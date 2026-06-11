@@ -1,0 +1,15 @@
+# dependencies
+node_modules/
+
+# environment — secrets never enter the repo
+.env
+.env*.local
+
+# builds
+dist/
+.next/
+out/
+
+# misc
+*.log
+.DS_Store
