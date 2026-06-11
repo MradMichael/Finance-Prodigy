@@ -9,63 +9,60 @@ A full-stack personal finance app built to make progress visible: a Financial He
 ## Repository layout
 
 ```
-momentum/
-├── prisma/
-│   ├── schema.prisma          # Star schema: dim_* / fact_* / planning tables
-│   ├── analytics_views.sql    # vw_fact_ledger, vw_monthly_bucket, vw_category_variance
-│   └── seed.ts                # Master calendar 2024–2032, category tree, demo user
-├── server/                    # Express API (port 4000)
-│   └── src/
-│       ├── index.ts           # Bootstrap, CORS, error handling
-│       ├── lib/core.ts        # Prisma singleton, date-key helpers, auth stub
-│       ├── services/
-│       │   └── financialEngine.ts   # Pure functions: payoff sim, health score, projections
-│       └── routes/
-│           ├── transactions.ts      # Logging, monthly summary, variance, trend
-│           ├── goals.ts             # Goals, contributions, emergency fund
-│           ├── debts.ts             # Debts, payments, payoff plan
-│           └── dashboard.ts         # Single aggregated dashboard payload
-└── client/                    # Next.js app (port 3000)
-    └── components/
-        └── FinancialDashboard.tsx   # The Motivation Engine screen
+Finance-Prodigy/
+├── server/                    # Express API (port 4000) — deploy root for Railway
+│   ├── prisma/
+│   │   ├── schema.prisma          # Star schema: dim_* / fact_* / planning tables
+│   │   ├── analytics_views.sql    # vw_fact_ledger, vw_monthly_bucket, vw_category_variance
+│   │   └── seed.ts                # Master calendar 2024–2032, category tree, demo user
+│   ├── src/
+│   │   ├── index.ts               # Bootstrap, CORS, error handling
+│   │   ├── lib/core.ts            # Prisma singleton, date-key helpers, auth stub
+│   │   ├── services/
+│   │   │   └── financialEngine.ts # Pure functions: payoff sim, health score, projections
+│   │   └── routes/
+│   │       ├── transactions.ts    # Logging, monthly summary, variance, trend
+│   │       ├── goals.ts           # Goals, contributions, emergency fund
+│   │       ├── debts.ts           # Debts, payments, payoff plan
+│   │       └── dashboard.ts       # Single aggregated dashboard payload
+│   ├── package.json
+│   ├── tsconfig.json
+│   └── .env.example
+├── client/                    # Next.js app (port 3000) — deploy to Vercel
+│   ├── app/
+│   │   ├── layout.tsx
+│   │   ├── page.tsx               # Renders <FinancialDashboard />
+│   │   └── globals.css
+│   ├── components/
+│   │   └── FinancialDashboard.tsx # The Motivation Engine screen
+│   ├── next.config.js             # /api/* → Express rewrite
+│   ├── tailwind.config.ts
+│   ├── tsconfig.json
+│   └── .env.example
+└── demo/
+    └── momentum-planner.jsx       # Standalone interactive planner (no backend)
 ```
 
 ---
 
 ## 1. Project setup commands
 
+Both apps are pre-scaffolded — just install dependencies.
+
+### Server (Express + Prisma)
+
+```bash
+cd server
+npm install
+cp .env.example .env   # fill in DATABASE_URL
+```
+
 ### Client (Next.js + TypeScript + Tailwind)
 
 ```bash
-npx create-next-app@latest client --typescript --tailwind --eslint --app --src-dir=false
 cd client
-npm install recharts
-```
-
-Copy `client/components/FinancialDashboard.tsx` into `components/`, then render it from `app/page.tsx`:
-
-```tsx
-import FinancialDashboard from "@/components/FinancialDashboard";
-export default function Home() {
-  return <FinancialDashboard />;
-}
-```
-
-Add the API proxy in `client/next.config.js` so the browser calls `/api/*` on the same origin and Next forwards it to Express (no CORS friction in dev):
-
-```js
-/** @type {import('next').NextConfig} */
-const nextConfig = {
-  async rewrites() {
-    return [
-      {
-        source: "/api/:path*",
-        destination: `${process.env.API_URL ?? "http://localhost:4000"}/api/:path*`,
-      },
-    ];
-  },
-};
-module.exports = nextConfig;
+npm install
+cp .env.example .env   # set API_URL if not using default localhost:4000
 ```
 
 Optional — register the "ledger ink & brass" palette as Tailwind tokens in `client/tailwind.config.ts` (the shipped component uses inline tokens, so this is for the screens you build next):
@@ -87,41 +84,18 @@ extend: {
 },
 ```
 
-### Server (Express + Prisma)
-
-```bash
-mkdir server && cd server
-npm init -y
-npm install express cors zod @prisma/client
-npm install -D typescript ts-node-dev @types/node @types/express @types/cors prisma
-npx tsc --init --rootDir src --outDir dist --esModuleInterop --strict
-```
-
-Add to `server/package.json`:
-
-```json
-{
-  "scripts": {
-    "dev": "ts-node-dev --respawn src/index.ts",
-    "build": "tsc",
-    "start": "node dist/index.js"
-  },
-  "prisma": {
-    "seed": "ts-node prisma/seed.ts"
-  }
-}
-```
-
-Place the `prisma/` folder (schema, views, seed) at the server root (or repo root — just keep the `--schema` paths consistent).
-
 ### Database (PostgreSQL)
 
+Run these from the `server/` directory:
+
 ```bash
+cd server
+
 # 1. Create the database (local example)
 createdb momentum
 
 # 2. Environment
-echo 'DATABASE_URL="postgresql://postgres:postgres@localhost:5432/momentum?schema=public"' > .env
+cp .env.example .env   # set DATABASE_URL
 
 # 3. Generate client + run the migration
 npx prisma migrate dev --name init_star_schema
