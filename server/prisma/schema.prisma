@@ -128,8 +128,8 @@ model DimDate {
   debtPayments      FactDebtPayment[]
   goalContributions FactGoalContribution[]
 
-  @@index([year, month])
-  @@index([yearMonth])
+  @@index([year, month], map: "dim_date_year_month_composite_idx")
+  @@index([yearMonth], map: "dim_date_year_month_str_idx")
   @@map("dim_date")
 }
 
