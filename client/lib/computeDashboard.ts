@@ -51,6 +51,16 @@ function dateFmt(d: Date) {
 }
 
 export function computeDashboard(data: LocalFinancials): DashboardPayload {
+  // Normalize arrays so partial objects from sync/patch never crash
+  data = {
+    ...data,
+    transactions: data.transactions ?? [],
+    goals:        data.goals        ?? [],
+    debts:        data.debts        ?? [],
+    recurring:    data.recurring    ?? [],
+    cards:        data.cards        ?? [],
+  };
+
   const now = new Date();
   const year = now.getFullYear();
 
@@ -71,7 +81,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   const toUSD = (amount: number, currency?: string) =>
     currency === "LBP" ? amount / lbpRate : amount;
 
-  const monthTx = data.transactions.filter((t) => t.date.startsWith(prefix));
+  const monthTx = (data.transactions ?? []).filter((t) => t.date.startsWith(prefix));
 
   // Recurring contributions this month (pro-rated by frequency, converted to USD)
   const activeRecurring = (data.recurring ?? []);

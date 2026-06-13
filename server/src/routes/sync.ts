@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { PrismaClient } from "@prisma/client";
+import { normalizeToTables } from "../lib/normalizeSync";
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -10,13 +11,20 @@ router.post("/push", async (req, res, next) => {
     const { email, data } = req.body;
     if (!email || !data) return res.status(400).json({ error: "email and data are required." });
 
+    const syncedAt = new Date();
+
     await prisma.userSync.upsert({
       where:  { email: email.toLowerCase().trim() },
       create: { email: email.toLowerCase().trim(), dataJson: JSON.stringify(data) },
-      update: { dataJson: JSON.stringify(data), syncedAt: new Date() },
+      update: { dataJson: JSON.stringify(data), syncedAt },
     });
 
-    res.json({ ok: true, syncedAt: new Date().toISOString() });
+    // Normalize into all structured tables — fire & forget so client is never blocked
+    normalizeToTables(email.toLowerCase().trim(), data).catch((err: Error) =>
+      console.error("[normalize] failed:", err.message)
+    );
+
+    res.json({ ok: true, syncedAt: syncedAt.toISOString() });
   } catch (err) {
     next(err);
   }

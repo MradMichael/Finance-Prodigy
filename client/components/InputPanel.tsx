@@ -198,6 +198,8 @@ export default function InputPanel({ financials, onChange, session }: Props) {
   const [txDate,   setTxDate]   = useState(todayISO());
   const [txCurrency,  setTxCurrency]  = useState<Currency>("USD");
   const [txPayMethod, setTxPayMethod] = useState<PaymentMethod>("cash");
+  const [txPayNote,   setTxPayNote]   = useState("");
+  const [txAddToEF,   setTxAddToEF]   = useState(false);
   const [txCardId,    setTxCardId]    = useState<string | null>(null);
   const [showAddCard, setShowAddCard] = useState(false);
   const [newCardType, setNewCardType] = useState<StoredCard["type"]>("Visa");
@@ -304,15 +306,22 @@ export default function InputPanel({ financials, onChange, session }: Props) {
         if (card) { cardId = card.id; cardLabel = card.label; }
       }
     }
+    const amtUSD = txCurrency === "LBP" ? amt / (financials.lbpRate ?? 89500) : amt;
     const tx: StoredTransaction = {
       id: uid(), amount: amt, currency: txCurrency, bucket: txBucket,
       description: txDesc.trim() || txBucket.charAt(0) + txBucket.slice(1).toLowerCase(),
       date: txDate,
       paymentMethod: txPayMethod,
+      ...(txPayMethod === "other" && txPayNote.trim() ? { paymentNote: txPayNote.trim() } : {}),
       ...(cardId ? { cardId, cardLabel } : {}),
     };
-    update({ transactions: [tx, ...financials.transactions] });
-    setTxAmt(""); setTxDesc("");
+    update({
+      transactions: [tx, ...financials.transactions],
+      ...(txBucket === "SAVINGS" && txAddToEF
+        ? { emergencyFundBalance: (financials.emergencyFundBalance ?? 0) + amtUSD }
+        : {}),
+    });
+    setTxAmt(""); setTxDesc(""); setTxPayNote(""); setTxAddToEF(false);
   }
 
   function addGoal() {
@@ -505,214 +514,77 @@ export default function InputPanel({ financials, onChange, session }: Props) {
   const fmt      = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 
   return (
-    <div
-      className="flex h-full overflow-hidden"
+    <aside
+      className="flex flex-col h-full overflow-y-auto"
       style={{ background: T.panel }}
     >
-      {/* ══ LEFT CONFIG PANEL — always visible ══════════════════ */}
-      <div
-        className="flex flex-col flex-shrink-0 overflow-y-auto"
-        style={{ width: 232, borderRight: `1px solid ${T.line}` }}
-      >
-        {/* Header */}
-        <div className="px-5 pt-5 pb-4 flex-shrink-0" style={{ borderBottom: `1px solid ${T.line}` }}>
-          <div className="flex items-center gap-2 mb-1">
-            <Signet size={24} />
-            <span className="text-base font-semibold" style={{ color: T.text, fontFamily: "Spectral, Georgia, serif" }}>ESSA</span>
-          </div>
-          {session && (
-            <p className="text-[11px] mt-1.5 font-medium" style={{ color: T.jade }}>{session.name}&apos;s finances</p>
-          )}
+      {/* ── Header ──────────────────────────────────────────── */}
+      <div className="px-6 pt-6 pb-5" style={{ borderBottom: `1px solid ${T.line}` }}>
+        <div className="flex items-center gap-2.5 mb-1">
+          <Signet size={28} />
+          <span className="text-lg font-medium" style={{ color: T.text, fontFamily: "Spectral, Georgia, serif" }}>
+            ESSA
+          </span>
         </div>
-
-        {/* ── Core setup fields ─────────────────────────────── */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-        {activeTab === "setup" && <>
-
-        {/* Setup */}
-        <Section title="Setup" icon="⚙️" defaultOpen={financials.income === 0}>
-          <div>
-            <Label>Your name</Label>
-            <FocusInput
-              value={financials.userName}
-              onChange={(e) => update({ userName: e.target.value })}
-              placeholder="Your name"
-            />
-          </div>
-          <div>
-            <Label>Monthly income (USD)</Label>
-            <MoneyInput
-              value={financials.income ? String(financials.income) : ""}
-              onChange={(v) => update({ income: parseFloat(v) || 0 })}
-              placeholder="e.g. 3,500"
-            />
-          </div>
-          <div>
-            <Label>LBP / USD rate</Label>
-            <MoneyInput
-              value={String(financials.lbpRate ?? 89500)}
-              onChange={(v) => update({ lbpRate: parseFloat(v) || 89500 })}
-              placeholder="89,500"
-            />
-            <p className="text-[10px] mt-1 px-1" style={{ color: T.mute }}>
-              Used to convert L£ amounts → $ on the dashboard
-            </p>
-          </div>
-          <div className="grid grid-cols-2 gap-2.5">
-            <div>
-              <Label>EF target (months)</Label>
-              <FocusInput
-                type="number" min="1" max="24"
-                value={financials.emergencyFundTargetMonths}
-                onChange={(e) => update({ emergencyFundTargetMonths: parseInt(e.target.value) || 6 })}
-              />
-            </div>
-            <div>
-              <Label>EF balance ($)</Label>
-              <MoneyInput
-                value={financials.emergencyFundBalance ? String(financials.emergencyFundBalance) : ""}
-                onChange={(v) => update({ emergencyFundBalance: parseFloat(v) || 0 })}
-                placeholder="0"
-              />
-            </div>
-          </div>
-          {/* Budget rule picker */}
-          <div>
-            <Label>Budget split model</Label>
-            <div className="space-y-1.5">
-              {(Object.keys(BUDGET_RULES) as BudgetRuleKey[]).map((k) => {
-                const rule = BUDGET_RULES[k];
-                const active = (financials.budgetRule ?? "50-30-20") === k;
-                return (
-                  <button
-                    key={k}
-                    onClick={() => update({ budgetRule: k })}
-                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-left transition-all"
-                    style={{
-                      background: active ? T.jade + "18" : T.panelSoft,
-                      border: `1px solid ${active ? T.jade : T.line}`,
-                    }}
-                  >
-                    <div>
-                      <p className="text-xs font-semibold" style={{ color: active ? T.jade : T.text }}>{rule.label}</p>
-                      <p className="text-[10px]" style={{ color: T.mute }}>{rule.desc}</p>
-                    </div>
-                    {active && <span className="text-xs" style={{ color: T.jade }}>✓</span>}
-                  </button>
-                );
-              })}
-            </div>
-            {/* Custom sliders */}
-            {(financials.budgetRule ?? "50-30-20") === "custom" && (
-              <div className="mt-3 space-y-2.5 rounded-xl p-3" style={{ background: T.ink, border: `1px solid ${T.line}` }}>
-                <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.jade }}>Custom percentages</p>
-                {(["Needs", "Wants"] as const).map((label) => {
-                  const key  = label === "Needs" ? "budgetCustomNeeds" : "budgetCustomWants";
-                  const val  = label === "Needs" ? (financials.budgetCustomNeeds ?? 50) : (financials.budgetCustomWants ?? 30);
-                  const other = label === "Needs" ? (financials.budgetCustomWants ?? 30) : (financials.budgetCustomNeeds ?? 50);
-                  const maxVal = Math.max(0, 100 - other);
-                  return (
-                    <div key={label}>
-                      <div className="flex justify-between text-[10px] mb-1">
-                        <span style={{ color: T.mute }}>{label}</span>
-                        <span style={{ color: T.jade }}>{val}%</span>
-                      </div>
-                      <input
-                        type="range" min={0} max={maxVal} step={5} value={Math.min(val, maxVal)}
-                        onChange={(e) => update({ [key]: parseInt(e.target.value) })}
-                        className="w-full" style={{ accentColor: T.jade }}
-                      />
-                    </div>
-                  );
-                })}
-                <p className="text-[10px] text-right" style={{ color: T.mute }}>
-                  Savings: <span style={{ color: T.jade }}>
-                    {Math.max(0, 100 - (financials.budgetCustomNeeds ?? 50) - (financials.budgetCustomWants ?? 30))}%
-                  </span>
-                </p>
-              </div>
-            )}
-          </div>
-
-          {financials.income === 0 && (
-            <p className="text-xs rounded-xl px-3 py-2.5" style={{ background: T.brass + "18", color: T.brass, border: `1px solid ${T.brass}30` }}>
-              ← Set your income first to unlock the dashboard
-            </p>
-          )}
-        </Section>
-
-        </>}
-        </div>
-
-        {/* Footer: reset */}
-        <div
-          className="px-5 py-3 flex-shrink-0 flex items-center justify-between"
-          style={{ borderTop: `1px solid ${T.line}` }}
-        >
-          <p className="text-[10px]" style={{ color: T.mute }}>Saved locally</p>
-          <button
-            className="text-[10px] transition-opacity hover:opacity-80"
-            style={{ color: T.coral }}
-            onClick={() => { if (confirm("Clear all data?")) onChange({ userName: "You", income: 0, lbpRate: 89500, emergencyFundTargetMonths: 6, emergencyFundBalance: 0, transactions: [], goals: [], debts: [], recurring: [], cards: [] }); }}
-          >
-            Reset
-          </button>
-        </div>
-      </div>
-      {/* ══ END LEFT CONFIG PANEL ═══════════════════════════════ */}
-
-      {/* ══ RIGHT CONTENT PANEL ═════════════════════════════════ */}
-      <div className="flex flex-1 flex-col overflow-hidden">
-
-        {/* Quick stats strip */}
-        {financials.income > 0 && (
-          <div
-            className="grid grid-cols-3 gap-px flex-shrink-0"
-            style={{ background: T.line, borderBottom: `1px solid ${T.line}` }}
-          >
-            {[
-              { label: "Needs", value: fmt(needsOut), color: T.sky   },
-              { label: "Wants", value: fmt(wantsOut), color: T.brass },
-              { label: "Saved", value: fmt(savOut),   color: T.jade  },
-            ].map((s) => (
-              <div key={s.label} className="flex flex-col items-center py-3" style={{ background: T.panelSoft }}>
-                <span className="text-xs font-semibold tabular-nums" style={{ color: s.color }}>{s.value}</span>
-                <span className="text-[9px] uppercase tracking-widest mt-0.5" style={{ color: T.mute }}>{s.label}</span>
-              </div>
-            ))}
-          </div>
+        <p className="text-xs mt-0.5" style={{ color: T.mute }}>
+          Earn · Spend · Save · Achieve
+        </p>
+        {session && (
+          <p className="text-[11px] mt-2 font-medium" style={{ color: T.jade }}>
+            {session.name}&apos;s finances
+          </p>
         )}
+      </div>
 
-        {/* Tab bar */}
-        <div className="flex flex-shrink-0" style={{ borderBottom: `1px solid ${T.line}` }}>
-          {([
-            { id: "daily" as const, label: "Daily",  icon: "⚡", badge: monthTx.length },
-            { id: "setup" as const, label: "Manage", icon: "⚙", badge: 0 },
-          ]).map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-[11px] font-semibold transition-all"
-              style={{
-                color: activeTab === tab.id ? T.jade : T.mute,
-                borderBottom: activeTab === tab.id ? `2px solid ${T.jade}` : "2px solid transparent",
-                background: "transparent",
-                marginBottom: -1,
-              }}
-            >
-              <span>{tab.icon}</span>
-              <span>{tab.label}</span>
-              {tab.badge > 0 && (
-                <span className="text-[9px] font-bold px-1 py-0.5 rounded-full" style={{ background: T.jade + "28", color: T.jade }}>
-                  {tab.badge}
-                </span>
-              )}
-            </button>
+      {/* ── Quick stats strip ───────────────────────────────── */}
+      {financials.income > 0 && (
+        <div
+          className="grid grid-cols-3 gap-px mx-0"
+          style={{ background: T.line, borderBottom: `1px solid ${T.line}` }}
+        >
+          {[
+            { label: "Needs", value: fmt(needsOut), color: T.sky   },
+            { label: "Wants", value: fmt(wantsOut), color: T.brass },
+            { label: "Saved", value: fmt(savOut),   color: T.jade  },
+          ].map((s) => (
+            <div key={s.label} className="flex flex-col items-center py-3" style={{ background: T.panelSoft }}>
+              <span className="text-xs font-semibold tabular-nums" style={{ color: s.color }}>{s.value}</span>
+              <span className="text-[9px] uppercase tracking-widest mt-0.5" style={{ color: T.mute }}>{s.label}</span>
+            </div>
           ))}
         </div>
+      )}
 
-        {/* Scrollable body */}
-        <div className="flex-1 overflow-y-auto px-6">
+      {/* ── Tab bar ─────────────────────────────────────────── */}
+      <div className="flex flex-shrink-0" style={{ borderBottom: `1px solid ${T.line}` }}>
+        {([
+          { id: "daily" as const, label: "Daily",  icon: "⚡", badge: monthTx.length },
+          { id: "setup" as const, label: "Manage", icon: "⚙", badge: 0 },
+        ]).map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-[11px] font-semibold transition-all"
+            style={{
+              color: activeTab === tab.id ? T.jade : T.mute,
+              borderBottom: activeTab === tab.id ? `2px solid ${T.jade}` : "2px solid transparent",
+              background: "transparent",
+              marginBottom: -1,
+            }}
+          >
+            <span>{tab.icon}</span>
+            <span>{tab.label}</span>
+            {tab.badge > 0 && (
+              <span className="text-[9px] font-bold px-1 py-0.5 rounded-full" style={{ background: T.jade + "28", color: T.jade }}>
+                {tab.badge}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Scrollable body ─────────────────────────────────── */}
+      <div className="flex-1 overflow-y-auto px-6">
 
         {/* ── DAILY TAB ────────────────────────────────────── */}
         {activeTab === "daily" && <>
@@ -759,6 +631,64 @@ export default function InputPanel({ financials, onChange, session }: Props) {
             </div>
           </div>
 
+          {/* Savings context: target hint + EF toggle */}
+          {txBucket === "SAVINGS" && financials.income > 0 && (() => {
+            const ruleKey: BudgetRuleKey = financials.budgetRule ?? "50-30-20";
+            const savPct  = ruleKey === "custom"
+              ? Math.max(0, 100 - (financials.budgetCustomNeeds ?? 50) - (financials.budgetCustomWants ?? 30))
+              : BUDGET_RULES[ruleKey].savings;
+            const targetAmt = Math.round(financials.income * savPct / 100);
+            const efTarget  = (financials.emergencyFundTargetMonths ?? 6) * financials.income;
+            const efBalance = financials.emergencyFundBalance ?? 0;
+            const efRemaining = Math.max(0, efTarget - efBalance);
+            const efFull = efBalance >= efTarget;
+            return (
+              <div className="space-y-2">
+                {/* Target hint */}
+                <div className="rounded-xl px-3 py-2.5 flex items-center justify-between" style={{ background: T.jade + "14", border: `1px solid ${T.jade}30` }}>
+                  <span className="text-[11px]" style={{ color: T.mute }}>
+                    Monthly savings target ({savPct}% of ${financials.income.toLocaleString()})
+                  </span>
+                  <span className="text-sm font-semibold tabular-nums" style={{ color: T.jade }}>
+                    ${targetAmt.toLocaleString()}
+                  </span>
+                </div>
+                {/* So far this month */}
+                <div className="rounded-xl px-3 py-2 flex items-center justify-between" style={{ background: T.panelSoft }}>
+                  <span className="text-[11px]" style={{ color: T.mute }}>Saved so far this month</span>
+                  <span className="text-xs font-medium tabular-nums" style={{ color: savOut >= targetAmt ? T.jade : T.brass }}>
+                    ${Math.round(savOut).toLocaleString()} / ${targetAmt.toLocaleString()}
+                  </span>
+                </div>
+                {/* EF toggle */}
+                {!efFull ? (
+                  <button
+                    onClick={() => setTxAddToEF((v) => !v)}
+                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-left transition-all"
+                    style={{
+                      background: txAddToEF ? T.jade + "18" : T.panelSoft,
+                      border: `1px solid ${txAddToEF ? T.jade : T.line}`,
+                    }}
+                  >
+                    <div>
+                      <p className="text-xs font-medium" style={{ color: txAddToEF ? T.jade : T.text }}>
+                        Also add to Emergency Fund
+                      </p>
+                      <p className="text-[10px]" style={{ color: T.mute }}>
+                        EF: ${efBalance.toLocaleString()} of ${efTarget.toLocaleString()} · ${efRemaining.toLocaleString()} remaining
+                      </p>
+                    </div>
+                    <span className="text-base ml-2">{txAddToEF ? "✓" : "○"}</span>
+                  </button>
+                ) : (
+                  <div className="rounded-xl px-3 py-2" style={{ background: T.jade + "14", border: `1px solid ${T.jade}30` }}>
+                    <p className="text-xs font-medium" style={{ color: T.jade }}>✓ Emergency Fund is fully funded</p>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           <div>
             <Label>Description</Label>
             <FocusInput
@@ -794,6 +724,20 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                 </button>
               ))}
             </div>
+
+            {/* Other: who paid / context */}
+            {txPayMethod === "other" && (
+              <div className="space-y-1.5">
+                <FocusInput
+                  value={txPayNote}
+                  onChange={(e) => setTxPayNote(e.target.value)}
+                  placeholder="Who paid or how? e.g. Dad filled gas tank"
+                />
+                <p className="text-[10px] px-1" style={{ color: T.mute }}>
+                  Still counted in your budget — you consumed the expense.
+                </p>
+              </div>
+            )}
 
             {/* Card selector */}
             {txPayMethod === "card" && (
@@ -944,7 +888,13 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                                 <span className="text-[9px]" style={{ color: T.mute }}>
                                   {tx.paymentMethod === "card" && tx.cardLabel
                                     ? tx.cardLabel
-                                    : tx.paymentMethod === "cash" ? "💵 Cash" : tx.paymentMethod === "card" ? "💳 Card" : "🔗 Other"}
+                                    : tx.paymentMethod === "cash"
+                                    ? "💵 Cash"
+                                    : tx.paymentMethod === "card"
+                                    ? "💳 Card"
+                                    : tx.paymentNote
+                                    ? `🤝 ${tx.paymentNote}`
+                                    : "🤝 Other"}
                                 </span>
                               )}
                             </div>
@@ -1705,10 +1655,26 @@ export default function InputPanel({ financials, onChange, session }: Props) {
         </>}
 
         <div className="h-6" />
-        </div>
-        {/* end scrollable body */}
       </div>
-      {/* ══ END RIGHT CONTENT PANEL ══════════════════════════════ */}
-    </div>
+      {/* end scrollable body */}
+
+      {/* ── Footer ──────────────────────────────────────────── */}
+      <div
+        className="px-6 py-3 flex items-center justify-between flex-shrink-0"
+        style={{ borderTop: `1px solid ${T.line}` }}
+      >
+        <p className="text-[10px]" style={{ color: T.mute }}>Saved in your browser</p>
+        <button
+          className="text-[10px] transition-opacity hover:opacity-80"
+          style={{ color: T.coral }}
+          onClick={() => {
+            if (confirm("Clear all data?"))
+              onChange({ userName: "You", income: 0, lbpRate: 89500, emergencyFundTargetMonths: 6, emergencyFundBalance: 0, transactions: [], goals: [], debts: [], recurring: [], cards: [] });
+          }}
+        >
+          Reset
+        </button>
+      </div>
+    </aside>
   );
 }

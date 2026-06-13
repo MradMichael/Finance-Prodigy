@@ -18,6 +18,7 @@ export interface StoredTransaction {
   description: string;
   date: string; // YYYY-MM-DD
   paymentMethod?: PaymentMethod;
+  paymentNote?: string; // for "other": who paid / context (e.g. "Dad filled gas tank")
   cardId?: string;
   cardLabel?: string;
 }
