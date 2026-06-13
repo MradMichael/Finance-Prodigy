@@ -505,79 +505,28 @@ export default function InputPanel({ financials, onChange, session }: Props) {
   const fmt      = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 
   return (
-    <aside
-      className="flex flex-col h-full overflow-y-auto"
+    <div
+      className="flex h-full overflow-hidden"
       style={{ background: T.panel }}
     >
-      {/* ── Header ──────────────────────────────────────────── */}
-      <div className="px-6 pt-6 pb-5" style={{ borderBottom: `1px solid ${T.line}` }}>
-        <div className="flex items-center gap-2.5 mb-1">
-          <Signet size={28} />
-          <span className="text-lg font-medium" style={{ color: T.text, fontFamily: "Spectral, Georgia, serif" }}>
-            ESSA
-          </span>
+      {/* ══ LEFT CONFIG PANEL — always visible ══════════════════ */}
+      <div
+        className="flex flex-col flex-shrink-0 overflow-y-auto"
+        style={{ width: 232, borderRight: `1px solid ${T.line}` }}
+      >
+        {/* Header */}
+        <div className="px-5 pt-5 pb-4 flex-shrink-0" style={{ borderBottom: `1px solid ${T.line}` }}>
+          <div className="flex items-center gap-2 mb-1">
+            <Signet size={24} />
+            <span className="text-base font-semibold" style={{ color: T.text, fontFamily: "Spectral, Georgia, serif" }}>ESSA</span>
+          </div>
+          {session && (
+            <p className="text-[11px] mt-1.5 font-medium" style={{ color: T.jade }}>{session.name}&apos;s finances</p>
+          )}
         </div>
-        <p className="text-xs mt-0.5" style={{ color: T.mute }}>
-          Earn · Spend · Save · Achieve
-        </p>
-        {session && (
-          <p className="text-[11px] mt-2 font-medium" style={{ color: T.jade }}>
-            {session.name}&apos;s finances
-          </p>
-        )}
-      </div>
 
-      {/* ── Quick stats strip ───────────────────────────────── */}
-      {financials.income > 0 && (
-        <div
-          className="grid grid-cols-3 gap-px mx-0"
-          style={{ background: T.line, borderBottom: `1px solid ${T.line}` }}
-        >
-          {[
-            { label: "Needs", value: fmt(needsOut), color: T.sky   },
-            { label: "Wants", value: fmt(wantsOut), color: T.brass },
-            { label: "Saved", value: fmt(savOut),   color: T.jade  },
-          ].map((s) => (
-            <div key={s.label} className="flex flex-col items-center py-3" style={{ background: T.panelSoft }}>
-              <span className="text-xs font-semibold tabular-nums" style={{ color: s.color }}>{s.value}</span>
-              <span className="text-[9px] uppercase tracking-widest mt-0.5" style={{ color: T.mute }}>{s.label}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* ── Tab bar ─────────────────────────────────────────── */}
-      <div className="flex flex-shrink-0" style={{ borderBottom: `1px solid ${T.line}` }}>
-        {([
-          { id: "daily" as const, label: "Daily",  icon: "⚡", badge: monthTx.length },
-          { id: "setup" as const, label: "Setup",  icon: "⚙", badge: 0 },
-        ]).map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-[11px] font-semibold transition-all"
-            style={{
-              color: activeTab === tab.id ? T.jade : T.mute,
-              borderBottom: activeTab === tab.id ? `2px solid ${T.jade}` : "2px solid transparent",
-              background: "transparent",
-              marginBottom: -1,
-            }}
-          >
-            <span>{tab.icon}</span>
-            <span>{tab.label}</span>
-            {tab.badge > 0 && (
-              <span className="text-[9px] font-bold px-1 py-0.5 rounded-full" style={{ background: T.jade + "28", color: T.jade }}>
-                {tab.badge}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      {/* ── Scrollable body ─────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto px-6">
-
-        {/* ── SETUP TAB ────────────────────────────────────── */}
+        {/* ── Core setup fields ─────────────────────────────── */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
         {activeTab === "setup" && <>
 
         {/* Setup */}
@@ -658,8 +607,10 @@ export default function InputPanel({ financials, onChange, session }: Props) {
               <div className="mt-3 space-y-2.5 rounded-xl p-3" style={{ background: T.ink, border: `1px solid ${T.line}` }}>
                 <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.jade }}>Custom percentages</p>
                 {(["Needs", "Wants"] as const).map((label) => {
-                  const key = label === "Needs" ? "budgetCustomNeeds" : "budgetCustomWants";
-                  const val = label === "Needs" ? (financials.budgetCustomNeeds ?? 50) : (financials.budgetCustomWants ?? 30);
+                  const key  = label === "Needs" ? "budgetCustomNeeds" : "budgetCustomWants";
+                  const val  = label === "Needs" ? (financials.budgetCustomNeeds ?? 50) : (financials.budgetCustomWants ?? 30);
+                  const other = label === "Needs" ? (financials.budgetCustomWants ?? 30) : (financials.budgetCustomNeeds ?? 50);
+                  const maxVal = Math.max(0, 100 - other);
                   return (
                     <div key={label}>
                       <div className="flex justify-between text-[10px] mb-1">
@@ -667,7 +618,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                         <span style={{ color: T.jade }}>{val}%</span>
                       </div>
                       <input
-                        type="range" min={0} max={100} step={5} value={val}
+                        type="range" min={0} max={maxVal} step={5} value={Math.min(val, maxVal)}
                         onChange={(e) => update({ [key]: parseInt(e.target.value) })}
                         className="w-full" style={{ accentColor: T.jade }}
                       />
@@ -675,8 +626,8 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                   );
                 })}
                 <p className="text-[10px] text-right" style={{ color: T.mute }}>
-                  Savings: <span style={{ color: 100 - (financials.budgetCustomNeeds ?? 50) - (financials.budgetCustomWants ?? 30) < 0 ? T.coral : T.jade }}>
-                    {100 - (financials.budgetCustomNeeds ?? 50) - (financials.budgetCustomWants ?? 30)}%
+                  Savings: <span style={{ color: T.jade }}>
+                    {Math.max(0, 100 - (financials.budgetCustomNeeds ?? 50) - (financials.budgetCustomWants ?? 30))}%
                   </span>
                 </p>
               </div>
@@ -691,6 +642,77 @@ export default function InputPanel({ financials, onChange, session }: Props) {
         </Section>
 
         </>}
+        </div>
+
+        {/* Footer: reset */}
+        <div
+          className="px-5 py-3 flex-shrink-0 flex items-center justify-between"
+          style={{ borderTop: `1px solid ${T.line}` }}
+        >
+          <p className="text-[10px]" style={{ color: T.mute }}>Saved locally</p>
+          <button
+            className="text-[10px] transition-opacity hover:opacity-80"
+            style={{ color: T.coral }}
+            onClick={() => { if (confirm("Clear all data?")) onChange({ userName: "You", income: 0, lbpRate: 89500, emergencyFundTargetMonths: 6, emergencyFundBalance: 0, transactions: [], goals: [], debts: [], recurring: [], cards: [] }); }}
+          >
+            Reset
+          </button>
+        </div>
+      </div>
+      {/* ══ END LEFT CONFIG PANEL ═══════════════════════════════ */}
+
+      {/* ══ RIGHT CONTENT PANEL ═════════════════════════════════ */}
+      <div className="flex flex-1 flex-col overflow-hidden">
+
+        {/* Quick stats strip */}
+        {financials.income > 0 && (
+          <div
+            className="grid grid-cols-3 gap-px flex-shrink-0"
+            style={{ background: T.line, borderBottom: `1px solid ${T.line}` }}
+          >
+            {[
+              { label: "Needs", value: fmt(needsOut), color: T.sky   },
+              { label: "Wants", value: fmt(wantsOut), color: T.brass },
+              { label: "Saved", value: fmt(savOut),   color: T.jade  },
+            ].map((s) => (
+              <div key={s.label} className="flex flex-col items-center py-3" style={{ background: T.panelSoft }}>
+                <span className="text-xs font-semibold tabular-nums" style={{ color: s.color }}>{s.value}</span>
+                <span className="text-[9px] uppercase tracking-widest mt-0.5" style={{ color: T.mute }}>{s.label}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Tab bar */}
+        <div className="flex flex-shrink-0" style={{ borderBottom: `1px solid ${T.line}` }}>
+          {([
+            { id: "daily" as const, label: "Daily",  icon: "⚡", badge: monthTx.length },
+            { id: "setup" as const, label: "Manage", icon: "⚙", badge: 0 },
+          ]).map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-[11px] font-semibold transition-all"
+              style={{
+                color: activeTab === tab.id ? T.jade : T.mute,
+                borderBottom: activeTab === tab.id ? `2px solid ${T.jade}` : "2px solid transparent",
+                background: "transparent",
+                marginBottom: -1,
+              }}
+            >
+              <span>{tab.icon}</span>
+              <span>{tab.label}</span>
+              {tab.badge > 0 && (
+                <span className="text-[9px] font-bold px-1 py-0.5 rounded-full" style={{ background: T.jade + "28", color: T.jade }}>
+                  {tab.badge}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Scrollable body */}
+        <div className="flex-1 overflow-y-auto px-6">
 
         {/* ── DAILY TAB ────────────────────────────────────── */}
         {activeTab === "daily" && <>
@@ -1683,22 +1705,10 @@ export default function InputPanel({ financials, onChange, session }: Props) {
         </>}
 
         <div className="h-6" />
+        </div>
+        {/* end scrollable body */}
       </div>
-
-      {/* ── Footer ──────────────────────────────────────────── */}
-      <div
-        className="px-6 py-3 flex items-center justify-between flex-shrink-0"
-        style={{ borderTop: `1px solid ${T.line}` }}
-      >
-        <p className="text-[10px]" style={{ color: T.mute }}>Saved in your browser</p>
-        <button
-          className="text-[10px] transition-opacity hover:opacity-80"
-          style={{ color: T.coral }}
-          onClick={() => { if (confirm("Clear all data?")) onChange({ userName: "You", income: 0, lbpRate: 89500, emergencyFundTargetMonths: 6, emergencyFundBalance: 0, transactions: [], goals: [], debts: [], recurring: [], cards: [] }); }}
-        >
-          Reset
-        </button>
-      </div>
-    </aside>
+      {/* ══ END RIGHT CONTENT PANEL ══════════════════════════════ */}
+    </div>
   );
 }

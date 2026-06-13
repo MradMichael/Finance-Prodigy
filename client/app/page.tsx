@@ -433,8 +433,10 @@ function BudgetScreen({
             <div className="rounded-xl p-4 space-y-3" style={{ background: T.ink, border: `1px solid ${T.line}` }}>
               <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.jade }}>Custom percentages</p>
               {(["Needs", "Wants"] as const).map((label) => {
-                const field = label === "Needs" ? "budgetCustomNeeds" as const : "budgetCustomWants" as const;
-                const val   = label === "Needs" ? customNeeds : customWants;
+                const field  = label === "Needs" ? "budgetCustomNeeds" as const : "budgetCustomWants" as const;
+                const val    = label === "Needs" ? customNeeds : customWants;
+                const other  = label === "Needs" ? customWants : customNeeds;
+                const maxVal = Math.max(0, 100 - other);
                 return (
                   <div key={label}>
                     <div className="flex justify-between text-xs mb-1.5">
@@ -442,7 +444,7 @@ function BudgetScreen({
                       <span style={{ color: T.jade }}>{val}%</span>
                     </div>
                     <input
-                      type="range" min={0} max={100} step={5} value={val}
+                      type="range" min={0} max={maxVal} step={5} value={Math.min(val, maxVal)}
                       onChange={(e) => onChange({ ...financials, [field]: parseInt(e.target.value) })}
                       className="w-full" style={{ accentColor: T.jade }}
                     />
@@ -451,9 +453,8 @@ function BudgetScreen({
               })}
               <div className="flex justify-between text-xs pt-1" style={{ borderTop: `1px solid ${T.line}` }}>
                 <span style={{ color: T.mute }}>Savings (auto)</span>
-                <span style={{ color: 100 - customNeeds - customWants < 0 ? T.coral : T.jade }}>
-                  {100 - customNeeds - customWants}%
-                  {100 - customNeeds - customWants < 0 && " — exceeds 100%"}
+                <span style={{ color: T.jade }}>
+                  {Math.max(0, 100 - customNeeds - customWants)}%
                 </span>
               </div>
             </div>
