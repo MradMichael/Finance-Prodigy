@@ -18,16 +18,11 @@
 
 import { useEffect, useState } from "react";
 import {
-  ResponsiveContainer, RadialBarChart, RadialBar, PolarAngleAxis,
+  ResponsiveContainer,
   AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
 } from "recharts";
-
-// ----------------------------- theme ----------------------------- //
-const T = {
-  ink: "#0B1F1E", panel: "#11302C", panelSoft: "#16403A", line: "#1E4A43",
-  text: "#EAF2EF", mute: "#8FAFA7",
-  brass: "#E3B341", jade: "#4FD1A5", coral: "#F08A7E", sky: "#7FB8D8",
-};
+import { useTheme } from "../contexts/ThemeContext";
+import type { BudgetRuleKey } from "../lib/localData";
 const SERIF: React.CSSProperties = { fontFamily: "Georgia, 'Times New Roman', serif" };
 const NUMS: React.CSSProperties = { fontVariantNumeric: "tabular-nums" };
 
@@ -46,6 +41,8 @@ interface Projection {
 interface DashboardPayload {
   user: { name: string; currency: string; payoffStrategy: "SNOWBALL" | "AVALANCHE" };
   period: { year: number; month: number };
+  budgetRule: BudgetRuleKey;
+  budgetTargets: { needs: number; wants: number; savings: number };
   health: {
     score: number; grade: string;
     components: { key: string; label: string; score: number; weight: number; detail: string }[];
@@ -109,45 +106,54 @@ const MOCK: DashboardPayload = {
     { ymKey: 202603, income: 3500, spend: 2960 }, { ymKey: 202604, income: 3500, spend: 2740 },
     { ymKey: 202605, income: 3500, spend: 2810 }, { ymKey: 202606, income: 3500, spend: 2830 },
   ],
+  budgetRule: "50-30-20",
+  budgetTargets: { needs: 1750, wants: 1050, savings: 700 },
 };
 
 // --------------------------- data hook --------------------------- //
-function useDashboard() {
+function useDashboard(enabled: boolean) {
   const [data, setData] = useState<DashboardPayload | null>(null);
   const [demo, setDemo] = useState(false);
   useEffect(() => {
+    if (!enabled) return;
     fetch("/api/dashboard")
       .then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
       .then(setData)
       .catch(() => { setData(MOCK); setDemo(true); });
-  }, []);
+  }, [enabled]);
   return { data, demo };
 }
 
 // --------------------------- sub-views --------------------------- //
 
 function HealthRing({ score, grade }: { score: number; grade: string }) {
-  const ringColor = score >= 80 ? T.jade : score >= 50 ? T.brass : T.coral;
+  const T = useTheme();
+  const color = score >= 80 ? T.jade : score >= 60 ? T.jade : score >= 40 ? T.brass : T.coral;
+  const r     = 38;
+  const circ  = 2 * Math.PI * r;
+  const dash  = (score / 100) * circ;
+  const gap   = circ - dash;
   return (
-    <div className="relative h-44 w-44 mx-auto">
-      <ResponsiveContainer>
-        <RadialBarChart
-          data={[{ value: score }]} innerRadius="78%" outerRadius="100%"
-          startAngle={225} endAngle={-45}
-        >
-          <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
-          <RadialBar dataKey="value" cornerRadius={12} fill={ringColor} background={{ fill: T.line }} />
-        </RadialBarChart>
-      </ResponsiveContainer>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-5xl" style={{ ...SERIF, ...NUMS, color: T.text }}>{score}</span>
-        <span className="text-xs tracking-widest uppercase mt-1" style={{ color: ringColor }}>{grade}</span>
+    <div className="relative w-40 h-40 mx-auto">
+      <svg viewBox="0 0 100 100" className="w-full h-full" style={{ transform: "rotate(-90deg)" }}>
+        <circle cx="50" cy="50" r={r} fill="none" stroke={T.line} strokeWidth="7" />
+        <circle
+          cx="50" cy="50" r={r} fill="none"
+          stroke={color} strokeWidth="7" strokeLinecap="round"
+          strokeDasharray={`${dash} ${gap}`}
+          style={{ transition: "stroke-dasharray 1s ease" }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5">
+        <span className="text-5xl font-medium tabular-nums" style={{ ...SERIF, color: T.text }}>{score}</span>
+        <span className="text-[10px] tracking-widest uppercase" style={{ color }}>{grade}</span>
       </div>
     </div>
   );
 }
 
 function Bar({ pct, color }: { pct: number; color: string }) {
+  const T = useTheme();
   return (
     <div className="h-2 rounded-full overflow-hidden" style={{ background: T.line }}>
       <div className="h-full rounded-full transition-all duration-700" style={{ width: `${Math.min(100, pct)}%`, background: color }} />
@@ -156,6 +162,7 @@ function Bar({ pct, color }: { pct: number; color: string }) {
 }
 
 function BucketRow({ label, actual, target, color }: { label: string; actual: number; target: number; color: string }) {
+  const T = useTheme();
   const pct = target > 0 ? (actual / target) * 100 : 0;
   const headroom = target - actual;
   return (
@@ -175,6 +182,7 @@ function BucketRow({ label, actual, target, color }: { label: string; actual: nu
 }
 
 function Panel({ title, children, className = "" }: { title?: string; children: React.ReactNode; className?: string }) {
+  const T = useTheme();
   return (
     <section className={`rounded-2xl p-5 ${className}`} style={{ background: T.panel, border: `1px solid ${T.line}` }}>
       {title && <h2 className="text-xs uppercase tracking-widest mb-4" style={{ color: T.mute }}>{title}</h2>}
@@ -185,8 +193,11 @@ function Panel({ title, children, className = "" }: { title?: string; children: 
 
 // ---------------------------- screen ----------------------------- //
 
-export default function FinancialDashboard() {
-  const { data, demo } = useDashboard();
+export default function FinancialDashboard({ data: propData }: { data?: DashboardPayload }) {
+  const T = useTheme();
+  const { data: fetchedData, demo: fetchedDemo } = useDashboard(propData === undefined);
+  const data = propData ?? fetchedData;
+  const demo = propData === undefined && fetchedDemo;
 
   if (!data) {
     return (
@@ -198,10 +209,12 @@ export default function FinancialDashboard() {
 
   const { health, month, emergencyFund: ef, debt, goals, sixMonthTrend, encouragements, user, period } = data;
   const monthName = ["", "January","February","March","April","May","June","July","August","September","October","November","December"][period.month];
-  const targets = {
-    needs: month.income * 0.5,
-    wants: month.income * 0.3,
-    savings: month.income * 0.2,
+  const targets     = data.budgetTargets;
+  const budgetLabel = data.budgetRule === "custom" ? "Custom split" : data.budgetRule.replace(/-/g, " / ");
+  const budgetPct   = {
+    needs:   Math.round(targets.needs   / Math.max(month.income, 1) * 100),
+    wants:   Math.round(targets.wants   / Math.max(month.income, 1) * 100),
+    savings: Math.round(targets.savings / Math.max(month.income, 1) * 100),
   };
 
   return (
@@ -211,11 +224,15 @@ export default function FinancialDashboard() {
         {/* Header */}
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <p className="text-xs uppercase tracking-widest" style={{ color: T.mute }}>Momentum · {monthName} {period.year}</p>
+            <p className="text-xs uppercase tracking-widest" style={{ color: T.mute }}>ESSA · {monthName} {period.year}</p>
             <h1 className="text-3xl md:text-4xl mt-1" style={SERIF}>
-              {month.netCashFlow >= 0
-                ? <>You kept <span style={{ color: T.brass }}>{money(month.netCashFlow)}</span> this month, {user.name.split(" ")[0]}.</>
-                : <>A heavy month — the plan below absorbs it, {user.name.split(" ")[0]}.</>}
+              {month.income === 0
+                ? <>Set your income to see the full picture, {user.name.split(" ")[0]}.</>
+                : month.netCashFlow >= month.income * 0.2
+                ? <>{user.name.split(" ")[0]}, you kept <span style={{ color: T.jade }}>{money(month.netCashFlow)}</span> — above your 20% target.</>
+                : month.netCashFlow > 0
+                ? <>You kept <span style={{ color: T.brass }}>{money(month.netCashFlow)}</span> this month, {user.name.split(" ")[0]}. Every dollar counts.</>
+                : <>Spending exceeded income by <span style={{ color: T.coral }}>{money(-month.netCashFlow)}</span> this month, {user.name.split(" ")[0]}. The plan below shows the path.</>}
             </h1>
           </div>
           {demo && (
@@ -224,6 +241,23 @@ export default function FinancialDashboard() {
             </span>
           )}
         </header>
+
+        {/* Month at a glance */}
+        {month.income > 0 && (
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { label: "Income",  value: money(month.income),        sub: "this month",                       color: T.text  },
+              { label: "Spent",   value: money(month.totalSpend),    sub: `${Math.round(month.totalSpend / month.income * 100)}% of income`, color: month.totalSpend > month.income ? T.coral : T.mute },
+              { label: "Saved",   value: money(month.savingsContrib), sub: `${month.savingsRatePct.toFixed(1)}% rate`,                       color: T.jade  },
+            ].map(({ label, value, sub, color }) => (
+              <div key={label} className="rounded-2xl px-4 py-4" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
+                <p className="text-[10px] uppercase tracking-widest mb-2" style={{ color: T.mute }}>{label}</p>
+                <p className="text-xl font-medium tabular-nums" style={{ ...SERIF, color }}>{value}</p>
+                <p className="text-[10px] mt-1" style={{ color: T.mute }}>{sub}</p>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Encouragements */}
         <div className="rounded-2xl px-5 py-4 space-y-1.5" style={{ background: T.panelSoft, borderLeft: `3px solid ${T.brass}` }}>
@@ -236,24 +270,31 @@ export default function FinancialDashboard() {
         <div className="grid gap-6 md:grid-cols-3">
           <Panel title="Financial health">
             <HealthRing score={health.score} grade={health.grade} />
-            <div className="mt-4 space-y-2.5">
-              {health.components.map((c) => (
-                <div key={c.key}>
-                  <div className="flex justify-between text-xs mb-1">
-                    <span style={{ color: T.mute }}>{c.label}</span>
-                    <span style={{ ...NUMS, color: T.text }}>{c.score}</span>
+            <div className="mt-4 space-y-3">
+              {health.components.map((c) => {
+                const col = c.score >= 70 ? T.jade : c.score >= 40 ? T.brass : T.coral;
+                return (
+                  <div key={c.key}>
+                    <div className="flex justify-between items-baseline mb-1.5">
+                      <span className="text-xs" style={{ color: T.mute }}>{c.label}</span>
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-sm font-semibold tabular-nums" style={{ color: col }}>{c.score}</span>
+                        <span className="text-[9px]" style={{ color: T.mute }}>/ 100</span>
+                      </div>
+                    </div>
+                    <Bar pct={c.score} color={col} />
+                    <p className="text-[10px] mt-1" style={{ color: T.mute }}>{c.detail}</p>
                   </div>
-                  <Bar pct={c.score} color={c.score >= 70 ? T.jade : c.score >= 40 ? T.brass : T.coral} />
-                </div>
-              ))}
+                );
+              })}
             </div>
           </Panel>
 
-          <Panel title="The 50 / 30 / 20 split">
+          <Panel title={`Budget · ${budgetLabel}`}>
             <div className="space-y-5">
-              <BucketRow label="Needs · 50%" actual={month.needsSpend} target={targets.needs} color={T.sky} />
-              <BucketRow label="Wants · 30%" actual={month.wantsSpend} target={targets.wants} color={T.brass} />
-              <BucketRow label="Savings · 20%" actual={month.savingsContrib} target={targets.savings} color={T.jade} />
+              <BucketRow label={`Needs · ${budgetPct.needs}%`}   actual={month.needsSpend}    target={targets.needs}   color={T.sky} />
+              <BucketRow label={`Wants · ${budgetPct.wants}%`}   actual={month.wantsSpend}    target={targets.wants}   color={T.brass} />
+              <BucketRow label={`Savings · ${budgetPct.savings}%`} actual={month.savingsContrib} target={targets.savings} color={T.jade} />
             </div>
             <p className="text-xs mt-5 pt-4" style={{ color: T.mute, borderTop: `1px solid ${T.line}` }}>
               Savings rate this month: <span style={{ ...NUMS, color: T.jade }}>{month.savingsRatePct.toFixed(1)}%</span> of income

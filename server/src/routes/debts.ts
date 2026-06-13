@@ -81,12 +81,13 @@ router.get("/payoff-plan", ah(async (req, res) => {
   const inputs = debts.map(toEngine);
   const snowball = simulateDebtPayoff(inputs, extra, "SNOWBALL");
   const avalanche = simulateDebtPayoff(inputs, extra, "AVALANCHE");
-  const baseline = simulateDebtPayoff(inputs, 0, user.payoffStrategy); // minimums only
+  const strategy = user.payoffStrategy === "SNOWBALL" ? "SNOWBALL" : "AVALANCHE";
+  const baseline = simulateDebtPayoff(inputs, 0, strategy); // minimums only
 
-  const chosen = user.payoffStrategy === "SNOWBALL" ? snowball : avalanche;
+  const chosen = strategy === "SNOWBALL" ? snowball : avalanche;
 
   res.json({
-    preferredStrategy: user.payoffStrategy,
+    preferredStrategy: strategy,
     extraMonthly: extra,
     plan: chosen,
     comparison: {

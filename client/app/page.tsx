@@ -1,5 +1,708 @@
+"use client";
+
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import FinancialDashboard from "../components/FinancialDashboard";
+import InputPanel from "../components/InputPanel";
+import { loadData, saveData, monthlyEquivalent, fmtDate, FREQ_LABELS } from "../lib/localData";
+import type { LocalFinancials } from "../lib/localData";
+import { computeDashboard } from "../lib/computeDashboard";
+import { getSession, signOut } from "../lib/auth";
+import type { Session } from "../lib/auth";
+import { pushToServer, getLastSyncTime } from "../lib/syncService";
+import { useTheme } from "../contexts/ThemeContext";
+import { Signet } from "../components/EssaBrand";
+
+type SyncStatus = "idle" | "syncing" | "synced" | "offline";
+
+type Screen = "overview" | "finances" | "transactions" | "goals" | "debts" | "recurring";
+
+const NAV: { key: Screen; label: string; icon: string }[] = [
+  { key: "overview",     label: "Overview",     icon: "◉" },
+  { key: "finances",     label: "My Finances",  icon: "✎" },
+  { key: "transactions", label: "Transactions", icon: "≡" },
+  { key: "goals",        label: "Goals",        icon: "◎" },
+  { key: "debts",        label: "Debts",        icon: "⌁" },
+  { key: "recurring",    label: "Recurring",    icon: "↻" },
+];
+
+const SERIF: React.CSSProperties = { fontFamily: "Spectral, Georgia, serif" };
+const NUMS:  React.CSSProperties = { fontVariantNumeric: "tabular-nums" };
+const money  = (n: number, d = 0) =>
+  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: d }).format(n);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TRANSACTIONS SCREEN
+// ─────────────────────────────────────────────────────────────────────────────
+function TransactionsScreen({ financials }: { financials: LocalFinancials }) {
+  const T = useTheme();
+  const [filter, setFilter] = useState("all");
+
+  const lbpRate = financials.lbpRate ?? 89500;
+  const toUSD   = (n: number, cur?: string) => cur === "LBP" ? n / lbpRate : n;
+
+  const allTx  = [...financials.transactions].sort((a, b) => b.date.localeCompare(a.date));
+  const months = Array.from(new Set(allTx.map((t) => t.date.slice(0, 7)))).sort().reverse();
+  const filtered = filter === "all" ? allTx : allTx.filter((t) => t.date.startsWith(filter));
+
+  const fmtMo = (ym: string) => {
+    const [y, m] = ym.split("-");
+    return `${["","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+m]} ${y}`;
+  };
+  const grouped = filtered.reduce<Record<string, typeof allTx>>((acc, t) => {
+    const k = t.date.slice(0, 7);
+    (acc[k] = acc[k] ?? []).push(t);
+    return acc;
+  }, {});
+  const BC = { NEEDS: T.sky, WANTS: T.brass, SAVINGS: T.jade } as const;
+  const BL = { NEEDS: "Needs", WANTS: "Wants", SAVINGS: "Savings" } as const;
+
+  return (
+    <main className="min-h-screen px-4 py-8 md:px-10" style={{ background: T.ink }}>
+      <div className="max-w-3xl mx-auto space-y-6">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="text-[10px] uppercase tracking-widest" style={{ color: T.mute }}>ESSA</p>
+            <h1 className="text-3xl mt-1" style={SERIF}>Transactions</h1>
+          </div>
+          <select
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            className="px-3 py-2 rounded-xl text-sm"
+            style={{ background: T.panel, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
+          >
+            <option value="all">All time</option>
+            {months.map((m) => <option key={m} value={m}>{fmtMo(m)}</option>)}
+          </select>
+        </div>
+
+        {/* Bucket summary */}
+        <div className="grid grid-cols-3 gap-3">
+          {(["NEEDS","WANTS","SAVINGS"] as const).map((b) => {
+            const sum = filtered.filter((t) => t.bucket === b).reduce((s, t) => s + toUSD(t.amount, t.currency), 0);
+            return (
+              <div key={b} className="rounded-2xl px-4 py-4" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
+                <p className="text-[10px] uppercase tracking-widest mb-2" style={{ color: T.mute }}>{BL[b]}</p>
+                <p className="text-xl font-medium tabular-nums" style={{ ...SERIF, color: BC[b] }}>{money(sum)}</p>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* List by month */}
+        {Object.keys(grouped).sort().reverse().map((mo) => {
+          const txs = grouped[mo];
+          const moTotal = txs.reduce((s, t) => s + toUSD(t.amount, t.currency), 0);
+          return (
+            <div key={mo}>
+              <div className="flex justify-between items-baseline mb-2 px-1">
+                <p className="text-xs uppercase tracking-widest" style={{ color: T.mute }}>{fmtMo(mo)}</p>
+                <p className="text-xs tabular-nums" style={{ color: T.mute }}>{money(moTotal)}</p>
+              </div>
+              <div className="rounded-2xl overflow-hidden" style={{ border: `1px solid ${T.line}` }}>
+                {txs.map((t, i) => (
+                  <div
+                    key={t.id}
+                    className="flex items-center gap-3 px-4 py-3"
+                    style={{ background: T.panel, borderTop: i > 0 ? `1px solid ${T.line}` : undefined }}
+                  >
+                    <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: BC[t.bucket] }} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm truncate" style={{ color: T.text }}>{t.description}</p>
+                      <p className="text-[10px]" style={{ color: T.mute }}>
+                        {fmtDate(t.date)} · {BL[t.bucket]}
+                        {t.cardLabel ? ` · ${t.cardLabel}` : t.paymentMethod === "cash" ? " · Cash" : ""}
+                      </p>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-sm font-medium tabular-nums" style={{ color: BC[t.bucket] }}>{money(toUSD(t.amount, t.currency))}</p>
+                      {t.currency === "LBP" && (
+                        <p className="text-[10px]" style={{ color: T.mute }}>LBP {t.amount.toLocaleString()}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+
+        {filtered.length === 0 && (
+          <div className="text-center py-20">
+            <p className="text-sm" style={{ color: T.mute }}>No transactions yet — add them in My Finances.</p>
+          </div>
+        )}
+      </div>
+    </main>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GOALS SCREEN
+// ─────────────────────────────────────────────────────────────────────────────
+function GoalsScreen({ dashData }: { dashData: ReturnType<typeof computeDashboard> }) {
+  const T = useTheme();
+  const goals = dashData.goals;
+
+  return (
+    <main className="min-h-screen px-4 py-8 md:px-10" style={{ background: T.ink }}>
+      <div className="max-w-3xl mx-auto space-y-6">
+        <div>
+          <p className="text-[10px] uppercase tracking-widest" style={{ color: T.mute }}>ESSA</p>
+          <h1 className="text-3xl mt-1" style={SERIF}>Goals</h1>
+        </div>
+
+        {goals.length === 0 ? (
+          <div className="text-center py-20">
+            <p className="text-sm" style={{ color: T.mute }}>No goals yet — add one in My Finances.</p>
+          </div>
+        ) : (
+          <div className="grid gap-5 sm:grid-cols-2">
+            {goals.map((g) => {
+              const pct   = g.projection.pctComplete;
+              const color = g.projection.onTrack ? T.jade : T.brass;
+              const r     = 38;
+              const circ  = 2 * Math.PI * r;
+              const dash  = (pct / 100) * circ;
+              return (
+                <div key={g.id} className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
+                  <div className="flex items-start justify-between gap-2 mb-5">
+                    <p className="text-base font-medium leading-snug" style={{ color: T.text }}>{g.emoji} {g.name}</p>
+                    <span
+                      className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full whitespace-nowrap flex-shrink-0"
+                      style={{ border: `1px solid ${color}`, color }}
+                    >
+                      {g.projection.onTrack ? "on pace" : "needs push"}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-5">
+                    {/* Ring */}
+                    <div className="relative w-24 h-24 flex-shrink-0">
+                      <svg viewBox="0 0 100 100" className="w-full h-full" style={{ transform: "rotate(-90deg)" }}>
+                        <circle cx="50" cy="50" r={r} fill="none" stroke={T.line} strokeWidth="10" />
+                        <circle cx="50" cy="50" r={r} fill="none" stroke={color} strokeWidth="10" strokeLinecap="round"
+                          strokeDasharray={`${dash} ${circ - dash}`}
+                          style={{ transition: "stroke-dasharray 1s ease" }}
+                        />
+                      </svg>
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <span className="text-sm font-bold tabular-nums" style={{ color: T.text }}>{pct}%</span>
+                      </div>
+                    </div>
+                    {/* Numbers */}
+                    <div className="space-y-2">
+                      <div>
+                        <p className="text-[10px] uppercase tracking-widest" style={{ color: T.mute }}>Saved</p>
+                        <p className="text-xl font-medium tabular-nums" style={{ ...SERIF, color: T.text }}>{money(g.currentAmount)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] uppercase tracking-widest" style={{ color: T.mute }}>Target</p>
+                        <p className="text-sm tabular-nums" style={{ color: T.mute }}>{money(g.targetAmount)}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 pt-4 flex flex-wrap gap-x-4 text-xs" style={{ borderTop: `1px solid ${T.line}`, color: T.mute }}>
+                    <span><span style={{ color }}>{money(g.projection.requiredMonthly)}/mo</span> needed</span>
+                    <span>{g.projection.monthsRemaining} months left</span>
+                    <span>by {g.projection.targetDateDisplay}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </main>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DEBTS SCREEN
+// ─────────────────────────────────────────────────────────────────────────────
+function DebtsScreen({ financials, dashData }: { financials: LocalFinancials; dashData: ReturnType<typeof computeDashboard> }) {
+  const T = useTheme();
+  const totalBal  = financials.debts.reduce((s, d) => s + d.balance, 0);
+  const totalMin  = financials.debts.reduce((s, d) => s + d.minPayment, 0);
+  const plan      = dashData.debt.plan;
+
+  return (
+    <main className="min-h-screen px-4 py-8 md:px-10" style={{ background: T.ink }}>
+      <div className="max-w-3xl mx-auto space-y-6">
+        <div>
+          <p className="text-[10px] uppercase tracking-widest" style={{ color: T.mute }}>ESSA</p>
+          <h1 className="text-3xl mt-1" style={SERIF}>Debts</h1>
+        </div>
+
+        {financials.debts.length === 0 ? (
+          <div className="text-center py-20">
+            <p className="text-3xl mb-3" style={SERIF}>Debt-free. 🏁</p>
+            <p className="text-sm" style={{ color: T.mute }}>Every dollar you earn works for your future.</p>
+          </div>
+        ) : (
+          <>
+            {/* Summary cards */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-2xl px-4 py-4" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
+                <p className="text-[10px] uppercase tracking-widest mb-2" style={{ color: T.mute }}>Total balance</p>
+                <p className="text-2xl font-medium tabular-nums" style={{ ...SERIF, color: T.coral }}>{money(totalBal)}</p>
+              </div>
+              <div className="rounded-2xl px-4 py-4" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
+                <p className="text-[10px] uppercase tracking-widest mb-2" style={{ color: T.mute }}>Min. payments / mo</p>
+                <p className="text-2xl font-medium tabular-nums" style={{ ...SERIF, color: T.text }}>{money(totalMin)}</p>
+              </div>
+            </div>
+
+            {/* Debt-free date banner */}
+            {plan?.feasible && plan.debtFreeDateDisplay && (
+              <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
+                <p className="text-xs uppercase tracking-widest mb-2" style={{ color: T.mute }}>Debt-free date</p>
+                <p className="text-5xl" style={{ ...SERIF, ...NUMS, color: T.brass }}>{plan.debtFreeDateDisplay}</p>
+                <div className="flex flex-wrap gap-x-5 text-xs mt-3" style={{ color: T.mute }}>
+                  <span>{plan.months} months to go</span>
+                  <span>at <span style={{ color: T.text }}>{money(plan.monthlyCommitment)}/mo</span></span>
+                  <span>lifetime interest <span style={{ color: T.coral }}>{money(plan.totalInterest)}</span></span>
+                </div>
+              </div>
+            )}
+
+            {/* Individual debts */}
+            <div className="space-y-3">
+              {financials.debts.map((d) => {
+                const monthlyInt = (d.apr / 100 / 12) * d.balance;
+                return (
+                  <div key={d.id} className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
+                    <div className="flex justify-between items-start gap-2 mb-3">
+                      <p className="font-medium" style={{ color: T.text }}>{d.name}</p>
+                      <p className="text-xl font-semibold tabular-nums flex-shrink-0" style={{ ...SERIF, color: T.coral }}>{money(d.balance)}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs" style={{ color: T.mute }}>
+                      <span>APR <span style={{ color: T.text }}>{d.apr}%</span></span>
+                      <span>Min payment <span style={{ color: T.text }}>{money(d.minPayment)}/mo</span></span>
+                      <span>Monthly interest <span style={{ color: T.coral }}>{money(monthlyInt)}</span></span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </div>
+    </main>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RECURRING SCREEN
+// ─────────────────────────────────────────────────────────────────────────────
+function RecurringScreen({ financials }: { financials: LocalFinancials }) {
+  const T    = useTheme();
+  const now  = new Date();
+  const lbpRate = financials.lbpRate ?? 89500;
+  const toUSD   = (n: number, cur?: string) => cur === "LBP" ? n / lbpRate : n;
+  const BC   = { NEEDS: T.sky, WANTS: T.brass, SAVINGS: T.jade } as const;
+  const BL   = { NEEDS: "Needs", WANTS: "Wants", SAVINGS: "Savings" } as const;
+
+  const totalMonthly = financials.recurring.reduce((s, r) => s + toUSD(monthlyEquivalent(r, now), r.currency), 0);
+
+  const buckets = (["NEEDS","WANTS","SAVINGS"] as const).map((b) => ({
+    bucket: b,
+    items: financials.recurring.filter((r) => r.bucket === b),
+    total: financials.recurring.filter((r) => r.bucket === b)
+      .reduce((s, r) => s + toUSD(monthlyEquivalent(r, now), r.currency), 0),
+  }));
+
+  return (
+    <main className="min-h-screen px-4 py-8 md:px-10" style={{ background: T.ink }}>
+      <div className="max-w-3xl mx-auto space-y-6">
+        <div>
+          <p className="text-[10px] uppercase tracking-widest" style={{ color: T.mute }}>ESSA</p>
+          <h1 className="text-3xl mt-1" style={SERIF}>Recurring</h1>
+        </div>
+
+        {financials.recurring.length === 0 ? (
+          <div className="text-center py-20">
+            <p className="text-sm" style={{ color: T.mute }}>No recurring items yet — add them in My Finances.</p>
+          </div>
+        ) : (
+          <>
+            {/* Total */}
+            <div className="rounded-2xl px-5 py-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
+              <p className="text-xs uppercase tracking-widest" style={{ color: T.mute }}>Total committed monthly</p>
+              <p className="text-4xl font-medium tabular-nums mt-1" style={{ ...SERIF, color: T.text }}>{money(totalMonthly)}</p>
+            </div>
+
+            {/* By bucket */}
+            {buckets.map(({ bucket, items, total }) => items.length > 0 && (
+              <div key={bucket}>
+                <div className="flex justify-between items-baseline mb-2 px-1">
+                  <p className="text-xs uppercase tracking-widest" style={{ color: BC[bucket] }}>{BL[bucket]}</p>
+                  <p className="text-xs tabular-nums" style={{ color: T.mute }}>{money(total)}/mo</p>
+                </div>
+                <div className="rounded-2xl overflow-hidden" style={{ border: `1px solid ${T.line}` }}>
+                  {items.map((r, i) => {
+                    const monthly = toUSD(monthlyEquivalent(r, now), r.currency);
+                    return (
+                      <div
+                        key={r.id}
+                        className="flex items-center gap-3 px-4 py-3"
+                        style={{ background: T.panel, borderTop: i > 0 ? `1px solid ${T.line}` : undefined }}
+                      >
+                        <span className="text-xl">{r.emoji}</span>
+                        <div className="flex-1">
+                          <p className="text-sm" style={{ color: T.text }}>{r.name}</p>
+                          <p className="text-[10px]" style={{ color: T.mute }}>
+                            {money(r.amount, 2)} · {FREQ_LABELS[r.frequency]}
+                          </p>
+                        </div>
+                        <p className="text-sm font-medium tabular-nums" style={{ color: BC[bucket] }}>
+                          {money(monthly)}/mo
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
+    </main>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SIDEBAR
+// ─────────────────────────────────────────────────────────────────────────────
+function SyncDot({ status }: { status: SyncStatus }) {
+  const T = useTheme();
+  if (status === "idle") return null;
+  const cfg = {
+    syncing: { color: T.brass,  label: "Syncing…",  animate: true  },
+    synced:  { color: T.jade,   label: "Synced",     animate: false },
+    offline: { color: T.mute,   label: "Offline",    animate: false },
+  }[status];
+  return (
+    <span
+      className="flex items-center gap-1"
+      title={cfg.label}
+      style={{ color: cfg.color }}
+    >
+      <span
+        className="inline-block w-1.5 h-1.5 rounded-full"
+        style={{
+          background: cfg.color,
+          animation: cfg.animate ? "essa-spin 1s linear infinite" : undefined,
+        }}
+      />
+    </span>
+  );
+}
+
+const SIDEBAR_PIN_KEY = "essa_sidebar_pinned";
+
+function Sidebar({
+  screen, setScreen, session, onProfile, syncStatus,
+}: {
+  screen: Screen; setScreen: (s: Screen) => void;
+  session: Session; onProfile: () => void;
+  syncStatus: SyncStatus;
+}) {
+  const T = useTheme();
+  const initials = session.name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
+
+  const [pinned, setPinned] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem(SIDEBAR_PIN_KEY) === "1";
+  });
+  const [hovered, setHovered] = useState(false);
+
+  const expanded = pinned || hovered;
+
+  function togglePin(e: React.MouseEvent) {
+    e.stopPropagation();
+    setPinned((v) => {
+      const next = !v;
+      localStorage.setItem(SIDEBAR_PIN_KEY, next ? "1" : "0");
+      return next;
+    });
+  }
+
+  return (
+    <aside
+      className="hidden md:flex flex-col flex-shrink-0"
+      style={{
+        width: expanded ? 220 : 60,
+        transition: "width 0.18s ease",
+        background: T.panel,
+        borderRight: `1px solid ${T.line}`,
+        overflow: "hidden",
+      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {/* Logo + pin button */}
+      <div
+        className="flex items-center gap-2 px-3.5 flex-shrink-0"
+        style={{ height: 56, borderBottom: `1px solid ${T.line}` }}
+      >
+        <div className="flex-shrink-0"><Signet size={26} /></div>
+        {expanded && (
+          <>
+            <span className="text-sm font-semibold flex-1 whitespace-nowrap" style={{ color: T.text, fontFamily: "Spectral, Georgia, serif" }}>
+              ESSA
+            </span>
+            <button
+              onClick={togglePin}
+              title={pinned ? "Unpin sidebar" : "Pin sidebar open"}
+              className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-lg transition-all hover:opacity-80"
+              style={{
+                color: pinned ? T.brass : T.mute,
+                background: pinned ? T.brass + "18" : "transparent",
+                border: `1px solid ${pinned ? T.brass + "40" : "transparent"}`,
+                fontSize: 12,
+              }}
+            >
+              {pinned ? "◈" : "◇"}
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* Nav */}
+      <nav className="flex-1 py-3 space-y-0.5 px-2 overflow-hidden">
+        {NAV.map(({ key, label, icon }) => {
+          const active = screen === key;
+          return (
+            <button
+              key={key}
+              onClick={() => setScreen(key)}
+              className="w-full flex items-center gap-3 px-2.5 py-2.5 rounded-xl text-sm font-medium transition-all"
+              style={{
+                background: active ? T.brass + "1A" : "transparent",
+                color: active ? T.brass : T.mute,
+                whiteSpace: "nowrap",
+              }}
+            >
+              <span className="text-base w-5 text-center flex-shrink-0">{icon}</span>
+              {expanded && <span>{label}</span>}
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* User + sync indicator */}
+      <div className="flex-shrink-0 px-2 py-3" style={{ borderTop: `1px solid ${T.line}` }}>
+        <button
+          onClick={onProfile}
+          className="w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-xl transition-all hover:opacity-80"
+          style={{ whiteSpace: "nowrap" }}
+        >
+          <div className="relative flex-shrink-0">
+            <div
+              className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold"
+              style={{ background: T.jade + "2A", color: T.jade }}
+            >
+              {initials}
+            </div>
+            {syncStatus !== "idle" && (
+              <span
+                className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border"
+                style={{
+                  background: syncStatus === "synced" ? T.jade : syncStatus === "syncing" ? T.brass : T.mute,
+                  borderColor: T.panel,
+                }}
+              />
+            )}
+          </div>
+          {expanded && (
+            <div className="text-left overflow-hidden flex-1">
+              <p className="text-xs font-medium truncate" style={{ color: T.text }}>{session.name}</p>
+              <p className="text-[10px] truncate" style={{ color: T.mute }}>
+                {syncStatus === "syncing" ? "Syncing…" : syncStatus === "synced" ? "Synced" : syncStatus === "offline" ? "Offline" : session.email}
+              </p>
+            </div>
+          )}
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MOBILE BOTTOM TAB BAR
+// ─────────────────────────────────────────────────────────────────────────────
+function BottomNav({ screen, setScreen }: { screen: Screen; setScreen: (s: Screen) => void }) {
+  const T = useTheme();
+  return (
+    <nav
+      className="md:hidden flex items-center justify-around px-2 py-2 flex-shrink-0"
+      style={{ background: T.panel, borderTop: `1px solid ${T.line}` }}
+    >
+      {NAV.map(({ key, label, icon }) => {
+        const active = screen === key;
+        return (
+          <button
+            key={key}
+            onClick={() => setScreen(key)}
+            className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl transition-all"
+            style={{ color: active ? T.brass : T.mute }}
+          >
+            <span className="text-base leading-none">{icon}</span>
+            <span className="text-[9px] font-medium">{label}</span>
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TOP BAR (mobile header)
+// ─────────────────────────────────────────────────────────────────────────────
+function TopBar({ session, onProfile, onSignOut }: { session: Session; onProfile: () => void; onSignOut: () => void }) {
+  const T        = useTheme();
+  const [menu, setMenu] = useState(false);
+  const initials = session.name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
+  return (
+    <header
+      className="flex items-center justify-between px-4 py-2.5 flex-shrink-0 md:hidden"
+      style={{ background: T.panel, borderBottom: `1px solid ${T.line}` }}
+    >
+      <div className="flex items-center gap-2">
+        <Signet size={26} />
+        <span className="text-sm font-semibold" style={{ color: T.text, fontFamily: "Spectral, Georgia, serif" }}>ESSA</span>
+      </div>
+      <div className="relative">
+        <button
+          onClick={() => setMenu((v) => !v)}
+          className="flex items-center gap-2 rounded-xl px-2.5 py-1.5"
+          style={{ background: T.panelSoft }}
+        >
+          <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold"
+            style={{ background: T.jade + "2A", color: T.jade }}>{initials}</div>
+          <span className="text-[10px]" style={{ color: T.mute }}>▾</span>
+        </button>
+        {menu && (
+          <>
+            <div className="fixed inset-0 z-10" onClick={() => setMenu(false)} />
+            <div className="absolute right-0 top-full mt-2 w-48 rounded-2xl py-2 z-20 shadow-2xl"
+              style={{ background: T.panel, border: `1px solid ${T.line}` }}>
+              <button onClick={() => { setMenu(false); onProfile(); }}
+                className="w-full text-left px-4 py-2.5 text-sm hover:opacity-80 flex gap-2" style={{ color: T.text }}>
+                <span>⚙</span> Settings
+              </button>
+              <button onClick={() => { setMenu(false); onSignOut(); }}
+                className="w-full text-left px-4 py-2.5 text-sm hover:opacity-80 flex gap-2" style={{ color: T.coral }}>
+                <span>→</span> Sign out
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </header>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HOME
+// ─────────────────────────────────────────────────────────────────────────────
+const SYNC_DEBOUNCE_MS = 2500; // wait 2.5 s after last change before pushing
 
 export default function Home() {
-  return <FinancialDashboard />;
+  const router  = useRouter();
+  const T       = useTheme();
+  const [session,    setSession]    = useState<Session | null>(null);
+  const [financials, setFinancials] = useState<LocalFinancials | null>(null);
+  const [screen,     setScreen]     = useState<Screen>("overview");
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
+
+  const syncTimer   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sessionRef  = useRef<Session | null>(null);
+
+  // keep a stable ref so the debounce closure always sees the latest session
+  useEffect(() => { sessionRef.current = session; }, [session]);
+
+  const autoSync = useCallback(async (data: LocalFinancials, email: string) => {
+    setSyncStatus("syncing");
+    const result = await pushToServer(email, data);
+    setSyncStatus(result.ok ? "synced" : "offline");
+    // fade back to idle after 4 s so the indicator doesn't stay forever
+    setTimeout(() => setSyncStatus((s) => s !== "syncing" ? "idle" : s), 4000);
+  }, []);
+
+  useEffect(() => {
+    const s = getSession();
+    if (!s) { router.replace("/sign-in"); return; }
+    setSession(s);
+    loadData(s.userId).then((data) => {
+      setFinancials({ ...data, userName: s.name });
+    });
+  }, [router]);
+
+  async function handleChange(updated: LocalFinancials) {
+    if (!session) return;
+    setFinancials(updated);
+    await saveData(updated, session.userId);
+
+    // Debounced auto-sync: reset the timer on every change
+    if (syncTimer.current) clearTimeout(syncTimer.current);
+    setSyncStatus("idle"); // clear stale status while user is still typing
+    syncTimer.current = setTimeout(() => {
+      const s = sessionRef.current;
+      if (s) autoSync(updated, s.email);
+    }, SYNC_DEBOUNCE_MS);
+  }
+
+  function handleSignOut() {
+    if (syncTimer.current) clearTimeout(syncTimer.current);
+    signOut();
+    router.push("/sign-in");
+  }
+  function handleProfile() { router.push("/profile"); }
+
+  if (!session || !financials) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3" style={{ background: T.ink }}>
+        <Signet size={40} />
+        <p className="text-sm" style={{ color: T.mute }}>Loading…</p>
+      </div>
+    );
+  }
+
+  const dashboardData = computeDashboard(financials);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100dvh", background: T.ink }}>
+
+      {/* Mobile header */}
+      <TopBar session={session} onProfile={handleProfile} onSignOut={handleSignOut} />
+
+      {/* Body row */}
+      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+
+        {/* Desktop sidebar */}
+        <Sidebar
+          screen={screen} setScreen={setScreen}
+          session={session} onProfile={handleProfile}
+          syncStatus={syncStatus}
+        />
+
+        {/* Main content */}
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          {screen === "overview"     && <FinancialDashboard data={dashboardData} />}
+          {screen === "finances"     && <InputPanel financials={financials} onChange={handleChange} session={session} />}
+          {screen === "transactions" && <TransactionsScreen financials={financials} />}
+          {screen === "goals"        && <GoalsScreen dashData={dashboardData} />}
+          {screen === "debts"        && <DebtsScreen financials={financials} dashData={dashboardData} />}
+          {screen === "recurring"    && <RecurringScreen financials={financials} />}
+        </div>
+
+      </div>
+
+      {/* Mobile bottom nav */}
+      <BottomNav screen={screen} setScreen={setScreen} />
+    </div>
+  );
 }
