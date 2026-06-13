@@ -87,14 +87,15 @@ export interface StoredRecurring {
   createdAt: string;      // ISO — when added to ESSA
 }
 
-export type BudgetRuleKey = "50-30-20" | "70-20-10" | "60-20-20" | "40-30-30" | "custom";
+export type BudgetRuleKey = "40-30-30" | "50-30-20" | "60-20-20" | "70-20-10" | "80-15-5" | "custom";
 
 export const BUDGET_RULES: Record<BudgetRuleKey, { label: string; desc: string; needs: number; wants: number; savings: number }> = {
-  "50-30-20": { label: "50 / 30 / 20", desc: "Standard — balanced lifestyle",            needs: 50, wants: 30, savings: 20 },
-  "70-20-10": { label: "70 / 20 / 10", desc: "Bare basics — tight or high-cost budget",  needs: 70, wants: 20, savings: 10 },
-  "60-20-20": { label: "60 / 20 / 20", desc: "Balanced — higher essential spending",     needs: 60, wants: 20, savings: 20 },
-  "40-30-30": { label: "40 / 30 / 30", desc: "Aggressive saver — maximize wealth",       needs: 40, wants: 30, savings: 30 },
-  "custom":   { label: "Custom",       desc: "Set your own percentages",                 needs: 50, wants: 30, savings: 20 },
+  "40-30-30": { label: "40 / 30 / 30", desc: "Aggressive saver — maximize wealth",        needs: 40, wants: 30, savings: 30 },
+  "50-30-20": { label: "50 / 30 / 20", desc: "Standard — balanced lifestyle",              needs: 50, wants: 30, savings: 20 },
+  "60-20-20": { label: "60 / 20 / 20", desc: "Balanced — higher essential spending",       needs: 60, wants: 20, savings: 20 },
+  "70-20-10": { label: "70 / 20 / 10", desc: "Tight budget — high-cost or lower income",  needs: 70, wants: 20, savings: 10 },
+  "80-15-5":  { label: "80 / 15 / 5",  desc: "Survival — when every dollar counts",       needs: 80, wants: 15, savings: 5  },
+  "custom":   { label: "Custom",       desc: "Set your own percentages",                   needs: 50, wants: 30, savings: 20 },
 };
 
 export interface LocalFinancials {
