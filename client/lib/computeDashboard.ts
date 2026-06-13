@@ -36,6 +36,14 @@ export interface DashboardPayload {
     targetAmount: number; currentAmount: number; projection: Projection;
   }[];
   sixMonthTrend: { ymKey: number; income: number; spend: number }[];
+  netWorth: {
+    assets: number;
+    liabilities: number;
+    total: number;
+    tier: string;
+    tierColor: "jade" | "brass" | "coral" | "mute";
+    suggestions: string[];
+  };
 }
 
 function dateFmt(d: Date) {
@@ -186,6 +194,79 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     };
   });
 
+  // ── Net worth ─────────────────────────────────────────────────────
+  const nwAssets      = data.emergencyFundBalance + data.goals.reduce((s, g) => s + toUSD(g.currentAmount, undefined), 0);
+  const nwLiabilities = totalDebtBalance;
+  const nwTotal       = nwAssets - nwLiabilities;
+
+  type NWColor = "jade" | "brass" | "coral" | "mute";
+  function netWorthTier(nw: number): { tier: string; tierColor: NWColor; suggestions: string[] } {
+    if (nw < -20000) return {
+      tier: "Heavy debt load",
+      tierColor: "coral",
+      suggestions: [
+        "Target the highest-APR debt first — that's where interest is burning fastest.",
+        "Every dollar above the minimum payment is money that stops compounding against you.",
+        "Even $50 extra per month cuts months off your payoff date — run the numbers in Debts.",
+      ],
+    };
+    if (nw < -5000) return {
+      tier: "Rebuilding",
+      tierColor: "coral",
+      suggestions: [
+        "You're climbing — the negative number is shrinking each month.",
+        "Consider a small side income for 3–6 months; even $200/month accelerates this significantly.",
+        "Once you clear the debt, redirect that minimum payment into savings automatically.",
+      ],
+    };
+    if (nw < 0) return {
+      tier: "Almost positive",
+      tierColor: "brass",
+      suggestions: [
+        "You're close to zero — that milestone shifts your psychology entirely.",
+        "Focus on one debt at a time to cross into positive territory fast.",
+        "Celebrate each debt closed — that freed cash is your first wealth-building tool.",
+      ],
+    };
+    if (nw < 5000) return {
+      tier: "Breaking even",
+      tierColor: "brass",
+      suggestions: [
+        "Your liabilities are covered. Now every dollar saved is pure net worth growth.",
+        "Start or grow your emergency fund — it's your first true asset.",
+        "Set a goal to hit $5,000 in savings; that buffer changes how you handle surprises.",
+      ],
+    };
+    if (nw < 25000) return {
+      tier: "Foundation builder",
+      tierColor: "jade",
+      suggestions: [
+        "You're ahead of most people your age — keep the momentum going.",
+        "Compound growth starts to matter here. Even modest returns on $10K make a difference.",
+        "Consider diversifying: savings, goals, and if applicable, low-risk investments.",
+      ],
+    };
+    if (nw < 100000) return {
+      tier: "Growing wealth",
+      tierColor: "jade",
+      suggestions: [
+        "Significant position — you have real financial resilience now.",
+        "At this level, optimizing income is often more powerful than cutting expenses.",
+        "Consider whether your money is working as hard as you are.",
+      ],
+    };
+    return {
+      tier: "Wealth building",
+      tierColor: "jade",
+      suggestions: [
+        "Strong financial foundation — protect it with diversification.",
+        "Focus shifts from accumulation to optimization and preservation.",
+        "Reinvesting returns rather than spending them is what separates this level from the next.",
+      ],
+    };
+  }
+  const nwData = netWorthTier(nwTotal);
+
   // ── Six-month trend ───────────────────────────────────────────────
   const sixMonthTrend = Array.from({ length: 6 }, (_, i) => {
     const d = new Date(year, month - 1 - (5 - i), 1);
@@ -223,6 +304,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     debt: { totalBalance: totalDebtBalance, count: data.debts.length, plan: debtPlan },
     goals,
     sixMonthTrend,
+    netWorth: { assets: Math.round(nwAssets), liabilities: Math.round(nwLiabilities), total: Math.round(nwTotal), ...nwData },
     budgetRule: ruleKey,
     budgetTargets: {
       needs:   income * (budgetTargetPct.needs   / 100),

@@ -214,6 +214,27 @@ export default function AdminPage() {
             <Row label="Sync push" value={`POST ${API}/api/sync/push`} mono />
             <Row label="Sync pull" value={`GET ${API}/api/sync/pull?email=…`} mono />
           </div>
+
+          {/* Offline troubleshooting guide */}
+          {health && !health.ok && (
+            <div className="rounded-xl p-4 space-y-3" style={{ background: T.coral + "0E", border: `1px solid ${T.coral}35` }}>
+              <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: T.coral }}>How to fix: server offline</p>
+              <ol className="space-y-2 text-xs" style={{ color: T.mute }}>
+                <li className="flex gap-2"><span style={{ color: T.coral }}>1.</span> Open a terminal (PowerShell or Command Prompt)</li>
+                <li className="flex gap-2"><span style={{ color: T.coral }}>2.</span> Navigate to the server folder:
+                  <code className="ml-1 px-2 py-0.5 rounded text-[11px]" style={{ background: T.ink, color: T.jade }}>cd C:\Users\Michael\source\repos\Finance-Prodigy\server</code>
+                </li>
+                <li className="flex gap-2"><span style={{ color: T.coral }}>3.</span> Start the server:
+                  <code className="ml-1 px-2 py-0.5 rounded text-[11px]" style={{ background: T.ink, color: T.jade }}>npm run dev</code>
+                </li>
+                <li className="flex gap-2"><span style={{ color: T.coral }}>4.</span> Wait for: <code className="px-1.5 py-0.5 rounded text-[11px]" style={{ background: T.ink, color: T.jade }}>momentum-api listening on :4000</code></li>
+                <li className="flex gap-2"><span style={{ color: T.coral }}>5.</span> Click <strong style={{ color: T.text }}>↻ Ping server</strong> above to verify.</li>
+              </ol>
+              <p className="text-[10px]" style={{ color: T.mute }}>
+                The server must be running for sync to work. Your financial data is safe in localStorage even while offline.
+              </p>
+            </div>
+          )}
         </Card>
 
         {/* Database */}
@@ -225,14 +246,11 @@ export default function AdminPage() {
             <Row label="Connection string" value={maskedUrl} mono sensitive />
             <Row label="Port" value="Dynamic — set static port in SQL Server Configuration Manager (run as Admin) to prevent it changing on restart" />
           </div>
-          <div
-            className="rounded-xl px-4 py-3 text-xs leading-relaxed"
-            style={{ background: T.panelSoft, color: T.mute }}
-          >
-            To start the API server, open a terminal and run:
-            <code className="block mt-2 px-3 py-2 rounded-lg text-xs" style={{ background: T.ink, color: T.jade }}>
-              cd server{"\n"}npm run dev
-            </code>
+          <div className="rounded-xl p-4 space-y-2 text-xs" style={{ background: T.panelSoft, color: T.mute }}>
+            <p className="font-semibold" style={{ color: T.text }}>Common database issues</p>
+            <p><span style={{ color: T.brass }}>•</span> <strong style={{ color: T.text }}>Port keeps changing</strong> — Open SQL Server Configuration Manager (as Admin) → SQL Server Network Configuration → Protocols → TCP/IP → IP Addresses tab → set port 55183 as static under IPAll.</p>
+            <p><span style={{ color: T.brass }}>•</span> <strong style={{ color: T.text }}>Connection refused</strong> — Make sure SQL Server service is running: open Services (services.msc) and check that <em>SQL Server (SQLPRACTICE_MM)</em> is Started.</p>
+            <p><span style={{ color: T.brass }}>•</span> <strong style={{ color: T.text }}>Prisma error</strong> — Run <code className="px-1 py-0.5 rounded" style={{ background: T.ink, color: T.jade }}>npx prisma migrate deploy</code> in the server folder to apply any pending migrations.</p>
           </div>
         </Card>
 

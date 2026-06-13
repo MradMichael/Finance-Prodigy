@@ -68,6 +68,11 @@ interface DashboardPayload {
     targetAmount: number; currentAmount: number; projection: Projection;
   }[];
   sixMonthTrend: { ymKey: number; income: number; spend: number }[];
+  netWorth: {
+    assets: number; liabilities: number; total: number;
+    tier: string; tierColor: "jade" | "brass" | "coral" | "mute";
+    suggestions: string[];
+  };
 }
 
 // ------------------------- mock (dev only) ------------------------ //
@@ -108,6 +113,15 @@ const MOCK: DashboardPayload = {
   ],
   budgetRule: "50-30-20",
   budgetTargets: { needs: 1750, wants: 1050, savings: 700 },
+  netWorth: {
+    assets: 6620, liabilities: 13260, total: -6640,
+    tier: "Rebuilding", tierColor: "coral",
+    suggestions: [
+      "You're climbing — the negative number is shrinking each month.",
+      "Consider a small side income for 3–6 months; even $200/month accelerates this significantly.",
+      "Once you clear the debt, redirect that minimum payment into savings automatically.",
+    ],
+  },
 };
 
 // --------------------------- data hook --------------------------- //
@@ -207,7 +221,7 @@ export default function FinancialDashboard({ data: propData }: { data?: Dashboar
     );
   }
 
-  const { health, month, emergencyFund: ef, debt, goals, sixMonthTrend, encouragements, user, period } = data;
+  const { health, month, emergencyFund: ef, debt, goals, sixMonthTrend, encouragements, user, period, netWorth } = data;
   const monthName = ["", "January","February","March","April","May","June","July","August","September","October","November","December"][period.month];
   const targets     = data.budgetTargets;
   const budgetLabel = data.budgetRule === "custom" ? "Custom split" : data.budgetRule.replace(/-/g, " / ");
@@ -366,7 +380,48 @@ export default function FinancialDashboard({ data: propData }: { data?: Dashboar
           </Panel>
         </div>
 
-        {/* Row 3: goals */}
+        {/* Row 3: Net worth */}
+        {(() => {
+          const nwColor = netWorth.tierColor === "jade" ? T.jade : netWorth.tierColor === "brass" ? T.brass : netWorth.tierColor === "coral" ? T.coral : T.mute;
+          return (
+            <Panel title="Net worth">
+              <div className="flex flex-wrap items-end justify-between gap-4 mb-5">
+                <div>
+                  <p className="text-5xl font-medium" style={{ ...SERIF, ...NUMS, color: netWorth.total >= 0 ? T.jade : T.coral }}>
+                    {netWorth.total >= 0 ? "+" : ""}{money(netWorth.total)}
+                  </p>
+                  <span
+                    className="inline-block mt-2 text-xs px-2.5 py-1 rounded-full font-medium"
+                    style={{ background: nwColor + "18", color: nwColor, border: `1px solid ${nwColor}40` }}
+                  >
+                    {netWorth.tier}
+                  </span>
+                </div>
+                <div className="flex gap-6 text-right">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-widest mb-1" style={{ color: T.mute }}>Assets</p>
+                    <p className="text-xl font-medium tabular-nums" style={{ ...SERIF, color: T.jade }}>{money(netWorth.assets)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase tracking-widest mb-1" style={{ color: T.mute }}>Liabilities</p>
+                    <p className="text-xl font-medium tabular-nums" style={{ ...SERIF, color: netWorth.liabilities > 0 ? T.coral : T.mute }}>{money(netWorth.liabilities)}</p>
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-2 pt-4" style={{ borderTop: `1px solid ${T.line}` }}>
+                <p className="text-[10px] uppercase tracking-widest mb-2" style={{ color: T.mute }}>To grow your net worth</p>
+                {netWorth.suggestions.map((s, i) => (
+                  <p key={i} className="text-sm flex gap-2" style={{ color: i === 0 ? T.text : T.mute }}>
+                    <span style={{ color: nwColor, flexShrink: 0 }}>→</span>
+                    {s}
+                  </p>
+                ))}
+              </div>
+            </Panel>
+          );
+        })()}
+
+        {/* Row 4: goals */}
         <Panel title="Goals & milestones">
           <div className="grid gap-4 sm:grid-cols-2">
             {goals.map((g) => (
