@@ -1,6 +1,7 @@
 "use client";
 
 import type { LocalFinancials } from "./localData";
+import { getSyncToken } from "./crypto";
 
 // Relative paths — proxied to the real API server by the next.config.js
 // rewrite (server-side), so this works unchanged whether the client and
@@ -14,11 +15,13 @@ export interface SyncResult {
 }
 
 export async function pushToServer(email: string, data: LocalFinancials): Promise<SyncResult> {
+  const token = getSyncToken();
+  if (!token) return { ok: false, error: "Not signed in — sign in again to sync." };
   try {
     const res = await fetch("/api/sync/push", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, data }),
+      body: JSON.stringify({ email, data, token }),
     });
     const json = await res.json();
     if (!res.ok) return { ok: false, error: json.error ?? "Sync failed." };
@@ -30,8 +33,10 @@ export async function pushToServer(email: string, data: LocalFinancials): Promis
 }
 
 export async function pullFromServer(email: string): Promise<{ ok: true; data: LocalFinancials; syncedAt: string } | { ok: false; error: string }> {
+  const token = getSyncToken();
+  if (!token) return { ok: false, error: "Not signed in — sign in again to sync." };
   try {
-    const res = await fetch(`/api/sync/pull?email=${encodeURIComponent(email)}`);
+    const res = await fetch(`/api/sync/pull?email=${encodeURIComponent(email)}&token=${encodeURIComponent(token)}`);
     if (res.status === 404) return { ok: false, error: "No data on server yet — push first." };
     const json = await res.json();
     if (!res.ok) return { ok: false, error: json.error ?? "Pull failed." };

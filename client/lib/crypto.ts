@@ -5,6 +5,7 @@
 // sessionStorage (cleared automatically when the browser tab closes).
 
 const KEY_STORE = "essa_ek_v1";
+const TOKEN_STORE = "essa_st_v1";
 const ALGO = { name: "AES-GCM", length: 256 } as const;
 
 async function deriveKey(password: string, userId: string): Promise<CryptoKey> {
@@ -40,6 +41,51 @@ export async function initEncryptionKey(password: string, userId: string): Promi
 /** Clears the session key — call on sign-out. */
 export function clearEncryptionKey(): void {
   sessionStorage.removeItem(KEY_STORE);
+}
+
+/**
+ * Derives a bearer token proving knowledge of the account password, sent
+ * to the sync API instead of the password itself. Uses a different salt
+ * than the encryption key (deriveKey above) so the two secrets are
+ * cryptographically independent even though both come from the same
+ * password.
+ */
+async function deriveSyncToken(password: string, email: string): Promise<string> {
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(password),
+    "PBKDF2",
+    false,
+    ["deriveBits"],
+  );
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: "PBKDF2",
+      salt: enc.encode(`essa-sync-v1-${email.toLowerCase().trim()}`),
+      iterations: 120_000,
+      hash: "SHA-256",
+    },
+    keyMaterial,
+    256,
+  );
+  return btoa(String.fromCharCode(...new Uint8Array(bits)));
+}
+
+/** Call this immediately after a successful sign-in or sign-up. */
+export async function initSyncToken(password: string, email: string): Promise<void> {
+  const token = await deriveSyncToken(password, email);
+  sessionStorage.setItem(TOKEN_STORE, token);
+}
+
+/** Clears the session token — call on sign-out. */
+export function clearSyncToken(): void {
+  sessionStorage.removeItem(TOKEN_STORE);
+}
+
+/** Returns the cached sync token, or null if the user hasn't signed in this session. */
+export function getSyncToken(): string | null {
+  try { return sessionStorage.getItem(TOKEN_STORE); } catch { return null; }
 }
 
 async function getKey(): Promise<CryptoKey | null> {

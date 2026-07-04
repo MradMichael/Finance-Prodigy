@@ -256,10 +256,15 @@ model Debt {
 // Stores the full app data snapshot per user for sync.
 // Push overwrites; pull restores. Simple and reliable.
 model UserSync {
-  id       Int      @id @default(autoincrement())
-  email    String   @unique
-  dataJson String   @db.NVarChar(Max)
-  syncedAt DateTime @default(now()) @map("synced_at")
+  id            Int      @id @default(autoincrement())
+  email         String   @unique
+  dataJson      String   @db.NVarChar(Max)
+  /// SHA-256 of a token derived client-side from the account password
+  /// (see client/lib/crypto.ts deriveSyncToken). Never the token itself.
+  /// Null on rows created before this column existed — first authenticated
+  /// push after upgrade registers the hash (trust-on-first-use).
+  authTokenHash String?  @map("auth_token_hash")
+  syncedAt      DateTime @default(now()) @map("synced_at")
 
   @@map("user_sync")
 }

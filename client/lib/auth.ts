@@ -69,8 +69,9 @@ export async function signIn(
   if (user.pwHash !== hashPw(password)) return { ok: false, error: "Incorrect password." };
   const session: Session = { userId: user.id, email: user.email, name: user.name };
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-  const { initEncryptionKey } = await import("./crypto");
+  const { initEncryptionKey, initSyncToken } = await import("./crypto");
   await initEncryptionKey(password, user.id);
+  await initSyncToken(password, user.email);
   return { ok: true, session };
 }
 
@@ -83,7 +84,10 @@ export function getSession(): Session | null {
 export function signOut(): void {
   localStorage.removeItem(SESSION_KEY);
   try {
-    import("./crypto").then(({ clearEncryptionKey }) => clearEncryptionKey());
+    import("./crypto").then(({ clearEncryptionKey, clearSyncToken }) => {
+      clearEncryptionKey();
+      clearSyncToken();
+    });
   } catch { /* ignore */ }
 }
 
