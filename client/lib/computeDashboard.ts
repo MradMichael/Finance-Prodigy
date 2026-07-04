@@ -13,6 +13,8 @@ export interface DashboardPayload {
   budgetRule: BudgetRuleKey;
   budgetTargets: { needs: number; wants: number; savings: number };
   budgetRollover: { needs: number; wants: number; savings: number };
+  /** budgetTargets + budgetRollover, floored at 0 — what BucketRow/budgetPace actually judge spend against. */
+  effectiveBudgetTargets: { needs: number; wants: number; savings: number };
   budgetPace: {
     bucket: "NEEDS" | "WANTS" | "SAVINGS"; label: string;
     pctOfMonthElapsed: number; pctOfBudgetUsed: number; projectedPct: number;
@@ -357,11 +359,19 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   const daysElapsed = Math.max(1, now.getDate());
   const BUCKET_LABEL = { NEEDS: "Needs", WANTS: "Wants", SAVINGS: "Savings" } as const;
   const bucketSpend = { NEEDS: needsSpend, WANTS: wantsSpend, SAVINGS: savingsContrib };
+  // Floored at 0 — a deficit rolling in from past months (or a 0%-allocated
+  // bucket) should never push the *target itself* negative, which would
+  // make "$0 spent" read as "over budget" and make every ratio nonsensical.
   const bucketTargetAmt = {
-    NEEDS: income * budgetTargetPct.needs / 100 + budgetRollover.needs,
-    WANTS: income * budgetTargetPct.wants / 100 + budgetRollover.wants,
-    SAVINGS: income * budgetTargetPct.savings / 100 + budgetRollover.savings,
+    NEEDS: Math.max(0, income * budgetTargetPct.needs / 100 + budgetRollover.needs),
+    WANTS: Math.max(0, income * budgetTargetPct.wants / 100 + budgetRollover.wants),
+    SAVINGS: Math.max(0, income * budgetTargetPct.savings / 100 + budgetRollover.savings),
   };
+  // Projecting a full month's spend from only the first few days grossly
+  // overreacts to lumpy early-month payments (rent, annual renewals) — a
+  // single day-1 charge can imply "you'll exceed this by $7,000". Below
+  // this threshold, flag it lightly without a specific dollar claim.
+  const MIN_DAYS_FOR_PROJECTION = 5;
   const budgetPace: DashboardPayload["budgetPace"] = (["NEEDS", "WANTS", "SAVINGS"] as const)
     .filter((b) => bucketTargetAmt[b] > 0)
     .map((b) => {
@@ -370,13 +380,16 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
       const pctOfMonthElapsed = Math.round((daysElapsed / daysInMonth) * 100);
       const pctOfBudgetUsed = Math.round((spend / target) * 100);
       const projectedPct = Math.round(((spend / daysElapsed) * daysInMonth / target) * 100);
+      const reliableProjection = daysElapsed >= MIN_DAYS_FOR_PROJECTION;
 
       if (b === "SAVINGS") {
         // Savings is a floor, not a ceiling — clearing it early is good news.
         const status = pctOfBudgetUsed >= 100 ? "ok" : "watch";
         const message = pctOfBudgetUsed >= 100
           ? `Savings target already met this month.`
-          : `On pace for ${Math.max(0, projectedPct)}% of this month's savings target.`;
+          : reliableProjection
+          ? `On pace for ${Math.max(0, projectedPct)}% of this month's savings target.`
+          : `${pctOfBudgetUsed}% of this month's savings target met so far.`;
         return { bucket: b, label: BUCKET_LABEL[b], pctOfMonthElapsed, pctOfBudgetUsed, projectedPct, status, message };
       }
 
@@ -385,10 +398,13 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
       if (spend >= target) {
         status = "over";
         message = `${BUCKET_LABEL[b]} budget is already used up, with ${Math.max(0, 100 - pctOfMonthElapsed)}% of the month left.`;
-      } else if (projectedPct >= 100) {
+      } else if (projectedPct >= 100 && reliableProjection) {
         status = "watch";
         const overBy = Math.round((spend / daysElapsed) * daysInMonth - target);
         message = `${pctOfBudgetUsed}% of ${BUCKET_LABEL[b]} budget spent and it's only the ${ordinal(daysElapsed)}. At this rate, you'll exceed it by ~$${overBy}.`;
+      } else if (projectedPct >= 100) {
+        status = "watch";
+        message = `${pctOfBudgetUsed}% of ${BUCKET_LABEL[b]} budget spent already, this early in the month — worth keeping an eye on.`;
       } else {
         message = `${BUCKET_LABEL[b]} spending is on pace (${pctOfBudgetUsed}% used, ${pctOfMonthElapsed}% of the month elapsed).`;
       }
@@ -467,6 +483,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     upcomingRenewals,
     budgetPace,
     budgetRollover,
+    effectiveBudgetTargets: { needs: bucketTargetAmt.NEEDS, wants: bucketTargetAmt.WANTS, savings: bucketTargetAmt.SAVINGS },
     netWorth: { assets: Math.round(nwAssets), liabilities: Math.round(nwLiabilities), total: Math.round(nwTotal), ...nwData },
     budgetRule: ruleKey,
     budgetTargets: {

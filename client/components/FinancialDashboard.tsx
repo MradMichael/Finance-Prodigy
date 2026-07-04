@@ -83,6 +83,7 @@ const MOCK: DashboardPayload = {
   budgetRule: "50-30-20",
   budgetTargets: { needs: 1750, wants: 1050, savings: 700 },
   budgetRollover: { needs: 40, wants: -60, savings: 120 },
+  effectiveBudgetTargets: { needs: 1790, wants: 990, savings: 820 },
   budgetPace: [
     { bucket: "NEEDS", label: "Needs", pctOfMonthElapsed: 50, pctOfBudgetUsed: 60, projectedPct: 96, status: "ok", message: "Needs spending is on pace (60% used, 50% of the month elapsed)." },
     { bucket: "WANTS", label: "Wants", pctOfMonthElapsed: 50, pctOfBudgetUsed: 78, projectedPct: 122, status: "watch", message: "78% of Wants budget spent and it's only the 15th. At this rate, you'll exceed it by ~$94." },
@@ -140,9 +141,9 @@ function HealthRing({ score, grade }: { score: number; grade: string }) {
           style={{ transition: "stroke-dasharray 1s ease" }}
         />
       </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5">
+      <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 px-6">
         <span className="text-5xl font-medium tabular-nums" style={{ ...SERIF, color: T.text }}>{score}</span>
-        <span className="text-[10px] tracking-widest uppercase" style={{ color }}>{grade}</span>
+        <span className="text-[10px] tracking-widest uppercase text-center leading-tight" style={{ color }}>{grade}</span>
       </div>
     </div>
   );
@@ -312,9 +313,9 @@ export default function FinancialDashboard({ data: propData }: { data?: Dashboar
 
           <Panel title={`Budget · ${budgetLabel}`}>
             <div className="space-y-5">
-              <BucketRow label={`Needs · ${budgetPct.needs}%`}   actual={month.needsSpend}    target={targets.needs + data.budgetRollover.needs}   color={T.sky} />
-              <BucketRow label={`Wants · ${budgetPct.wants}%`}   actual={month.wantsSpend}    target={targets.wants + data.budgetRollover.wants}   color={T.brass} />
-              <BucketRow label={`Savings · ${budgetPct.savings}%`} actual={month.savingsContrib} target={targets.savings + data.budgetRollover.savings} color={T.jade} />
+              <BucketRow label={`Needs · ${budgetPct.needs}%`}   actual={month.needsSpend}    target={data.effectiveBudgetTargets.needs}   color={T.sky} />
+              <BucketRow label={`Wants · ${budgetPct.wants}%`}   actual={month.wantsSpend}    target={data.effectiveBudgetTargets.wants}   color={T.brass} />
+              <BucketRow label={`Savings · ${budgetPct.savings}%`} actual={month.savingsContrib} target={data.effectiveBudgetTargets.savings} color={T.jade} />
             </div>
 
             {/* Pace warnings — Copilot-style "on track to exceed" heads-up */}
