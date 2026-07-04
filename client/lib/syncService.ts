@@ -2,7 +2,9 @@
 
 import type { LocalFinancials } from "./localData";
 
-const SERVER = "http://localhost:4000";
+// Relative paths — proxied to the real API server by the next.config.js
+// rewrite (server-side), so this works unchanged whether the client and
+// API are both local or deployed to separate origins (e.g. Vercel + Railway).
 const LAST_SYNC_KEY = "essa_last_sync";
 
 export interface SyncResult {
@@ -13,7 +15,7 @@ export interface SyncResult {
 
 export async function pushToServer(email: string, data: LocalFinancials): Promise<SyncResult> {
   try {
-    const res = await fetch(`${SERVER}/api/sync/push`, {
+    const res = await fetch("/api/sync/push", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, data }),
@@ -29,7 +31,7 @@ export async function pushToServer(email: string, data: LocalFinancials): Promis
 
 export async function pullFromServer(email: string): Promise<{ ok: true; data: LocalFinancials; syncedAt: string } | { ok: false; error: string }> {
   try {
-    const res = await fetch(`${SERVER}/api/sync/pull?email=${encodeURIComponent(email)}`);
+    const res = await fetch(`/api/sync/pull?email=${encodeURIComponent(email)}`);
     if (res.status === 404) return { ok: false, error: "No data on server yet — push first." };
     const json = await res.json();
     if (!res.ok) return { ok: false, error: json.error ?? "Pull failed." };

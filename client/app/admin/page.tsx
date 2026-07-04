@@ -8,7 +8,9 @@ import { useTheme } from "../../contexts/ThemeContext";
 import { Signet } from "../../components/EssaBrand";
 
 const SERIF: React.CSSProperties = { fontFamily: "Spectral, Georgia, serif" };
-const API   = "http://localhost:4000";
+// Relative — proxied to the real API server by the next.config.js rewrite,
+// so this reflects the actual deployed API_URL, not just localhost.
+const API = "";
 
 interface ServerHealth {
   ok: boolean;
@@ -181,7 +183,7 @@ export default function AdminPage() {
         </div>
 
         {/* Server health */}
-        <Card title="API server · localhost:4000">
+        <Card title="API server">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div className="flex items-center gap-3">
               {health === null ? (
@@ -209,7 +211,7 @@ export default function AdminPage() {
           </div>
 
           <div className="space-y-0" style={{ borderTop: `1px solid ${T.line}` }}>
-            <Row label="API base URL" value={API} mono />
+            <Row label="API base URL" value="/api (proxied — see API_URL in client/.env)" mono />
             <Row label="Health endpoint" value={`${API}/api/health`} mono />
             <Row label="Sync push" value={`POST ${API}/api/sync/push`} mono />
             <Row label="Sync pull" value={`GET ${API}/api/sync/pull?email=…`} mono />
