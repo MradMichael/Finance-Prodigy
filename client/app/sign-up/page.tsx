@@ -62,7 +62,7 @@ export default function SignUpPage() {
     if (password !== confirm) { setError("Passwords do not match."); return; }
     setLoading(true);
     await new Promise((r) => setTimeout(r, 300));
-    const reg = signUp(email, name, password);
+    const reg = await signUp(email, name, password);
     if (!reg.ok) { setLoading(false); setError(reg.error); return; }
     const login = await signIn(email, password);
     setLoading(false);
