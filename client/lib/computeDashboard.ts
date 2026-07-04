@@ -100,7 +100,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   // ── Health components ────────────────────────────────────────────
   const targetSavingsPct = budgetTargetPct.savings;
   const targetNeedsPct   = budgetTargetPct.needs / 100;
-  const savingsScore = Math.min(100, (savingsRatePct / targetSavingsPct) * 100);
+  const savingsScore = targetSavingsPct > 0 ? Math.min(100, (savingsRatePct / targetSavingsPct) * 100) : 100;
   const needsPct = needsSpend / income;
   const needsScore = needsPct <= targetNeedsPct ? 100 : Math.max(0, 100 - (needsPct - targetNeedsPct) * 400);
 
