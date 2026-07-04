@@ -1,5 +1,7 @@
 "use client";
 
+import { toB64 as b64, fromB64 as unb64 } from "./crypto";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ESSA — local auth layer (localStorage, no backend required)
 // Each user's financial data is namespaced under their unique ID so records
@@ -58,13 +60,6 @@ async function deriveBits(password: string, salt: Uint8Array): Promise<ArrayBuff
   );
 }
 
-function b64(bytes: Uint8Array): string {
-  return btoa(String.fromCharCode(...bytes));
-}
-function unb64(s: string): Uint8Array {
-  return Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
-}
-
 // Legacy djb2 hash — kept only to verify + silently upgrade pre-existing
 // accounts on their next successful sign-in. Never used for new accounts.
 function legacyHashPw(pw: string): string {
@@ -93,13 +88,16 @@ export async function signUp(
 
   const id = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2, 18);
   const { createEnvelopes } = await import("./crypto");
-  const { wrappedPassword, wrappedRecovery, recoveryCode } = await createEnvelopes(password, id);
+  const [{ wrappedPassword, wrappedRecovery, recoveryCode }, pwHash] = await Promise.all([
+    createEnvelopes(password, id),
+    hashPassword(password),
+  ]);
 
   putUsers([...users, {
     id,
     email:     email.toLowerCase().trim(),
     name:      name.trim(),
-    pwHash:    await hashPassword(password),
+    pwHash,
     createdAt: new Date().toISOString(),
     isAdmin:   users.length === 0, // first account registered is admin
     wrappedDekPassword: wrappedPassword,
@@ -130,6 +128,10 @@ export async function signIn(
 
   const { unwrapWithPassword, migrateLegacyEnvelope, activateSessionKey, initSyncToken } = await import("./crypto");
 
+  // Independent of the DEK unwrap/migration below (only needs password +
+  // email) — kick it off concurrently instead of waiting for that first.
+  const syncTokenPromise = initSyncToken(password, user.email);
+
   let dek: Uint8Array | null;
   let recoveryCode: string | undefined;
   if (user.wrappedDekPassword) {
@@ -147,10 +149,10 @@ export async function signIn(
       : u)));
   }
 
+  await syncTokenPromise;
   const session: Session = { userId: user.id, email: user.email, name: user.name };
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
   activateSessionKey(dek);
-  await initSyncToken(password, user.email);
   return { ok: true, session, recoveryCode };
 }
 
@@ -178,8 +180,12 @@ export async function recoverAccount(
   const dek = await unwrapWithRecoveryCode(recoveryCode, user.id, user.wrappedDekRecovery);
   if (!dek) return { ok: false, error: "Invalid recovery code." };
 
-  const { wrappedPassword, wrappedRecovery, recoveryCode: newRecoveryCode } = await rewrapEnvelopes(dek, newPassword, user.id);
-  const newPwHash = await hashPassword(newPassword);
+  // All three only need dek/newPassword/email — independent, run concurrently.
+  const [{ wrappedPassword, wrappedRecovery, recoveryCode: newRecoveryCode }, newPwHash] = await Promise.all([
+    rewrapEnvelopes(dek, newPassword, user.id),
+    hashPassword(newPassword),
+    initSyncToken(newPassword, user.email),
+  ]);
   putUsers(getUsers().map((u) => (u.id === user.id
     ? { ...u, pwHash: newPwHash, wrappedDekPassword: wrappedPassword, wrappedDekRecovery: wrappedRecovery }
     : u)));
@@ -187,7 +193,6 @@ export async function recoverAccount(
   const session: Session = { userId: user.id, email: user.email, name: user.name };
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
   activateSessionKey(dek);
-  await initSyncToken(newPassword, user.email);
   return { ok: true, session, newRecoveryCode };
 }
 
