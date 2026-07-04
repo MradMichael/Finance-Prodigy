@@ -55,14 +55,23 @@ const CATEGORY_TREE: Record<BudgetBucket, string[]> = {
 };
 
 async function main() {
-  // 1) Master calendar — upserted per row (SQL Server's Prisma connector
-  //    doesn't support createMany's skipDuplicates, unlike Postgres/MySQL).
-  for (let year = 2024; year <= 2032; year++) {
-    for (const row of buildCalendarYear(year)) {
-      await prisma.dimDate.upsert({ where: { dateKey: row.dateKey }, update: {}, create: row });
-    }
-    console.log(`dim_date ✓ ${year}`);
+  // 1) Master calendar — SQL Server's Prisma connector doesn't support
+  //    createMany's skipDuplicates (Postgres/MySQL-only), so instead of
+  //    upserting ~3,287 rows one at a time, fetch the existing keys once
+  //    and batch-insert only what's missing.
+  const allRows = [];
+  for (let year = 2024; year <= 2032; year++) allRows.push(...buildCalendarYear(year));
+
+  const existingKeys = new Set(
+    (await prisma.dimDate.findMany({ select: { dateKey: true } })).map((r) => r.dateKey),
+  );
+  const missingRows = allRows.filter((r) => !existingKeys.has(r.dateKey));
+
+  const CHUNK_SIZE = 500; // comfortably under SQL Server's ~2,100 bound-parameter limit
+  for (let i = 0; i < missingRows.length; i += CHUNK_SIZE) {
+    await prisma.dimDate.createMany({ data: missingRows.slice(i, i + CHUNK_SIZE) });
   }
+  console.log(`dim_date ✓ (${missingRows.length} inserted, ${allRows.length - missingRows.length} already existed)`);
 
   // 2) Category dimension
   for (const [bucket, names] of Object.entries(CATEGORY_TREE) as [BudgetBucket, string[]][]) {
