@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { createHash } from "crypto";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { normalizeToTables } from "../lib/normalizeSync";
 
 const router = Router();
@@ -12,6 +12,8 @@ const prisma = new PrismaClient();
 // so only someone who knows the password can push/pull that email's data.
 const hashToken = (token: string): string => createHash("sha256").update(token).digest("hex");
 
+class SyncAuthError extends Error {}
+
 // POST /api/sync/push  — body: { email, data, token }
 router.post("/push", async (req, res, next) => {
   try {
@@ -21,18 +23,38 @@ router.post("/push", async (req, res, next) => {
     const normalizedEmail = String(email).toLowerCase().trim();
     const tokenHash = hashToken(token);
 
-    const existing = await prisma.userSync.findUnique({ where: { email: normalizedEmail } });
-    // Legacy rows (pre-auth) have no hash yet — first authenticated push registers it (TOFU).
-    if (existing?.authTokenHash && existing.authTokenHash !== tokenHash) {
-      return res.status(401).json({ error: "Invalid sync credentials for this account." });
+    // The token check-then-write must be one atomic unit: with two plain
+    // await calls, two concurrent pushes to the same not-yet-registered
+    // email could both read "no hash yet" before either write lands,
+    // letting the second one silently steal the TOFU registration and the
+    // first pusher's data. Serializable isolation makes SQL Server abort
+    // one of two conflicting transactions instead.
+    let syncedAt: Date;
+    try {
+      syncedAt = await prisma.$transaction(async (tx) => {
+        const existing = await tx.userSync.findUnique({ where: { email: normalizedEmail } });
+        if (existing?.authTokenHash && existing.authTokenHash !== tokenHash) {
+          throw new SyncAuthError();
+        }
+        const now = new Date();
+        await tx.userSync.upsert({
+          where:  { email: normalizedEmail },
+          create: { email: normalizedEmail, dataJson: JSON.stringify(data), authTokenHash: tokenHash },
+          update: { dataJson: JSON.stringify(data), syncedAt: now, authTokenHash: tokenHash },
+        });
+        return now;
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch (err) {
+      if (err instanceof SyncAuthError) {
+        return res.status(401).json({ error: "Invalid sync credentials for this account." });
+      }
+      // P2034 = write conflict / deadlock from the isolation level above —
+      // the losing side of a genuine race. Safe to ask the client to retry.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2034") {
+        return res.status(409).json({ error: "Sync is busy — please try again." });
+      }
+      throw err;
     }
-
-    const syncedAt = new Date();
-    await prisma.userSync.upsert({
-      where:  { email: normalizedEmail },
-      create: { email: normalizedEmail, dataJson: JSON.stringify(data), authTokenHash: tokenHash },
-      update: { dataJson: JSON.stringify(data), syncedAt, authTokenHash: tokenHash },
-    });
 
     // Normalize into all structured tables — fire & forget so client is never blocked
     normalizeToTables(normalizedEmail, data).catch((err: Error) =>
