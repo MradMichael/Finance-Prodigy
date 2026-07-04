@@ -7,7 +7,12 @@
  *  2. dim_category — default 50/30/20 tree
  *  3. dim_user     — demo user + two accounts
  */
-import { PrismaClient, BudgetBucket, AccountType } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
+
+/// NEEDS | WANTS | SAVINGS | INCOME — see DimCategory.bucket (String, no DB enum on SQL Server)
+type BudgetBucket = "NEEDS" | "WANTS" | "SAVINGS" | "INCOME";
+/// CHECKING | SAVINGS | CREDIT_CARD | CASH | INVESTMENT — see DimAccount.type
+type AccountType = "CHECKING" | "SAVINGS" | "CREDIT_CARD" | "CASH" | "INVESTMENT";
 
 const prisma = new PrismaClient();
 
@@ -50,10 +55,12 @@ const CATEGORY_TREE: Record<BudgetBucket, string[]> = {
 };
 
 async function main() {
-  // 1) Master calendar — chunked per year to stay well under the
-  //    Postgres bind-parameter ceiling.
+  // 1) Master calendar — upserted per row (SQL Server's Prisma connector
+  //    doesn't support createMany's skipDuplicates, unlike Postgres/MySQL).
   for (let year = 2024; year <= 2032; year++) {
-    await prisma.dimDate.createMany({ data: buildCalendarYear(year), skipDuplicates: true });
+    for (const row of buildCalendarYear(year)) {
+      await prisma.dimDate.upsert({ where: { dateKey: row.dateKey }, update: {}, create: row });
+    }
     console.log(`dim_date ✓ ${year}`);
   }
 
@@ -80,8 +87,8 @@ async function main() {
       efTargetMonths: 6,
       accounts: {
         create: [
-          { name: "Main Checking", type: AccountType.CHECKING },
-          { name: "High-Yield Savings", type: AccountType.SAVINGS },
+          { name: "Main Checking", type: "CHECKING" satisfies AccountType },
+          { name: "High-Yield Savings", type: "SAVINGS" satisfies AccountType },
         ],
       },
     },
