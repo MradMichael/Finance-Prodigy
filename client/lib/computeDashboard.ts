@@ -1,5 +1,6 @@
 import type { LocalFinancials, BudgetRuleKey } from "./localData";
-import { monthlyEquivalent, BUDGET_RULES } from "./localData";
+import { monthlyEquivalent, nextOccurrence, BUDGET_RULES } from "./localData";
+import { simulateDebtPayoff, type DebtInput } from "./debtEngine";
 
 interface Projection {
   pctComplete: number; monthsRemaining: number; requiredMonthly: number;
@@ -11,11 +12,18 @@ export interface DashboardPayload {
   period: { year: number; month: number };
   budgetRule: BudgetRuleKey;
   budgetTargets: { needs: number; wants: number; savings: number };
+  budgetRollover: { needs: number; wants: number; savings: number };
+  budgetPace: {
+    bucket: "NEEDS" | "WANTS" | "SAVINGS"; label: string;
+    pctOfMonthElapsed: number; pctOfBudgetUsed: number; projectedPct: number;
+    status: "ok" | "watch" | "over"; message: string;
+  }[];
   health: {
     score: number; grade: string;
     components: { key: string; label: string; score: number; weight: number; detail: string }[];
   };
   encouragements: string[];
+  streaks: { key: string; label: string; count: number; message: string }[];
   month: {
     income: number; needsSpend: number; wantsSpend: number; savingsContrib: number;
     totalSpend: number; netCashFlow: number; savingsRatePct: number;
@@ -30,12 +38,22 @@ export interface DashboardPayload {
       feasible: boolean; months: number; debtFreeDateDisplay: string | null;
       totalInterest: number; monthlyCommitment: number; warning?: string;
     } | null;
+    comparison: {
+      snowball: { feasible: boolean; months: number; totalInterest: number; debtFreeDateDisplay: string | null };
+      avalanche: { feasible: boolean; months: number; totalInterest: number; debtFreeDateDisplay: string | null };
+      avalancheSavesVsSnowball: number;
+    } | null;
   };
   goals: {
     id: number; name: string; emoji: string | null; type: string;
     targetAmount: number; currentAmount: number; projection: Projection;
   }[];
   sixMonthTrend: { ymKey: number; income: number; spend: number }[];
+  netWorthTrend: { ym: string; value: number }[];
+  upcomingRenewals: {
+    id: string; name: string; emoji: string; amount: number; currency: string;
+    dueDate: string; dueInDays: number;
+  }[];
   netWorth: {
     assets: number;
     liabilities: number;
@@ -54,11 +72,13 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   // Normalize arrays so partial objects from sync/patch never crash
   data = {
     ...data,
-    transactions: data.transactions ?? [],
-    goals:        data.goals        ?? [],
-    debts:        data.debts        ?? [],
-    recurring:    data.recurring    ?? [],
-    cards:        data.cards        ?? [],
+    transactions:     data.transactions     ?? [],
+    goals:            data.goals            ?? [],
+    debts:            data.debts            ?? [],
+    recurring:        data.recurring        ?? [],
+    cards:            data.cards            ?? [],
+    assets:           data.assets           ?? [],
+    netWorthHistory:  data.netWorthHistory  ?? [],
   };
 
   const now = new Date();
@@ -160,23 +180,32 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     enc.push("Log your first transaction below. The picture sharpens quickly once data starts flowing in.");
   }
 
-  // ── Debt plan ────────────────────────────────────────────────────
+  // ── Debt plan (real per-debt amortization, not an average-APR estimate) ──
   const totalDebtBalance = data.debts.reduce((s, d) => s + d.balance, 0);
   let debtPlan = null;
+  let debtComparison: DashboardPayload["debt"]["comparison"] = null;
   if (data.debts.length > 0 && totalDebtBalance > 0) {
     const extra = Math.max(0, netCashFlow * 0.3);
     const monthlyPayment = totalMinPayments + extra;
+    const debtInputs: DebtInput[] = data.debts.map((d) => ({
+      id: d.id, name: d.name, balance: d.balance, aprPct: d.apr, minimumPayment: d.minPayment,
+    }));
     if (monthlyPayment > 0) {
-      const months = Math.ceil(totalDebtBalance / monthlyPayment);
-      const avgApr = data.debts.reduce((s, d) => s + d.apr * d.balance, 0) / totalDebtBalance;
-      const totalInterest = Math.round((avgApr / 100 / 12) * totalDebtBalance * months * 0.5);
-      const freeDate = new Date(now);
-      freeDate.setMonth(freeDate.getMonth() + months);
+      const chosen = simulateDebtPayoff(debtInputs, extra, "AVALANCHE", now);
       debtPlan = {
-        feasible: true, months,
-        debtFreeDateDisplay: dateFmt(freeDate),
-        totalInterest,
-        monthlyCommitment: Math.round(monthlyPayment),
+        feasible: chosen.feasible, months: chosen.months,
+        debtFreeDateDisplay: chosen.debtFreeDate ? dateFmt(new Date(chosen.debtFreeDate)) : null,
+        totalInterest: chosen.totalInterest,
+        monthlyCommitment: Math.round(chosen.monthlyCommitment),
+        ...(chosen.warning ? { warning: chosen.warning } : {}),
+      };
+
+      const snowball = simulateDebtPayoff(debtInputs, extra, "SNOWBALL", now);
+      const avalanche = chosen;
+      debtComparison = {
+        snowball: { feasible: snowball.feasible, months: snowball.months, totalInterest: snowball.totalInterest, debtFreeDateDisplay: snowball.debtFreeDate ? dateFmt(new Date(snowball.debtFreeDate)) : null },
+        avalanche: { feasible: avalanche.feasible, months: avalanche.months, totalInterest: avalanche.totalInterest, debtFreeDateDisplay: avalanche.debtFreeDate ? dateFmt(new Date(avalanche.debtFreeDate)) : null },
+        avalancheSavesVsSnowball: Math.round((snowball.totalInterest - avalanche.totalInterest) * 100) / 100,
       };
     } else {
       debtPlan = { feasible: false, months: 0, debtFreeDateDisplay: null, totalInterest: 0, monthlyCommitment: 0, warning: "Monthly income is fully consumed by needs and wants — try trimming wants to free up cash for debt." };
@@ -205,7 +234,9 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   });
 
   // ── Net worth ─────────────────────────────────────────────────────
-  const nwAssets      = data.emergencyFundBalance + data.goals.reduce((s, g) => s + toUSD(g.currentAmount, undefined), 0);
+  const nwAssets      = data.emergencyFundBalance
+    + data.goals.reduce((s, g) => s + toUSD(g.currentAmount, undefined), 0)
+    + data.assets.reduce((s, a) => s + toUSD(a.value, a.currency), 0);
   const nwLiabilities = totalDebtBalance;
   const nwTotal       = nwAssets - nwLiabilities;
 
@@ -288,6 +319,123 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     return { ymKey, income: isCurrent ? income : (sp > 0 ? income : 0), spend: sp };
   });
 
+  const monthKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const ordinal = (n: number) => {
+    const s = ["th", "st", "nd", "rd"], v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+  };
+
+  // ── Budget rollover — unspent (or overspent) carries into this month ──
+  // Approximation: assumes the current budget rule applied in past months
+  // too, and skips months with zero logged transactions so a blank month
+  // doesn't distort the running total. Computed before budget pace below
+  // so the pace warnings judge spend against the same rollover-adjusted
+  // target the Budget screen displays, instead of two different numbers.
+  const budgetRollover = { needs: 0, wants: 0, savings: 0 };
+  {
+    const monthsBack = Math.min(11, month - 1); // back to January of this year, capped at 11
+    for (let i = monthsBack; i >= 1; i--) {
+      const d = new Date(year, month - 1 - i, 1);
+      const ym = monthKey(d);
+      const tx = data.transactions.filter((t) => t.date.startsWith(ym));
+      if (tx.length === 0) continue;
+      const spend = { needs: 0, wants: 0, savings: 0 };
+      for (const t of tx) {
+        const amt = toUSD(t.amount, t.currency);
+        if (t.bucket === "NEEDS") spend.needs += amt;
+        else if (t.bucket === "WANTS") spend.wants += amt;
+        else spend.savings += amt;
+      }
+      budgetRollover.needs   += (income * budgetTargetPct.needs   / 100) - spend.needs;
+      budgetRollover.wants   += (income * budgetTargetPct.wants   / 100) - spend.wants;
+      budgetRollover.savings += (income * budgetTargetPct.savings / 100) - spend.savings;
+    }
+  }
+
+  // ── Budget pace — proactive "on track to exceed" warnings ──────────
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const daysElapsed = Math.max(1, now.getDate());
+  const BUCKET_LABEL = { NEEDS: "Needs", WANTS: "Wants", SAVINGS: "Savings" } as const;
+  const bucketSpend = { NEEDS: needsSpend, WANTS: wantsSpend, SAVINGS: savingsContrib };
+  const bucketTargetAmt = {
+    NEEDS: income * budgetTargetPct.needs / 100 + budgetRollover.needs,
+    WANTS: income * budgetTargetPct.wants / 100 + budgetRollover.wants,
+    SAVINGS: income * budgetTargetPct.savings / 100 + budgetRollover.savings,
+  };
+  const budgetPace: DashboardPayload["budgetPace"] = (["NEEDS", "WANTS", "SAVINGS"] as const)
+    .filter((b) => bucketTargetAmt[b] > 0)
+    .map((b) => {
+      const spend = bucketSpend[b];
+      const target = bucketTargetAmt[b];
+      const pctOfMonthElapsed = Math.round((daysElapsed / daysInMonth) * 100);
+      const pctOfBudgetUsed = Math.round((spend / target) * 100);
+      const projectedPct = Math.round(((spend / daysElapsed) * daysInMonth / target) * 100);
+
+      if (b === "SAVINGS") {
+        // Savings is a floor, not a ceiling — clearing it early is good news.
+        const status = pctOfBudgetUsed >= 100 ? "ok" : "watch";
+        const message = pctOfBudgetUsed >= 100
+          ? `Savings target already met this month.`
+          : `On pace for ${Math.max(0, projectedPct)}% of this month's savings target.`;
+        return { bucket: b, label: BUCKET_LABEL[b], pctOfMonthElapsed, pctOfBudgetUsed, projectedPct, status, message };
+      }
+
+      let status: "ok" | "watch" | "over" = "ok";
+      let message: string;
+      if (spend >= target) {
+        status = "over";
+        message = `${BUCKET_LABEL[b]} budget is already used up, with ${Math.max(0, 100 - pctOfMonthElapsed)}% of the month left.`;
+      } else if (projectedPct >= 100) {
+        status = "watch";
+        const overBy = Math.round((spend / daysElapsed) * daysInMonth - target);
+        message = `${pctOfBudgetUsed}% of ${BUCKET_LABEL[b]} budget spent and it's only the ${ordinal(daysElapsed)}. At this rate, you'll exceed it by ~$${overBy}.`;
+      } else {
+        message = `${BUCKET_LABEL[b]} spending is on pace (${pctOfBudgetUsed}% used, ${pctOfMonthElapsed}% of the month elapsed).`;
+      }
+      return { bucket: b, label: BUCKET_LABEL[b], pctOfMonthElapsed, pctOfBudgetUsed, projectedPct, status, message };
+    });
+
+  // ── Streaks ─────────────────────────────────────────────────────────
+  let savingsStreak = 0;
+  if (targetSavingsPct > 0 && data.income > 0) {
+    for (let i = 1; i <= 12; i++) {
+      const d = new Date(year, month - 1 - i, 1);
+      const tx = data.transactions.filter((t) => t.date.startsWith(monthKey(d)));
+      if (tx.length === 0) break;
+      const monthSavings = tx.filter((t) => t.bucket === "SAVINGS").reduce((s, t) => s + toUSD(t.amount, t.currency), 0);
+      if ((monthSavings / data.income) * 100 >= targetSavingsPct) savingsStreak++;
+      else break;
+    }
+  }
+  const streaks: DashboardPayload["streaks"] = [];
+  if (savingsStreak >= 2) {
+    streaks.push({
+      key: "savings-streak", label: "Savings streak", count: savingsStreak,
+      message: `🔥 ${savingsStreak} months in a row hitting your savings target.`,
+    });
+  }
+
+  // ── Upcoming renewals ────────────────────────────────────────────────
+  const RENEWAL_WINDOW_DAYS = 7;
+  const upcomingRenewals: DashboardPayload["upcomingRenewals"] = data.recurring
+    .map((r) => {
+      const next = nextOccurrence(r, now);
+      if (!next) return null;
+      const dueInDays = Math.round((next.getTime() - now.getTime()) / (24 * 3600 * 1000));
+      if (dueInDays < 0 || dueInDays > RENEWAL_WINDOW_DAYS) return null;
+      return { id: r.id, name: r.name, emoji: r.emoji, amount: r.amount, currency: r.currency, dueDate: next.toISOString().slice(0, 10), dueInDays };
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null)
+    .sort((a, b) => a.dueInDays - b.dueInDays);
+
+  // ── Net worth trend — today's value merged into the persisted history ──
+  // (Persisting the snapshot back into storage happens in the caller —
+  // this function stays pure/side-effect-free.)
+  const currentYm = monthKey(now);
+  const netWorthTrend = [...data.netWorthHistory.filter((h) => h.ym !== currentYm), { ym: currentYm, value: Math.round(nwTotal) }]
+    .sort((a, b) => a.ym.localeCompare(b.ym))
+    .slice(-12);
+
   return {
     user: { name: data.userName || "You", currency: "USD", payoffStrategy: "AVALANCHE" },
     period: { year, month },
@@ -302,6 +450,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
       ],
     },
     encouragements: enc,
+    streaks,
     month: { income, needsSpend, wantsSpend, savingsContrib, totalSpend, netCashFlow, savingsRatePct },
     emergencyFund: {
       targetMonths: data.emergencyFundTargetMonths,
@@ -311,9 +460,13 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
       pctFunded: Math.round(efPct),
       remaining: Math.max(0, Math.round(efTarget - efBalance)),
     },
-    debt: { totalBalance: totalDebtBalance, count: data.debts.length, plan: debtPlan },
+    debt: { totalBalance: totalDebtBalance, count: data.debts.length, plan: debtPlan, comparison: debtComparison },
     goals,
     sixMonthTrend,
+    netWorthTrend,
+    upcomingRenewals,
+    budgetPace,
+    budgetRollover,
     netWorth: { assets: Math.round(nwAssets), liabilities: Math.round(nwLiabilities), total: Math.round(nwTotal), ...nwData },
     budgetRule: ruleKey,
     budgetTargets: {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import FinancialDashboard from "../components/FinancialDashboard";
 import InputPanel from "../components/InputPanel";
@@ -476,6 +476,32 @@ function DebtsScreen({ financials, dashData }: { financials: LocalFinancials; da
                   <span>at <span style={{ color: T.text }}>{money(plan.monthlyCommitment)}/mo</span></span>
                   <span>lifetime interest <span style={{ color: T.coral }}>{money(plan.totalInterest)}</span></span>
                 </div>
+              </div>
+            )}
+
+            {/* Snowball vs Avalanche comparison */}
+            {dashData.debt.comparison && (
+              <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
+                <p className="text-xs uppercase tracking-widest mb-4" style={{ color: T.mute }}>Snowball vs. Avalanche</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-xl p-4" style={{ background: T.panelSoft, border: `1px solid ${T.line}` }}>
+                    <p className="text-[10px] uppercase tracking-widest mb-1" style={{ color: T.mute }}>Snowball</p>
+                    <p className="text-[10px] mb-3" style={{ color: T.mute }}>Smallest balance first</p>
+                    <p className="text-lg font-semibold tabular-nums" style={{ ...SERIF, color: T.text }}>{dashData.debt.comparison.snowball.months} mo</p>
+                    <p className="text-xs mt-1" style={{ color: T.coral }}>{money(dashData.debt.comparison.snowball.totalInterest)} interest</p>
+                  </div>
+                  <div className="rounded-xl p-4" style={{ background: T.panelSoft, border: `1px solid ${T.jade}50` }}>
+                    <p className="text-[10px] uppercase tracking-widest mb-1" style={{ color: T.jade }}>Avalanche</p>
+                    <p className="text-[10px] mb-3" style={{ color: T.mute }}>Highest APR first</p>
+                    <p className="text-lg font-semibold tabular-nums" style={{ ...SERIF, color: T.text }}>{dashData.debt.comparison.avalanche.months} mo</p>
+                    <p className="text-xs mt-1" style={{ color: T.coral }}>{money(dashData.debt.comparison.avalanche.totalInterest)} interest</p>
+                  </div>
+                </div>
+                {dashData.debt.comparison.avalancheSavesVsSnowball > 0 && (
+                  <p className="text-xs mt-4" style={{ color: T.jade }}>
+                    Avalanche saves {money(dashData.debt.comparison.avalancheSavesVsSnowball)} in interest over Snowball on this debt load — the tradeoff is fewer quick wins along the way.
+                  </p>
+                )}
               </div>
             )}
 
@@ -1312,7 +1338,27 @@ export default function Home() {
   }
   function handleProfile() { router.push("/profile"); }
 
-  if (!session || !financials) {
+  const dashboardData = useMemo(() => (financials ? computeDashboard(financials) : null), [financials]);
+
+  // Persist a monthly net-worth snapshot so the trend chart has history to
+  // show. computeDashboard stays pure/side-effect-free — this is the one
+  // place that writes the snapshot back, and only when it's actually stale
+  // (new month, or this month's value changed), so it can't loop.
+  useEffect(() => {
+    if (!financials || !dashboardData) return;
+    const now = new Date();
+    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const history = financials.netWorthHistory ?? [];
+    const existing = history.find((h) => h.ym === ym);
+    if (existing?.value === dashboardData.netWorth.total) return;
+    const updatedHistory = [...history.filter((h) => h.ym !== ym), { ym, value: dashboardData.netWorth.total }]
+      .sort((a, b) => a.ym.localeCompare(b.ym))
+      .slice(-12);
+    handleChange({ ...financials, netWorthHistory: updatedHistory });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [financials, dashboardData]);
+
+  if (!session || !financials || !dashboardData) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-3" style={{ background: T.ink }}>
         <Signet size={40} />
@@ -1320,8 +1366,6 @@ export default function Home() {
       </div>
     );
   }
-
-  const dashboardData = computeDashboard(financials);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100dvh", background: T.ink }}>

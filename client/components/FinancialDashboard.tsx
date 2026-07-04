@@ -20,9 +20,10 @@ import { useEffect, useState } from "react";
 import {
   ResponsiveContainer,
   AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
+  LineChart, Line,
 } from "recharts";
 import { useTheme } from "../contexts/ThemeContext";
-import type { BudgetRuleKey } from "../lib/localData";
+import type { DashboardPayload } from "../lib/computeDashboard";
 const SERIF: React.CSSProperties = { fontFamily: "Georgia, 'Times New Roman', serif" };
 const NUMS: React.CSSProperties = { fontVariantNumeric: "tabular-nums" };
 
@@ -32,48 +33,10 @@ const ymLabel = (ymKey: number) => {
   const m = ymKey % 100, y = Math.floor(ymKey / 100) % 100;
   return `${["", "Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][m]} ’${y}`;
 };
-
-// ----------------------------- types ----------------------------- //
-interface Projection {
-  pctComplete: number; monthsRemaining: number; requiredMonthly: number;
-  paceRatio: number; onTrack: boolean; targetDateDisplay: string;
-}
-interface DashboardPayload {
-  user: { name: string; currency: string; payoffStrategy: "SNOWBALL" | "AVALANCHE" };
-  period: { year: number; month: number };
-  budgetRule: BudgetRuleKey;
-  budgetTargets: { needs: number; wants: number; savings: number };
-  health: {
-    score: number; grade: string;
-    components: { key: string; label: string; score: number; weight: number; detail: string }[];
-  };
-  encouragements: string[];
-  month: {
-    income: number; needsSpend: number; wantsSpend: number; savingsContrib: number;
-    totalSpend: number; netCashFlow: number; savingsRatePct: number;
-  };
-  emergencyFund: {
-    targetMonths: number; targetAmount: number; balance: number;
-    coverageMonths: number; pctFunded: number; remaining: number;
-  };
-  debt: {
-    totalBalance: number; count: number;
-    plan: {
-      feasible: boolean; months: number; debtFreeDateDisplay: string | null;
-      totalInterest: number; monthlyCommitment: number; warning?: string;
-    } | null;
-  };
-  goals: {
-    id: number; name: string; emoji: string | null; type: string;
-    targetAmount: number; currentAmount: number; projection: Projection;
-  }[];
-  sixMonthTrend: { ymKey: number; income: number; spend: number }[];
-  netWorth: {
-    assets: number; liabilities: number; total: number;
-    tier: string; tierColor: "jade" | "brass" | "coral" | "mute";
-    suggestions: string[];
-  };
-}
+const ymStrLabel = (ym: string) => {
+  const [y, m] = ym.split("-").map(Number);
+  return `${["", "Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][m]} ’${String(y).slice(2)}`;
+};
 
 // ------------------------- mock (dev only) ------------------------ //
 const MOCK: DashboardPayload = {
@@ -94,11 +57,17 @@ const MOCK: DashboardPayload = {
     "Stay the course and you're debt-free by 14-09-2028 — the date is already on the calendar.",
     "30 Before 30 Travel Fund is on pace — 31% there.",
   ],
+  streaks: [{ key: "savings-streak", label: "Savings streak", count: 3, message: "🔥 3 months in a row hitting your savings target." }],
   month: { income: 3500, needsSpend: 1640, wantsSpend: 710, savingsContrib: 480, totalSpend: 2830, netCashFlow: 670, savingsRatePct: 13.7 },
   emergencyFund: { targetMonths: 6, targetAmount: 9840, balance: 5120, coverageMonths: 3.1, pctFunded: 52, remaining: 4720 },
   debt: {
     totalBalance: 13260, count: 3,
     plan: { feasible: true, months: 27, debtFreeDateDisplay: "14-09-2028", totalInterest: 1684, monthlyCommitment: 675 },
+    comparison: {
+      snowball: { feasible: true, months: 29, totalInterest: 1820, debtFreeDateDisplay: "14-11-2028" },
+      avalanche: { feasible: true, months: 27, totalInterest: 1684, debtFreeDateDisplay: "14-09-2028" },
+      avalancheSavesVsSnowball: 136,
+    },
   },
   goals: [
     { id: 1, name: "30 Before 30 Travel Fund", emoji: "✈️", type: "TRAVEL", targetAmount: 12000, currentAmount: 3720,
@@ -113,6 +82,19 @@ const MOCK: DashboardPayload = {
   ],
   budgetRule: "50-30-20",
   budgetTargets: { needs: 1750, wants: 1050, savings: 700 },
+  budgetRollover: { needs: 40, wants: -60, savings: 120 },
+  budgetPace: [
+    { bucket: "NEEDS", label: "Needs", pctOfMonthElapsed: 50, pctOfBudgetUsed: 60, projectedPct: 96, status: "ok", message: "Needs spending is on pace (60% used, 50% of the month elapsed)." },
+    { bucket: "WANTS", label: "Wants", pctOfMonthElapsed: 50, pctOfBudgetUsed: 78, projectedPct: 122, status: "watch", message: "78% of Wants budget spent and it's only the 15th. At this rate, you'll exceed it by ~$94." },
+    { bucket: "SAVINGS", label: "Savings", pctOfMonthElapsed: 50, pctOfBudgetUsed: 69, projectedPct: 96, status: "watch", message: "On pace for 96% of this month's savings target." },
+  ],
+  netWorthTrend: [
+    { ym: "2026-01", value: -8100 }, { ym: "2026-02", value: -7820 }, { ym: "2026-03", value: -7400 },
+    { ym: "2026-04", value: -7050 }, { ym: "2026-05", value: -6820 }, { ym: "2026-06", value: -6640 },
+  ],
+  upcomingRenewals: [
+    { id: "1", name: "Netflix", emoji: "🎬", amount: 15.49, currency: "USD", dueDate: "2026-06-20", dueInDays: 3 },
+  ],
   netWorth: {
     assets: 6620, liabilities: 13260, total: -6640,
     tier: "Rebuilding", tierColor: "coral",
@@ -221,7 +203,7 @@ export default function FinancialDashboard({ data: propData }: { data?: Dashboar
     );
   }
 
-  const { health, month, emergencyFund: ef, debt, goals, sixMonthTrend, encouragements, user, period, netWorth } = data;
+  const { health, month, emergencyFund: ef, debt, goals, sixMonthTrend, encouragements, user, period, netWorth, streaks, budgetPace, netWorthTrend, upcomingRenewals } = data;
   const monthName = ["", "January","February","March","April","May","June","July","August","September","October","November","December"][period.month];
   const targets     = data.budgetTargets;
   const budgetLabel = data.budgetRule === "custom" ? "Custom split" : data.budgetRule.replace(/-/g, " / ");
@@ -278,7 +260,31 @@ export default function FinancialDashboard({ data: propData }: { data?: Dashboar
           {encouragements.map((e, i) => (
             <p key={i} className="text-sm" style={{ color: i === 0 ? T.text : T.mute }}>{e}</p>
           ))}
+          {streaks.map((s) => (
+            <p key={s.key} className="text-sm" style={{ color: T.jade }}>{s.message}</p>
+          ))}
         </div>
+
+        {/* Upcoming renewals */}
+        {upcomingRenewals.length > 0 && (
+          <div className="rounded-2xl px-5 py-4 flex flex-wrap gap-3" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
+            <p className="text-xs uppercase tracking-widest flex-shrink-0 self-center" style={{ color: T.mute }}>Renewing soon</p>
+            {upcomingRenewals.map((r) => (
+              <span
+                key={r.id}
+                className="text-xs px-3 py-1.5 rounded-full flex items-center gap-1.5"
+                style={{ background: T.panelSoft, border: `1px solid ${T.line}`, color: T.text }}
+              >
+                <span>{r.emoji}</span>
+                <span>{r.name}</span>
+                <span style={{ color: T.mute }}>· {money(r.amount)}</span>
+                <span style={{ color: r.dueInDays <= 2 ? T.coral : T.brass }}>
+                  · {r.dueInDays === 0 ? "today" : r.dueInDays === 1 ? "tomorrow" : `in ${r.dueInDays}d`}
+                </span>
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* Row 1: health · 50/30/20 · trend */}
         <div className="grid gap-6 md:grid-cols-3">
@@ -306,10 +312,29 @@ export default function FinancialDashboard({ data: propData }: { data?: Dashboar
 
           <Panel title={`Budget · ${budgetLabel}`}>
             <div className="space-y-5">
-              <BucketRow label={`Needs · ${budgetPct.needs}%`}   actual={month.needsSpend}    target={targets.needs}   color={T.sky} />
-              <BucketRow label={`Wants · ${budgetPct.wants}%`}   actual={month.wantsSpend}    target={targets.wants}   color={T.brass} />
-              <BucketRow label={`Savings · ${budgetPct.savings}%`} actual={month.savingsContrib} target={targets.savings} color={T.jade} />
+              <BucketRow label={`Needs · ${budgetPct.needs}%`}   actual={month.needsSpend}    target={targets.needs + data.budgetRollover.needs}   color={T.sky} />
+              <BucketRow label={`Wants · ${budgetPct.wants}%`}   actual={month.wantsSpend}    target={targets.wants + data.budgetRollover.wants}   color={T.brass} />
+              <BucketRow label={`Savings · ${budgetPct.savings}%`} actual={month.savingsContrib} target={targets.savings + data.budgetRollover.savings} color={T.jade} />
             </div>
+
+            {/* Pace warnings — Copilot-style "on track to exceed" heads-up */}
+            {budgetPace.filter((p) => p.status !== "ok").length > 0 && (
+              <div className="mt-4 space-y-2">
+                {budgetPace.filter((p) => p.status !== "ok").map((p) => (
+                  <div
+                    key={p.bucket}
+                    className="rounded-xl px-3 py-2 text-xs"
+                    style={{
+                      background: p.status === "over" ? T.coral + "18" : T.brass + "18",
+                      border: `1px solid ${p.status === "over" ? T.coral : T.brass}40`,
+                      color: T.text,
+                    }}
+                  >
+                    {p.message}
+                  </div>
+                ))}
+              </div>
+            )}
             <p className="text-xs mt-5 pt-4" style={{ color: T.mute, borderTop: `1px solid ${T.line}` }}>
               Savings rate this month: <span style={{ ...NUMS, color: T.jade }}>{month.savingsRatePct.toFixed(1)}%</span> of income
             </p>
@@ -408,6 +433,25 @@ export default function FinancialDashboard({ data: propData }: { data?: Dashboar
                   </div>
                 </div>
               </div>
+
+              {netWorthTrend.length >= 2 && (
+                <div className="h-40 mb-2">
+                  <ResponsiveContainer>
+                    <LineChart data={netWorthTrend} margin={{ top: 8, right: 4, left: -18, bottom: 0 }}>
+                      <CartesianGrid stroke={T.line} strokeDasharray="2 6" vertical={false} />
+                      <XAxis dataKey="ym" tickFormatter={ymStrLabel} tick={{ fill: T.mute, fontSize: 11 }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fill: T.mute, fontSize: 11 }} axisLine={false} tickLine={false} />
+                      <Tooltip
+                        contentStyle={{ background: T.panelSoft, border: `1px solid ${T.line}`, borderRadius: 12, color: T.text }}
+                        labelFormatter={(v) => ymStrLabel(String(v))}
+                        formatter={(v: number) => [money(v), "Net worth"]}
+                      />
+                      <Line type="monotone" dataKey="value" stroke={nwColor} strokeWidth={2} dot={{ r: 3, fill: nwColor }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
               <div className="space-y-2 pt-4" style={{ borderTop: `1px solid ${T.line}` }}>
                 <p className="text-[10px] uppercase tracking-widest mb-2" style={{ color: T.mute }}>To grow your net worth</p>
                 {netWorth.suggestions.map((s, i) => (

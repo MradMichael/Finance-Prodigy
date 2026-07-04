@@ -34,6 +34,14 @@ export interface StoredGoal {
   achievedAt?: string;  // ISO — when goal was completed
 }
 
+export interface StoredAsset {
+  id: string;
+  name: string;      // e.g. "Car", "Brokerage account"
+  value: number;
+  currency: Currency;
+  createdAt: string; // ISO
+}
+
 export interface StoredDebt {
   id: string;
   name: string;
@@ -110,6 +118,9 @@ export interface LocalFinancials {
   debts: StoredDebt[];
   recurring: StoredRecurring[];
   cards: StoredCard[];
+  assets: StoredAsset[];
+  /** One entry per calendar month (YYYY-MM), appended/updated as the dashboard is computed — powers the net worth trend chart. */
+  netWorthHistory: { ym: string; value: number }[];
   budgetRule?: BudgetRuleKey;
   budgetCustomNeeds?: number;
   budgetCustomWants?: number;
@@ -126,6 +137,8 @@ export const DEFAULT_DATA: LocalFinancials = {
   debts: [],
   recurring: [],
   cards: [],
+  assets: [],
+  netWorthHistory: [],
   budgetRule: "50-30-20",
 };
 
@@ -182,6 +195,31 @@ export function monthlyEquivalent(r: StoredRecurring, asOf: Date = new Date()): 
   if (end && asOf > end) return 0;
 
   return r.amount * FREQ_MONTHLY[r.frequency];
+}
+
+const DAY_FREQ_LENGTH: Partial<Record<RecurringFrequency, number>> = { weekly: 7, biweekly: 14 };
+const MONTH_FREQ_LENGTH: Partial<Record<RecurringFrequency, number>> = {
+  monthly: 1, every2months: 2, quarterly: 3, biannually: 6, yearly: 12,
+};
+
+/** Next date this recurring item is due on/after `asOf`, or null if it's already ended (by end date or total-amount cap). */
+export function nextOccurrence(r: StoredRecurring, asOf: Date = new Date()): Date | null {
+  const start = new Date(r.startDate);
+  if (r.endDate && asOf > new Date(r.endDate)) return null;
+  if (r.totalAmount != null && r.totalAmount > 0 && recurringPaidSoFar(r, asOf) >= r.totalAmount) return null;
+  if (asOf <= start) return start;
+
+  const dayLen = DAY_FREQ_LENGTH[r.frequency];
+  if (dayLen != null) {
+    const msPerPeriod = dayLen * 24 * 60 * 60 * 1000;
+    const periodsElapsed = Math.floor((asOf.getTime() - start.getTime()) / msPerPeriod);
+    return new Date(start.getTime() + (periodsElapsed + 1) * msPerPeriod);
+  }
+
+  const monthLen = MONTH_FREQ_LENGTH[r.frequency] ?? 1;
+  const next = new Date(start);
+  while (next <= asOf) next.setMonth(next.getMonth() + monthLen);
+  return next;
 }
 
 /** How much has been paid so far on a totalAmount-capped recurring item. */
