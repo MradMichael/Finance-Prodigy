@@ -17,6 +17,9 @@ export interface StoredUser {
   pwHash:    string;
   createdAt: string;
   isAdmin?:  boolean;
+  /** Data-encryption key wrapped under the password / a recovery code. Absent on accounts created before recovery codes existed — migrated on next sign-in. */
+  wrappedDekPassword?: import("./crypto").Envelope;
+  wrappedDekRecovery?: import("./crypto").Envelope;
 }
 
 export interface Session {
@@ -81,26 +84,33 @@ function putUsers(users: StoredUser[]): void {
 
 export async function signUp(
   email: string, name: string, password: string,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true; recoveryCode: string } | { ok: false; error: string }> {
   if (!email.trim() || !name.trim() || !password) return { ok: false, error: "All fields are required." };
   if (password.length < 6) return { ok: false, error: "Password must be at least 6 characters." };
   const users = getUsers();
   if (users.some((u) => u.email.toLowerCase() === email.toLowerCase().trim()))
     return { ok: false, error: "An account with this email already exists." };
+
+  const id = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2, 18);
+  const { createEnvelopes } = await import("./crypto");
+  const { wrappedPassword, wrappedRecovery, recoveryCode } = await createEnvelopes(password, id);
+
   putUsers([...users, {
-    id:        crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2, 18),
+    id,
     email:     email.toLowerCase().trim(),
     name:      name.trim(),
     pwHash:    await hashPassword(password),
     createdAt: new Date().toISOString(),
     isAdmin:   users.length === 0, // first account registered is admin
+    wrappedDekPassword: wrappedPassword,
+    wrappedDekRecovery: wrappedRecovery,
   }]);
-  return { ok: true };
+  return { ok: true, recoveryCode };
 }
 
 export async function signIn(
   email: string, password: string,
-): Promise<{ ok: true; session: Session } | { ok: false; error: string }> {
+): Promise<{ ok: true; session: Session; recoveryCode?: string } | { ok: false; error: string }> {
   const user = getUsers().find((u) => u.email === email.toLowerCase().trim());
   if (!user) return { ok: false, error: "No account found with this email." };
 
@@ -118,12 +128,67 @@ export async function signIn(
   }
   if (!valid) return { ok: false, error: "Incorrect password." };
 
+  const { unwrapWithPassword, migrateLegacyEnvelope, activateSessionKey, initSyncToken } = await import("./crypto");
+
+  let dek: Uint8Array | null;
+  let recoveryCode: string | undefined;
+  if (user.wrappedDekPassword) {
+    dek = await unwrapWithPassword(password, user.id, user.wrappedDekPassword);
+    if (!dek) return { ok: false, error: "Could not unlock your data. Try again or use account recovery." };
+  } else {
+    // Pre-existing account from before recovery codes — migrate now that we
+    // have the password. Existing encrypted data decrypts unchanged since
+    // the DEK equals what already protected it (see migrateLegacyEnvelope).
+    const migrated = await migrateLegacyEnvelope(password, user.id);
+    dek = migrated.dek;
+    recoveryCode = migrated.recoveryCode;
+    putUsers(getUsers().map((u) => (u.id === user.id
+      ? { ...u, wrappedDekPassword: migrated.wrappedPassword, wrappedDekRecovery: migrated.wrappedRecovery }
+      : u)));
+  }
+
   const session: Session = { userId: user.id, email: user.email, name: user.name };
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-  const { initEncryptionKey, initSyncToken } = await import("./crypto");
-  await initEncryptionKey(password, user.id);
+  activateSessionKey(dek);
   await initSyncToken(password, user.email);
-  return { ok: true, session };
+  return { ok: true, session, recoveryCode };
+}
+
+/**
+ * Resets the password using a recovery code, without losing access to
+ * already-encrypted data (the DEK itself never changes, only how it's
+ * wrapped). Issues a new recovery code — the old one stops working.
+ *
+ * Note: if this account has synced before, the server still expects the
+ * *old* password-derived sync token; the next push will be rejected until
+ * that's re-registered (see sync.ts's TOFU model). Known limitation — see
+ * README.
+ */
+export async function recoverAccount(
+  email: string, recoveryCode: string, newPassword: string,
+): Promise<{ ok: true; session: Session; newRecoveryCode: string } | { ok: false; error: string }> {
+  if (newPassword.length < 6) return { ok: false, error: "Password must be at least 6 characters." };
+  const user = getUsers().find((u) => u.email === email.toLowerCase().trim());
+  if (!user) return { ok: false, error: "No account found with this email." };
+  if (!user.wrappedDekRecovery) {
+    return { ok: false, error: "Recovery isn't set up for this account yet — it needs one successful sign-in first." };
+  }
+
+  const { unwrapWithRecoveryCode, rewrapEnvelopes, activateSessionKey, initSyncToken } = await import("./crypto");
+  const dek = await unwrapWithRecoveryCode(recoveryCode, user.id, user.wrappedDekRecovery);
+  if (!dek) return { ok: false, error: "Invalid recovery code." };
+
+  const { wrappedPassword, wrappedRecovery, recoveryCode: newRecoveryCode } = await rewrapEnvelopes(dek, newPassword, user.id);
+  const newPwHash = await hashPassword(newPassword);
+  putUsers(getUsers().map((u) => (u.id === user.id
+    ? { ...u, pwHash: newPwHash, wrappedDekPassword: wrappedPassword, wrappedDekRecovery: wrappedRecovery }
+    : u)));
+
+  const session: Session = { userId: user.id, email: user.email, name: user.name };
+  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  activateSessionKey(dek);
+  await initSyncToken(newPassword, user.email);
+  return { ok: true, session, newRecoveryCode };
 }
 
 export function getSession(): Session | null {

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { signUp, signIn, getSession } from "../../lib/auth";
 import { useTheme } from "../../contexts/ThemeContext";
 import { Sovereign } from "../../components/EssaBrand";
+import RecoveryCodeModal from "../../components/RecoveryCodeModal";
 
 function Field({
   label, type = "text", value, onChange, placeholder, autoComplete,
@@ -51,6 +52,7 @@ export default function SignUpPage() {
   const [confirm,  setConfirm]  = useState("");
   const [error,    setError]    = useState("");
   const [loading,  setLoading]  = useState(false);
+  const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
 
   useEffect(() => {
     if (getSession()) router.replace("/");
@@ -63,9 +65,13 @@ export default function SignUpPage() {
     setLoading(true);
     await new Promise((r) => setTimeout(r, 300));
     const reg = await signUp(email, name, password);
-    if (!reg.ok) { setLoading(false); setError(reg.error); return; }
-    const login = await signIn(email, password);
     setLoading(false);
+    if (!reg.ok) { setError(reg.error); return; }
+    setRecoveryCode(reg.recoveryCode);
+  }
+
+  async function finishSignUp() {
+    const login = await signIn(email, password);
     if (login.ok) router.push("/");
   }
 
@@ -129,6 +135,8 @@ export default function SignUpPage() {
       <p className="text-[10px] mt-8 text-center max-w-xs" style={{ color: T.mute }}>
         Each account&apos;s data is stored separately. Your records are private to you.
       </p>
+
+      {recoveryCode && <RecoveryCodeModal code={recoveryCode} onContinue={finishSignUp} />}
     </div>
   );
 }
