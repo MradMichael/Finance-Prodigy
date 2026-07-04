@@ -72,7 +72,12 @@ export default function SignUpPage() {
 
   async function finishSignUp() {
     const login = await signIn(email, password);
-    if (login.ok) router.push("/");
+    if (login.ok) { router.push("/"); return; }
+    // Account was created successfully — only the immediate sign-in failed.
+    // Dismiss the modal and fall back to the normal form (with its existing
+    // error banner) instead of leaving the user stuck on it silently.
+    setRecoveryCode(null);
+    setError(`Account created, but automatic sign-in failed: ${login.error} Please sign in below.`);
   }
 
   return (
