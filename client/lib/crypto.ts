@@ -22,10 +22,10 @@ const PBKDF2_ITERATIONS = 120_000;
 
 export type Envelope = { v: 1; iv: string; ct: string };
 
-function toB64(bytes: Uint8Array): string {
+export function toB64(bytes: Uint8Array): string {
   return btoa(String.fromCharCode(...bytes));
 }
-function fromB64(s: string): Uint8Array {
+export function fromB64(s: string): Uint8Array {
   return Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 }
 
@@ -66,6 +66,11 @@ export function generateRecoveryCode(): string {
   return [0, 4, 8, 12].map((i) => chars.slice(i, i + 4).join("")).join("-");
 }
 
+/** Strips everything but letters/digits and uppercases, so "k7qm 4xpz-9rtl2wjc" and "K7QM-4XPZ-9RTL-2WJC" derive the same key — a hand-retyped code shouldn't fail just because the dashes/spacing don't match exactly. */
+function canonicalizeRecoveryCode(code: string): string {
+  return code.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+}
+
 export interface DekEnvelopes {
   wrappedPassword: Envelope;
   wrappedRecovery: Envelope;
@@ -96,7 +101,7 @@ export async function rewrapEnvelopes(dek: Uint8Array, password: string, userId:
   const recoveryCode = generateRecoveryCode();
   const [kekPassword, kekRecovery] = await Promise.all([
     deriveKek(password, `essa-kek-v1-${userId}`),
-    deriveKek(recoveryCode, `essa-recovery-v1-${userId}`),
+    deriveKek(canonicalizeRecoveryCode(recoveryCode), `essa-recovery-v1-${userId}`),
   ]);
   const [wrappedPassword, wrappedRecovery] = await Promise.all([wrapDek(dek, kekPassword), wrapDek(dek, kekRecovery)]);
   return { wrappedPassword, wrappedRecovery, recoveryCode };
@@ -110,7 +115,7 @@ export async function unwrapWithPassword(password: string, userId: string, wrapp
 
 /** Unwraps the DEK using a recovery code. Returns null if the code is wrong. */
 export async function unwrapWithRecoveryCode(code: string, userId: string, wrapped: Envelope): Promise<Uint8Array | null> {
-  const kek = await deriveKek(code.trim().toUpperCase(), `essa-recovery-v1-${userId}`);
+  const kek = await deriveKek(canonicalizeRecoveryCode(code), `essa-recovery-v1-${userId}`);
   return unwrapDek(wrapped, kek);
 }
 
