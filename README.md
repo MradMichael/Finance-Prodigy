@@ -123,7 +123,16 @@ SQL Server's default instance port is dynamic and can change on restart — set 
 
 ## Testing
 
-No automated tests exist yet. `tsc --noEmit` and `npm run build` (client) are the current correctness checks.
+```bash
+cd client
+npm test              # run once
+npm run test:watch    # watch mode
+npm run test:coverage # with coverage report
+```
+
+Vitest, covering the money-math engines and security-critical code: `computeDashboard.ts` (health score, budget pace/rollover, debt plan, net worth, balance reconciliation), `debtEngine.ts` (Snowball/Avalanche simulation), `localData.ts`'s date-math helpers, and `crypto.ts`/`auth.ts` (envelope encryption, password hashing, sign-up/in/recovery flows). No tests on the server side — see [`server/src/lib/normalizeSync.ts`](server/src/lib/normalizeSync.ts)'s fire-and-forget, DB-coupled nature for why that's a deliberate choice, not an oversight.
+
+`tsc --noEmit` and `npm run build` remain the other correctness checks.
 
 ---
 

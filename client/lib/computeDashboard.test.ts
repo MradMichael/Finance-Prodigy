@@ -1,0 +1,303 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { computeDashboard } from "./computeDashboard";
+import { DEFAULT_DATA, type LocalFinancials, type BudgetRuleKey } from "./localData";
+
+function makeData(overrides: Partial<LocalFinancials> = {}): LocalFinancials {
+  return { ...DEFAULT_DATA, ...overrides };
+}
+
+// Pinned mid-month so daysElapsed(15) clears MIN_DAYS_FOR_PROJECTION(5) and
+// daysInMonth(31, July) gives clean percentages — every test that cares about
+// "now" relies on this unless it explicitly re-pins a different date.
+const NOW = new Date(2026, 6, 15); // July 15, 2026
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(NOW);
+});
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+describe("budget rules", () => {
+  const rules: BudgetRuleKey[] = ["40-30-30", "50-30-20", "60-20-20", "70-20-10", "80-15-5"];
+  it.each(rules)("computes budgetTargets for %s from income", (rule) => {
+    const data = makeData({ income: 1000, budgetRule: rule });
+    const result = computeDashboard(data);
+    const sum = result.budgetTargets.needs + result.budgetTargets.wants + result.budgetTargets.savings;
+    expect(sum).toBeCloseTo(1000, 5);
+    expect(result.budgetRule).toBe(rule);
+  });
+
+  it("custom rule uses budgetCustomNeeds/Wants and derives savings as the remainder", () => {
+    const data = makeData({ income: 1000, budgetRule: "custom", budgetCustomNeeds: 60, budgetCustomWants: 30 });
+    const result = computeDashboard(data);
+    expect(result.budgetTargets.needs).toBeCloseTo(600, 5);
+    expect(result.budgetTargets.wants).toBeCloseTo(300, 5);
+    expect(result.budgetTargets.savings).toBeCloseTo(100, 5);
+  });
+
+  it("custom rule with needs+wants > 100 produces a negative savings target (documents current behavior, not necessarily desired)", () => {
+    const data = makeData({ income: 1000, budgetRule: "custom", budgetCustomNeeds: 70, budgetCustomWants: 50 });
+    const result = computeDashboard(data);
+    // 100 - 70 - 50 = -20% of income
+    expect(result.budgetTargets.savings).toBeCloseTo(-200, 5);
+    // effectiveBudgetTargets floors at 0 regardless of the raw (possibly negative) target
+    expect(result.effectiveBudgetTargets.savings).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe("health score", () => {
+  it("component weights always sum to 100", () => {
+    const data = makeData({ income: 3000 });
+    const result = computeDashboard(data);
+    const totalWeight = result.health.components.reduce((s, c) => s + c.weight, 0);
+    expect(totalWeight).toBe(100);
+  });
+
+  it("score is a weighted sum of the components (within rounding)", () => {
+    const data = makeData({ income: 3000, emergencyFundBalance: 3000, emergencyFundTargetMonths: 1 });
+    const result = computeDashboard(data);
+    const bySum = result.health.components.reduce((s, c) => s + (c.score * c.weight) / 100, 0);
+    expect(result.health.score).toBeCloseTo(bySum, 0);
+  });
+
+  it("grade matches the documented thresholds", () => {
+    // Full EF, no debt, needs well under target, and a savings transaction
+    // meeting the 20% target this month should land in the top grade.
+    // (No goals -> goalScore defaults to 50, capping the max achievable score.)
+    const data = makeData({
+      income: 3000, emergencyFundBalance: 100000, emergencyFundTargetMonths: 1,
+      transactions: [{ id: "t1", amount: 600, currency: "USD", bucket: "SAVINGS", description: "Savings", date: "2026-07-01" }],
+    });
+    const result = computeDashboard(data);
+    expect(result.health.score).toBeGreaterThanOrEqual(80);
+    expect(result.health.grade).toBe("Thriving");
+  });
+});
+
+describe("net worth tiers", () => {
+  const cases: { assets: number; debtBalance: number; expectedTier: string; expectedColor: string }[] = [
+    { assets: 0, debtBalance: 25000, expectedTier: "Heavy debt load", expectedColor: "coral" },
+    { assets: 0, debtBalance: 10000, expectedTier: "Rebuilding", expectedColor: "coral" },
+    { assets: 4000, debtBalance: 5000, expectedTier: "Almost positive", expectedColor: "brass" },
+    { assets: 3000, debtBalance: 0, expectedTier: "Breaking even", expectedColor: "brass" },
+    { assets: 10000, debtBalance: 0, expectedTier: "Foundation builder", expectedColor: "jade" },
+    { assets: 50000, debtBalance: 0, expectedTier: "Growing wealth", expectedColor: "jade" },
+    { assets: 150000, debtBalance: 0, expectedTier: "Wealth building", expectedColor: "jade" },
+  ];
+  it.each(cases)("nw=$assets-$debtBalance -> $expectedTier", ({ assets, debtBalance, expectedTier, expectedColor }) => {
+    const data = makeData({
+      income: 3000,
+      emergencyFundBalance: assets,
+      debts: debtBalance > 0 ? [{ id: "d1", name: "Loan", balance: debtBalance, apr: 10, minPayment: 100, createdAt: NOW.toISOString() }] : [],
+    });
+    const result = computeDashboard(data);
+    expect(result.netWorth.tier).toBe(expectedTier);
+    expect(result.netWorth.tierColor).toBe(expectedColor);
+  });
+});
+
+describe("debt plan", () => {
+  it("is null when there are no debts", () => {
+    const result = computeDashboard(makeData({ income: 3000 }));
+    expect(result.debt.plan).toBeNull();
+    expect(result.debt.comparison).toBeNull();
+  });
+
+  it("is infeasible when the monthly commitment doesn't cover interest", () => {
+    const data = makeData({
+      income: 100, // tiny income -> tiny/no extra payment
+      debts: [{ id: "d1", name: "Huge APR loan", balance: 10000, apr: 99, minPayment: 1, createdAt: NOW.toISOString() }],
+    });
+    const result = computeDashboard(data);
+    expect(result.debt.plan?.feasible).toBe(false);
+    expect(result.debt.plan?.warning).toBeTruthy();
+  });
+
+  it("feasible plan produces a comparison where avalanche never has more total interest than snowball on the same inputs", () => {
+    const data = makeData({
+      income: 5000,
+      debts: [
+        { id: "d1", name: "Card A", balance: 2000, apr: 24, minPayment: 50, createdAt: NOW.toISOString() },
+        { id: "d2", name: "Card B", balance: 500, apr: 8, minPayment: 20, createdAt: NOW.toISOString() },
+      ],
+    });
+    const result = computeDashboard(data);
+    expect(result.debt.plan?.feasible).toBe(true);
+    expect(result.debt.comparison).not.toBeNull();
+    expect(result.debt.comparison!.avalanche.totalInterest).toBeLessThanOrEqual(result.debt.comparison!.snowball.totalInterest);
+    expect(result.debt.comparison!.avalancheSavesVsSnowball).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe("budget pace", () => {
+  it("flags 'over' once spend reaches the effective target", () => {
+    const data = makeData({
+      income: 1000, budgetRule: "50-30-20", // needs target = 500
+      transactions: [{ id: "t1", amount: 600, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-07-01" }],
+    });
+    const result = computeDashboard(data);
+    const needs = result.budgetPace.find((p) => p.bucket === "NEEDS")!;
+    expect(needs.status).toBe("over");
+  });
+
+  it("does not claim a specific dollar overage before MIN_DAYS_FOR_PROJECTION", () => {
+    vi.setSystemTime(new Date(2026, 6, 2)); // July 2 — daysElapsed=2, below the threshold of 5
+    const data = makeData({
+      income: 1000, budgetRule: "50-30-20",
+      transactions: [{ id: "t1", amount: 400, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-07-01" }],
+    });
+    const result = computeDashboard(data);
+    const needs = result.budgetPace.find((p) => p.bucket === "NEEDS")!;
+    expect(needs.status).toBe("watch");
+    expect(needs.message).not.toMatch(/\$\d/); // no dollar-figure projection this early
+  });
+
+  it("does claim a specific dollar overage once past MIN_DAYS_FOR_PROJECTION", () => {
+    // NOW is July 15 (daysElapsed=15) via the top-level beforeEach.
+    const data = makeData({
+      income: 1000, budgetRule: "50-30-20", // needs target = 500
+      transactions: [{ id: "t1", amount: 300, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-07-01" }],
+    });
+    const result = computeDashboard(data);
+    const needs = result.budgetPace.find((p) => p.bucket === "NEEDS")!;
+    // projected = (300/15)*31 = 620 > 500 target -> watch, with a dollar figure
+    expect(needs.status).toBe("watch");
+    expect(needs.message).toMatch(/\$\d/);
+  });
+
+  it("treats SAVINGS as a floor: hitting 100%+ is 'ok', not 'over'", () => {
+    const data = makeData({
+      income: 1000, budgetRule: "50-30-20", // savings target = 200
+      transactions: [{ id: "t1", amount: 500, currency: "USD", bucket: "SAVINGS", description: "Transfer", date: "2026-07-01" }],
+    });
+    const result = computeDashboard(data);
+    const savings = result.budgetPace.find((p) => p.bucket === "SAVINGS")!;
+    expect(savings.status).toBe("ok");
+  });
+
+  it("floors a rollover-deficit target at 0 instead of going negative", () => {
+    // 0%-savings custom rule this month, but a positive-savings month back in
+    // January means budgetRollover.savings goes negative -> should floor at 0.
+    const data = makeData({
+      income: 1000, budgetRule: "custom", budgetCustomNeeds: 85, budgetCustomWants: 15, // savings target = 0%
+      transactions: [{ id: "t1", amount: 50, currency: "USD", bucket: "SAVINGS", description: "Old saving", date: "2026-01-15" }],
+    });
+    const result = computeDashboard(data);
+    expect(result.effectiveBudgetTargets.savings).toBeGreaterThanOrEqual(0);
+    // With $0 spent against a floored (non-negative) target, savings should never read "over".
+    const savings = result.budgetPace.find((p) => p.bucket === "SAVINGS");
+    if (savings) expect(savings.status).not.toBe("over");
+  });
+});
+
+describe("upcoming renewals", () => {
+  it("includes a recurring item due within the 7-day window", () => {
+    const data = makeData({
+      recurring: [{
+        id: "r1", name: "Netflix", emoji: "🎬", amount: 15, currency: "USD", frequency: "monthly",
+        bucket: "WANTS", startDate: "2026-06-20", endDate: null, totalAmount: null, createdAt: "2026-06-20T00:00:00.000Z",
+      }],
+    });
+    const result = computeDashboard(data);
+    // Monthly from June 20 -> next occurrence July 20, 5 days after "now" (July 15).
+    expect(result.upcomingRenewals).toHaveLength(1);
+    expect(result.upcomingRenewals[0].dueInDays).toBe(5);
+  });
+
+  it("excludes a recurring item due more than 7 days out", () => {
+    const data = makeData({
+      recurring: [{
+        id: "r1", name: "Annual plan", emoji: "📅", amount: 100, currency: "USD", frequency: "yearly",
+        bucket: "WANTS", startDate: "2025-09-01", endDate: null, totalAmount: null, createdAt: "2025-09-01T00:00:00.000Z",
+      }],
+    });
+    const result = computeDashboard(data);
+    expect(result.upcomingRenewals).toHaveLength(0);
+  });
+});
+
+describe("balance checks", () => {
+  it("matches cash transactions and ignores card transactions", () => {
+    const data = makeData({
+      trackedBalances: [{ id: "b1", name: "Wallet", paymentMethod: "cash", startingBalance: 100, startingDate: "2026-07-01", currency: "USD" }],
+      transactions: [
+        { id: "t1", amount: 20, currency: "USD", bucket: "WANTS", description: "Coffee", date: "2026-07-05", paymentMethod: "cash" },
+        { id: "t2", amount: 50, currency: "USD", bucket: "WANTS", description: "Shoes", date: "2026-07-06", paymentMethod: "card", cardId: "c1" },
+      ],
+    });
+    const result = computeDashboard(data);
+    expect(result.balanceChecks).toHaveLength(1);
+    expect(result.balanceChecks[0].expected).toBe(80); // 100 - 20 cash only
+  });
+
+  it("matches card transactions only for the same cardId", () => {
+    const data = makeData({
+      trackedBalances: [{ id: "b1", name: "Visa", paymentMethod: "card", cardId: "c1", startingBalance: 200, startingDate: "2026-07-01", currency: "USD" }],
+      transactions: [
+        { id: "t1", amount: 30, currency: "USD", bucket: "WANTS", description: "On this card", date: "2026-07-05", paymentMethod: "card", cardId: "c1" },
+        { id: "t2", amount: 40, currency: "USD", bucket: "WANTS", description: "Different card", date: "2026-07-06", paymentMethod: "card", cardId: "c2" },
+      ],
+    });
+    const result = computeDashboard(data);
+    expect(result.balanceChecks[0].expected).toBe(170); // 200 - 30, c2's tx excluded
+  });
+
+  it("computes discrepancy only once an actual balance has been recorded", () => {
+    const data = makeData({
+      trackedBalances: [{
+        id: "b1", name: "Wallet", paymentMethod: "cash", startingBalance: 100, startingDate: "2026-07-01", currency: "USD",
+        actualBalance: 70, actualBalanceDate: "2026-07-10T00:00:00.000Z",
+      }],
+      transactions: [{ id: "t1", amount: 20, currency: "USD", bucket: "WANTS", description: "Coffee", date: "2026-07-05", paymentMethod: "cash" }],
+    });
+    const result = computeDashboard(data);
+    // expected = 80, actual = 70 -> discrepancy = -10 (unaccounted for)
+    expect(result.balanceChecks[0].discrepancy).toBe(-10);
+  });
+
+  it("discrepancy is null when no actual balance has been entered", () => {
+    const data = makeData({
+      trackedBalances: [{ id: "b1", name: "Wallet", paymentMethod: "cash", startingBalance: 100, startingDate: "2026-07-01", currency: "USD" }],
+    });
+    const result = computeDashboard(data);
+    expect(result.balanceChecks[0].actual).toBeNull();
+    expect(result.balanceChecks[0].discrepancy).toBeNull();
+  });
+});
+
+describe("net worth trend", () => {
+  it("merges today's value into history, replacing any existing entry for the current month", () => {
+    const data = makeData({
+      income: 3000,
+      netWorthHistory: [
+        { ym: "2026-05", value: 1000 },
+        { ym: "2026-06", value: 1200 },
+        { ym: "2026-07", value: 999 }, // stale — should be replaced by today's computed value
+      ],
+    });
+    const result = computeDashboard(data);
+    const julyEntries = result.netWorthTrend.filter((h) => h.ym === "2026-07");
+    expect(julyEntries).toHaveLength(1);
+    expect(julyEntries[0].value).not.toBe(999);
+  });
+
+  it("keeps only the most recent 12 months", () => {
+    const history = Array.from({ length: 15 }, (_, i) => ({ ym: `2025-${String(i + 1).padStart(2, "0")}`, value: i }))
+      .filter((h) => Number(h.ym.split("-")[1]) <= 12);
+    const data = makeData({ income: 3000, netWorthHistory: history });
+    const result = computeDashboard(data);
+    expect(result.netWorthTrend.length).toBeLessThanOrEqual(12);
+  });
+
+  it("is sorted ascending by year-month", () => {
+    const data = makeData({
+      income: 3000,
+      netWorthHistory: [{ ym: "2026-03", value: 1 }, { ym: "2026-01", value: 2 }, { ym: "2026-02", value: 3 }],
+    });
+    const result = computeDashboard(data);
+    const yms = result.netWorthTrend.map((h) => h.ym);
+    expect(yms).toEqual([...yms].sort());
+  });
+});
