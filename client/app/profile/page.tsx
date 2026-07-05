@@ -9,40 +9,7 @@ import { loadData, saveData } from "../../lib/localData";
 import { pullFromServer, getLastSyncTime } from "../../lib/syncService";
 import { useTheme, useThemeControl } from "../../contexts/ThemeContext";
 import { THEMES, type ThemeKey } from "../../lib/theme";
-
-function Field({
-  label, type = "text", value, onChange, placeholder,
-}: {
-  label: string; type?: string; value: string;
-  onChange: (v: string) => void; placeholder?: string;
-}) {
-  const T = useTheme();
-  const [focused, setFocused] = useState(false);
-  return (
-    <div>
-      <label className="block text-[11px] uppercase tracking-widest mb-1.5 font-medium" style={{ color: T.mute }}>
-        {label}
-      </label>
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        className="w-full rounded-xl px-4 py-3 text-sm transition-all duration-150"
-        style={{
-          background: T.panelSoft,
-          border: `1px solid ${focused ? T.jade : T.line}`,
-          color: T.text,
-          outline: "none",
-          boxShadow: focused ? `0 0 0 3px ${T.jade}28` : "none",
-          colorScheme: "dark",
-        }}
-      />
-    </div>
-  );
-}
+import Field from "../../components/form/Field";
 
 const THEME_SWATCHES: { key: ThemeKey; accent: string; bg: string }[] = [
   { key: "ledger",   accent: "#4FD1A5", bg: "#11302C" },
