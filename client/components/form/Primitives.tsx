@@ -17,9 +17,17 @@ export function Label({ children }: { children: React.ReactNode }) {
 export function FocusInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
   const T = useTheme();
   const [focused, setFocused] = useState(false);
+  // Native date pickers render in whatever locale the input's effective
+  // language resolves to — on a US-locale OS/browser that's MM/DD/YYYY,
+  // which then sits right next to this app's own DD/MM/YYYY displays
+  // (DateHint, transaction lists, etc.) showing the same date two
+  // different ways. en-GB forces the native picker itself to DD/MM/YYYY
+  // so there's one format on screen, not two that look like a mismatch.
+  const dateProps = props.type === "date" && !props.lang ? { lang: "en-GB" } : {};
   return (
     <input
       {...props}
+      {...dateProps}
       onFocus={(e) => { setFocused(true); props.onFocus?.(e); }}
       onBlur={(e)  => { setFocused(false);  props.onBlur?.(e);  }}
       className="w-full rounded-xl px-3 py-2.5 text-sm transition-all duration-150"
