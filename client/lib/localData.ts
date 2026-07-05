@@ -238,9 +238,20 @@ export function nextOccurrence(r: StoredRecurring, asOf: Date = new Date()): Dat
     return new Date(start.getTime() + (periodsElapsed + 1) * msPerPeriod);
   }
 
+  // Clamp to the target month's actual last day instead of letting
+  // Date.setMonth overflow into the following month — a naive
+  // next.setMonth(next.getMonth() + monthLen) on Jan 31 + 1 month lands on
+  // March 3 (Feb only has 28/29 days), silently skipping a February
+  // occurrence and shifting the recurring day going forward.
   const monthLen = MONTH_FREQ_LENGTH[r.frequency] ?? 1;
-  const next = new Date(start);
-  while (next <= asOf) next.setMonth(next.getMonth() + monthLen);
+  const targetDay = start.getUTCDate();
+  let next = new Date(start);
+  while (next <= asOf) {
+    const candidate = new Date(Date.UTC(next.getUTCFullYear(), next.getUTCMonth() + monthLen, 1));
+    const daysInTargetMonth = new Date(Date.UTC(candidate.getUTCFullYear(), candidate.getUTCMonth() + 1, 0)).getUTCDate();
+    candidate.setUTCDate(Math.min(targetDay, daysInTargetMonth));
+    next = candidate;
+  }
   return next;
 }
 

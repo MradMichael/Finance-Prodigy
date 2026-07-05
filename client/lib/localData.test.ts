@@ -94,15 +94,25 @@ describe("nextOccurrence", () => {
     expect(next?.toISOString().slice(0, 10)).toBe("2026-03-15");
   });
 
-  it("KNOWN QUIRK: a Jan-31 monthly recurring skips February and lands on a shifted day, due to JS Date.setMonth's end-of-month rollover", () => {
-    // Documents actual current behavior, not necessarily desired behavior —
-    // flagged for a decision on whether to fix (see plan discussion).
+  it("a Jan-31 monthly recurring clamps to Feb 28 in a non-leap year instead of overflowing into March", () => {
     const r = makeRecurring({ frequency: "monthly", startDate: "2026-01-31" });
-    const next = nextOccurrence(r, new Date(2026, 1, 15)); // Feb 15
-    // 2026 is not a leap year: Jan 31 + 1 month via setMonth() overflows
-    // Feb's 28 days into March 3, skipping a "due in February" occurrence
-    // entirely and silently shifting the recurring day-of-month.
-    expect(next?.toISOString().slice(0, 10)).toBe("2026-03-03");
+    const next = nextOccurrence(r, new Date("2026-02-15"));
+    // 2026 is not a leap year -- Feb only has 28 days, so the occurrence
+    // clamps to Feb 28 rather than a naive Date.setMonth overflowing to Mar 3.
+    expect(next?.toISOString().slice(0, 10)).toBe("2026-02-28");
+  });
+
+  it("a Jan-31 monthly recurring clamps to Feb 29 in a leap year", () => {
+    const r = makeRecurring({ frequency: "monthly", startDate: "2028-01-31" });
+    const next = nextOccurrence(r, new Date("2028-02-15"));
+    expect(next?.toISOString().slice(0, 10)).toBe("2028-02-29");
+  });
+
+  it("a day-31 monthly recurring returns to day 31 in a month that has one, after being clamped", () => {
+    const r = makeRecurring({ frequency: "monthly", startDate: "2026-01-31" });
+    // Feb 28 (clamped) -> next occurrence should be March 31 (March has 31 days again), not stuck at 28.
+    const next = nextOccurrence(r, new Date("2026-03-01"));
+    expect(next?.toISOString().slice(0, 10)).toBe("2026-03-31");
   });
 });
 
