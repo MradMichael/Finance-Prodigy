@@ -250,7 +250,7 @@ export default function AdminPage() {
           </div>
           <div className="rounded-xl p-4 space-y-2 text-xs" style={{ background: T.panelSoft, color: T.mute }}>
             <p className="font-semibold" style={{ color: T.text }}>Common database issues</p>
-            <p><span style={{ color: T.brass }}>•</span> <strong style={{ color: T.text }}>Connection refused / project suspended</strong> — Neon's free tier suspends idle compute after inactivity; the first request after a while wakes it up and can take a few seconds.</p>
+            <p><span style={{ color: T.brass }}>•</span> <strong style={{ color: T.text }}>Connection refused / project suspended</strong> — Neon&apos;s free tier suspends idle compute after inactivity; the first request after a while wakes it up and can take a few seconds.</p>
             <p><span style={{ color: T.brass }}>•</span> <strong style={{ color: T.text }}>Migration fails with a prepared-statement error</strong> — Make sure <code className="px-1 py-0.5 rounded" style={{ background: T.ink, color: T.jade }}>DIRECT_URL</code> in <code className="px-1 py-0.5 rounded" style={{ background: T.ink, color: T.jade }}>server/.env</code> points at the non-pooled host (no <code className="px-1 py-0.5 rounded" style={{ background: T.ink, color: T.jade }}>-pooler</code> in the hostname).</p>
             <p><span style={{ color: T.brass }}>•</span> <strong style={{ color: T.text }}>Prisma error</strong> — Run <code className="px-1 py-0.5 rounded" style={{ background: T.ink, color: T.jade }}>npx prisma migrate deploy</code> in the server folder to apply any pending migrations.</p>
           </div>
