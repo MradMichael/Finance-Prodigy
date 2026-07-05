@@ -15,7 +15,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: "How secure is the encryption?",
-    a: "Your data is encrypted with AES-GCM 256-bit. The key is derived from your password using PBKDF2 with 120,000 iterations and is never stored — only held in sessionStorage while you're logged in.",
+    a: "Your data is encrypted with AES-GCM 256-bit using a random key generated for your account — never derived directly from your password. That key is locked two ways: once by your password, once by a one-time recovery code shown at sign-up (PBKDF2, 120,000 iterations). It's never stored unlocked — only held in sessionStorage while you're logged in.",
   },
   {
     q: "What happens if I clear my browser data?",
@@ -23,7 +23,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: "Can I use ESSA on multiple devices?",
-    a: "Yes — push your data from one device, then pull it on another. Both must be connected to the same local database server (running at localhost:4000).",
+    a: "Yes — push your data from one device, then pull it on another. Both must be able to reach the same sync server (by default your own machine at localhost:4000; a deployed setup would point at wherever that server actually runs).",
   },
   {
     q: "What currencies are supported?",

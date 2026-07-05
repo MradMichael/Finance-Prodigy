@@ -104,6 +104,19 @@ SQL Server's default instance port is dynamic and can change on restart — set 
 
 ---
 
+## Deployment
+
+**Verified locally, not yet deployed to a real host:**
+- `cd server && npm install && npm run build` (`prisma generate && tsc`) builds clean standalone.
+- `npx prisma migrate deploy` + `npx prisma db seed` against a real SQL Server, run twice — the seed is genuinely idempotent (second run: 0 rows inserted, all already existed).
+- `cd client && npm run build && API_URL=http://localhost:4000 npm start` — the **production** build (not `next dev`) serves correctly and `next.config.js`'s `/api/*` rewrite honors `API_URL` as documented.
+- A real `/api/sync/push` + `/api/sync/pull` round trip against the running production build.
+- CORS: the server always responds with the configured `CLIENT_ORIGIN` value in `Access-Control-Allow-Origin`, regardless of the request's actual `Origin` header — this is what makes a browser reject responses to any page that isn't running at `CLIENT_ORIGIN`, even though a non-browser client like `curl` won't visibly enforce that itself.
+
+**Not yet verified — requires an actual account/host, so this is deliberately scoped out until you want to commit to one:** deploying the client to Vercel (or similar) and the server to Railway/Render (or similar), and provisioning a real cloud SQL Server instance. The schema is SQL-Server-specific (`server/prisma/schema.prisma`'s `provider = "sqlserver"`, with cascade-rule workarounds for SQL Server's `NoAction` requirements) — a self-hosted or cloud SQL Server (e.g. Azure SQL) works as-is; a Postgres-as-a-service host (Neon, Supabase, etc.) would need the schema ported first, which is a separate, larger task.
+
+---
+
 ## Security model
 
 - **Encryption key:** a random 256-bit key (DEK) generated per account, never derived directly from your password. It's wrapped (encrypted) once under a key derived from your password, and once under a key derived from a one-time **recovery code** shown at sign-up. Either one unlocks the same DEK.
