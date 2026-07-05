@@ -96,6 +96,9 @@ const MOCK: DashboardPayload = {
   upcomingRenewals: [
     { id: "1", name: "Netflix", emoji: "🎬", amount: 15.49, currency: "USD", dueDate: "2026-06-20", dueInDays: 3 },
   ],
+  balanceChecks: [
+    { id: "1", name: "Cash", currency: "USD", expected: 240, actual: 190, actualDate: "2026-06-18", discrepancy: -50 },
+  ],
   netWorth: {
     assets: 6620, liabilities: 13260, total: -6640,
     tier: "Rebuilding", tierColor: "coral",
@@ -204,7 +207,7 @@ export default function FinancialDashboard({ data: propData }: { data?: Dashboar
     );
   }
 
-  const { health, month, emergencyFund: ef, debt, goals, sixMonthTrend, encouragements, user, period, netWorth, streaks, budgetPace, netWorthTrend, upcomingRenewals } = data;
+  const { health, month, emergencyFund: ef, debt, goals, sixMonthTrend, encouragements, user, period, netWorth, streaks, budgetPace, netWorthTrend, upcomingRenewals, balanceChecks } = data;
   const monthName = ["", "January","February","March","April","May","June","July","August","September","October","November","December"][period.month];
   const targets     = data.budgetTargets;
   const budgetLabel = data.budgetRule === "custom" ? "Custom split" : data.budgetRule.replace(/-/g, " / ");
@@ -284,6 +287,30 @@ export default function FinancialDashboard({ data: propData }: { data?: Dashboar
                 </span>
               </span>
             ))}
+          </div>
+        )}
+
+        {/* Balance check — expected (from logged transactions) vs. what you actually have */}
+        {balanceChecks.some((b) => b.actual != null) && (
+          <div className="rounded-2xl px-5 py-4 space-y-2.5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
+            <p className="text-xs uppercase tracking-widest" style={{ color: T.mute }}>Balance check</p>
+            {balanceChecks.filter((b) => b.actual != null).map((b) => {
+              const gap = b.discrepancy ?? 0;
+              const mismatch = Math.abs(gap) >= 1;
+              return (
+                <div key={b.id} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 text-sm">
+                  <span style={{ color: T.text }}>{b.name}</span>
+                  <span style={{ color: T.mute }}>
+                    expected {money(b.expected)} · you said {money(b.actual as number)}
+                    {mismatch && (
+                      <span style={{ color: T.coral }}>
+                        {" · "}{gap < 0 ? `$${Math.abs(gap).toFixed(0)} unaccounted for — check for a missed entry` : `$${gap.toFixed(0)} more than expected`}
+                      </span>
+                    )}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         )}
 

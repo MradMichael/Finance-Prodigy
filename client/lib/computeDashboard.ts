@@ -56,6 +56,12 @@ export interface DashboardPayload {
     id: string; name: string; emoji: string; amount: number; currency: string;
     dueDate: string; dueInDays: number;
   }[];
+  balanceChecks: {
+    id: string; name: string; currency: string;
+    expected: number;
+    actual: number | null; actualDate: string | null;
+    discrepancy: number | null; // actual - expected, when actual is known
+  }[];
   netWorth: {
     assets: number;
     liabilities: number;
@@ -80,6 +86,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     recurring:        data.recurring        ?? [],
     cards:            data.cards            ?? [],
     assets:           data.assets           ?? [],
+    trackedBalances:  data.trackedBalances  ?? [],
     netWorthHistory:  data.netWorthHistory  ?? [],
   };
 
@@ -317,7 +324,13 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     const isCurrent = i === 5;
     const mo = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
     const tx = data.transactions.filter((t) => t.date.startsWith(mo));
-    const sp = tx.reduce((s, t) => s + toUSD(t.amount, t.currency), 0);
+    const txSpend = tx.reduce((s, t) => s + toUSD(t.amount, t.currency), 0);
+    // Recurring payments (rent, subscriptions, etc.) don't create a
+    // transaction row each month, so counting only logged transactions
+    // understated every month's real spend — evaluate each recurring
+    // item as of that historical month, same as the current-month totals do.
+    const recurSpend = activeRecurring.reduce((s, r) => s + toUSD(monthlyEquivalent(r, d), r.currency), 0);
+    const sp = txSpend + recurSpend;
     return { ymKey, income: isCurrent ? income : (sp > 0 ? income : 0), spend: sp };
   });
 
@@ -444,6 +457,25 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     .filter((x): x is NonNullable<typeof x> => x !== null)
     .sort((a, b) => a.dueInDays - b.dueInDays);
 
+  // ── Balance reconciliation — "did I forget to log a payment?" ──────
+  // Expected = starting balance minus every transaction on this payment
+  // method since the starting date. Only sees the transaction ledger, so
+  // debt payments and un-"extra"'d recurring charges aren't reflected —
+  // a real gap, not a bug (see TrackedBalance's doc comment).
+  const balanceChecks: DashboardPayload["balanceChecks"] = data.trackedBalances.map((tb) => {
+    const spent = data.transactions
+      .filter((t) => t.date >= tb.startingDate && t.paymentMethod === tb.paymentMethod
+        && (tb.paymentMethod !== "card" || t.cardId === tb.cardId))
+      .reduce((s, t) => s + toUSD(t.amount, t.currency), 0);
+    const expected = Math.round((tb.startingBalance - spent) * 100) / 100;
+    const actual = tb.actualBalance ?? null;
+    return {
+      id: tb.id, name: tb.name, currency: tb.currency, expected,
+      actual, actualDate: tb.actualBalanceDate ?? null,
+      discrepancy: actual != null ? Math.round((actual - expected) * 100) / 100 : null,
+    };
+  });
+
   // ── Net worth trend — today's value merged into the persisted history ──
   // (Persisting the snapshot back into storage happens in the caller —
   // this function stays pure/side-effect-free.)
@@ -481,6 +513,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     sixMonthTrend,
     netWorthTrend,
     upcomingRenewals,
+    balanceChecks,
     budgetPace,
     budgetRollover,
     effectiveBudgetTargets: { needs: bucketTargetAmt.NEEDS, wants: bucketTargetAmt.WANTS, savings: bucketTargetAmt.SAVINGS },

@@ -34,6 +34,26 @@ export interface StoredGoal {
   achievedAt?: string;  // ISO — when goal was completed
 }
 
+/**
+ * Reconciliation between what the app thinks you have (starting balance
+ * minus every logged transaction on this payment method) and what you
+ * actually see when you check your wallet/bank — a mismatch usually
+ * means a payment never got logged. Only sees transactions, so debt
+ * payments and un-"extra"'d recurring charges won't show up in the
+ * expected figure — a known gap, not a bug.
+ */
+export interface TrackedBalance {
+  id: string;
+  name: string;             // "Cash", "Chase Checking"…
+  paymentMethod: PaymentMethod;
+  cardId?: string;          // set when paymentMethod === "card" — which saved card this tracks
+  startingBalance: number;
+  startingDate: string;     // YYYY-MM-DD
+  currency: Currency;
+  actualBalance?: number;   // last balance you told it you actually have
+  actualBalanceDate?: string; // ISO — when you last confirmed it
+}
+
 export interface StoredAsset {
   id: string;
   name: string;      // e.g. "Car", "Brokerage account"
@@ -119,6 +139,7 @@ export interface LocalFinancials {
   recurring: StoredRecurring[];
   cards: StoredCard[];
   assets: StoredAsset[];
+  trackedBalances: TrackedBalance[];
   /** One entry per calendar month (YYYY-MM), appended/updated as the dashboard is computed — powers the net worth trend chart. */
   netWorthHistory: { ym: string; value: number }[];
   budgetRule?: BudgetRuleKey;
@@ -138,6 +159,7 @@ export const DEFAULT_DATA: LocalFinancials = {
   recurring: [],
   cards: [],
   assets: [],
+  trackedBalances: [],
   netWorthHistory: [],
   budgetRule: "50-30-20",
 };

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type {
   LocalFinancials, StoredTransaction, StoredGoal, StoredDebt,
-  StoredRecurring, StoredCard, RecurringFrequency, Currency, PaymentMethod, BudgetRuleKey,
+  StoredRecurring, StoredCard, RecurringFrequency, Currency, PaymentMethod, BudgetRuleKey, TrackedBalance,
 } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, monthlyEquivalent, recurringPaidSoFar } from "../lib/localData";
@@ -166,6 +166,16 @@ function CurrencyToggle({ value, onChange }: { value: Currency; onChange: (c: Cu
   );
 }
 
+// The native date picker renders in the browser/OS locale (often MM/DD/YYYY
+// on US-locale systems) regardless of how this app displays dates elsewhere
+// (DD/MM/YYYY) — that mismatch is an easy way to log the wrong date without
+// noticing. This makes the actual stored value unambiguous at a glance.
+function DateHint({ value }: { value: string }) {
+  const T = useTheme();
+  if (!value) return null;
+  return <p className="text-[10px] mt-1" style={{ color: T.mute }}>Will be saved as {fmtDate(value)} (DD/MM/YYYY)</p>;
+}
+
 const PM_OPTIONS: { value: PaymentMethod; label: string; icon: string }[] = [
   { value: "cash",  label: "Cash",  icon: "💵" },
   { value: "card",  label: "Card",  icon: "💳" },
@@ -225,6 +235,15 @@ export default function InputPanel({ financials, onChange, session }: Props) {
   const [aName,     setAName]     = useState("");
   const [aValue,    setAValue]    = useState("");
   const [aCurrency, setACurrency] = useState<Currency>("USD");
+
+  // Tracked balance (reconciliation) form
+  const [tbName,        setTbName]        = useState("");
+  const [tbMethod,      setTbMethod]      = useState<PaymentMethod>("cash");
+  const [tbCardId,      setTbCardId]      = useState("");
+  const [tbStartBal,    setTbStartBal]    = useState("");
+  const [tbStartDate,   setTbStartDate]   = useState(todayISO());
+  const [tbCurrency,    setTbCurrency]    = useState<Currency>("USD");
+  const [actualInputs,  setActualInputs]  = useState<Record<string, string>>({});
 
   // Recurring form
   const [rName,        setRName]        = useState("");
@@ -370,6 +389,34 @@ export default function InputPanel({ financials, onChange, session }: Props) {
 
   function deleteAsset(id: string) {
     update({ assets: (financials.assets ?? []).filter((a) => a.id !== id) });
+  }
+
+  function addTrackedBalance() {
+    if (!tbName.trim() || !tbStartBal) return;
+    if (tbMethod === "card" && !tbCardId) return;
+    const tb: TrackedBalance = {
+      id: uid(), name: tbName.trim(), paymentMethod: tbMethod,
+      ...(tbMethod === "card" ? { cardId: tbCardId } : {}),
+      startingBalance: parseFloat(tbStartBal.replace(/,/g, "")),
+      startingDate: tbStartDate, currency: tbCurrency,
+    };
+    update({ trackedBalances: [...(financials.trackedBalances ?? []), tb] });
+    setTbName(""); setTbMethod("cash"); setTbCardId(""); setTbStartBal(""); setTbStartDate(todayISO()); setTbCurrency("USD");
+  }
+
+  function updateActualBalance(id: string) {
+    const raw = actualInputs[id];
+    const amt = parseFloat((raw ?? "").replace(/,/g, ""));
+    if (isNaN(amt)) return;
+    update({
+      trackedBalances: (financials.trackedBalances ?? []).map((tb) =>
+        tb.id !== id ? tb : { ...tb, actualBalance: amt, actualBalanceDate: new Date().toISOString() }),
+    });
+    setActualInputs((prev) => ({ ...prev, [id]: "" }));
+  }
+
+  function deleteTrackedBalance(id: string) {
+    update({ trackedBalances: (financials.trackedBalances ?? []).filter((tb) => tb.id !== id) });
   }
 
   function recordDebtPayment(debtId: string) {
@@ -628,6 +675,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                 value={txDate}
                 onChange={(e) => setTxDate(e.target.value)}
               />
+              <DateHint value={txDate} />
             </div>
           </div>
 
@@ -875,6 +923,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                             <div>
                               <Label>Date</Label>
                               <FocusInput type="date" value={editTxDate} onChange={(e) => setEditTxDate(e.target.value)} />
+                              <DateHint value={editTxDate} />
                             </div>
                           </div>
                           <div>
@@ -926,12 +975,12 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                             </span>
                             <button
                               onClick={() => startEditTx(tx)}
-                              className="opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity text-[10px] px-1.5 py-0.5 rounded"
+                              className="opacity-70 md:opacity-0 md:group-hover:opacity-100 hover:!opacity-100 transition-opacity text-[10px] px-1.5 py-0.5 rounded"
                               style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
                             >✎</button>
                             <button
                               onClick={() => update({ transactions: financials.transactions.filter((t) => t.id !== tx.id) })}
-                              className="opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity text-xs"
+                              className="opacity-70 md:opacity-0 md:group-hover:opacity-100 hover:!opacity-100 transition-opacity text-xs px-1"
                               style={{ color: T.coral }}
                             >✕</button>
                           </div>
@@ -993,6 +1042,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                                     <div>
                                       <Label>Date</Label>
                                       <FocusInput type="date" value={editTxDate} onChange={(e) => setEditTxDate(e.target.value)} />
+                              <DateHint value={editTxDate} />
                                     </div>
                                   </div>
                                   <div>
@@ -1027,12 +1077,12 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                                     <span className="text-xs tabular-nums font-medium" style={{ color: b.color }}>{fmtCur(tx.amount, tx.currency ?? "USD")}</span>
                                     <button
                                       onClick={() => startEditTx(tx)}
-                                      className="opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity text-[10px] px-1.5 py-0.5 rounded"
+                                      className="opacity-70 md:opacity-0 md:group-hover:opacity-100 hover:!opacity-100 transition-opacity text-[10px] px-1.5 py-0.5 rounded"
                                       style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
                                     >✎</button>
                                     <button
                                       onClick={() => update({ transactions: financials.transactions.filter((t) => t.id !== tx.id) })}
-                                      className="opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity text-[10px]"
+                                      className="opacity-70 md:opacity-0 md:group-hover:opacity-100 hover:!opacity-100 transition-opacity text-[10px] px-1"
                                       style={{ color: T.coral }}
                                     >✕</button>
                                   </div>
@@ -1114,7 +1164,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                           </p>
                         )}
                       </div>
-                      <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                      <div className="flex gap-1.5 opacity-70 md:opacity-0 md:group-hover:opacity-100 transition-opacity flex-shrink-0">
                         <button
                           onClick={() => startEditGoal(g)}
                           className="text-[10px] px-1.5 py-0.5 rounded transition-all hover:opacity-80"
@@ -1332,7 +1382,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                                 <span className="text-xs font-semibold tabular-nums" style={{ color: b.color }}>
                                   {sym}{mo.toFixed(0)}<span className="font-normal" style={{ color: T.mute }}>/mo</span>
                                 </span>
-                                <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <div className="flex gap-1.5 opacity-70 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                                   <button
                                     onClick={() => startEditRec(r)}
                                     className="text-[10px] px-1.5 py-0.5 rounded transition-all hover:opacity-80"
@@ -1723,6 +1773,125 @@ export default function InputPanel({ financials, onChange, session }: Props) {
           </div>
         </Section>
 
+        <Section title="Balance Check" icon="🔍" badge={(financials.trackedBalances ?? []).length} defaultOpen={false}>
+          <p className="text-xs" style={{ color: T.mute }}>
+            Set a starting balance for your cash or a card. ESSA subtracts every transaction logged on that payment
+            method since then to tell you what you <em>should</em> have — compare it to what you actually see, and a
+            gap usually means a payment never got logged. (Debt payments and recurring charges without an &quot;+extra&quot;
+            log won&apos;t show up here — a known limit, not a bug.)
+          </p>
+          {(financials.trackedBalances ?? []).length > 0 && (
+            <div className="space-y-2">
+              {(financials.trackedBalances ?? []).map((tb) => {
+                const card = tb.cardId ? financials.cards.find((c) => c.id === tb.cardId) : null;
+                return (
+                  <div key={tb.id} className="rounded-xl p-3 space-y-2" style={{ background: T.panelSoft, border: `1px solid ${T.line}` }}>
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-medium" style={{ color: T.text }}>{tb.name}</p>
+                        <p className="text-[10px]" style={{ color: T.mute }}>
+                          {tb.paymentMethod === "cash" ? "💵 Cash" : tb.paymentMethod === "card" ? `💳 ${card?.label ?? "Card"}` : "🤝 Other"}
+                          {" · since "}{fmtDate(tb.startingDate)}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => deleteTrackedBalance(tb.id)}
+                        className="text-xs px-2 py-1 rounded-lg hover:opacity-70 transition-opacity flex-shrink-0"
+                        style={{ color: T.coral }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    <div className="pt-2 space-y-1.5" style={{ borderTop: `1px solid ${T.line}` }}>
+                      {tb.actualBalance != null && (
+                        <p className="text-[10px]" style={{ color: T.mute }}>
+                          Last checked: <span style={{ color: T.text }}>{tb.currency === "LBP" ? "L£" : "$"}{tb.actualBalance.toLocaleString()}</span>
+                          {tb.actualBalanceDate && ` on ${fmtDate(tb.actualBalanceDate)}`}
+                        </p>
+                      )}
+                      <p className="text-[10px]" style={{ color: T.mute }}>See the actual-vs-expected comparison on the Overview screen.</p>
+                      <div className="flex gap-2">
+                        <div className="flex-1">
+                          <MoneyInput
+                            value={actualInputs[tb.id] ?? ""}
+                            onChange={(v) => setActualInputs((prev) => ({ ...prev, [tb.id]: v }))}
+                            placeholder="What you actually have now"
+                          />
+                        </div>
+                        <button
+                          onClick={() => updateActualBalance(tb.id)}
+                          className="px-3 py-1.5 rounded-xl text-xs font-semibold hover:opacity-90 flex-shrink-0"
+                          style={{ background: T.jade, color: T.ink }}
+                        >
+                          Update
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <div
+            className="rounded-xl p-4 space-y-3"
+            style={{ background: T.ink, border: `1px solid ${T.line}` }}
+          >
+            <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.jade }}>
+              Track a new balance
+            </p>
+            <div>
+              <Label>Name</Label>
+              <FocusInput value={tbName} onChange={(e) => setTbName(e.target.value)} placeholder="Cash, Chase Checking…" />
+            </div>
+            <div>
+              <Label>Payment method</Label>
+              <div className="grid grid-cols-3 gap-1.5">
+                {(["cash", "card", "other"] as PaymentMethod[]).map((m) => (
+                  <button key={m} onClick={() => setTbMethod(m)}
+                    className="py-1.5 rounded-lg text-[10px] font-medium transition-all"
+                    style={{ background: tbMethod === m ? T.jade + "22" : T.panelSoft, border: `1px solid ${tbMethod === m ? T.jade : T.line}`, color: tbMethod === m ? T.jade : T.mute }}>
+                    {m === "cash" ? "💵 Cash" : m === "card" ? "💳 Card" : "🤝 Other"}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {tbMethod === "card" && (
+              <div>
+                <Label>Which card</Label>
+                {financials.cards.length === 0 ? (
+                  <p className="text-xs" style={{ color: T.coral }}>No saved cards yet — add one when logging a transaction first.</p>
+                ) : (
+                  <select
+                    value={tbCardId}
+                    onChange={(e) => setTbCardId(e.target.value)}
+                    className="w-full rounded-xl px-3 py-2.5 text-sm"
+                    style={{ background: T.panelSoft, border: `1px solid ${T.line}`, color: T.text }}
+                  >
+                    <option value="">Select a card…</option>
+                    {financials.cards.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+                  </select>
+                )}
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label>Starting balance</Label>
+                <MoneyInput value={tbStartBal} onChange={setTbStartBal} placeholder="0" />
+              </div>
+              <div>
+                <Label>Currency</Label>
+                <CurrencyToggle value={tbCurrency} onChange={setTbCurrency} />
+              </div>
+            </div>
+            <div>
+              <Label>As of date</Label>
+              <FocusInput type="date" value={tbStartDate} onChange={(e) => setTbStartDate(e.target.value)} />
+              <p className="text-[10px] mt-1" style={{ color: T.mute }}>Will be saved as {fmtDate(tbStartDate)} (DD/MM/YYYY)</p>
+            </div>
+            <PrimaryBtn onClick={addTrackedBalance} color={T.jade}>+ Track this balance</PrimaryBtn>
+          </div>
+        </Section>
+
         </>}
 
         <div className="h-6" />
@@ -1740,7 +1909,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
           style={{ color: T.coral }}
           onClick={() => {
             if (confirm("Clear all data?"))
-              onChange({ userName: "You", income: 0, lbpRate: 89500, emergencyFundTargetMonths: 6, emergencyFundBalance: 0, transactions: [], goals: [], debts: [], recurring: [], cards: [], assets: [], netWorthHistory: [] });
+              onChange({ userName: "You", income: 0, lbpRate: 89500, emergencyFundTargetMonths: 6, emergencyFundBalance: 0, transactions: [], goals: [], debts: [], recurring: [], cards: [], assets: [], trackedBalances: [], netWorthHistory: [] });
           }}
         >
           Reset
