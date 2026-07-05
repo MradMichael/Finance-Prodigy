@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { Currency } from "../../lib/localData";
-import { fmtDate } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 
 export function Label({ children }: { children: React.ReactNode }) {
@@ -17,17 +16,9 @@ export function Label({ children }: { children: React.ReactNode }) {
 export function FocusInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
   const T = useTheme();
   const [focused, setFocused] = useState(false);
-  // Native date pickers render in whatever locale the input's effective
-  // language resolves to — on a US-locale OS/browser that's MM/DD/YYYY,
-  // which then sits right next to this app's own DD/MM/YYYY displays
-  // (DateHint, transaction lists, etc.) showing the same date two
-  // different ways. en-GB forces the native picker itself to DD/MM/YYYY
-  // so there's one format on screen, not two that look like a mismatch.
-  const dateProps = props.type === "date" && !props.lang ? { lang: "en-GB" } : {};
   return (
     <input
       {...props}
-      {...dateProps}
       onFocus={(e) => { setFocused(true); props.onFocus?.(e); }}
       onBlur={(e)  => { setFocused(false);  props.onBlur?.(e);  }}
       className="w-full rounded-xl px-3 py-2.5 text-sm transition-all duration-150"
@@ -165,12 +156,71 @@ export function CurrencyToggle({ value, onChange }: { value: Currency; onChange:
   );
 }
 
-// The native date picker renders in the browser/OS locale (often MM/DD/YYYY
-// on US-locale systems) regardless of how this app displays dates elsewhere
-// (DD/MM/YYYY) — that mismatch is an easy way to log the wrong date without
-// noticing. This makes the actual stored value unambiguous at a glance.
-export function DateHint({ value }: { value: string }) {
+/**
+ * Custom DD/MM/YYYY date field — deliberately NOT a native
+ * <input type="date">. Native pickers render in whatever locale the
+ * browser resolves (MM/DD/YYYY on a US-locale system) and that can't be
+ * reliably forced: the lang attribute works in some Chromium versions
+ * but Firefox ignores it and follows the OS locale regardless. That
+ * meant the picker could show "08/04/2026" right next to this app's own
+ * DD/MM/YYYY displays showing "04/08/2026" for the exact same date —
+ * looked like a bug even when it wasn't. This guarantees one format,
+ * everywhere, in every browser, always.
+ */
+export function DateFieldDMY({
+  value, onChange, style,
+}: {
+  value: string; // YYYY-MM-DD, or "" for empty
+  onChange: (iso: string) => void;
+  style?: React.CSSProperties;
+}) {
   const T = useTheme();
-  if (!value) return null;
-  return <p className="text-[10px] mt-1" style={{ color: T.mute }}>Will be saved as {fmtDate(value)} (DD/MM/YYYY)</p>;
+  const [focused, setFocused] = useState(false);
+
+  function toDisplay(iso: string): string {
+    const [y, m, d] = iso ? iso.split("-") : [];
+    return y && m && d ? `${d}/${m}/${y}` : "";
+  }
+
+  const [text, setText] = useState(() => toDisplay(value));
+
+  // Stay in sync if the value changes from outside (e.g. loading a record to edit).
+  useEffect(() => setText(toDisplay(value)), [value]);
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const digits = e.target.value.replace(/\D/g, "").slice(0, 8);
+    let formatted = digits;
+    if (digits.length > 4) formatted = `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+    else if (digits.length > 2) formatted = `${digits.slice(0, 2)}/${digits.slice(2)}`;
+    setText(formatted);
+
+    if (digits.length === 8) {
+      const day = digits.slice(0, 2), month = digits.slice(2, 4), year = digits.slice(4, 8);
+      const d = parseInt(day, 10), m = parseInt(month, 10);
+      if (d >= 1 && d <= 31 && m >= 1 && m <= 12) onChange(`${year}-${month}-${day}`);
+    }
+  }
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      value={text}
+      onChange={handleChange}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      placeholder="DD/MM/YYYY"
+      maxLength={10}
+      className="w-full rounded-xl px-3 py-2.5 text-sm tabular-nums transition-all duration-150"
+      style={{
+        background: T.panelSoft,
+        border: `1px solid ${focused ? T.jade : T.line}`,
+        color: T.text,
+        outline: "none",
+        boxShadow: focused ? `0 0 0 3px ${T.jade}28` : "none",
+        colorScheme: "dark",
+        ...style,
+      }}
+    />
+  );
 }

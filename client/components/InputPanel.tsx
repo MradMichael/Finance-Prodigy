@@ -9,7 +9,7 @@ import type { Session } from "../lib/auth";
 import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, monthlyEquivalent, recurringPaidSoFar } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
-import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateHint } from "./form/Primitives";
+import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY } from "./form/Primitives";
 
 type Bucket = "NEEDS" | "WANTS" | "SAVINGS";
 
@@ -507,12 +507,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
             </div>
             <div>
               <Label>Date</Label>
-              <FocusInput
-                type="date"
-                value={txDate}
-                onChange={(e) => setTxDate(e.target.value)}
-              />
-              <DateHint value={txDate} />
+              <DateFieldDMY value={txDate} onChange={setTxDate} />
             </div>
           </div>
 
@@ -759,8 +754,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                             </div>
                             <div>
                               <Label>Date</Label>
-                              <FocusInput type="date" value={editTxDate} onChange={(e) => setEditTxDate(e.target.value)} />
-                              <DateHint value={editTxDate} />
+                              <DateFieldDMY value={editTxDate} onChange={setEditTxDate} />
                             </div>
                           </div>
                           <div>
@@ -878,8 +872,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                                     </div>
                                     <div>
                                       <Label>Date</Label>
-                                      <FocusInput type="date" value={editTxDate} onChange={(e) => setEditTxDate(e.target.value)} />
-                              <DateHint value={editTxDate} />
+                                      <DateFieldDMY value={editTxDate} onChange={setEditTxDate} />
                                     </div>
                                   </div>
                                   <div>
@@ -970,7 +963,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                     </div>
                     <div>
                       <Label>Target date</Label>
-                      <FocusInput type="date" value={editGDate} onChange={(e) => setEditGDate(e.target.value)} />
+                      <DateFieldDMY value={editGDate} onChange={setEditGDate} />
                     </div>
                     <div className="flex gap-2">
                       <button onClick={() => saveEditGoal(g.id)} className="px-3 py-1.5 rounded-xl text-xs font-semibold hover:opacity-90" style={{ background: T.jade, color: T.ink }}>Save</button>
@@ -1080,7 +1073,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
             </div>
             <div>
               <Label>Target date</Label>
-              <FocusInput type="date" value={gDate} onChange={(e) => setGDate(e.target.value)} />
+              <DateFieldDMY value={gDate} onChange={setGDate} />
             </div>
             <PrimaryBtn onClick={addGoal} color={T.brass}>+ Add goal</PrimaryBtn>
           </div>
@@ -1155,7 +1148,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                               </div>
                               <div>
                                 <Label>Start date</Label>
-                                <FocusInput type="date" value={editRStart} onChange={(e) => setEditRStart(e.target.value)} />
+                                <DateFieldDMY value={editRStart} onChange={setEditRStart} />
                               </div>
                               <div>
                                 <Label>Ends</Label>
@@ -1168,7 +1161,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                                     </button>
                                   ))}
                                 </div>
-                                {editREndType === "date" && <FocusInput type="date" value={editREnd} onChange={(e) => setEditREnd(e.target.value)} />}
+                                {editREndType === "date" && <DateFieldDMY value={editREnd} onChange={setEditREnd} />}
                                 {editREndType === "amount" && <MoneyInput value={editRTotalAmount} onChange={setEditRTotalAmount} placeholder="Total amount" />}
                               </div>
                               <div className="flex gap-2">
@@ -1364,7 +1357,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
 
                   <div>
                     <Label>Start date</Label>
-                    <FocusInput type="date" value={rStart} onChange={(e) => setRStart(e.target.value)} />
+                    <DateFieldDMY value={rStart} onChange={setRStart} />
                   </div>
 
                   <div>
@@ -1386,7 +1379,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                       ))}
                     </div>
                     {rEndType === "date" && (
-                      <FocusInput type="date" value={rEnd} onChange={(e) => setREnd(e.target.value)} />
+                      <DateFieldDMY value={rEnd} onChange={setREnd} />
                     )}
                     {rEndType === "amount" && (
                       <div>
@@ -1441,7 +1434,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                     </div>
                     <div>
                       <Label>Opened date (when this debt started)</Label>
-                      <FocusInput type="date" value={editDOpened} onChange={(e) => setEditDOpened(e.target.value)} />
+                      <DateFieldDMY value={editDOpened} onChange={setEditDOpened} />
                     </div>
                     <div className="flex gap-2">
                       <button onClick={() => saveEditDebt(d.id)} className="px-3 py-1.5 rounded-xl text-xs font-semibold hover:opacity-90" style={{ background: T.jade, color: T.ink }}>Save</button>
@@ -1554,7 +1547,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
             </div>
             <div>
               <Label>Opened date (optional — when this debt started)</Label>
-              <FocusInput type="date" value={dOpenedDate} onChange={(e) => setDOpenedDate(e.target.value)} />
+              <DateFieldDMY value={dOpenedDate} onChange={setDOpenedDate} />
             </div>
             <PrimaryBtn onClick={addDebt} color={T.coral}>+ Add debt</PrimaryBtn>
           </div>
@@ -1722,8 +1715,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
             </div>
             <div>
               <Label>As of date</Label>
-              <FocusInput type="date" value={tbStartDate} onChange={(e) => setTbStartDate(e.target.value)} />
-              <p className="text-[10px] mt-1" style={{ color: T.mute }}>Will be saved as {fmtDate(tbStartDate)} (DD/MM/YYYY)</p>
+              <DateFieldDMY value={tbStartDate} onChange={setTbStartDate} />
             </div>
             <PrimaryBtn onClick={addTrackedBalance} color={T.jade}>+ Track this balance</PrimaryBtn>
           </div>
