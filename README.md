@@ -12,7 +12,7 @@ A local-first personal finance tracker: 50/30/20 (or custom) budget tracking, a 
 
 **The Express + SQL Server backend is optional and does two things:**
 1. **Sync** (`/api/sync/push` / `/api/sync/pull`) — lets you carry your data to a second device. Push uploads your encrypted-in-transit-by-HTTPS JSON blob keyed by email; pull downloads it. Protected by a token derived from your account password (see [Security model](#security-model)) — the server never sees your password.
-2. **Analytics warehouse** — every push also fires-and-forgets a decomposition of your data into a proper star schema (`dim_date`, `dim_category`, `fact_transaction`, etc. — see [`prisma/schema.prisma`](server/prisma/schema.prisma)) so you can point Power BI / Qlik / Metabase at it later. **The app itself doesn't read this back yet** — see [What's not wired up](#whats-not-wired-up-yet).
+2. **Analytics warehouse** — every push also fires-and-forgets a decomposition of your data into a proper star schema (`dim_date`, `dim_category`, `fact_transaction`, etc. — see [`prisma/schema.prisma`](server/prisma/schema.prisma)) so you can point Power BI / Qlik / Metabase at it later. **The app itself doesn't read this back** — it's a write-only sink today, populated by `server/src/lib/normalizeSync.ts` on every push.
 
 If you never run the server, the app works fully offline — sign-up, sign-in, and all the screens work purely against `localStorage`.
 
@@ -37,17 +37,15 @@ Finance-Prodigy/
 │   │   └── syncService.ts             # Push/pull to the Express API (relative /api/* paths)
 │   ├── components/                    # FinancialDashboard, InputPanel, EssaBrand, ThemeContext
 │   └── next.config.js                 # Proxies /api/* to the Express server (see API_URL below)
-├── server/                        # Express API — optional sync + future analytics backend
+├── server/                        # Express API — sync + analytics warehouse only
 │   ├── prisma/
 │   │   ├── schema.prisma              # SQL Server star schema
 │   │   ├── analytics_views.sql        # BI-facing views (vw_fact_ledger, vw_monthly_bucket, vw_category_variance)
 │   │   └── seed.ts                    # Master calendar, category tree, demo user
 │   ├── src/
 │   │   ├── index.ts                   # Bootstrap, CORS, error handling
-│   │   ├── routes/sync.ts             # The only routes the client actually calls
-│   │   └── routes/{goals,debts,transactions,dashboard}.ts + services/financialEngine.ts
-│   │                                  # Full CRUD + a second, independent calculation engine —
-│   │                                  # built for a future server-driven redesign, not currently used (see below)
+│   │   ├── routes/sync.ts             # Push/pull — the only routes that exist
+│   │   └── lib/normalizeSync.ts       # Decomposes each push into the star schema
 │   └── .env.example
 └── demo/
     └── momentum-planner.jsx           # Standalone interactive planner, no backend — a design reference, not part of the app
@@ -113,15 +111,6 @@ SQL Server's default instance port is dynamic and can change on restart — set 
 - **Passwords** are hashed with PBKDF2-SHA256 (120,000 iterations, random per-account salt) before ever touching `localStorage`.
 - **Sync auth:** push/pull require a bearer token derived from your password (PBKDF2, independent of the encryption key). The server stores only a hash of it — never the token, never your password. The first push for an email registers the hash (trust-on-first-use); every push/pull after that must match.
 - **Known limitation:** resetting your password via `/recover` changes the sync token, which the server doesn't know about yet. The next sync push after a password reset will be rejected until that account's `user_sync` row is manually cleared. Low-impact today (single-user use); worth a proper "re-link" flow if this becomes a real workflow.
-- **Not currently authenticated:** the `/api/goals`, `/api/debts`, `/api/transactions`, `/api/dashboard` routes trust a client-supplied `x-user-id` header with no verification (`userIdOf()` in `server/src/lib/core.ts`). This is fine only because the client never calls them today — see below. Don't expose port 4000 publicly, and don't wire the client to these routes without adding real auth first.
-
----
-
-## What's not wired up yet
-
-`server/src/services/financialEngine.ts` and the `/api/goals` · `/api/debts` · `/api/transactions` · `/api/dashboard` routes are a complete, independently-tested-in-spirit calculation engine (debt payoff simulation, goal projections, health score) sitting behind a full CRUD API — built for a future version where the server, not the browser, is the source of truth. **Nothing in the client calls them today.** The dashboard you actually see is computed entirely by `client/lib/computeDashboard.ts`, which has its own (similar but not identical) scoring logic.
-
-If you pick this back up: either cut the client over to these routes and retire `computeDashboard.ts`, or remove the unused engine/routes so there's only one place financial math can drift.
 
 ---
 
@@ -129,8 +118,6 @@ If you pick this back up: either cut the client over to these routes and retire 
 
 - **Server-side accounts** — the architecturally "correct" long-term fix for real password reset (email-based) and multi-device sync without the recovery-code workaround. Requires real user records + sessions on the server, migrating sign-up/sign-in off `localStorage`, and deciding whether to cut over to the normalized SQL tables as the source of truth. Sizable, deliberately scoped as its own future project — not a quick add-on.
 - Re-link the sync token automatically after a password reset (see Known limitation above).
-- Decide the fate of the unused server-side calculation engine (see above).
-- Transaction entry posting to `POST /api/transactions` and a strategy toggle calling `/api/debts/payoff-plan`, if the server ever becomes the source of truth.
 
 ---
 

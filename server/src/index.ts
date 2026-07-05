@@ -5,10 +5,6 @@
 import express from "express";
 import cors from "cors";
 import { ZodError } from "zod";
-import transactions from "./routes/transactions";
-import goals from "./routes/goals";
-import debts from "./routes/debts";
-import dashboard from "./routes/dashboard";
 import sync from "./routes/sync";
 
 const app = express();
@@ -17,10 +13,6 @@ app.use(express.json());
 
 app.get("/api/health", (_req, res) => res.json({ ok: true, service: "momentum-api" }));
 
-app.use("/api/transactions", transactions);
-app.use("/api/goals", goals);
-app.use("/api/debts", debts);
-app.use("/api/dashboard", dashboard);
 app.use("/api/sync", sync);
 
 // Central error handler — Zod issues come back as 422 with details.

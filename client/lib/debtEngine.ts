@@ -1,9 +1,9 @@
 /**
  * Debt payoff simulation — Snowball vs Avalanche, run client-side so the
  * comparison can be shown without a server round trip. Pure functions,
- * no I/O — mirrors server/src/services/financialEngine.ts's
- * simulateDebtPayoff (kept independent since the client and server are
- * separately deployable, but the algorithm should stay identical).
+ * no I/O. Originally ported from a server-side financial engine that has
+ * since been removed (it was unreachable — the client never called it);
+ * this is now the only implementation.
  */
 
 export interface DebtInput {
