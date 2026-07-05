@@ -9,7 +9,7 @@
  */
 import { PrismaClient } from "@prisma/client";
 
-/// NEEDS | WANTS | SAVINGS | INCOME — see DimCategory.bucket (String, no DB enum on SQL Server)
+/// NEEDS | WANTS | SAVINGS | INCOME — see DimCategory.bucket (String, not a native DB enum — kept as-is from the original schema)
 type BudgetBucket = "NEEDS" | "WANTS" | "SAVINGS" | "INCOME";
 /// CHECKING | SAVINGS | CREDIT_CARD | CASH | INVESTMENT — see DimAccount.type
 type AccountType = "CHECKING" | "SAVINGS" | "CREDIT_CARD" | "CASH" | "INVESTMENT";
@@ -55,10 +55,8 @@ const CATEGORY_TREE: Record<BudgetBucket, string[]> = {
 };
 
 async function main() {
-  // 1) Master calendar — SQL Server's Prisma connector doesn't support
-  //    createMany's skipDuplicates (Postgres/MySQL-only), so instead of
-  //    upserting ~3,287 rows one at a time, fetch the existing keys once
-  //    and batch-insert only what's missing.
+  // 1) Master calendar — fetch existing keys once and batch-insert only
+  //    what's missing, rather than upserting ~3,287 rows one at a time.
   const allRows = [];
   for (let year = 2024; year <= 2032; year++) allRows.push(...buildCalendarYear(year));
 
@@ -67,7 +65,7 @@ async function main() {
   );
   const missingRows = allRows.filter((r) => !existingKeys.has(r.dateKey));
 
-  const CHUNK_SIZE = 500; // comfortably under SQL Server's ~2,100 bound-parameter limit
+  const CHUNK_SIZE = 500; // comfortably under Postgres's bound-parameter limits
   for (let i = 0; i < missingRows.length; i += CHUNK_SIZE) {
     await prisma.dimDate.createMany({ data: missingRows.slice(i, i + CHUNK_SIZE) });
   }

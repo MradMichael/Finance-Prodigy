@@ -1,7 +1,7 @@
 /**
  * normalizeSync.ts
  * After every sync push, decompose the LocalFinancials JSON blob
- * into all normalized SQL Server tables.
+ * into all normalized Postgres tables.
  *
  * Deletion order respects FK constraints (NoAction = must delete
  * child rows before parent):

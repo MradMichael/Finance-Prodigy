@@ -27,7 +27,7 @@ router.post("/push", async (req, res, next) => {
     // await calls, two concurrent pushes to the same not-yet-registered
     // email could both read "no hash yet" before either write lands,
     // letting the second one silently steal the TOFU registration and the
-    // first pusher's data. Serializable isolation makes SQL Server abort
+    // first pusher's data. Serializable isolation makes Postgres abort
     // one of two conflicting transactions instead.
     let syncedAt: Date;
     try {

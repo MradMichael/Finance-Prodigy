@@ -148,8 +148,8 @@ export default function AdminPage() {
 
   if (!ready) return null;
 
-  const dbUrl = process.env.NEXT_PUBLIC_DB_URL ?? "sqlserver://LAPTOP-33DI4LK2:<port>;database=essa;integratedSecurity=true";
-  const maskedUrl = dbUrl.replace(/:[^;]+;database/, ":<port>;database");
+  const dbUrl = process.env.NEXT_PUBLIC_DB_URL ?? "postgresql://neondb_owner:<password>@ep-purple-sky-at1sit9h-pooler.c-9.us-east-1.aws.neon.tech/neondb?sslmode=require";
+  const maskedUrl = dbUrl.replace(/:\/\/[^:]+:[^@]+@/, "://<user>:<password>@");
   const lastSync  = getLastSyncTime();
 
   return (
@@ -240,18 +240,18 @@ export default function AdminPage() {
         </Card>
 
         {/* Database */}
-        <Card title="Database · SQL Server">
+        <Card title="Database · Postgres (Neon)">
           <div className="space-y-0" style={{ borderTop: `1px solid ${T.line}` }}>
-            <Row label="Instance" value="LAPTOP-33DI4LK2\SQLPRACTICE_MM" mono sensitive />
-            <Row label="Database" value="essa" mono />
-            <Row label="Auth" value="Windows Integrated Security" />
-            <Row label="Connection string" value={maskedUrl} mono sensitive />
-            <Row label="Port" value="Dynamic — set static port in SQL Server Configuration Manager (run as Admin) to prevent it changing on restart" />
+            <Row label="Provider" value="Neon (Postgres 16)" />
+            <Row label="Database" value="neondb" mono />
+            <Row label="Auth" value="Password (in connection string)" />
+            <Row label="Pooled connection string" value={maskedUrl} mono sensitive />
+            <Row label="Migrations" value="Run against DIRECT_URL — Neon's pooler doesn't support the prepared statements Prisma Migrate needs" />
           </div>
           <div className="rounded-xl p-4 space-y-2 text-xs" style={{ background: T.panelSoft, color: T.mute }}>
             <p className="font-semibold" style={{ color: T.text }}>Common database issues</p>
-            <p><span style={{ color: T.brass }}>•</span> <strong style={{ color: T.text }}>Port keeps changing</strong> — Open SQL Server Configuration Manager (as Admin) → SQL Server Network Configuration → Protocols → TCP/IP → IP Addresses tab → set port 55183 as static under IPAll.</p>
-            <p><span style={{ color: T.brass }}>•</span> <strong style={{ color: T.text }}>Connection refused</strong> — Make sure SQL Server service is running: open Services (services.msc) and check that <em>SQL Server (SQLPRACTICE_MM)</em> is Started.</p>
+            <p><span style={{ color: T.brass }}>•</span> <strong style={{ color: T.text }}>Connection refused / project suspended</strong> — Neon's free tier suspends idle compute after inactivity; the first request after a while wakes it up and can take a few seconds.</p>
+            <p><span style={{ color: T.brass }}>•</span> <strong style={{ color: T.text }}>Migration fails with a prepared-statement error</strong> — Make sure <code className="px-1 py-0.5 rounded" style={{ background: T.ink, color: T.jade }}>DIRECT_URL</code> in <code className="px-1 py-0.5 rounded" style={{ background: T.ink, color: T.jade }}>server/.env</code> points at the non-pooled host (no <code className="px-1 py-0.5 rounded" style={{ background: T.ink, color: T.jade }}>-pooler</code> in the hostname).</p>
             <p><span style={{ color: T.brass }}>•</span> <strong style={{ color: T.text }}>Prisma error</strong> — Run <code className="px-1 py-0.5 rounded" style={{ background: T.ink, color: T.jade }}>npx prisma migrate deploy</code> in the server folder to apply any pending migrations.</p>
           </div>
         </Card>
@@ -312,7 +312,7 @@ export default function AdminPage() {
             <Row label="Framework" value="Next.js 14 App Router" />
             <Row label="Financial data" value="AES-256-GCM encrypted · PBKDF2 key derivation · 120,000 iterations" />
             <Row label="User registry" value="Stored in localStorage (essa_users_v1) — passwords hashed, not encrypted" />
-            <Row label="Storage" value="localStorage (financial data encrypted) + SQL Server (auto-sync)" />
+            <Row label="Storage" value="localStorage (financial data encrypted) + Postgres/Neon (auto-sync)" />
             <Row label="Themes" value="6 themes — Ledger · Midnight · Obsidian · Aurora · Ember · Ivory" />
           </div>
           <div className="rounded-xl px-4 py-3 text-xs leading-relaxed" style={{ background: T.brass + "12", color: T.brass, border: `1px solid ${T.brass}28` }}>

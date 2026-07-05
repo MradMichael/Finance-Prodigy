@@ -198,7 +198,7 @@ export default function ProfilePage() {
               Database sync
             </h2>
             <p className="text-xs mt-1" style={{ color: T.mute }}>
-              Your data is automatically saved to SQL Server whenever you make changes — no action needed.
+              Your data is automatically saved to the database whenever you make changes — no action needed.
             </p>
             {lastSync && (
               <p className="text-[11px] mt-2 flex items-center gap-1.5" style={{ color: T.jade }}>

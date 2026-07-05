@@ -1,14 +1,15 @@
 // =====================================================================
-// ESSA — Financial Platform  (SQL Server edition)
+// ESSA — Financial Platform  (Postgres / Neon edition)
 // ---------------------------------------------------------------------
-// Prisma's sqlserver connector does not support enums.
-// All enum-like columns are String with allowed values enforced in the
-// API layer. Expected values are documented inline.
+// Enum-like columns are still String (not native Postgres enums) with
+// allowed values enforced in the API layer — kept as-is from the prior
+// SQL Server port rather than introducing enums as a separate change.
+// Expected values are documented inline.
 //
-// SQL Server cascade rules applied:
-//   • onDelete: Restrict → NoAction (RESTRICT not supported)
-//   • Multiple cascade paths broken by switching the secondary User FK
-//     on FactDebtPayment and FactGoalContribution to NoAction.
+// Cascade rules: onDelete: NoAction is used in a few places (originally
+// a SQL Server workaround for multiple cascade paths on the secondary
+// User FK on FactDebtPayment/FactGoalContribution). Postgres supports
+// NoAction natively too, so behavior is unchanged.
 // =====================================================================
 
 generator client {
@@ -16,8 +17,9 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlserver"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ----------------------------------------------------------------- //
@@ -258,7 +260,7 @@ model Debt {
 model UserSync {
   id            Int      @id @default(autoincrement())
   email         String   @unique
-  dataJson      String   @db.NVarChar(Max)
+  dataJson      String   @db.Text
   /// SHA-256 of a token derived client-side from the account password
   /// (see client/lib/crypto.ts deriveSyncToken). Never the token itself.
   /// Null on rows created before this column existed — first authenticated

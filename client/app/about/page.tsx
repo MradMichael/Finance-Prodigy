@@ -51,7 +51,7 @@ const FEATURES = [
   { icon: "🔄", title: "Recurring payments", body: "Model subscriptions, loans, and any periodic expense or income." },
   { icon: "💳", title: "Payment methods", body: "Track cash vs card (Visa, Mastercard, Amex) per transaction." },
   { icon: "🌍", title: "Multi-currency", body: "USD + LBP with a configurable exchange rate." },
-  { icon: "☁️", title: "Database sync", body: "Back up to a local SQL Server and restore on any device." },
+  { icon: "☁️", title: "Database sync", body: "Back up to Postgres (Neon) and restore on any device." },
   { icon: "🎨", title: "3 themes", body: "Ledger (green), Midnight (navy), and Obsidian (black)." },
 ];
 

@@ -2,7 +2,7 @@
 
 A local-first personal finance tracker: 50/30/20 (or custom) budget tracking, a Financial Health Score, an emergency fund tracker, Snowball/Avalanche debt payoff projections, and milestone goals with required-monthly-contribution math. Supports USD and LBP (Lebanese Pound) with a user-set exchange rate.
 
-**Stack:** Next.js 14 (App Router, TypeScript) + Tailwind CSS + Recharts · Node.js/Express · SQL Server + Prisma (optional cross-device sync).
+**Stack:** Next.js 14 (App Router, TypeScript) + Tailwind CSS + Recharts · Node.js/Express · Postgres (Neon) + Prisma (optional cross-device sync).
 
 ---
 
@@ -10,7 +10,7 @@ A local-first personal finance tracker: 50/30/20 (or custom) budget tracking, a 
 
 **Your financial data lives in your browser, not in a database.** Everything — transactions, goals, debts, recurring payments — is stored in `localStorage`, encrypted at rest (AES-GCM), and all dashboard math (health score, debt payoff plans, goal projections) runs client-side in [`client/lib/computeDashboard.ts`](client/lib/computeDashboard.ts). There is no server-side session or user database backing sign-in.
 
-**The Express + SQL Server backend is optional and does two things:**
+**The Express + Postgres backend is optional and does two things:**
 1. **Sync** (`/api/sync/push` / `/api/sync/pull`) — lets you carry your data to a second device. Push uploads your encrypted-in-transit-by-HTTPS JSON blob keyed by email; pull downloads it. Protected by a token derived from your account password (see [Security model](#security-model)) — the server never sees your password.
 2. **Analytics warehouse** — every push also fires-and-forgets a decomposition of your data into a proper star schema (`dim_date`, `dim_category`, `fact_transaction`, etc. — see [`prisma/schema.prisma`](server/prisma/schema.prisma)) so you can point Power BI / Qlik / Metabase at it later. **The app itself doesn't read this back** — it's a write-only sink today, populated by `server/src/lib/normalizeSync.ts` on every push.
 
@@ -39,7 +39,7 @@ Finance-Prodigy/
 │   └── next.config.js                 # Proxies /api/* to the Express server (see API_URL below)
 ├── server/                        # Express API — sync + analytics warehouse only
 │   ├── prisma/
-│   │   ├── schema.prisma              # SQL Server star schema
+│   │   ├── schema.prisma              # Postgres star schema (Neon or any Postgres host)
 │   │   ├── analytics_views.sql        # BI-facing views (vw_fact_ledger, vw_monthly_bucket, vw_category_variance)
 │   │   └── seed.ts                    # Master calendar, category tree, demo user
 │   ├── src/
@@ -67,12 +67,12 @@ Open http://localhost:3000, sign up, and start using it. That's it — sync is o
 
 ### With sync (optional)
 
-You'll need a SQL Server instance (a local named instance works fine for development).
+You'll need a Postgres database — [Neon](https://neon.tech) (free tier) works well and is what this is verified against; any Postgres 14+ host works the same way.
 
 ```bash
 cd server
 npm install
-cp .env.example .env        # fill in DATABASE_URL — see below
+cp .env.example .env        # fill in DATABASE_URL + DIRECT_URL — see below
 npx prisma migrate deploy   # applies the existing migrations
 npx prisma generate
 npx prisma db seed          # master calendar + category tree (safe to re-run)
@@ -95,25 +95,26 @@ Then in the app: Profile → Push (uploads your local data) or Pull (restores fr
 
 | Variable | Where | Example | Purpose |
 |---|---|---|---|
-| `DATABASE_URL` | `server/.env` | `sqlserver://HOST:PORT;database=essa;integratedSecurity=true;trustServerCertificate=true` | SQL Server connection (Prisma) |
+| `DATABASE_URL` | `server/.env` | `postgresql://USER:PASSWORD@HOST-pooler/DBNAME?sslmode=require&pgbouncer=true` | Pooled Postgres connection (Prisma) — what the running app uses |
+| `DIRECT_URL` | `server/.env` | `postgresql://USER:PASSWORD@HOST/DBNAME?sslmode=require` | Non-pooled connection — Prisma Migrate needs this because PgBouncer's transaction pooling mode doesn't support the prepared statements migrations use |
 | `PORT` | `server/.env` | `4000` | Express listen port |
 | `CLIENT_ORIGIN` | `server/.env` | `http://localhost:3000` | CORS allow-origin |
 | `API_URL` | `client/.env` | `http://localhost:4000` | Where `next.config.js` proxies `/api/*` to — the browser only ever calls relative `/api/*` paths, so this is the one place that needs to change for a deployed setup (e.g. your Railway API URL) |
 
-SQL Server's default instance port is dynamic and can change on restart — set a static port in SQL Server Configuration Manager if you're running the server long-term.
+On Neon specifically: both URLs come from the same project's Connect panel — `DATABASE_URL` is the default pooled one it shows you, `DIRECT_URL` is the same string with `-pooler` dropped from the hostname and `pgbouncer=true` removed.
 
 ---
 
 ## Deployment
 
-**Verified locally, not yet deployed to a real host:**
+**Verified against a real cloud database (Neon):**
 - `cd server && npm install && npm run build` (`prisma generate && tsc`) builds clean standalone.
-- `npx prisma migrate deploy` + `npx prisma db seed` against a real SQL Server, run twice — the seed is genuinely idempotent (second run: 0 rows inserted, all already existed).
+- `npx prisma migrate dev` + `npx prisma db seed` against a live Neon Postgres project, run twice — the seed is genuinely idempotent (second run: 0 rows inserted, all already existed).
+- `npm run dev` against Neon's pooled connection, then a real `/api/sync/push` + `/api/sync/pull` round trip against it (verified with a throwaway test record, cleaned up after).
 - `cd client && npm run build && API_URL=http://localhost:4000 npm start` — the **production** build (not `next dev`) serves correctly and `next.config.js`'s `/api/*` rewrite honors `API_URL` as documented.
-- A real `/api/sync/push` + `/api/sync/pull` round trip against the running production build.
 - CORS: the server always responds with the configured `CLIENT_ORIGIN` value in `Access-Control-Allow-Origin`, regardless of the request's actual `Origin` header — this is what makes a browser reject responses to any page that isn't running at `CLIENT_ORIGIN`, even though a non-browser client like `curl` won't visibly enforce that itself.
 
-**Not yet verified — requires an actual account/host, so this is deliberately scoped out until you want to commit to one:** deploying the client to Vercel (or similar) and the server to Railway/Render (or similar), and provisioning a real cloud SQL Server instance. The schema is SQL-Server-specific (`server/prisma/schema.prisma`'s `provider = "sqlserver"`, with cascade-rule workarounds for SQL Server's `NoAction` requirements) — a self-hosted or cloud SQL Server (e.g. Azure SQL) works as-is; a Postgres-as-a-service host (Neon, Supabase, etc.) would need the schema ported first, which is a separate, larger task.
+**Not yet verified — requires an actual account/host, so this is deliberately scoped out until you want to commit to one:** deploying the client to Vercel (or similar) and the server to Railway/Render (or similar) so the API itself is reachable from another device, not just `localhost`. The database side of that is already solved by Neon (or any Postgres host) being reachable over the internet — this remaining gap is purely about hosting the Express process itself.
 
 ---
 
