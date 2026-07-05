@@ -190,6 +190,7 @@ export function DateFieldDMY({
   const dayRef = useRef<HTMLInputElement>(null);
   const monthRef = useRef<HTMLInputElement>(null);
   const yearRef = useRef<HTMLInputElement>(null);
+  const nativeRef = useRef<HTMLInputElement>(null);
 
   // Stay in sync if the value changes from outside (e.g. loading a record to edit).
   useEffect(() => {
@@ -209,9 +210,16 @@ export function DateFieldDMY({
   // Auto-advance once a segment is full, or as soon as no valid second
   // digit could follow (e.g. day "4" can only ever be "04"-"09", never
   // "4X", so there's no reason to make the user type a leading zero).
+  // Day/month are also clamped to their max (e.g. "13" as a month becomes
+  // "12") instead of silently accepting an out-of-range value that would
+  // just never get committed — typing 13/13/2026 used to look accepted
+  // with no feedback that nothing was actually saved.
   function makeHandler(maxLen: number, maxValue: number, setter: (v: string) => void, next?: React.RefObject<HTMLInputElement>) {
     return (e: React.ChangeEvent<HTMLInputElement>) => {
-      const digits = e.target.value.replace(/\D/g, "").slice(0, maxLen);
+      let digits = e.target.value.replace(/\D/g, "").slice(0, maxLen);
+      if (maxLen === 2 && digits.length === 2 && parseInt(digits, 10) > maxValue) {
+        digits = String(maxValue).padStart(2, "0");
+      }
       setter(digits);
       if (setter === setDay) commit(digits, month, year);
       else if (setter === setMonth) commit(day, digits, year);
@@ -249,16 +257,40 @@ export function DateFieldDMY({
     colorScheme: "dark",
   };
 
+  // A hidden native date input, used purely as a calendar picker widget —
+  // its own text display is never shown (that's what caused the original
+  // locale-mismatch bug), only its value on change, which the DOM always
+  // reports as YYYY-MM-DD regardless of locale.
+  function openPicker() {
+    const el = nativeRef.current;
+    if (!el) return;
+    try {
+      el.showPicker();
+    } catch {
+      el.focus();
+    }
+  }
+
   return (
     <div
       className="w-full rounded-xl px-3 py-2.5 flex items-center gap-1 text-sm tabular-nums transition-all duration-150"
       style={{
+        position: "relative",
         background: T.panelSoft,
         border: `1px solid ${focused ? T.jade : T.line}`,
         boxShadow: focused ? `0 0 0 3px ${T.jade}28` : "none",
         ...style,
       }}
     >
+      <input
+        ref={nativeRef}
+        type="date"
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+        tabIndex={-1}
+        aria-hidden="true"
+        style={{ position: "absolute", width: 0, height: 0, opacity: 0, pointerEvents: "none" }}
+      />
       <input
         ref={dayRef}
         type="text"
@@ -300,6 +332,15 @@ export function DateFieldDMY({
         maxLength={4}
         style={{ ...segStyle, width: "3em" }}
       />
+      <button
+        type="button"
+        onClick={openPicker}
+        aria-label="Pick date from calendar"
+        className="ml-auto text-sm leading-none opacity-70 hover:opacity-100 transition-opacity"
+        style={{ background: "transparent", border: "none", cursor: "pointer", color: T.mute, padding: "2px 4px" }}
+      >
+        📅
+      </button>
     </div>
   );
 }
