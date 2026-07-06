@@ -103,7 +103,14 @@ export default function SignUpPage() {
         </p>
       </div>
 
-      <p className="text-[10px] mt-8 text-center max-w-xs" style={{ color: T.mute }}>
+      <p className="text-[10px] mt-6 text-center max-w-xs" style={{ color: T.mute }}>
+        By creating an account you agree to the{" "}
+        <Link href="/terms" className="underline hover:opacity-80" style={{ color: T.mute }}>Terms of Service</Link>
+        {" "}and{" "}
+        <Link href="/privacy" className="underline hover:opacity-80" style={{ color: T.mute }}>Privacy Policy</Link>.
+      </p>
+
+      <p className="text-[10px] mt-2 text-center max-w-xs" style={{ color: T.mute }}>
         Each account&apos;s data is stored separately. Your records are private to you.
       </p>
 

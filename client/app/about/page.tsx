@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useTheme } from "../../contexts/ThemeContext";
 import { Signet } from "../../components/EssaBrand";
 
@@ -286,6 +287,11 @@ export default function AboutPage() {
           </p>
           <p className="text-[10px] mt-1" style={{ color: T.mute + "80" }}>
             Your data never leaves your device without your permission.
+          </p>
+          <p className="text-[10px] mt-3">
+            <Link href="/terms" className="underline hover:opacity-80" style={{ color: T.mute }}>Terms of Service</Link>
+            <span style={{ color: T.mute }}> · </span>
+            <Link href="/privacy" className="underline hover:opacity-80" style={{ color: T.mute }}>Privacy Policy</Link>
           </p>
         </footer>
 
