@@ -3,6 +3,7 @@ import {
   createEnvelopes, migrateLegacyEnvelope, rewrapEnvelopes,
   unwrapWithPassword, unwrapWithRecoveryCode, generateRecoveryCode,
   activateSessionKey, clearEncryptionKey, encryptJSON, decryptJSON,
+  deriveRecoveryToken,
 } from "./crypto";
 
 beforeEach(() => {
@@ -139,5 +140,31 @@ describe("encryptJSON / decryptJSON", () => {
     const plaintext = JSON.stringify({ a: 1 });
     const result = await encryptJSON(plaintext);
     expect(result).toBe(plaintext);
+  });
+});
+
+describe("deriveRecoveryToken", () => {
+  it("is deterministic for the same code and email", async () => {
+    const a = await deriveRecoveryToken("K7QM-4XPZ-9RTL-2WJC", "user@example.com");
+    const b = await deriveRecoveryToken("K7QM-4XPZ-9RTL-2WJC", "user@example.com");
+    expect(a).toBe(b);
+  });
+
+  it("canonicalizes the code the same way unwrapWithRecoveryCode does — formatting differences don't change the result", async () => {
+    const a = await deriveRecoveryToken("K7QM-4XPZ-9RTL-2WJC", "user@example.com");
+    const b = await deriveRecoveryToken("k7qm 4xpz-9rtl2wjc", "user@example.com");
+    expect(a).toBe(b);
+  });
+
+  it("differs per email, so the same code can't be replayed against a different account", async () => {
+    const a = await deriveRecoveryToken("K7QM-4XPZ-9RTL-2WJC", "user@example.com");
+    const b = await deriveRecoveryToken("K7QM-4XPZ-9RTL-2WJC", "someone-else@example.com");
+    expect(a).not.toBe(b);
+  });
+
+  it("differs from a completely different recovery code", async () => {
+    const a = await deriveRecoveryToken("K7QM-4XPZ-9RTL-2WJC", "user@example.com");
+    const b = await deriveRecoveryToken("ZZZZ-ZZZZ-ZZZZ-ZZZZ", "user@example.com");
+    expect(a).not.toBe(b);
   });
 });

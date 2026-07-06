@@ -266,6 +266,14 @@ model UserSync {
   /// Null on rows created before this column existed — first authenticated
   /// push after upgrade registers the hash (trust-on-first-use).
   authTokenHash String?  @map("auth_token_hash")
+  /// SHA-256 of a token derived client-side from the account's recovery
+  /// code (deriveRecoveryToken), independent of authTokenHash. Lets
+  /// /api/sync/relink prove account ownership after a password reset
+  /// (which changes authTokenHash) without ever sending the password or
+  /// recovery code itself. Null on rows from before this existed or for
+  /// accounts that have never registered one — those still need the
+  /// manual clear this was built to avoid (see routes/sync.ts).
+  recoveryTokenHash String? @map("recovery_token_hash")
   syncedAt      DateTime @default(now()) @map("synced_at")
 
   @@map("user_sync")

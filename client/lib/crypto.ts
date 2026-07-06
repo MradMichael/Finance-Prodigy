@@ -158,10 +158,42 @@ async function deriveSyncToken(password: string, email: string): Promise<string>
   return btoa(String.fromCharCode(...new Uint8Array(bits)));
 }
 
-/** Call this immediately after a successful sign-in or sign-up. */
-export async function initSyncToken(password: string, email: string): Promise<void> {
+/** Call this immediately after a successful sign-in or sign-up. Returns the token (e.g. for a relink call after a password reset). */
+export async function initSyncToken(password: string, email: string): Promise<string> {
   const token = await deriveSyncToken(password, email);
   sessionStorage.setItem(TOKEN_STORE, token);
+  return token;
+}
+
+/**
+ * Derives a second, independent proof-of-ownership token from the account's
+ * recovery code, registered on the server alongside the password-derived
+ * sync token (see /api/sync/relink). A password reset changes the sync
+ * token but not this one's underlying secret in the way that matters: the
+ * OLD recovery code is exactly what recoverAccount() already requires the
+ * user to type in, so it can authorize swapping in the new sync token
+ * without ever sending the password or recovery code itself to the server.
+ */
+export async function deriveRecoveryToken(recoveryCode: string, email: string): Promise<string> {
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(canonicalizeRecoveryCode(recoveryCode)),
+    "PBKDF2",
+    false,
+    ["deriveBits"],
+  );
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: "PBKDF2",
+      salt: enc.encode(`essa-sync-recovery-v1-${email.toLowerCase().trim()}`),
+      iterations: 120_000,
+      hash: "SHA-256",
+    },
+    keyMaterial,
+    256,
+  );
+  return btoa(String.fromCharCode(...new Uint8Array(bits)));
 }
 
 /** Clears the session token — call on sign-out. */

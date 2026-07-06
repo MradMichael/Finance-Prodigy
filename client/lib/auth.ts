@@ -22,6 +22,15 @@ export interface StoredUser {
   /** Data-encryption key wrapped under the password / a recovery code. Absent on accounts created before recovery codes existed — migrated on next sign-in. */
   wrappedDekPassword?: import("./crypto").Envelope;
   wrappedDekRecovery?: import("./crypto").Envelope;
+  /**
+   * A one-way token derived from the current recovery code (deriveRecoveryToken),
+   * persisted locally so it can be sent with a future sync push (registering it
+   * server-side) and, after a password reset, used as proof of the *previous*
+   * recovery code to re-link sync without ever sending the code itself. Safe to
+   * persist — like pwHash, it's a one-way derivation, not the code. Absent on
+   * accounts created before this existed.
+   */
+  recoveryTokenForSync?: string;
 }
 
 export interface Session {
@@ -87,21 +96,27 @@ export async function signUp(
     return { ok: false, error: "An account with this email already exists." };
 
   const id = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2, 18);
-  const { createEnvelopes } = await import("./crypto");
+  const normalizedEmail = email.toLowerCase().trim();
+  const { createEnvelopes, deriveRecoveryToken } = await import("./crypto");
   const [{ wrappedPassword, wrappedRecovery, recoveryCode }, pwHash] = await Promise.all([
     createEnvelopes(password, id),
     hashPassword(password),
   ]);
+  // Persisted so a future sync push can register it server-side (see
+  // syncService.ts) — safe to store since it's a one-way derivation of the
+  // recovery code, not the code itself.
+  const recoveryTokenForSync = await deriveRecoveryToken(recoveryCode, normalizedEmail);
 
   putUsers([...users, {
     id,
-    email:     email.toLowerCase().trim(),
+    email:     normalizedEmail,
     name:      name.trim(),
     pwHash,
     createdAt: new Date().toISOString(),
     isAdmin:   users.length === 0, // first account registered is admin
     wrappedDekPassword: wrappedPassword,
     wrappedDekRecovery: wrappedRecovery,
+    recoveryTokenForSync,
   }]);
   return { ok: true, recoveryCode };
 }
@@ -161,10 +176,13 @@ export async function signIn(
  * already-encrypted data (the DEK itself never changes, only how it's
  * wrapped). Issues a new recovery code — the old one stops working.
  *
- * Note: if this account has synced before, the server still expects the
- * *old* password-derived sync token; the next push will be rejected until
- * that's re-registered (see sync.ts's TOFU model). Known limitation — see
- * README.
+ * A password reset changes the sync token the server checks pushes/pulls
+ * against. If this account had synced before AND had registered a recovery
+ * token (see recoveryTokenForSync above), a best-effort relink call proves
+ * ownership via the *old* recovery token and re-registers the new one —
+ * see syncService.ts's relinkSync. If that registration never happened
+ * (e.g. this account has never pushed), there's nothing to relink and the
+ * next push will simply register fresh, same as a brand-new account.
  */
 export async function recoverAccount(
   email: string, recoveryCode: string, newPassword: string,
@@ -176,18 +194,30 @@ export async function recoverAccount(
     return { ok: false, error: "Recovery isn't set up for this account yet — it needs one successful sign-in first." };
   }
 
-  const { unwrapWithRecoveryCode, rewrapEnvelopes, activateSessionKey, initSyncToken } = await import("./crypto");
+  const { unwrapWithRecoveryCode, rewrapEnvelopes, activateSessionKey, initSyncToken, deriveRecoveryToken } = await import("./crypto");
   const dek = await unwrapWithRecoveryCode(recoveryCode, user.id, user.wrappedDekRecovery);
   if (!dek) return { ok: false, error: "Invalid recovery code." };
 
-  // All three only need dek/newPassword/email — independent, run concurrently.
-  const [{ wrappedPassword, wrappedRecovery, recoveryCode: newRecoveryCode }, newPwHash] = await Promise.all([
+  // All independent (only need dek/newPassword/email) — run concurrently.
+  const [{ wrappedPassword, wrappedRecovery, recoveryCode: newRecoveryCode }, newPwHash, newToken] = await Promise.all([
     rewrapEnvelopes(dek, newPassword, user.id),
     hashPassword(newPassword),
     initSyncToken(newPassword, user.email),
   ]);
+  const newRecoveryTokenForSync = await deriveRecoveryToken(newRecoveryCode, user.email);
+
+  if (user.recoveryTokenForSync) {
+    // Fire-and-forget — a real network call, best-effort. If it fails
+    // (offline, server down), the known limitation persists exactly as
+    // before this feature existed: the next push gets rejected until the
+    // server row is cleared by hand. Not a regression, just not fixed this time.
+    import("./syncService").then(({ relinkSync }) =>
+      relinkSync(user.email, newToken, newRecoveryTokenForSync, user.recoveryTokenForSync)
+    ).catch(() => {});
+  }
+
   putUsers(getUsers().map((u) => (u.id === user.id
-    ? { ...u, pwHash: newPwHash, wrappedDekPassword: wrappedPassword, wrappedDekRecovery: wrappedRecovery }
+    ? { ...u, pwHash: newPwHash, wrappedDekPassword: wrappedPassword, wrappedDekRecovery: wrappedRecovery, recoveryTokenForSync: newRecoveryTokenForSync }
     : u)));
 
   const session: Session = { userId: user.id, email: user.email, name: user.name };
@@ -210,6 +240,11 @@ export function signOut(): void {
       clearSyncToken();
     });
   } catch { /* ignore */ }
+}
+
+/** The current recovery-derived sync token for this email, if one's been generated (see recoveryTokenForSync). Included on every push so the server can register it (see syncService.ts). */
+export function getRecoveryTokenForSync(email: string): string | undefined {
+  return getUsers().find((u) => u.email === email.toLowerCase().trim())?.recoveryTokenForSync;
 }
 
 export function updateProfile(userId: string, name: string): void {

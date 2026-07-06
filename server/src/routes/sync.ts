@@ -20,6 +20,12 @@ const tokenSchema = z.string().min(1).max(2000);
 const pushSchema = z.object({
   email: emailSchema,
   token: tokenSchema,
+  // Registered passively on every push once the client has one to send
+  // (see client/lib/auth.ts) — this is what /relink checks against later,
+  // so a password reset can prove ownership without ever sending the
+  // password or recovery code itself. Optional so older clients (or a
+  // client mid-upgrade) can still push without it.
+  recoveryToken: tokenSchema.optional(),
   data: z.record(z.unknown()).refine(
     (d) => JSON.stringify(d).length <= MAX_DATA_JSON_BYTES,
     { message: `data exceeds the ${MAX_DATA_JSON_BYTES}-byte limit` },
@@ -29,6 +35,13 @@ const pushSchema = z.object({
 const pullQuerySchema = z.object({
   email: emailSchema,
   token: tokenSchema,
+});
+
+const relinkSchema = z.object({
+  email: emailSchema,
+  token: tokenSchema,             // new sync token, derived from the new password
+  recoveryToken: tokenSchema,     // new recovery token, derived from the newly-issued recovery code
+  oldRecoveryToken: tokenSchema.optional(), // proof of the previous recovery token — required whenever one was already registered
 });
 
 // Server never sees the password or the raw token — only its hash, the
@@ -42,8 +55,9 @@ class SyncAuthError extends Error {}
 // POST /api/sync/push  — body: { email, data, token }
 router.post("/push", async (req, res, next) => {
   try {
-    const { email: normalizedEmail, data, token } = pushSchema.parse(req.body);
+    const { email: normalizedEmail, data, token, recoveryToken } = pushSchema.parse(req.body);
     const tokenHash = hashToken(token);
+    const recoveryTokenHash = recoveryToken ? hashToken(recoveryToken) : undefined;
 
     // The token check-then-write must be one atomic unit: with two plain
     // await calls, two concurrent pushes to the same not-yet-registered
@@ -59,10 +73,13 @@ router.post("/push", async (req, res, next) => {
           throw new SyncAuthError();
         }
         const now = new Date();
+        // Preserve the existing recoveryTokenHash when this push doesn't carry
+        // one (an older client, or one that predates having a recovery code
+        // at all) rather than clobbering a previously-registered value with null.
         await tx.userSync.upsert({
           where:  { email: normalizedEmail },
-          create: { email: normalizedEmail, dataJson: JSON.stringify(data), authTokenHash: tokenHash },
-          update: { dataJson: JSON.stringify(data), syncedAt: now, authTokenHash: tokenHash },
+          create: { email: normalizedEmail, dataJson: JSON.stringify(data), authTokenHash: tokenHash, recoveryTokenHash },
+          update: { dataJson: JSON.stringify(data), syncedAt: now, authTokenHash: tokenHash, ...(recoveryTokenHash ? { recoveryTokenHash } : {}) },
         });
         return now;
       }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
@@ -104,6 +121,66 @@ router.get("/pull", async (req, res, next) => {
     }
 
     res.json({ ok: true, data: JSON.parse(record.dataJson), syncedAt: record.syncedAt });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/sync/relink — body: { email, token, recoveryToken, oldRecoveryToken? }
+// Called after a password reset (client/lib/auth.ts recoverAccount), which
+// changes the sync token push/pull check against. Proves ownership via the
+// PREVIOUS recovery token instead — the old recovery code is exactly what
+// recoverAccount already required the user to type in, so this lets a
+// legitimate password reset keep working without ever sending the password
+// or recovery code itself to the server.
+router.post("/relink", async (req, res, next) => {
+  try {
+    const { email, token, recoveryToken, oldRecoveryToken } = relinkSchema.parse(req.body);
+    const tokenHash = hashToken(token);
+    const recoveryTokenHash = hashToken(recoveryToken);
+
+    try {
+      await prisma.$transaction(async (tx) => {
+        const existing = await tx.userSync.findUnique({ where: { email } });
+
+        if (!existing || (!existing.authTokenHash && !existing.recoveryTokenHash)) {
+          // Nothing registered yet (this account has never actually synced) —
+          // safe to register fresh, the same trust-on-first-use logic push uses.
+          await tx.userSync.upsert({
+            where: { email },
+            create: { email, dataJson: existing?.dataJson ?? "{}", authTokenHash: tokenHash, recoveryTokenHash },
+            update: { authTokenHash: tokenHash, recoveryTokenHash },
+          });
+          return;
+        }
+
+        if (!existing.recoveryTokenHash) {
+          // Synced before this feature existed — no recovery proof on file to
+          // check against. Refuse rather than let anyone who merely knows *a*
+          // recovery code silently take over an already-claimed sync slot.
+          throw new SyncAuthError();
+        }
+
+        if (!oldRecoveryToken || hashToken(oldRecoveryToken) !== existing.recoveryTokenHash) {
+          throw new SyncAuthError();
+        }
+
+        await tx.userSync.update({
+          where: { email },
+          data: { authTokenHash: tokenHash, recoveryTokenHash },
+        });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch (err) {
+      if (err instanceof SyncAuthError) {
+        return res.status(401).json({ error: "Could not verify ownership of this account's sync data." });
+      }
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2034") {
+        return res.status(409).json({ error: "Sync is busy — please try again." });
+      }
+      throw err;
+    }
+
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }

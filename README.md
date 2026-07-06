@@ -124,14 +124,13 @@ On Neon specifically: both URLs come from the same project's Connect panel — `
 - **Forgot your password?** Use the recovery code shown at sign-up (`/recover`). There is no email-based reset — if you lose both the password and the recovery code, that account's data is unrecoverable by design (that's what "encrypted" means).
 - **Passwords** are hashed with PBKDF2-SHA256 (120,000 iterations, random per-account salt) before ever touching `localStorage`.
 - **Sync auth:** push/pull require a bearer token derived from your password (PBKDF2, independent of the encryption key). The server stores only a hash of it — never the token, never your password. The first push for an email registers the hash (trust-on-first-use); every push/pull after that must match.
-- **Known limitation:** resetting your password via `/recover` changes the sync token, which the server doesn't know about yet. The next sync push after a password reset will be rejected until that account's `user_sync` row is manually cleared. Low-impact today (single-user use); worth a proper "re-link" flow if this becomes a real workflow.
+- **Password reset re-links sync automatically.** Resetting your password (`/recover`) changes the sync token, which used to leave the server stuck expecting the old one until the `user_sync` row was cleared by hand. A second, independent token derived from your recovery code (`POST /api/sync/relink`) now proves ownership across the reset instead — the old recovery code is exactly what `/recover` already required you to type in. This only works if the account had synced (pushed) at least once before the reset, since that's the only point a recovery token gets registered server-side in the first place; accounts that had never synced simply register fresh on their next push, same as a brand-new account.
 
 ---
 
 ## Roadmap
 
 - **Server-side accounts** — the architecturally "correct" long-term fix for real password reset (email-based) and multi-device sync without the recovery-code workaround. Requires real user records + sessions on the server, migrating sign-up/sign-in off `localStorage`, and deciding whether to cut over to the normalized SQL tables as the source of truth. Sizable, deliberately scoped as its own future project — not a quick add-on.
-- Re-link the sync token automatically after a password reset (see Known limitation above).
 
 ---
 

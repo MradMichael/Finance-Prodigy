@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { signUp, signIn, recoverAccount, getSession, signOut, isAdmin, listUsers, type StoredUser } from "./auth";
+import { signUp, signIn, recoverAccount, getSession, signOut, isAdmin, listUsers, getRecoveryTokenForSync, type StoredUser } from "./auth";
 
 const USERS_KEY = "essa_users_v1";
 
@@ -152,6 +152,20 @@ describe("recoverAccount", () => {
     // Old recovery code should no longer work; the new one should.
     const oldCodeAttempt = await recoverAccount("a@test.com", reg.recoveryCode, "yetanotherpassword");
     expect(oldCodeAttempt.ok).toBe(false);
+  });
+
+  it("rotates the persisted recovery-sync token on every successful recovery (for the /relink fix)", async () => {
+    const reg = await signUp("a@test.com", "Alice", "password1");
+    if (!reg.ok) throw new Error("setup failed");
+    const beforeToken = getRecoveryTokenForSync("a@test.com");
+    expect(beforeToken).toBeTruthy();
+
+    const result = await recoverAccount("a@test.com", reg.recoveryCode, "brandnewpassword");
+    expect(result.ok).toBe(true);
+
+    const afterToken = getRecoveryTokenForSync("a@test.com");
+    expect(afterToken).toBeTruthy();
+    expect(afterToken).not.toBe(beforeToken);
   });
 });
 
