@@ -4,16 +4,34 @@
  */
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import { ZodError } from "zod";
 import sync from "./routes/sync";
 
 const app = express();
+// crossOriginResourcePolicy defaults to "same-origin", which would make
+// browsers block the client's fetch to this API — the client is always a
+// different origin from this server (different port in dev, different
+// domain once deployed), so that's the one default this API needs to opt out of.
+app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 app.use(cors({ origin: process.env.CLIENT_ORIGIN ?? "http://localhost:3000" }));
 app.use(express.json());
 
 app.get("/api/health", (_req, res) => res.json({ ok: true, service: "momentum-api" }));
 
-app.use("/api/sync", sync);
+// Generous enough for normal auto-sync usage (debounced client-side, so a
+// real user isn't hammering this), tight enough to bound brute-forcing a
+// sync token via repeated /pull attempts or hammering /push. Tune once
+// real usage patterns are known.
+const syncLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many sync requests — please wait a few minutes and try again." },
+});
+app.use("/api/sync", syncLimiter, sync);
 
 // Central error handler — Zod issues come back as 422 with details.
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

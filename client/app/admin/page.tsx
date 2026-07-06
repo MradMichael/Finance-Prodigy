@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, notFound } from "next/navigation";
 import { getSession, isAdmin, ensureFirstUserIsAdmin, listUsers } from "../../lib/auth";
 import { getLastSyncTime } from "../../lib/syncService";
 import { useTheme } from "../../contexts/ThemeContext";
@@ -104,6 +104,15 @@ function Row({ label, value, mono = false, sensitive = false }: { label: string;
 }
 
 export default function AdminPage() {
+  // "isAdmin" today just means "the first account ever signed up in this
+  // browser" (see auth.ts) — there's no real server-side role system yet,
+  // so in an open-signup world every new visitor becomes "admin" of their
+  // own session on their first try. That's harmless for the developer's
+  // own local testing, but this panel also shows a masked-but-recognizable
+  // real database hostname, which shouldn't ship to anyone else. Gate the
+  // whole route out of production builds until real accounts/roles exist.
+  if (process.env.NODE_ENV === "production") notFound();
+
   const router = useRouter();
   const T      = useTheme();
 
@@ -148,7 +157,7 @@ export default function AdminPage() {
 
   if (!ready) return null;
 
-  const dbUrl = process.env.NEXT_PUBLIC_DB_URL ?? "postgresql://neondb_owner:<password>@ep-purple-sky-at1sit9h-pooler.c-9.us-east-1.aws.neon.tech/neondb?sslmode=require";
+  const dbUrl = process.env.NEXT_PUBLIC_DB_URL ?? "postgresql://<user>:<password>@<project>-pooler.<region>.aws.neon.tech/<database>?sslmode=require";
   const maskedUrl = dbUrl.replace(/:\/\/[^:]+:[^@]+@/, "://<user>:<password>@");
   const lastSync  = getLastSyncTime();
 

@@ -1,10 +1,35 @@
 import { Router } from "express";
 import { createHash } from "crypto";
+import { z } from "zod";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { normalizeToTables } from "../lib/normalizeSync";
 
 const router = Router();
 const prisma = new PrismaClient();
+
+// `data` is the client's LocalFinancials blob — its exact shape is
+// intentionally NOT modeled here (that would couple this route to every
+// field the client ever adds/changes, for a JSON store that's supposed to
+// stay flexible). Just bound what a request handler actually needs to be
+// safe from: a real email, a real token, and a payload that can't be used
+// to exhaust the database with an arbitrarily large row.
+const MAX_DATA_JSON_BYTES = 2_000_000; // 2MB — generous for a personal-finance data blob
+const emailSchema = z.string().trim().toLowerCase().email().max(320);
+const tokenSchema = z.string().min(1).max(2000);
+
+const pushSchema = z.object({
+  email: emailSchema,
+  token: tokenSchema,
+  data: z.record(z.unknown()).refine(
+    (d) => JSON.stringify(d).length <= MAX_DATA_JSON_BYTES,
+    { message: `data exceeds the ${MAX_DATA_JSON_BYTES}-byte limit` },
+  ),
+});
+
+const pullQuerySchema = z.object({
+  email: emailSchema,
+  token: tokenSchema,
+});
 
 // Server never sees the password or the raw token — only its hash, the
 // same way a password hash works. The token itself is derived client-side
@@ -17,10 +42,7 @@ class SyncAuthError extends Error {}
 // POST /api/sync/push  — body: { email, data, token }
 router.post("/push", async (req, res, next) => {
   try {
-    const { email, data, token } = req.body;
-    if (!email || !data || !token) return res.status(400).json({ error: "email, data, and token are required." });
-
-    const normalizedEmail = String(email).toLowerCase().trim();
+    const { email: normalizedEmail, data, token } = pushSchema.parse(req.body);
     const tokenHash = hashToken(token);
 
     // The token check-then-write must be one atomic unit: with two plain
@@ -70,9 +92,7 @@ router.post("/push", async (req, res, next) => {
 // GET /api/sync/pull?email=xxx&token=yyy — returns latest saved data
 router.get("/pull", async (req, res, next) => {
   try {
-    const email = String(req.query.email ?? "").toLowerCase().trim();
-    const token = String(req.query.token ?? "");
-    if (!email || !token) return res.status(400).json({ error: "email and token query params are required." });
+    const { email, token } = pullQuerySchema.parse(req.query);
 
     const record = await prisma.userSync.findUnique({ where: { email } });
     if (!record) return res.status(404).json({ error: "No sync data found for this account." });
