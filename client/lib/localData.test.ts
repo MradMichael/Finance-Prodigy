@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  monthlyEquivalent, nextOccurrence, recurringPaidSoFar, fmtDate,
+  monthlyEquivalent, nextOccurrence, recurringPaidSoFar, fmtDate, valueForMonth,
   loadData, saveData, DEFAULT_DATA, type StoredRecurring,
 } from "./localData";
 
@@ -113,6 +113,30 @@ describe("nextOccurrence", () => {
     // Feb 28 (clamped) -> next occurrence should be March 31 (March has 31 days again), not stuck at 28.
     const next = nextOccurrence(r, new Date("2026-03-01"));
     expect(next?.toISOString().slice(0, 10)).toBe("2026-03-31");
+  });
+});
+
+describe("valueForMonth", () => {
+  it("returns the fallback when there's no history yet", () => {
+    expect(valueForMonth(undefined, "2026-07", 500)).toBe(500);
+    expect(valueForMonth([], "2026-07", 500)).toBe(500);
+  });
+
+  it("returns the most recent entry at or before the target month", () => {
+    const history = [{ ym: "2026-01", value: 1000 }, { ym: "2026-05", value: 2000 }];
+    expect(valueForMonth(history, "2026-07", 999)).toBe(2000);
+    expect(valueForMonth(history, "2026-05", 999)).toBe(2000); // exact match
+    expect(valueForMonth(history, "2026-03", 999)).toBe(1000); // between entries -> most recent past one
+  });
+
+  it("falls back when the target month is before any recorded history", () => {
+    const history = [{ ym: "2026-06", value: 2000 }];
+    expect(valueForMonth(history, "2026-01", 999)).toBe(999);
+  });
+
+  it("is unaffected by history entries out of chronological order", () => {
+    const history = [{ ym: "2026-05", value: 2000 }, { ym: "2026-01", value: 1000 }];
+    expect(valueForMonth(history, "2026-07", 999)).toBe(2000);
   });
 });
 

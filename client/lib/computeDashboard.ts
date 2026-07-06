@@ -1,5 +1,5 @@
 import type { LocalFinancials, BudgetRuleKey } from "./localData";
-import { monthlyEquivalent, nextOccurrence, BUDGET_RULES } from "./localData";
+import { monthlyEquivalent, nextOccurrence, BUDGET_RULES, valueForMonth } from "./localData";
 import { simulateDebtPayoff, type DebtInput } from "./debtEngine";
 
 interface Projection {
@@ -110,6 +110,17 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   const toUSD = (amount: number, currency?: string) =>
     currency === "LBP" ? amount / lbpRate : amount;
 
+  // For judging a PAST month: use the income/LBP-rate that were actually in
+  // effect that month, not whatever they are today. A raise or an updated
+  // exchange rate (LBP is volatile enough that this happens often) would
+  // otherwise silently rewrite what past months looked like every time this
+  // recomputes. Falls back to the current value for months before any
+  // history was recorded (accounts predating this, or genuinely the first
+  // month), so this only improves accuracy going forward, not retroactively.
+  const incomeForMonth = (ym: string) => Math.max(valueForMonth(data.incomeHistory, ym, data.income), 1);
+  const toUSDForMonth = (amount: number, currency: string | undefined, ym: string) =>
+    currency === "LBP" ? amount / valueForMonth(data.lbpRateHistory, ym, lbpRate) : amount;
+
   const monthTx = (data.transactions ?? []).filter((t) => t.date.startsWith(prefix));
 
   // Recurring contributions this month (pro-rated by frequency, converted to USD)
@@ -139,14 +150,20 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   const efPct     = efTarget > 0 ? Math.min(100, (efBalance / efTarget) * 100) : 0;
   const efScore   = efPct;
 
-  const totalMinPayments = data.debts.reduce((s, d) => s + d.minPayment, 0);
+  // Paid-off debts stay in the array (balance 0, paidOffAt set) for history —
+  // their minPayment isn't cleared, so summing over all debts unfiltered
+  // would keep counting a payment obligation that no longer exists.
+  const totalMinPayments = data.debts.filter((d) => d.balance > 0).reduce((s, d) => s + d.minPayment, 0);
   const debtPressurePct  = totalMinPayments / income;
   const debtScore = Math.max(0, 100 - debtPressurePct * 400);
 
   const goalScores = data.goals.map((g) => {
     const rem = g.targetAmount - g.currentAmount;
     if (rem <= 0) return 1;
-    const ms = Math.max(1, (new Date(g.targetDate).getTime() - now.getTime()) / (30.44 * 24 * 3600 * 1000));
+    // Rounded the same way the `goals` array below computes its own `ms` for
+    // the same goal — otherwise the two independently-computed paces can
+    // drift by a hair and disagree right at a threshold (e.g. onTrack).
+    const ms = Math.max(1, Math.round((new Date(g.targetDate).getTime() - now.getTime()) / (30.44 * 24 * 3600 * 1000)));
     const req = rem / ms;
     return req > 0 ? Math.min(2, savingsContrib / req) : 0.5;
   });
@@ -232,7 +249,9 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
       id: i + 1, name: g.name, emoji: g.emoji || null, type: "SAVINGS",
       targetAmount: g.targetAmount, currentAmount: g.currentAmount,
       projection: {
-        pctComplete: Math.min(100, Math.round((g.currentAmount / g.targetAmount) * 100)),
+        // targetAmount of exactly 0 (e.g. a goal saved before an amount was
+        // entered) would otherwise divide 0/0 into NaN — treat it as met.
+        pctComplete: g.targetAmount > 0 ? Math.min(100, Math.round((g.currentAmount / g.targetAmount) * 100)) : 100,
         monthsRemaining: ms,
         requiredMonthly: Math.round(req),
         paceRatio: Math.round(pace * 100) / 100,
@@ -324,14 +343,15 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     const isCurrent = i === 5;
     const mo = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
     const tx = data.transactions.filter((t) => t.date.startsWith(mo));
-    const txSpend = tx.reduce((s, t) => s + toUSD(t.amount, t.currency), 0);
+    const txSpend = tx.reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, mo), 0);
     // Recurring payments (rent, subscriptions, etc.) don't create a
     // transaction row each month, so counting only logged transactions
     // understated every month's real spend — evaluate each recurring
     // item as of that historical month, same as the current-month totals do.
-    const recurSpend = activeRecurring.reduce((s, r) => s + toUSD(monthlyEquivalent(r, d), r.currency), 0);
+    const recurSpend = activeRecurring.reduce((s, r) => s + toUSDForMonth(monthlyEquivalent(r, d), r.currency, mo), 0);
     const sp = txSpend + recurSpend;
-    return { ymKey, income: isCurrent ? income : (sp > 0 ? income : 0), spend: sp };
+    const moIncome = isCurrent ? income : incomeForMonth(mo);
+    return { ymKey, income: isCurrent ? income : (sp > 0 ? moIncome : 0), spend: sp };
   });
 
   const monthKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -341,11 +361,14 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   };
 
   // ── Budget rollover — unspent (or overspent) carries into this month ──
-  // Approximation: assumes the current budget rule applied in past months
-  // too, and skips months with zero logged transactions so a blank month
-  // doesn't distort the running total. Computed before budget pace below
-  // so the pace warnings judge spend against the same rollover-adjusted
-  // target the Budget screen displays, instead of two different numbers.
+  // Uses the income/LBP-rate that were actually in effect each past month
+  // (via incomeForMonth/toUSDForMonth) rather than today's values. Still an
+  // approximation in one respect: it assumes the current budget rule/split
+  // applied in past months too, since there's no history of past rule
+  // changes — and skips months with zero logged transactions so a blank
+  // month doesn't distort the running total. Computed before budget pace
+  // below so the pace warnings judge spend against the same rollover-
+  // adjusted target the Budget screen displays, instead of two different numbers.
   const budgetRollover = { needs: 0, wants: 0, savings: 0 };
   {
     const monthsBack = Math.min(11, month - 1); // back to January of this year, capped at 11
@@ -356,14 +379,15 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
       if (tx.length === 0) continue;
       const spend = { needs: 0, wants: 0, savings: 0 };
       for (const t of tx) {
-        const amt = toUSD(t.amount, t.currency);
+        const amt = toUSDForMonth(t.amount, t.currency, ym);
         if (t.bucket === "NEEDS") spend.needs += amt;
         else if (t.bucket === "WANTS") spend.wants += amt;
         else spend.savings += amt;
       }
-      budgetRollover.needs   += (income * budgetTargetPct.needs   / 100) - spend.needs;
-      budgetRollover.wants   += (income * budgetTargetPct.wants   / 100) - spend.wants;
-      budgetRollover.savings += (income * budgetTargetPct.savings / 100) - spend.savings;
+      const moIncome = incomeForMonth(ym);
+      budgetRollover.needs   += (moIncome * budgetTargetPct.needs   / 100) - spend.needs;
+      budgetRollover.wants   += (moIncome * budgetTargetPct.wants   / 100) - spend.wants;
+      budgetRollover.savings += (moIncome * budgetTargetPct.savings / 100) - spend.savings;
     }
   }
 
@@ -429,10 +453,11 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   if (targetSavingsPct > 0 && data.income > 0) {
     for (let i = 1; i <= 12; i++) {
       const d = new Date(year, month - 1 - i, 1);
-      const tx = data.transactions.filter((t) => t.date.startsWith(monthKey(d)));
+      const ym = monthKey(d);
+      const tx = data.transactions.filter((t) => t.date.startsWith(ym));
       if (tx.length === 0) break;
-      const monthSavings = tx.filter((t) => t.bucket === "SAVINGS").reduce((s, t) => s + toUSD(t.amount, t.currency), 0);
-      if ((monthSavings / data.income) * 100 >= targetSavingsPct) savingsStreak++;
+      const monthSavings = tx.filter((t) => t.bucket === "SAVINGS").reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, ym), 0);
+      if ((monthSavings / incomeForMonth(ym)) * 100 >= targetSavingsPct) savingsStreak++;
       else break;
     }
   }
@@ -446,11 +471,17 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
 
   // ── Upcoming renewals ────────────────────────────────────────────────
   const RENEWAL_WINDOW_DAYS = 7;
+  // Anchored at today's LOCAL midnight (same local-date convention already
+  // used everywhere else in this function, e.g. daysElapsed = now.getDate())
+  // rather than the raw current instant — otherwise the sub-day time-of-day
+  // component makes dueInDays flicker by ±1 right at the 7-day window
+  // boundary depending on what time of day the user opens the app.
+  const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const upcomingRenewals: DashboardPayload["upcomingRenewals"] = data.recurring
     .map((r) => {
       const next = nextOccurrence(r, now);
       if (!next) return null;
-      const dueInDays = Math.round((next.getTime() - now.getTime()) / (24 * 3600 * 1000));
+      const dueInDays = Math.round((next.getTime() - todayMidnight.getTime()) / (24 * 3600 * 1000));
       if (dueInDays < 0 || dueInDays > RENEWAL_WINDOW_DAYS) return null;
       return { id: r.id, name: r.name, emoji: r.emoji, amount: r.amount, currency: r.currency, dueDate: next.toISOString().slice(0, 10), dueInDays };
     })
@@ -461,12 +492,15 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   // Expected = starting balance minus every transaction on this payment
   // method since the starting date. Only sees the transaction ledger, so
   // debt payments and un-"extra"'d recurring charges aren't reflected —
-  // a real gap, not a bug (see TrackedBalance's doc comment).
+  // a real gap, not a bug (see TrackedBalance's doc comment). Each
+  // transaction converts at the LBP rate that was in effect *for its own
+  // month*, not today's rate — otherwise updating the rate would silently
+  // shift the expected balance for every LBP transaction ever logged.
   const balanceChecks: DashboardPayload["balanceChecks"] = data.trackedBalances.map((tb) => {
     const spent = data.transactions
       .filter((t) => t.date >= tb.startingDate && t.paymentMethod === tb.paymentMethod
         && (tb.paymentMethod !== "card" || t.cardId === tb.cardId))
-      .reduce((s, t) => s + toUSD(t.amount, t.currency), 0);
+      .reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, t.date.slice(0, 7)), 0);
     const expected = Math.round((tb.startingBalance - spent) * 100) / 100;
     const actual = tb.actualBalance ?? null;
     return {

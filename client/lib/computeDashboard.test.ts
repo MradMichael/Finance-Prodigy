@@ -301,3 +301,106 @@ describe("net worth trend", () => {
     expect(yms).toEqual([...yms].sort());
   });
 });
+
+describe("income history — past months judged against income at the time, not today's", () => {
+  it("sixMonthTrend uses the historical income for a past month, not the current (raised) one", () => {
+    const data = makeData({
+      income: 3000, // "after the raise"
+      incomeHistory: [{ ym: "2026-02", value: 1000 }], // income was 1000 back in February
+      transactions: [{ id: "t1", amount: 50, currency: "USD", bucket: "NEEDS", description: "Groceries", date: "2026-02-10" }],
+    });
+    const result = computeDashboard(data);
+    const feb = result.sixMonthTrend.find((t) => t.ymKey === 202602)!;
+    expect(feb.income).toBe(1000);
+  });
+
+  it("current month always uses live income regardless of history", () => {
+    const data = makeData({
+      income: 3000,
+      incomeHistory: [{ ym: "2026-02", value: 1000 }],
+      transactions: [{ id: "t1", amount: 50, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-07-05" }],
+    });
+    const result = computeDashboard(data);
+    const july = result.sixMonthTrend.find((t) => t.ymKey === 202607)!;
+    expect(july.income).toBe(3000);
+  });
+
+  it("falls back to current income for months with no recorded history (legacy accounts)", () => {
+    const data = makeData({
+      income: 2000,
+      transactions: [{ id: "t1", amount: 50, currency: "USD", bucket: "NEEDS", description: "Groceries", date: "2026-03-10" }],
+    });
+    const result = computeDashboard(data);
+    const mar = result.sixMonthTrend.find((t) => t.ymKey === 202603)!;
+    expect(mar.income).toBe(2000);
+  });
+
+  it("budgetRollover-derived debt/savings scoring is unaffected by a later raise for past months", () => {
+    // A raise this month shouldn't retroactively imply January under- or over-saved
+    // relative to a target it never actually had to hit.
+    const data = makeData({
+      income: 5000,
+      incomeHistory: [{ ym: "2026-01", value: 1000 }],
+      budgetRule: "50-30-20",
+      transactions: [{ id: "t1", amount: 200, currency: "USD", bucket: "SAVINGS", description: "Old saving", date: "2026-01-15" }],
+    });
+    const result = computeDashboard(data);
+    // At the OLD income (1000), 20% savings target = 200 -> exactly met, rollover ~0.
+    // At the (wrong) current income (5000), 20% target = 1000 -> would show a large deficit.
+    expect(result.budgetRollover.savings).toBeCloseTo(0, 0);
+  });
+});
+
+describe("LBP exchange-rate history — past LBP transactions convert at the rate in effect then", () => {
+  it("sixMonthTrend converts a past LBP transaction using the historical rate, not today's", () => {
+    const data = makeData({
+      income: 1000,
+      lbpRate: 100000, // today's rate
+      lbpRateHistory: [{ ym: "2026-02", value: 50000 }], // rate back in February
+      transactions: [{ id: "t1", amount: 5_000_000, currency: "LBP", bucket: "NEEDS", description: "Groceries", date: "2026-02-10" }],
+    });
+    const result = computeDashboard(data);
+    const feb = result.sixMonthTrend.find((t) => t.ymKey === 202602)!;
+    // 5,000,000 LBP at the historical 50,000 rate = $100, not $50 at today's 100,000 rate.
+    expect(feb.spend).toBeCloseTo(100, 5);
+  });
+
+  it("falls back to the current rate for months with no recorded rate history", () => {
+    const data = makeData({
+      income: 1000,
+      lbpRate: 100000,
+      transactions: [{ id: "t1", amount: 1_000_000, currency: "LBP", bucket: "NEEDS", description: "Groceries", date: "2026-03-10" }],
+    });
+    const result = computeDashboard(data);
+    const mar = result.sixMonthTrend.find((t) => t.ymKey === 202603)!;
+    expect(mar.spend).toBeCloseTo(10, 5);
+  });
+});
+
+describe("paid-off debts don't inflate ongoing debt pressure", () => {
+  it("excludes a paid-off debt's stale minPayment from the debt-pressure health score", () => {
+    const withPaidOffDebt = makeData({
+      income: 1000,
+      debts: [
+        { id: "d1", name: "Active loan", balance: 500, apr: 10, minPayment: 100, createdAt: "2026-01-01T00:00:00.000Z" },
+        { id: "d2", name: "Paid off card", balance: 0, apr: 20, minPayment: 200, createdAt: "2026-01-01T00:00:00.000Z", paidOffAt: "2026-06-01T00:00:00.000Z" },
+      ],
+    });
+    const result = computeDashboard(withPaidOffDebt);
+    const debtComponent = result.health.components.find((c) => c.key === "debt")!;
+    // Only the $100 active minimum counts: debtPressurePct = 0.10 -> score = 100 - 0.10*400 = 60.
+    // If the paid-off debt's $200 leaked in, pressure would be 0.30 -> score would clamp to 0.
+    expect(debtComponent.score).toBe(60);
+  });
+});
+
+describe("goal edge cases", () => {
+  it("a goal with a $0 target shows 100% complete instead of NaN", () => {
+    const data = makeData({
+      goals: [{ id: "g1", name: "Untitled goal", emoji: "🎯", targetAmount: 0, currentAmount: 0, targetDate: "2026-12-01", createdAt: "2026-07-01T00:00:00.000Z" }],
+    });
+    const result = computeDashboard(data);
+    expect(result.goals[0].projection.pctComplete).toBe(100);
+    expect(Number.isNaN(result.goals[0].projection.pctComplete)).toBe(false);
+  });
+});

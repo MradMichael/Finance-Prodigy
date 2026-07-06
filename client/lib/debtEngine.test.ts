@@ -80,4 +80,30 @@ describe("simulateDebtPayoff", () => {
     const decimals = (result.totalInterest.toString().split(".")[1] ?? "").length;
     expect(decimals).toBeLessThanOrEqual(2);
   });
+
+  it("lands the payoff date in the correct month when starting on the 31st (no Date.setMonth overflow)", () => {
+    // Same overflow bug already fixed in localData.ts's nextOccurrence:
+    // a naive d.setMonth(d.getMonth()+1) on Jan 31 lands on March 3
+    // (Feb only has 28 days in 2026), a full month later than intended.
+    const debts: DebtInput[] = [{ id: "d1", name: "Small", balance: 100, aprPct: 5, minimumPayment: 1000 }];
+    const start = new Date(2026, 0, 31); // Jan 31, 2026
+    const result = simulateDebtPayoff(debts, 0, "AVALANCHE", start);
+    expect(result.feasible).toBe(true);
+    expect(result.months).toBe(1);
+    const freeDate = new Date(result.debtFreeDate!);
+    expect(freeDate.getMonth()).toBe(1); // February, not March
+    expect(freeDate.getDate()).toBe(28); // clamped to Feb's actual last day
+  });
+
+  it("excludes an already-paid-off debt's stale minimumPayment from monthlyCommitment", () => {
+    // A paid-off debt (balance 0) can still be passed in with its original
+    // minimumPayment intact (the app keeps paid-off debts around for
+    // history) — that payment obligation is gone and shouldn't count.
+    const debts: DebtInput[] = [
+      { id: "d1", name: "Active", balance: 500, aprPct: 10, minimumPayment: 100 },
+      { id: "d2", name: "Paid off", balance: 0, aprPct: 20, minimumPayment: 200 },
+    ];
+    const result = simulateDebtPayoff(debts, 50, "AVALANCHE");
+    expect(result.monthlyCommitment).toBe(150); // 100 + 50, not 300 + 50
+  });
 });

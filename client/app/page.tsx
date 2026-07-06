@@ -82,21 +82,38 @@ export default function Home() {
 
   const dashboardData = useMemo(() => (financials ? computeDashboard(financials) : null), [financials]);
 
-  // Persist a monthly net-worth snapshot so the trend chart has history to
-  // show. computeDashboard stays pure/side-effect-free — this is the one
-  // place that writes the snapshot back, and only when it's actually stale
-  // (new month, or this month's value changed), so it can't loop.
+  // Persist monthly snapshots (net worth, income, LBP rate) so past months
+  // can be judged against what was actually true then, not whatever these
+  // settings are today. computeDashboard stays pure/side-effect-free — this
+  // is the one place that writes snapshots back, and only when something's
+  // actually stale (new month, or this month's value changed), so it can't loop.
   useEffect(() => {
     if (!financials || !dashboardData) return;
     const now = new Date();
     const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    const history = financials.netWorthHistory ?? [];
-    const existing = history.find((h) => h.ym === ym);
-    if (existing?.value === dashboardData.netWorth.total) return;
-    const updatedHistory = [...history.filter((h) => h.ym !== ym), { ym, value: dashboardData.netWorth.total }]
-      .sort((a, b) => a.ym.localeCompare(b.ym))
-      .slice(-12);
-    handleChange({ ...financials, netWorthHistory: updatedHistory });
+
+    function snapshot(history: { ym: string; value: number }[] | undefined, value: number) {
+      const h = history ?? [];
+      if (h.find((e) => e.ym === ym)?.value === value) return h;
+      return [...h.filter((e) => e.ym !== ym), { ym, value }]
+        .sort((a, b) => a.ym.localeCompare(b.ym))
+        .slice(-24);
+    }
+
+    const updatedNetWorth = snapshot(financials.netWorthHistory, dashboardData.netWorth.total);
+    const updatedIncome   = snapshot(financials.incomeHistory, financials.income);
+    const updatedLbpRate  = snapshot(financials.lbpRateHistory, financials.lbpRate);
+
+    if (updatedNetWorth === financials.netWorthHistory
+      && updatedIncome === financials.incomeHistory
+      && updatedLbpRate === financials.lbpRateHistory) return;
+
+    handleChange({
+      ...financials,
+      netWorthHistory: updatedNetWorth,
+      incomeHistory: updatedIncome,
+      lbpRateHistory: updatedLbpRate,
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [financials, dashboardData]);
 

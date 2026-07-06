@@ -142,6 +142,10 @@ export interface LocalFinancials {
   trackedBalances: TrackedBalance[];
   /** One entry per calendar month (YYYY-MM), appended/updated as the dashboard is computed — powers the net worth trend chart. */
   netWorthHistory: { ym: string; value: number }[];
+  /** One entry per calendar month (YYYY-MM) that `income` actually changed in — lets past months be judged against what income was *then*, not whatever it is today. Absent/empty on accounts predating this field. */
+  incomeHistory?: { ym: string; value: number }[];
+  /** Same idea as incomeHistory, for `lbpRate` — LBP is volatile enough that using today's rate to re-convert a past month's LBP transactions silently rewrites history every time the rate is updated. */
+  lbpRateHistory?: { ym: string; value: number }[];
   budgetRule?: BudgetRuleKey;
   budgetCustomNeeds?: number;
   budgetCustomWants?: number;
@@ -161,8 +165,31 @@ export const DEFAULT_DATA: LocalFinancials = {
   assets: [],
   trackedBalances: [],
   netWorthHistory: [],
+  incomeHistory: [],
+  lbpRateHistory: [],
   budgetRule: "50-30-20",
 };
+
+/**
+ * Looks up the value that was in effect for a given calendar month (YYYY-MM)
+ * from a history array of {ym, value} snapshots — the most recent entry at
+ * or before that month, or `fallback` if no history exists yet (accounts
+ * created before history tracking existed, or a month before the first
+ * recorded change). Shared by income and LBP-rate lookups since both are
+ * "a flat current setting that can change over time" with the same shape.
+ */
+export function valueForMonth(
+  history: { ym: string; value: number }[] | undefined,
+  ym: string,
+  fallback: number,
+): number {
+  if (!history || history.length === 0) return fallback;
+  let best: { ym: string; value: number } | null = null;
+  for (const h of history) {
+    if (h.ym <= ym && (best === null || h.ym > best.ym)) best = h;
+  }
+  return best ? best.value : fallback;
+}
 
 function storageKey(userId: string) { return `essa_data_${userId}`; }
 

@@ -26,10 +26,18 @@ export interface PayoffPlan {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
+// Clamp to the target month's actual last day instead of letting
+// Date.setMonth overflow into the following month — the same bug already
+// fixed in localData.ts's nextOccurrence: a naive d.setMonth(d.getMonth()+1)
+// on Jan 31 lands on March 3 (Feb only has 28/29 days), which would show a
+// debt-free date a full month later than it actually is.
 function addMonths(date: Date, months: number): Date {
-  const d = new Date(date);
-  d.setMonth(d.getMonth() + months);
-  return d;
+  const targetDay = date.getDate();
+  const candidate = new Date(date.getFullYear(), date.getMonth() + months, 1);
+  const daysInTargetMonth = new Date(candidate.getFullYear(), candidate.getMonth() + 1, 0).getDate();
+  candidate.setDate(Math.min(targetDay, daysInTargetMonth));
+  candidate.setHours(date.getHours(), date.getMinutes(), date.getSeconds(), date.getMilliseconds());
+  return candidate;
 }
 
 /**
@@ -48,7 +56,10 @@ export function simulateDebtPayoff(
   start: Date = new Date(),
 ): PayoffPlan {
   const live = debts.filter((d) => d.balance > 0).map((d) => ({ ...d, paid: false }));
-  const monthlyCommitment = round2(debts.reduce((s, d) => s + d.minimumPayment, 0) + extraMonthly);
+  // Sum only debts still owed — a caller can pass already-paid-off debts
+  // (balance 0, kept for history) whose minimumPayment wasn't cleared, and
+  // those shouldn't count toward a monthly commitment that no longer exists.
+  const monthlyCommitment = round2(live.reduce((s, d) => s + d.minimumPayment, 0) + extraMonthly);
 
   const base: PayoffPlan = {
     strategy, feasible: true, months: 0,
