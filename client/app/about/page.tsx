@@ -292,6 +292,8 @@ export default function AboutPage() {
             <Link href="/terms" className="underline hover:opacity-80" style={{ color: T.mute }}>Terms of Service</Link>
             <span style={{ color: T.mute }}> · </span>
             <Link href="/privacy" className="underline hover:opacity-80" style={{ color: T.mute }}>Privacy Policy</Link>
+            <span style={{ color: T.mute }}> · </span>
+            <Link href="/security" className="underline hover:opacity-80" style={{ color: T.mute }}>Trust &amp; Security</Link>
           </p>
         </footer>
 

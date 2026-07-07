@@ -53,11 +53,11 @@ export default function PrivacyPage() {
         <Section title="What we collect">
           <p><strong style={{ color: T.text }}>Account info:</strong> your name, email address, and a password hash — never your raw password.</p>
           <p><strong style={{ color: T.text }}>Financial data:</strong> transactions, goals, debts, recurring payments, and anything else you enter. This is encrypted (AES-256-GCM) and stored in your own browser&apos;s local storage — it never touches our servers unless you turn on Database sync.</p>
-          <p><strong style={{ color: T.text }}>Optional sync backup:</strong> if you use Profile → Push, a copy of your data is sent to our database (currently hosted on Neon/Postgres) so you can restore it on another device. This is opt-in — nothing is uploaded unless you choose to push.</p>
+          <p><strong style={{ color: T.text }}>Optional sync backup:</strong> if you use Profile → Push, a copy of your data is sent to our database (currently hosted on Neon/Postgres) so you can restore it on another device. This is opt-in — nothing is uploaded unless you choose to push. <strong style={{ color: T.text }}>Unlike your local browser storage, this server-side copy is not client-side-encrypted</strong> — it&apos;s stored as readable data, because the analytics decomposition described below needs to read actual field values. It&apos;s protected instead by database access controls, TLS in transit, and requiring your password-derived sync token to read it back — a materially different guarantee than the local encryption, and worth knowing plainly rather than assuming it carries over.</p>
         </Section>
 
         <Section title="How it's protected">
-          <p>Your data-encryption key is random and never derived directly from your password. It&apos;s locked two ways — once by your password, once by a one-time recovery code shown at sign-up — so either one unlocks it.</p>
+          <p>Your data-encryption key is random and never derived directly from your password. It&apos;s locked two ways — once by your password, once by a one-time recovery code shown at sign-up — so either one unlocks it. This protects the copy in your browser; see the sync-backup note above for what protects the server-side copy instead, if you use it.</p>
           <p><strong style={{ color: T.text }}>There is no email-based password reset.</strong> If you lose both your password and your recovery code, your account&apos;s data cannot be recovered by us or anyone else — that&apos;s a direct consequence of how the encryption works, not a support limitation we can override.</p>
         </Section>
 

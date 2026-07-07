@@ -245,6 +245,14 @@ export default function ProfilePage() {
             <span>About ESSA · FAQ · Contact</span>
             <span style={{ color: T.mute }}>→</span>
           </Link>
+          <Link
+            href="/security"
+            className="flex items-center justify-between w-full px-4 py-3 rounded-xl text-sm transition-all hover:opacity-80"
+            style={{ background: T.panelSoft, color: T.text }}
+          >
+            <span>Trust &amp; Security</span>
+            <span style={{ color: T.mute }}>→</span>
+          </Link>
           {admin && (
             <Link
               href="/admin"
