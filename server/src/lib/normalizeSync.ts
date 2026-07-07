@@ -420,3 +420,25 @@ export async function normalizeToTables(email: string, raw: LocalFinancials): Pr
     `debts=${debts.length} recurring=${recurring.length} months=${Object.keys(monthBuckets).length}`
   );
 }
+
+/**
+ * Deletes everything this analytics warehouse holds for an email — called
+ * when a user deletes their account (see routes/sync.ts's DELETE handler).
+ * Same FK-safe order as step 4 above, plus removing the dim_user row itself
+ * at the end (safe once everything referencing it is gone). A no-op if this
+ * email was never normalized here (e.g. never actually pushed).
+ */
+export async function deleteAllDataForEmail(email: string): Promise<void> {
+  const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+  if (!user) return;
+
+  await prisma.factTransaction.deleteMany({ where: { userId: user.id } });
+  await prisma.factMonthlySnapshot.deleteMany({ where: { userId: user.id } });
+  await prisma.goal.deleteMany({ where: { userId: user.id } });
+  await prisma.debt.deleteMany({ where: { userId: user.id } });
+  await prisma.budget.deleteMany({ where: { userId: user.id } });
+  await prisma.dimAccount.deleteMany({ where: { userId: user.id } });
+  await prisma.user.delete({ where: { id: user.id } });
+
+  console.log(`[normalize] deleted all analytics data for user=${user.id}`);
+}

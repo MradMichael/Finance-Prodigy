@@ -82,3 +82,25 @@ export function getLastSyncTime(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem(LAST_SYNC_KEY);
 }
+
+/**
+ * Removes this account's synced backup (and everything derived from it in
+ * the analytics warehouse) from the server. Called fire-and-forget from
+ * auth.ts's deleteAccount — local deletion is immediate either way; this is
+ * best-effort cleanup so a deleted account doesn't leave a backup behind
+ * indefinitely (see the Privacy Policy's known-gap note).
+ */
+export async function deleteFromServer(email: string, token: string): Promise<SyncResult> {
+  try {
+    const res = await fetch("/api/sync", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, token }),
+    });
+    const json = await res.json();
+    if (!res.ok) return { ok: false, error: json.error ?? "Delete failed." };
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "Could not reach server." };
+  }
+}

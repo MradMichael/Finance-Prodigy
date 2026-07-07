@@ -254,9 +254,24 @@ export function updateProfile(userId: string, name: string): void {
 }
 
 export function deleteAccount(userId: string): void {
+  const user = getUsers().find((u) => u.id === userId);
   putUsers(getUsers().filter((u) => u.id !== userId));
   localStorage.removeItem(SESSION_KEY);
   localStorage.removeItem(`essa_data_${userId}`);
+
+  // Best-effort — local deletion above is what actually matters and is
+  // already done. If this account ever synced, also try to remove that
+  // backup rather than leaving it on the server indefinitely (see the
+  // Privacy Policy's note on this). A failure here (offline, server down)
+  // isn't surfaced — the user already got what "delete account" promises
+  // locally; this is cleanup, not something to block or retry on.
+  if (user) {
+    import("./crypto").then(({ getSyncToken }) => {
+      const token = getSyncToken();
+      if (!token) return;
+      import("./syncService").then(({ deleteFromServer }) => deleteFromServer(user.email, token));
+    }).catch(() => {});
+  }
 }
 
 export function isAdmin(userId: string): boolean {

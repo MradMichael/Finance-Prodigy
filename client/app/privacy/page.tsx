@@ -84,9 +84,10 @@ export default function PrivacyPage() {
             immediately.
           </p>
           <p>
-            <strong style={{ color: T.text }}>If you&apos;ve ever used Database sync</strong>, that backup copy on
-            our server isn&apos;t automatically deleted by this action today — email us and we&apos;ll remove it by
-            hand. (We&apos;re aware this should eventually happen automatically and it&apos;s on our list.)
+            <strong style={{ color: T.text }}>If you&apos;ve ever used Database sync</strong>, deleting your account
+            also removes that backup copy (and anything derived from it) from our server automatically, on a
+            best-effort basis. If you&apos;re offline at the moment you delete, or the server is unreachable, that
+            part won&apos;t complete — email us and we&apos;ll remove it by hand.
           </p>
         </Section>
 

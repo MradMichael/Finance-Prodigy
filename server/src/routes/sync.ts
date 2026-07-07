@@ -2,7 +2,7 @@ import { Router } from "express";
 import { createHash } from "crypto";
 import { z } from "zod";
 import { Prisma, PrismaClient } from "@prisma/client";
-import { normalizeToTables } from "../lib/normalizeSync";
+import { normalizeToTables, deleteAllDataForEmail } from "../lib/normalizeSync";
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -42,6 +42,11 @@ const relinkSchema = z.object({
   token: tokenSchema,             // new sync token, derived from the new password
   recoveryToken: tokenSchema,     // new recovery token, derived from the newly-issued recovery code
   oldRecoveryToken: tokenSchema.optional(), // proof of the previous recovery token — required whenever one was already registered
+});
+
+const deleteSchema = z.object({
+  email: emailSchema,
+  token: tokenSchema,
 });
 
 // Server never sees the password or the raw token — only its hash, the
@@ -179,6 +184,33 @@ router.post("/relink", async (req, res, next) => {
       }
       throw err;
     }
+
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/sync — body: { email, token }
+// Called when a user deletes their account (client/lib/auth.ts deleteAccount)
+// so a synced backup doesn't outlive the account that created it. Removes
+// the user_sync row plus everything normalizeToTables ever wrote into the
+// analytics warehouse for that email. A no-op (still 200) if this account
+// never actually synced — nothing to delete either way.
+router.delete("/", async (req, res, next) => {
+  try {
+    const { email, token } = deleteSchema.parse(req.body);
+    const tokenHash = hashToken(token);
+
+    const record = await prisma.userSync.findUnique({ where: { email } });
+    if (record) {
+      if (record.authTokenHash && record.authTokenHash !== tokenHash) {
+        return res.status(401).json({ error: "Invalid sync credentials for this account." });
+      }
+      await prisma.userSync.delete({ where: { email } });
+    }
+
+    await deleteAllDataForEmail(email);
 
     res.json({ ok: true });
   } catch (err) {
