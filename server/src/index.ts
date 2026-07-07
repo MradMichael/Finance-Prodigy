@@ -8,6 +8,7 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { ZodError } from "zod";
 import sync from "./routes/sync";
+import auth from "./routes/auth";
 import { logger } from "./lib/logger";
 
 const app = express();
@@ -33,6 +34,19 @@ const syncLimiter = rateLimit({
   message: { error: "Too many sync requests — please wait a few minutes and try again." },
 });
 app.use("/api/sync", syncLimiter, sync);
+
+// Tighter than the sync limiter — this is an email-existence check, which
+// is inherently an enumeration surface (the response itself reveals
+// whether an email has synced data), so it's worth bounding harder even
+// though a legitimate user only ever triggers it once per sign-up attempt.
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests — please wait a few minutes and try again." },
+});
+app.use("/api/auth", authLimiter, auth);
 
 // Central error handler — Zod issues come back as 422 with details.
 app.use((err: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {

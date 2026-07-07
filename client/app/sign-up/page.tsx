@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { signUp, signIn, getSession } from "../../lib/auth";
+import { checkEmailExists } from "../../lib/syncService";
 import { useTheme } from "../../contexts/ThemeContext";
 import { Sovereign } from "../../components/EssaBrand";
 import RecoveryCodeModal from "../../components/RecoveryCodeModal";
@@ -19,10 +20,23 @@ export default function SignUpPage() {
   const [error,    setError]    = useState("");
   const [loading,  setLoading]  = useState(false);
   const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
+  const [emailSyncedElsewhere, setEmailSyncedElsewhere] = useState(false);
 
   useEffect(() => {
     if (getSession()) router.replace("/");
   }, [router]);
+
+  // Soft warning only — there's no real server-side user registry (sign-up
+  // itself never touches the network), so this can only detect "this email
+  // has synced data from some other device," not a true duplicate account.
+  // Debounced so it doesn't fire on every keystroke; never blocks signing up.
+  useEffect(() => {
+    if (!email.includes("@")) { setEmailSyncedElsewhere(false); return; }
+    const t = setTimeout(async () => {
+      setEmailSyncedElsewhere(await checkEmailExists(email));
+    }, 600);
+    return () => clearTimeout(t);
+  }, [email]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -73,6 +87,16 @@ export default function SignUpPage() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <Field label="Full name" value={name} onChange={setName} placeholder="Your name" autoComplete="name" />
           <Field label="Email" type="email" value={email} onChange={setEmail} placeholder="you@email.com" autoComplete="email" />
+          {emailSyncedElsewhere && (
+            <div
+              className="rounded-xl px-4 py-3 text-xs leading-relaxed"
+              style={{ background: T.brass + "18", border: `1px solid ${T.brass}40`, color: T.brass }}
+            >
+              This email already has synced data from another device. If that&apos;s you,{" "}
+              <Link href="/sign-in" className="underline font-medium">sign in</Link> instead — a new account
+              here won&apos;t be able to sync until that&apos;s resolved.
+            </div>
+          )}
           <Field label="Password" type="password" value={password} onChange={setPassword} placeholder="Min. 6 characters" autoComplete="new-password" />
           <Field label="Confirm password" type="password" value={confirm} onChange={setConfirm} placeholder="••••••••" autoComplete="new-password" />
 

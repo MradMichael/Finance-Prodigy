@@ -104,3 +104,21 @@ export async function deleteFromServer(email: string, token: string): Promise<Sy
     return { ok: false, error: "Could not reach server." };
   }
 }
+
+/**
+ * Checks whether this email already has synced data from some other
+ * device — the only cross-device signal the server can give, since sign-up
+ * itself never touches it (see routes/auth.ts). Best-effort UX warning,
+ * not a hard block: returns false on any network failure so an offline or
+ * server-down moment never prevents signing up.
+ */
+export async function checkEmailExists(email: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/auth/check-email?email=${encodeURIComponent(email)}`);
+    if (!res.ok) return false;
+    const json = await res.json();
+    return json.exists === true;
+  } catch {
+    return false;
+  }
+}
