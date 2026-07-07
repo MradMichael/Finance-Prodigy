@@ -8,6 +8,7 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { ZodError } from "zod";
 import sync from "./routes/sync";
+import { logger } from "./lib/logger";
 
 const app = express();
 // crossOriginResourcePolicy defaults to "same-origin", which would make
@@ -34,13 +35,13 @@ const syncLimiter = rateLimit({
 app.use("/api/sync", syncLimiter, sync);
 
 // Central error handler — Zod issues come back as 422 with details.
-app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+app.use((err: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
   if (err instanceof ZodError) {
     return res.status(422).json({ error: "Validation failed", issues: err.issues });
   }
-  console.error(err);
+  logger.error("unhandled_request_error", err, { method: req.method, path: req.path });
   res.status(500).json({ error: "Something went wrong on our side — your data is safe." });
 });
 
 const PORT = Number(process.env.PORT ?? 4000);
-app.listen(PORT, () => console.log(`momentum-api listening on :${PORT}`));
+app.listen(PORT, () => logger.info("server_started", { port: PORT }));

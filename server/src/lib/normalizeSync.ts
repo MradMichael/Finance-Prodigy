@@ -14,6 +14,7 @@
  */
 
 import { PrismaClient } from "@prisma/client";
+import { logger } from "./logger";
 
 const prisma = new PrismaClient();
 
@@ -415,10 +416,10 @@ export async function normalizeToTables(email: string, raw: LocalFinancials): Pr
     });
   }
 
-  console.log(
-    `[normalize] user=${user.id} tx=${transactions.length} goals=${goals.length} ` +
-    `debts=${debts.length} recurring=${recurring.length} months=${Object.keys(monthBuckets).length}`
-  );
+  logger.info("normalize_complete", {
+    userId: user.id, transactions: transactions.length, goals: goals.length,
+    debts: debts.length, recurring: recurring.length, months: Object.keys(monthBuckets).length,
+  });
 }
 
 /**
@@ -440,5 +441,5 @@ export async function deleteAllDataForEmail(email: string): Promise<void> {
   await prisma.dimAccount.deleteMany({ where: { userId: user.id } });
   await prisma.user.delete({ where: { id: user.id } });
 
-  console.log(`[normalize] deleted all analytics data for user=${user.id}`);
+  logger.info("normalize_data_deleted", { userId: user.id });
 }

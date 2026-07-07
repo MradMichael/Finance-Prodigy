@@ -3,6 +3,7 @@ import { createHash } from "crypto";
 import { z } from "zod";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { normalizeToTables, deleteAllDataForEmail } from "../lib/normalizeSync";
+import { logger } from "../lib/logger";
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -102,7 +103,7 @@ router.post("/push", async (req, res, next) => {
 
     // Normalize into all structured tables — fire & forget so client is never blocked
     normalizeToTables(normalizedEmail, data).catch((err: Error) =>
-      console.error("[normalize] failed:", err.message)
+      logger.error("normalize_failed", err, { email: normalizedEmail })
     );
 
     res.json({ ok: true, syncedAt: syncedAt.toISOString() });
