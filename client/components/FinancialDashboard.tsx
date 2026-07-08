@@ -24,6 +24,8 @@ import {
 } from "recharts";
 import { useTheme } from "../contexts/ThemeContext";
 import type { DashboardPayload } from "../lib/computeDashboard";
+import OnboardingChecklist from "./OnboardingChecklist";
+import type { Screen } from "./screens/shared";
 const SERIF: React.CSSProperties = { fontFamily: "Georgia, 'Times New Roman', serif" };
 const NUMS: React.CSSProperties = { fontVariantNumeric: "tabular-nums" };
 
@@ -193,7 +195,12 @@ function Panel({ title, children, className = "" }: { title?: string; children: 
 
 // ---------------------------- screen ----------------------------- //
 
-export default function FinancialDashboard({ data: propData }: { data?: DashboardPayload }) {
+export default function FinancialDashboard({
+  data: propData, onNavigate,
+}: {
+  data?: DashboardPayload;
+  onNavigate?: (screen: Screen) => void;
+}) {
   const T = useTheme();
   const { data: fetchedData, demo: fetchedDemo } = useDashboard(propData === undefined);
   const data = propData ?? fetchedData;
@@ -241,6 +248,10 @@ export default function FinancialDashboard({ data: propData }: { data?: Dashboar
             </span>
           )}
         </header>
+
+        {month.income === 0 && onNavigate && (
+          <OnboardingChecklist hasTransactions={month.totalSpend > 0} onNavigate={onNavigate} />
+        )}
 
         {/* Month at a glance */}
         {month.income > 0 && (
