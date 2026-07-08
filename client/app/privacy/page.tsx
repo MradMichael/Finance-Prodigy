@@ -91,6 +91,13 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
+        <Section title="Taking your data with you">
+          <p>
+            Profile → Download my data exports everything — transactions, goals, debts, recurring payments,
+            settings — as a JSON file, anytime, with no restriction. Yours to keep, move elsewhere, or back up by hand.
+          </p>
+        </Section>
+
         <Section title="Children's privacy">
           <p>ESSA isn&apos;t intended for anyone under 16. We don&apos;t knowingly collect data from children.</p>
         </Section>

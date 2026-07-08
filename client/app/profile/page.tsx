@@ -76,6 +76,23 @@ export default function ProfilePage() {
     router.push("/sign-in");
   }
 
+  // "You can leave anytime, nothing's locked in" is a real trust signal for
+  // a financial app asking strangers for their data — and cheap to build,
+  // since LocalFinancials is already a single serializable object.
+  async function handleExport() {
+    if (!session) return;
+    const data = await loadData(session.userId);
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `essa-data-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
   const initials = session ? session.name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2) : "…";
 
   return (
@@ -265,6 +282,29 @@ export default function ProfilePage() {
               <span>→</span>
             </Link>
           )}
+        </div>
+
+        {/* Your data */}
+        <div
+          className="rounded-2xl p-6 space-y-4"
+          style={{ background: T.panel, border: `1px solid ${T.line}` }}
+        >
+          <div>
+            <h2 className="text-sm font-semibold" style={{ color: T.text, fontFamily: "Spectral, Georgia, serif" }}>
+              Your data
+            </h2>
+            <p className="text-xs mt-1" style={{ color: T.mute }}>
+              Download everything ESSA has for your account — transactions, goals, debts, recurring payments, and
+              settings — as a JSON file. Yours to keep, move elsewhere, or back up by hand.
+            </p>
+          </div>
+          <button
+            onClick={handleExport}
+            className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 flex items-center gap-2"
+            style={{ background: T.line, color: T.text }}
+          >
+            ⬇ Download my data
+          </button>
         </div>
 
         {/* Danger zone */}
