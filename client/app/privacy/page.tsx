@@ -76,6 +76,12 @@ export default function PrivacyPage() {
             own data. This stays on our own database, is not shared externally, and the app itself doesn&apos;t
             currently read it back — it exists for future internal use only.
           </p>
+          <p>
+            Separately, Profile → Help improve ESSA is an <strong style={{ color: T.text }}>opt-in, off by default</strong> toggle
+            that sends anonymous counts for a handful of named product actions (like completing an onboarding step) to
+            our own server — no third-party analytics SDK, no identity attached, never your financial data. Turning
+            it on or off takes effect immediately.
+          </p>
         </Section>
 
         <Section title="Deleting your data">

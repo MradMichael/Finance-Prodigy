@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useTheme } from "../contexts/ThemeContext";
 import type { Screen } from "./screens/shared";
+import { trackEvent } from "../lib/analytics";
 
 const SERIF = { fontFamily: "Spectral, Georgia, serif" };
 const DISMISS_KEY = "essa_onboarding_dismissed";
@@ -35,9 +36,9 @@ export default function OnboardingChecklist({
   if (dismissed) return null;
 
   const steps = [
-    { done: false, label: "Set your monthly income", detail: "Unlocks your health score, budget targets, and every projection.", action: () => onNavigate("setup") },
-    { done: hasTransactions, label: "Log your first transaction", detail: "Real spending, not a demo — takes about 10 seconds.", action: () => onNavigate("finances") },
-    { done: false, label: "Come back to Overview", detail: "See your health score and where you actually stand.", action: () => onNavigate("overview") },
+    { done: false, label: "Set your monthly income", detail: "Unlocks your health score, budget targets, and every projection.", action: () => { trackEvent("onboarding_step_income"); onNavigate("setup"); } },
+    { done: hasTransactions, label: "Log your first transaction", detail: "Real spending, not a demo — takes about 10 seconds.", action: () => { trackEvent("onboarding_step_transaction"); onNavigate("finances"); } },
+    { done: false, label: "Come back to Overview", detail: "See your health score and where you actually stand.", action: () => { trackEvent("onboarding_step_overview"); onNavigate("overview"); } },
   ];
 
   return (

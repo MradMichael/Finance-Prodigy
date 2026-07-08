@@ -7,6 +7,7 @@ import { getSession, updateProfile, deleteAccount, signOut, isAdmin, ensureFirst
 import type { Session } from "../../lib/auth";
 import { loadData, saveData } from "../../lib/localData";
 import { pullFromServer, getLastSyncTime } from "../../lib/syncService";
+import { isAnalyticsOptedIn, setAnalyticsOptIn } from "../../lib/analytics";
 import { useTheme, useThemeControl } from "../../contexts/ThemeContext";
 import { THEMES, type ThemeKey } from "../../lib/theme";
 import Field from "../../components/form/Field";
@@ -34,6 +35,7 @@ export default function ProfilePage() {
   const [syncMsg,       setSyncMsg]       = useState("");
   const [syncing,       setSyncing]       = useState(false);
   const [lastSync,      setLastSync]      = useState<string | null>(null);
+  const [analyticsOn,   setAnalyticsOn]   = useState(false);
 
   useEffect(() => {
     ensureFirstUserIsAdmin();
@@ -43,7 +45,14 @@ export default function ProfilePage() {
     setName(s.name);
     setLastSync(getLastSyncTime());
     setAdmin(isAdmin(s.userId));
+    setAnalyticsOn(isAnalyticsOptedIn());
   }, [router]);
+
+  function toggleAnalytics() {
+    const next = !analyticsOn;
+    setAnalyticsOptIn(next);
+    setAnalyticsOn(next);
+  }
 
   async function handlePull() {
     if (!session) return;
@@ -305,6 +314,36 @@ export default function ProfilePage() {
           >
             ⬇ Download my data
           </button>
+        </div>
+
+        {/* Analytics opt-in */}
+        <div
+          className="rounded-2xl p-6 space-y-4"
+          style={{ background: T.panel, border: `1px solid ${T.line}` }}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold" style={{ color: T.text, fontFamily: "Spectral, Georgia, serif" }}>
+                Help improve ESSA
+              </h2>
+              <p className="text-xs mt-1" style={{ color: T.mute }}>
+                Off by default. If enabled, sends anonymous counts for a handful of named actions (like completing
+                onboarding steps) — no third-party tracker, no identity attached, never your financial data.
+              </p>
+            </div>
+            <button
+              onClick={toggleAnalytics}
+              role="switch"
+              aria-checked={analyticsOn}
+              className="flex-shrink-0 w-11 h-6 rounded-full relative transition-colors"
+              style={{ background: analyticsOn ? T.jade : T.line }}
+            >
+              <span
+                className="absolute top-0.5 w-5 h-5 rounded-full transition-all"
+                style={{ background: T.ink, left: analyticsOn ? "22px" : "2px" }}
+              />
+            </button>
+          </div>
         </div>
 
         {/* Danger zone */}

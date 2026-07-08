@@ -9,6 +9,7 @@ import rateLimit from "express-rate-limit";
 import { ZodError } from "zod";
 import sync from "./routes/sync";
 import auth from "./routes/auth";
+import events from "./routes/events";
 import { logger } from "./lib/logger";
 
 const app = express();
@@ -47,6 +48,7 @@ const authLimiter = rateLimit({
   message: { error: "Too many requests — please wait a few minutes and try again." },
 });
 app.use("/api/auth", authLimiter, auth);
+app.use("/api/events", authLimiter, events);
 
 // Central error handler — Zod issues come back as 422 with details.
 app.use((err: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
