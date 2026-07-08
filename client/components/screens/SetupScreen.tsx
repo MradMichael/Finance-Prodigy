@@ -5,6 +5,24 @@ import { BUDGET_RULES } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF } from "./shared";
 
+// LBP is volatile enough that a stale rate silently undermines the app's
+// one real differentiator (accurate dual-currency tracking) — surface it
+// instead of letting it quietly go out of date unnoticed.
+function RateStaleness({ updatedAt }: { updatedAt?: string }) {
+  const T = useTheme();
+  if (!updatedAt) return null;
+  const days = Math.floor((Date.now() - new Date(updatedAt).getTime()) / 86_400_000);
+  if (days < 3) return null; // recently updated — no need to nag
+  const stale = days >= 14;
+  const color = stale ? T.coral : T.brass;
+  const label = days === 1 ? "1 day ago" : `${days} days ago`;
+  return (
+    <p className="text-[11px] mt-1.5 px-1 font-medium" style={{ color }}>
+      ⚠ Rate last updated {label}{stale ? " — LBP moves fast, double-check it's still accurate" : ""}.
+    </p>
+  );
+}
+
 export default function SetupScreen({
   financials,
   onChange,
@@ -70,12 +88,13 @@ export default function SetupScreen({
               style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
               type="number" min="0" step="500"
               value={financials.lbpRate ?? 89500}
-              onChange={(e) => update({ lbpRate: parseFloat(e.target.value) || 89500 })}
+              onChange={(e) => update({ lbpRate: parseFloat(e.target.value) || 89500, lbpRateUpdatedAt: new Date().toISOString() })}
               placeholder="89500"
             />
             <p className="text-[11px] mt-1.5 px-1" style={{ color: T.mute }}>
               Used to convert L£ amounts to $ across the app. Update this when the rate changes.
             </p>
+            <RateStaleness updatedAt={financials.lbpRateUpdatedAt} />
           </div>
         </div>
 

@@ -146,6 +146,8 @@ export interface LocalFinancials {
   incomeHistory?: { ym: string; value: number }[];
   /** Same idea as incomeHistory, for `lbpRate` — LBP is volatile enough that using today's rate to re-convert a past month's LBP transactions silently rewrites history every time the rate is updated. */
   lbpRateHistory?: { ym: string; value: number }[];
+  /** ISO timestamp of the last time `lbpRate` was actually edited — powers the staleness indicator in SetupScreen (day-level precision; lbpRateHistory above only tracks month granularity). Absent on accounts predating this field, or if the rate has never been edited since. */
+  lbpRateUpdatedAt?: string;
   budgetRule?: BudgetRuleKey;
   budgetCustomNeeds?: number;
   budgetCustomWants?: number;
