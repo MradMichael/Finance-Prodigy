@@ -11,7 +11,7 @@ A local-first personal finance tracker: 50/30/20 (or custom) budget tracking, a 
 **Your financial data lives in your browser, not in a database.** Everything — transactions, goals, debts, recurring payments — is stored in `localStorage`, encrypted at rest (AES-GCM), and all dashboard math (health score, debt payoff plans, goal projections) runs client-side in [`client/lib/computeDashboard.ts`](client/lib/computeDashboard.ts). There is no server-side session or user database backing sign-in.
 
 **The Express + Postgres backend is optional and does two things:**
-1. **Sync** (`/api/sync/push` / `/api/sync/pull`) — lets you carry your data to a second device. Push uploads your encrypted-in-transit-by-HTTPS JSON blob keyed by email; pull downloads it. Protected by a token derived from your account password (see [Security model](#security-model)) — the server never sees your password.
+1. **Sync** (`/api/sync/push` / `/api/sync/pull`) — lets you carry your data to a second device. Push uploads a JSON blob keyed by email; pull downloads it. Protected by a token derived from your account password (see [Security model](#security-model)) — the server never sees your password. **The uploaded blob itself is not client-side-encrypted** the way `localStorage` is — it's stored as plain, readable data (protected by DB access controls + TLS in transit + the sync token instead), because the analytics decomposition below needs to read actual field values. See [`client/app/security/page.tsx`](client/app/security/page.tsx) for the full explanation.
 2. **Analytics warehouse** — every push also fires-and-forgets a decomposition of your data into a proper star schema (`dim_date`, `dim_category`, `fact_transaction`, etc. — see [`prisma/schema.prisma`](server/prisma/schema.prisma)) so you can point Power BI / Qlik / Metabase at it later. **The app itself doesn't read this back** — it's a write-only sink today, populated by `server/src/lib/normalizeSync.ts` on every push.
 
 If you never run the server, the app works fully offline — sign-up, sign-in, and all the screens work purely against `localStorage`.
@@ -25,17 +25,21 @@ Finance-Prodigy/
 ├── client/                        # Next.js app — the actual product
 │   ├── app/
 │   │   ├── page.tsx                   # Main app shell: auth gate + all screens (Overview, Budget, Goals, Debts, Transactions)
+│   │   ├── error.tsx, global-error.tsx  # Client-side error boundaries (friendly screen, not Next's default crash page)
 │   │   ├── sign-in/, sign-up/         # localStorage auth
 │   │   ├── recover/                   # Forgot-password flow (recovery code, see Security model)
-│   │   ├── profile/                   # Account settings, theme picker, sync push/pull
-│   │   └── admin/                     # Diagnostics: API health, registered users, sync status
+│   │   ├── profile/                   # Account settings, theme picker, sync push/pull, data export, analytics opt-in
+│   │   ├── about/, terms/, privacy/, security/  # FAQ, Terms of Service, Privacy Policy, Trust & Security
+│   │   └── admin/                     # Diagnostics: API health, registered users, sync status — gated out of production builds
 │   ├── lib/
-│   │   ├── auth.ts                    # Sign-up/in/out, password hashing, recovery
+│   │   ├── auth.ts                    # Sign-up/in/out, password hashing, recovery, sync-relink token
 │   │   ├── crypto.ts                  # AES-GCM encryption + the DEK-wrapping scheme behind recovery codes
 │   │   ├── localData.ts               # Data types + encrypted localStorage load/save
 │   │   ├── computeDashboard.ts        # Pure function: your data → everything the dashboard shows
-│   │   └── syncService.ts             # Push/pull to the Express API (relative /api/* paths)
-│   ├── components/                    # FinancialDashboard, InputPanel, EssaBrand, ThemeContext
+│   │   ├── syncService.ts             # Push/pull/relink to the Express API (relative /api/* paths)
+│   │   └── analytics.ts               # Opt-in, first-party-only product analytics (off by default)
+│   ├── components/                    # FinancialDashboard, InputPanel, OnboardingChecklist, EssaBrand, ThemeContext
+│   ├── public/                        # manifest.webmanifest, sw.js, icons — PWA/installable support
 │   └── next.config.js                 # Proxies /api/* to the Express server (see API_URL below)
 ├── server/                        # Express API — sync + analytics warehouse only
 │   ├── prisma/
@@ -43,9 +47,11 @@ Finance-Prodigy/
 │   │   ├── analytics_views.sql        # BI-facing views (vw_fact_ledger, vw_monthly_bucket, vw_category_variance)
 │   │   └── seed.ts                    # Master calendar, category tree, demo user
 │   ├── src/
-│   │   ├── index.ts                   # Bootstrap, CORS, error handling
-│   │   ├── routes/sync.ts             # Push/pull — the only routes that exist
-│   │   └── lib/normalizeSync.ts       # Decomposes each push into the star schema
+│   │   ├── index.ts                   # Bootstrap, CORS, helmet, rate limiting, error handling
+│   │   ├── routes/sync.ts             # push / pull / relink / delete
+│   │   ├── routes/auth.ts             # check-email (interim cross-device duplicate-email warning)
+│   │   ├── routes/events.ts           # Analytics event sink — allow-listed event names only
+│   │   └── lib/{normalizeSync,logger}.ts  # Star-schema decomposition + structured JSON logging
 │   └── .env.example
 └── demo/
     └── momentum-planner.jsx           # Standalone interactive planner, no backend — a design reference, not part of the app
@@ -107,14 +113,21 @@ On Neon specifically: both URLs come from the same project's Connect panel — `
 
 ## Deployment
 
+**Code-side readiness (everything that doesn't require an external account) is done:** input validation, rate limiting, security headers, structured logging, client-side error boundaries, an admin page that's compiled out of production entirely, Terms of Service + Privacy Policy + a Trust & Security page, PWA installability, and a full green run of `tsc --noEmit` + the test suite + production builds for both client and server (Postgres migrations included) against a live Neon database. See [`client/app/security/page.tsx`](client/app/security/page.tsx) for the plain-language version of what is and isn't protected.
+
 **Verified against a real cloud database (Neon):**
 - `cd server && npm install && npm run build` (`prisma generate && tsc`) builds clean standalone.
 - `npx prisma migrate dev` + `npx prisma db seed` against a live Neon Postgres project, run twice — the seed is genuinely idempotent (second run: 0 rows inserted, all already existed).
-- `npm run dev` against Neon's pooled connection, then a real `/api/sync/push` + `/api/sync/pull` round trip against it (verified with a throwaway test record, cleaned up after).
+- `npm run dev` against Neon's pooled connection, then real `/api/sync/push`, `/pull`, `/relink`, and `DELETE` round trips against it (verified with throwaway test records, cleaned up after).
 - `cd client && npm run build && API_URL=http://localhost:4000 npm start` — the **production** build (not `next dev`) serves correctly and `next.config.js`'s `/api/*` rewrite honors `API_URL` as documented.
 - CORS: the server always responds with the configured `CLIENT_ORIGIN` value in `Access-Control-Allow-Origin`, regardless of the request's actual `Origin` header — this is what makes a browser reject responses to any page that isn't running at `CLIENT_ORIGIN`, even though a non-browser client like `curl` won't visibly enforce that itself.
+- `/admin` returns a genuine 404 with no database/host strings anywhere in the response when built with `NODE_ENV=production`, confirmed by actually running `next build && next start` and requesting it.
 
-**Not yet verified — requires an actual account/host, so this is deliberately scoped out until you want to commit to one:** deploying the client to Vercel (or similar) and the server to Railway/Render (or similar) so the API itself is reachable from another device, not just `localhost`. The database side of that is already solved by Neon (or any Postgres host) being reachable over the internet — this remaining gap is purely about hosting the Express process itself.
+**Not yet verified — requires an actual account/host, so this is deliberately scoped out until you want to commit to one:**
+- Deploying the client to Vercel (or similar) and the server to Railway/Render (or similar) so the API itself is reachable from another device, not just `localhost`. The database side of that is already solved by Neon (or any Postgres host) being reachable over the internet — this remaining gap is purely about hosting the Express process itself.
+- A real domain name + SSL certificate.
+- Safari/iOS testing on an actual device — the calendar-picker button (`DateFieldDMY` in `client/components/form/Primitives.tsx`) uses `HTMLInputElement.showPicker()`, which has a `.focus()` fallback if unsupported but hasn't been confirmed to feel right on real iOS Safari.
+- A rollout decision on whether to open signup to strangers immediately or run a private beta first — recommended, since no amount of code review substitutes for real usage surfacing what it can't predict.
 
 ---
 
@@ -125,6 +138,9 @@ On Neon specifically: both URLs come from the same project's Connect panel — `
 - **Passwords** are hashed with PBKDF2-SHA256 (120,000 iterations, random per-account salt) before ever touching `localStorage`.
 - **Sync auth:** push/pull require a bearer token derived from your password (PBKDF2, independent of the encryption key). The server stores only a hash of it — never the token, never your password. The first push for an email registers the hash (trust-on-first-use); every push/pull after that must match.
 - **Password reset re-links sync automatically.** Resetting your password (`/recover`) changes the sync token, which used to leave the server stuck expecting the old one until the `user_sync` row was cleared by hand. A second, independent token derived from your recovery code (`POST /api/sync/relink`) now proves ownership across the reset instead — the old recovery code is exactly what `/recover` already required you to type in. This only works if the account had synced (pushed) at least once before the reset, since that's the only point a recovery token gets registered server-side in the first place; accounts that had never synced simply register fresh on their next push, same as a brand-new account.
+- **Deleting your account also purges the server-side copy.** `DELETE /api/sync` (called automatically from Profile → Delete account) removes the `user_sync` backup row and everything derived from it in the analytics warehouse, not just your local browser data.
+- **API hardening:** every request body is validated with zod (malformed requests get a 422, not a crash); `/api/sync/*` and `/api/auth/*` are rate-limited; security headers are set via `helmet`; the admin diagnostics page is compiled out of production builds entirely (`notFound()` when `NODE_ENV === "production"`) rather than just being link-hidden.
+- **Cross-device signup collisions:** there's no real server-side user registry (see Roadmap below), so `GET /api/auth/check-email` is an interim, narrower check — it can only tell you "this email has synced before," which is enough to warn someone signing up with an email that already has data elsewhere before they invest in an account that'll conflict with it.
 
 ---
 

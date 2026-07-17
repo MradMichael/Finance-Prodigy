@@ -24,7 +24,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: "Can I use ESSA on multiple devices?",
-    a: "Yes — push your data from one device, then pull it on another. Both must be able to reach the same sync server (by default your own machine at localhost:4000; a deployed setup would point at wherever that server actually runs).",
+    a: "Yes — push your data from one device (Profile → Database sync → Push), then pull it on another (Profile → Database sync → Restore from database). Both devices just need to be able to reach ESSA itself.",
   },
   {
     q: "What currencies are supported?",
