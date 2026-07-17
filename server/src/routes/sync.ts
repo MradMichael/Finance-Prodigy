@@ -1,12 +1,13 @@
 import { Router } from "express";
 import { createHash } from "crypto";
 import { z } from "zod";
-import { Prisma, PrismaClient } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { normalizeToTables, deleteAllDataForEmail } from "../lib/normalizeSync";
 import { logger } from "../lib/logger";
+import { prisma } from "../lib/prisma";
+import { emailSchema, tokenSchema } from "../lib/validation";
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // `data` is the client's LocalFinancials blob — its exact shape is
 // intentionally NOT modeled here (that would couple this route to every
@@ -15,8 +16,6 @@ const prisma = new PrismaClient();
 // safe from: a real email, a real token, and a payload that can't be used
 // to exhaust the database with an arbitrarily large row.
 const MAX_DATA_JSON_BYTES = 2_000_000; // 2MB — generous for a personal-finance data blob
-const emailSchema = z.string().trim().toLowerCase().email().max(320);
-const tokenSchema = z.string().min(1).max(2000);
 
 const pushSchema = z.object({
   email: emailSchema,
@@ -64,6 +63,9 @@ router.post("/push", async (req, res, next) => {
     const { email: normalizedEmail, data, token, recoveryToken } = pushSchema.parse(req.body);
     const tokenHash = hashToken(token);
     const recoveryTokenHash = recoveryToken ? hashToken(recoveryToken) : undefined;
+    // Computed once and reused in both the create and update branches below —
+    // this payload can be up to ~2MB, no reason to re-serialize it twice more.
+    const dataJson = JSON.stringify(data);
 
     // The token check-then-write must be one atomic unit: with two plain
     // await calls, two concurrent pushes to the same not-yet-registered
@@ -84,8 +86,8 @@ router.post("/push", async (req, res, next) => {
         // at all) rather than clobbering a previously-registered value with null.
         await tx.userSync.upsert({
           where:  { email: normalizedEmail },
-          create: { email: normalizedEmail, dataJson: JSON.stringify(data), authTokenHash: tokenHash, recoveryTokenHash },
-          update: { dataJson: JSON.stringify(data), syncedAt: now, authTokenHash: tokenHash, ...(recoveryTokenHash ? { recoveryTokenHash } : {}) },
+          create: { email: normalizedEmail, dataJson, authTokenHash: tokenHash, recoveryTokenHash },
+          update: { dataJson, syncedAt: now, authTokenHash: tokenHash, ...(recoveryTokenHash ? { recoveryTokenHash } : {}) },
         });
         return now;
       }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
@@ -205,7 +207,14 @@ router.delete("/", async (req, res, next) => {
 
     const record = await prisma.userSync.findUnique({ where: { email } });
     if (record) {
-      if (record.authTokenHash && record.authTokenHash !== tokenHash) {
+      // Mirror /pull's check exactly: a falsy authTokenHash must REFUSE the
+      // request, not skip it. `record.authTokenHash && ...` short-circuits
+      // to false (allowing the delete through with zero proof of ownership)
+      // whenever authTokenHash is null — the opposite of what's intended.
+      if (!record.authTokenHash) {
+        return res.status(401).json({ error: "This account has no sync credentials registered yet — nothing to verify against." });
+      }
+      if (record.authTokenHash !== tokenHash) {
         return res.status(401).json({ error: "Invalid sync credentials for this account." });
       }
       await prisma.userSync.delete({ where: { email } });

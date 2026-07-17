@@ -13,10 +13,8 @@
  *   dim_account       (now safe)
  */
 
-import { PrismaClient } from "@prisma/client";
 import { logger } from "./logger";
-
-const prisma = new PrismaClient();
+import { prisma } from "./prisma";
 
 // ── local types (mirror LocalFinancials shape) ──────────────────────────────
 
@@ -158,6 +156,18 @@ export async function normalizeToTables(email: string, raw: LocalFinancials): Pr
   const recurring    = raw.recurring    ?? [];
   const now          = new Date();
   const todayStr     = now.toISOString().slice(0, 10);
+
+  // This runs fire-and-forget after /push already responded (see routes/sync.ts),
+  // so a DELETE /api/sync for the same email can land while this is still
+  // in flight — without this check, deleteAllDataForEmail() could find
+  // nothing to clean up, then THIS finishes afterward and recreates the
+  // analytics rows the deletion was supposed to remove. Bail out if the
+  // account's sync record is gone by the time we actually get to write.
+  const stillSynced = await prisma.userSync.findUnique({ where: { email: email.toLowerCase() }, select: { id: true } });
+  if (!stillSynced) {
+    logger.info("normalize_skipped_deleted", { email: email.toLowerCase() });
+    return;
+  }
 
   // ── 1. Upsert dim_user ────────────────────────────────────────────────────
   const user = await prisma.user.upsert({

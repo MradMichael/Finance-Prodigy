@@ -90,6 +90,12 @@ export async function signUp(
   email: string, name: string, password: string,
 ): Promise<{ ok: true; recoveryCode: string } | { ok: false; error: string }> {
   if (!email.trim() || !name.trim() || !password) return { ok: false, error: "All fields are required." };
+  // The server's sync API validates email format strictly (zod's .email()) —
+  // without a matching check here, someone could sign up locally with a
+  // non-standard string ("test", "admin@localhost") that works fine until
+  // their first sync attempt, which would then fail with a confusing 422
+  // for a problem that traces back to account creation, not sync itself.
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return { ok: false, error: "Enter a valid email address." };
   if (password.length < 6) return { ok: false, error: "Password must be at least 6 characters." };
   const users = getUsers();
   if (users.some((u) => u.email.toLowerCase() === email.toLowerCase().trim()))

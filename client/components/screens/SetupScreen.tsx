@@ -15,7 +15,7 @@ function RateStaleness({ updatedAt }: { updatedAt?: string }) {
   if (days < 3) return null; // recently updated — no need to nag
   const stale = days >= 14;
   const color = stale ? T.coral : T.brass;
-  const label = days === 1 ? "1 day ago" : `${days} days ago`;
+  const label = `${days} days ago`; // never 1 (unreachable, gated above at days < 3)
   return (
     <p className="text-[11px] mt-1.5 px-1 font-medium" style={{ color }}>
       ⚠ Rate last updated {label}{stale ? " — LBP moves fast, double-check it's still accurate" : ""}.
@@ -88,7 +88,22 @@ export default function SetupScreen({
               style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
               type="number" min="0" step="500"
               value={financials.lbpRate ?? 89500}
-              onChange={(e) => update({ lbpRate: parseFloat(e.target.value) || 89500, lbpRateUpdatedAt: new Date().toISOString() })}
+              onChange={(e) => {
+                // Only commit — and only stamp "just updated" — on a real,
+                // valid, positive number. The old `parseFloat(...) || 89500`
+                // silently discarded an empty/zero/invalid keystroke by
+                // snapping the stored rate back to the hardcoded default,
+                // while still stamping lbpRateUpdatedAt as if the user's
+                // input had been accepted — the staleness indicator would
+                // report a rate as "just verified" the same moment real
+                // input was thrown away. Leaving the field alone mid-edit
+                // (rather than forcing it to 0) also avoids ever storing
+                // lbpRate as 0, which computeDashboard.ts would divide by.
+                const parsed = parseFloat(e.target.value);
+                if (!isNaN(parsed) && parsed > 0) {
+                  update({ lbpRate: parsed, lbpRateUpdatedAt: new Date().toISOString() });
+                }
+              }}
               placeholder="89500"
             />
             <p className="text-[11px] mt-1.5 px-1" style={{ color: T.mute }}>

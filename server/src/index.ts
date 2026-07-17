@@ -19,7 +19,12 @@ const app = express();
 // domain once deployed), so that's the one default this API needs to opt out of.
 app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 app.use(cors({ origin: process.env.CLIENT_ORIGIN ?? "http://localhost:3000" }));
-app.use(express.json());
+// express.json()'s own default limit (100kb) is well under sync.ts's
+// documented 2MB payload cap — without raising it here, any push over
+// ~100KB never reaches that check at all; body-parser rejects it first
+// with a raw, unfriendly 413. This just moves the actual cutoff to where
+// the zod validation (and its clear error message) already expects it.
+app.use(express.json({ limit: "3mb" }));
 
 app.get("/api/health", (_req, res) => res.json({ ok: true, service: "momentum-api" }));
 

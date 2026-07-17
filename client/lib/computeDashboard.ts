@@ -10,6 +10,8 @@ interface Projection {
 export interface DashboardPayload {
   user: { name: string; currency: string; payoffStrategy: "SNOWBALL" | "AVALANCHE" };
   period: { year: number; month: number };
+  /** Any transaction ever logged, not scoped to this month — distinct from month.totalSpend, which also counts pro-rated recurring payments even when nothing's actually been logged. */
+  hasLoggedTransactions: boolean;
   budgetRule: BudgetRuleKey;
   budgetTargets: { needs: number; wants: number; savings: number };
   budgetRollover: { needs: number; wants: number; savings: number };
@@ -521,6 +523,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   return {
     user: { name: data.userName || "You", currency: "USD", payoffStrategy: "AVALANCHE" },
     period: { year, month },
+    hasLoggedTransactions: (data.transactions ?? []).length > 0,
     health: {
       score: totalScore, grade,
       components: [

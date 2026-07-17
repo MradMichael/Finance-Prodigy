@@ -16,8 +16,9 @@ const DISMISS_KEY = "essa_onboarding_dismissed";
  * than for an app onboarding people already primed by an ad.
  */
 export default function OnboardingChecklist({
-  hasTransactions, onNavigate,
+  hasIncome, hasTransactions, onNavigate,
 }: {
+  hasIncome: boolean;
   hasTransactions: boolean;
   onNavigate: (screen: Screen) => void;
 }) {
@@ -36,7 +37,7 @@ export default function OnboardingChecklist({
   if (dismissed) return null;
 
   const steps = [
-    { done: false, label: "Set your monthly income", detail: "Unlocks your health score, budget targets, and every projection.", action: () => { trackEvent("onboarding_step_income"); onNavigate("setup"); } },
+    { done: hasIncome, label: "Set your monthly income", detail: "Unlocks your health score, budget targets, and every projection.", action: () => { trackEvent("onboarding_step_income"); onNavigate("setup"); } },
     { done: hasTransactions, label: "Log your first transaction", detail: "Real spending, not a demo — takes about 10 seconds.", action: () => { trackEvent("onboarding_step_transaction"); onNavigate("finances"); } },
     { done: false, label: "Come back to Overview", detail: "See your health score and where you actually stand.", action: () => { trackEvent("onboarding_step_overview"); onNavigate("overview"); } },
   ];

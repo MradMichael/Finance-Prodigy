@@ -44,6 +44,7 @@ const ymStrLabel = (ym: string) => {
 const MOCK: DashboardPayload = {
   user: { name: "Demo User", currency: "USD", payoffStrategy: "AVALANCHE" },
   period: { year: 2026, month: 6 },
+  hasLoggedTransactions: true,
   health: {
     score: 68, grade: "Building momentum",
     components: [
@@ -249,8 +250,12 @@ export default function FinancialDashboard({
           )}
         </header>
 
-        {month.income === 0 && onNavigate && (
-          <OnboardingChecklist hasTransactions={month.totalSpend > 0} onNavigate={onNavigate} />
+        {/* Keeps showing until BOTH steps are actually done (not just "income
+            set"), so a user who sets income first doesn't lose the nudge to
+            log a transaction — it used to be gated on income === 0 alone and
+            vanished the instant step 1 was done, even if step 2 wasn't. */}
+        {onNavigate && !(month.income > 0 && data.hasLoggedTransactions) && (
+          <OnboardingChecklist hasIncome={month.income > 0} hasTransactions={data.hasLoggedTransactions} onNavigate={onNavigate} />
         )}
 
         {/* Month at a glance */}

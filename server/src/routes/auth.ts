@@ -1,12 +1,12 @@
 import { Router } from "express";
 import { z } from "zod";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../lib/prisma";
+import { emailSchema } from "../lib/validation";
 
 const router = Router();
-const prisma = new PrismaClient();
 
 const emailQuerySchema = z.object({
-  email: z.string().trim().toLowerCase().email().max(320),
+  email: emailSchema,
 });
 
 /**
