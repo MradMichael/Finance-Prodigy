@@ -135,15 +135,20 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   const wantsSpend  = monthTx.filter((t) => t.bucket === "WANTS").reduce((s, t) => s + toUSD(t.amount, t.currency), 0)   + recurWants;
   const savingsContrib = monthTx.filter((t) => t.bucket === "SAVINGS").reduce((s, t) => s + toUSD(t.amount, t.currency), 0) + recurSavings;
   const totalSpend  = needsSpend + wantsSpend + savingsContrib;
-  const income      = Math.max(data.income, 1); // guard div-by-zero
+  // `income` stays the RAW stored value everywhere it's displayed or used
+  // as a multiplier (month.income, netCashFlow, budget targets) so a fresh
+  // $0-income account reads as $0, not a phantom $1. `incomeSafe` exists
+  // only to keep the ratio calculations below from dividing by zero.
+  const income      = data.income;
+  const incomeSafe  = Math.max(data.income, 1); // guard div-by-zero (ratios only)
   const netCashFlow = income - totalSpend;
-  const savingsRatePct = (savingsContrib / income) * 100;
+  const savingsRatePct = (savingsContrib / incomeSafe) * 100;
 
   // ── Health components ────────────────────────────────────────────
   const targetSavingsPct = budgetTargetPct.savings;
   const targetNeedsPct   = budgetTargetPct.needs / 100;
   const savingsScore = targetSavingsPct > 0 ? Math.min(100, (savingsRatePct / targetSavingsPct) * 100) : 100;
-  const needsPct = needsSpend / income;
+  const needsPct = needsSpend / incomeSafe;
   const needsScore = needsPct <= targetNeedsPct ? 100 : Math.max(0, 100 - (needsPct - targetNeedsPct) * 400);
 
   const efMonthlyBase = needsSpend || income * 0.5;
@@ -156,7 +161,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   // their minPayment isn't cleared, so summing over all debts unfiltered
   // would keep counting a payment obligation that no longer exists.
   const totalMinPayments = data.debts.filter((d) => d.balance > 0).reduce((s, d) => s + d.minPayment, 0);
-  const debtPressurePct  = totalMinPayments / income;
+  const debtPressurePct  = totalMinPayments / incomeSafe;
   const debtScore = Math.max(0, 100 - debtPressurePct * 400);
 
   const goalScores = data.goals.map((g) => {

@@ -351,6 +351,19 @@ describe("income history — past months judged against income at the time, not 
   });
 });
 
+describe("fresh account with $0 income — the div-by-zero guard must not leak into display", () => {
+  it("reports month.income and netCashFlow as 0, not a phantom $1, and produces no NaN/Infinity", () => {
+    const data = makeData({ income: 0 });
+    const result = computeDashboard(data);
+    expect(result.month.income).toBe(0);
+    expect(result.month.netCashFlow).toBe(0);
+    expect(Number.isFinite(result.month.savingsRatePct)).toBe(true);
+    expect(result.budgetTargets.needs).toBe(0);
+    expect(result.budgetTargets.wants).toBe(0);
+    expect(result.budgetTargets.savings).toBe(0);
+  });
+});
+
 describe("LBP exchange-rate history — past LBP transactions convert at the rate in effect then", () => {
   it("sixMonthTrend converts a past LBP transaction using the historical rate, not today's", () => {
     const data = makeData({
