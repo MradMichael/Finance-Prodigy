@@ -130,6 +130,41 @@ export function clearEncryptionKey(): void {
 }
 
 /**
+ * True only if a DEK is actually active in this tab's sessionStorage right
+ * now. The signed-in Session record lives in localStorage (persists across
+ * tabs/restarts) while the DEK deliberately lives in sessionStorage (cleared
+ * on browser close, scoped per-tab) — callers that only check for a Session
+ * and skip this can end up "signed in" with no key, which used to make
+ * encryptJSON/decryptJSON silently fail open. Check both before touching data.
+ */
+export function hasActiveKey(): boolean {
+  try { return sessionStorage.getItem(KEY_STORE) !== null; }
+  catch { return false; }
+}
+
+/**
+ * For the legacy sign-in migration only: proves a candidate password is
+ * genuinely correct by actually decrypting this account's stored data with
+ * the DEK it would derive, rather than trusting the legacy djb2 checksum
+ * alone (32-bit and unsalted — brute-forceable in well under a minute).
+ * Returns true/false when there's stored data to check against, or null
+ * when there isn't yet (a legacy account that's never saved anything) —
+ * callers should fall back to the checksum only in that narrow null case,
+ * since there's nothing real to cryptographically verify against.
+ */
+export async function verifyLegacyPassword(password: string, userId: string): Promise<boolean | null> {
+  let raw: string | null;
+  try { raw = localStorage.getItem(`essa_data_${userId}`); } catch { return null; }
+  if (!raw) return null;
+  let parsed: Partial<Envelope>;
+  try { parsed = JSON.parse(raw); } catch { return null; }
+  if (parsed.v !== 1 || !parsed.iv || !parsed.ct) return null; // unencrypted legacy data — nothing to verify against
+  const legacyKek = await deriveKek(password, `essa-v1-${userId}`);
+  const result = await unwrapDek(parsed as Envelope, legacyKek);
+  return result !== null;
+}
+
+/**
  * Derives a bearer token proving knowledge of the account password, sent
  * to the sync API instead of the password itself. Uses a different salt
  * than the password KEK (deriveKek above) so the two secrets are
@@ -217,10 +252,17 @@ async function getKey(): Promise<CryptoKey | null> {
   }
 }
 
-/** Encrypts a JSON string. Returns the envelope JSON string. */
+/**
+ * Encrypts a JSON string. Returns the envelope JSON string.
+ * Throws if there's no active key rather than silently storing plaintext —
+ * a missing key here means the caller skipped the hasActiveKey() check
+ * (e.g. a stale session outliving its per-tab key) and is about to persist
+ * data it can't actually protect. Callers should guard with hasActiveKey()
+ * before ever reaching this point; this throw is the backstop.
+ */
 export async function encryptJSON(plaintext: string): Promise<string> {
   const key = await getKey();
-  if (!key) return plaintext; // no key yet — store as plain (will encrypt on next save)
+  if (!key) throw new Error("ENCRYPTION_KEY_MISSING");
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const buf = await crypto.subtle.encrypt(
     { name: "AES-GCM", iv },
@@ -235,19 +277,34 @@ export async function encryptJSON(plaintext: string): Promise<string> {
   return JSON.stringify(env);
 }
 
-/** Decrypts an envelope JSON string. Falls back to returning the input unchanged
- *  if the data is plain JSON (migration from unencrypted storage). */
+/**
+ * Decrypts an envelope JSON string. Falls back to returning the input
+ * unchanged only when it's genuinely plain JSON (migration from unencrypted
+ * storage) — that's the one legitimate fallback. If it IS an encrypted
+ * envelope but there's no key, or the key doesn't actually decrypt it, this
+ * throws instead of returning the raw envelope/garbage as if it were real
+ * data: silently succeeding here used to make a stale session look like an
+ * empty account, and a subsequent save would then overwrite the real
+ * encrypted record with that empty state.
+ */
 export async function decryptJSON(input: string): Promise<string> {
+  let parsed: Partial<Envelope>;
   try {
-    const parsed = JSON.parse(input) as Partial<Envelope>;
-    if (parsed.v !== 1 || !parsed.iv || !parsed.ct) return input; // plain JSON — migrate
-    const key = await getKey();
-    if (!key) return input;
+    parsed = JSON.parse(input);
+  } catch {
+    return input; // not valid JSON at all — let the caller's own parse surface the real problem
+  }
+  if (parsed.v !== 1 || !parsed.iv || !parsed.ct) return input; // plain JSON — legit unencrypted-migration case
+
+  const key = await getKey();
+  if (!key) throw new Error("ENCRYPTION_KEY_MISSING");
+
+  try {
     const iv = Uint8Array.from(atob(parsed.iv), (c) => c.charCodeAt(0));
     const ct = Uint8Array.from(atob(parsed.ct), (c) => c.charCodeAt(0));
     const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ct);
     return new TextDecoder().decode(plain);
   } catch {
-    return input; // decrypt failed — return as-is so app can attempt JSON.parse
+    throw new Error("DECRYPT_FAILED");
   }
 }

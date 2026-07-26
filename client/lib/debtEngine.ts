@@ -115,6 +115,18 @@ export function simulateDebtPayoff(
     }
   }
 
+  // The loop above can also exit because the 600-month cap was hit, not
+  // because every debt actually reached zero — a commitment that's only
+  // marginally above interest amortizes so slowly it never finishes within
+  // 50 years. Reporting feasible:true with a concrete "debt-free" date in
+  // that case would be presenting a wrong payoff date as a real one.
+  if (live.some((d) => d.balance > 0)) {
+    return {
+      ...base, feasible: false, months: -1, debtFreeDate: null,
+      warning: "This payment amount is too slow to project a payoff date within 50 years — try increasing the monthly commitment.",
+    };
+  }
+
   return {
     ...base,
     months: month,

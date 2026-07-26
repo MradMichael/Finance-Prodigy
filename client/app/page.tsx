@@ -17,7 +17,7 @@ import type { Screen, SyncStatus } from "../components/screens/shared";
 import { loadData, saveData } from "../lib/localData";
 import type { LocalFinancials } from "../lib/localData";
 import { computeDashboard } from "../lib/computeDashboard";
-import { getSession, signOut } from "../lib/auth";
+import { getSession, hasValidSession, signOut } from "../lib/auth";
 import type { Session } from "../lib/auth";
 import { pushToServer } from "../lib/syncService";
 import { useTheme } from "../contexts/ThemeContext";
@@ -52,7 +52,15 @@ export default function Home() {
 
   useEffect(() => {
     const s = getSession();
-    if (!s) { router.replace("/sign-in"); return; }
+    if (!s || !hasValidSession()) {
+      // A session can outlive its per-tab encryption key (browser restart,
+      // or a fresh tab) — treat that as not really signed in rather than
+      // proceeding to load/save data without a key. signOut() clears the
+      // stale session so the sign-in flow starts clean.
+      if (s) signOut();
+      router.replace("/sign-in");
+      return;
+    }
     setSession(s);
     loadData(s.userId).then((data) => {
       setFinancials({ ...data, userName: s.name });
@@ -100,19 +108,34 @@ export default function Home() {
         .slice(-24);
     }
 
-    const updatedNetWorth = snapshot(financials.netWorthHistory, dashboardData.netWorth.total);
-    const updatedIncome   = snapshot(financials.incomeHistory, financials.income);
-    const updatedLbpRate  = snapshot(financials.lbpRateHistory, financials.lbpRate);
+    function snapshotBudgetPct(
+      history: { ym: string; needs: number; wants: number; savings: number }[] | undefined,
+      pct: { needs: number; wants: number; savings: number },
+    ) {
+      const h = history ?? [];
+      const existing = h.find((e) => e.ym === ym);
+      if (existing && existing.needs === pct.needs && existing.wants === pct.wants && existing.savings === pct.savings) return h;
+      return [...h.filter((e) => e.ym !== ym), { ym, ...pct }]
+        .sort((a, b) => a.ym.localeCompare(b.ym))
+        .slice(-24);
+    }
+
+    const updatedNetWorth  = snapshot(financials.netWorthHistory, dashboardData.netWorth.total);
+    const updatedIncome    = snapshot(financials.incomeHistory, financials.income);
+    const updatedLbpRate   = snapshot(financials.lbpRateHistory, financials.lbpRate);
+    const updatedBudgetPct = snapshotBudgetPct(financials.budgetRuleHistory, dashboardData.budgetTargetPct);
 
     if (updatedNetWorth === financials.netWorthHistory
       && updatedIncome === financials.incomeHistory
-      && updatedLbpRate === financials.lbpRateHistory) return;
+      && updatedLbpRate === financials.lbpRateHistory
+      && updatedBudgetPct === financials.budgetRuleHistory) return;
 
     handleChange({
       ...financials,
       netWorthHistory: updatedNetWorth,
       incomeHistory: updatedIncome,
       lbpRateHistory: updatedLbpRate,
+      budgetRuleHistory: updatedBudgetPct,
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [financials, dashboardData]);

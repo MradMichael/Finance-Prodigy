@@ -52,12 +52,18 @@ describe("simulateDebtPayoff", () => {
     expect(result.months).toBeLessThan(600);
   });
 
-  it("caps at 600 months rather than looping forever on a barely-feasible plan", () => {
+  it("caps at 600 months rather than looping forever, and reports infeasible (not a false payoff date) when the cap is hit before the debt actually clears", () => {
     // Interest ~= (1_000_000 * 1) / 1200 = 833.33, commitment 1000 clears the
-    // feasibility bar by a hair but pays down extremely slowly.
+    // upfront feasibility bar by a hair, but at this pace amortization takes
+    // roughly 179 years — the loop hits the 600-month (50-year) cap with real
+    // balance still outstanding. Reporting feasible:true with a concrete
+    // debt-free date here would show a wrong payoff date as a real one.
     const debts: DebtInput[] = [{ id: "d1", name: "Mortgage-ish", balance: 1_000_000, aprPct: 1, minimumPayment: 1000 }];
     const result = simulateDebtPayoff(debts, 0, "AVALANCHE");
-    expect(result.months).toBeLessThanOrEqual(600);
+    expect(result.feasible).toBe(false);
+    expect(result.months).toBe(-1);
+    expect(result.debtFreeDate).toBeNull();
+    expect(result.warning).toBeTruthy();
   });
 
   it("carries the payoff date across a December -> January year boundary", () => {

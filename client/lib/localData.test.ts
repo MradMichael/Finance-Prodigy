@@ -142,6 +142,10 @@ describe("valueForMonth", () => {
 
 describe("loadData / saveData round trip", () => {
   it("saves and loads data for a user, round-tripping through real encryption", async () => {
+    const { createEnvelopes, activateSessionKey } = await import("./crypto");
+    const { dek } = await createEnvelopes("pw", "test-user-1");
+    activateSessionKey(dek);
+
     const userId = "test-user-1";
     const data = { ...DEFAULT_DATA, userName: "Test User", income: 4200 };
     await saveData(data, userId);

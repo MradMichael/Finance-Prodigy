@@ -135,11 +135,73 @@ describe("encryptJSON / decryptJSON", () => {
     expect(result).toBe(plainJson);
   });
 
-  it("encryptJSON stores plaintext as-is when there is no key yet (will encrypt on next save)", async () => {
+  it("encryptJSON throws instead of silently storing plaintext when there is no key (would otherwise overwrite real encrypted data with an unencrypted copy)", async () => {
     clearEncryptionKey();
     const plaintext = JSON.stringify({ a: 1 });
-    const result = await encryptJSON(plaintext);
-    expect(result).toBe(plaintext);
+    await expect(encryptJSON(plaintext)).rejects.toThrow("ENCRYPTION_KEY_MISSING");
+  });
+
+  it("decryptJSON throws instead of silently returning a still-encrypted envelope when there is no key (would otherwise look like an empty account)", async () => {
+    const { dek } = await createEnvelopes("pw", "user-1");
+    activateSessionKey(dek);
+    const encrypted = await encryptJSON(JSON.stringify({ real: "data" }));
+    clearEncryptionKey();
+    await expect(decryptJSON(encrypted)).rejects.toThrow("ENCRYPTION_KEY_MISSING");
+  });
+
+  it("decryptJSON throws on a genuine decrypt failure (wrong key) instead of returning garbage", async () => {
+    const { dek } = await createEnvelopes("pw", "user-1");
+    activateSessionKey(dek);
+    const encrypted = await encryptJSON(JSON.stringify({ real: "data" }));
+    const { dek: otherDek } = await createEnvelopes("other-pw", "user-2");
+    activateSessionKey(otherDek);
+    await expect(decryptJSON(encrypted)).rejects.toThrow("DECRYPT_FAILED");
+  });
+});
+
+describe("hasActiveKey", () => {
+  it("reflects whether a session key is currently active", async () => {
+    const { hasActiveKey } = await import("./crypto");
+    clearEncryptionKey();
+    expect(hasActiveKey()).toBe(false);
+    const { dek } = await createEnvelopes("pw", "user-1");
+    activateSessionKey(dek);
+    expect(hasActiveKey()).toBe(true);
+  });
+});
+
+describe("verifyLegacyPassword", () => {
+  it("returns null when the account has no stored data yet (nothing to verify against)", async () => {
+    localStorage.clear();
+    const { verifyLegacyPassword } = await import("./crypto");
+    const result = await verifyLegacyPassword("any-password", "brand-new-legacy-user");
+    expect(result).toBeNull();
+  });
+
+  it("returns true for the password that actually decrypts the account's stored data", async () => {
+    localStorage.clear();
+    const userId = "legacy-user-1";
+    const password = "legacy-password";
+    const migrated = await migrateLegacyEnvelope(password, userId);
+    activateSessionKey(migrated.dek);
+    const encrypted = await encryptJSON(JSON.stringify({ real: "legacy data" }));
+    localStorage.setItem(`essa_data_${userId}`, encrypted);
+
+    const { verifyLegacyPassword } = await import("./crypto");
+    expect(await verifyLegacyPassword(password, userId)).toBe(true);
+  });
+
+  it("returns false for a wrong password even if it happened to pass a weaker checksum", async () => {
+    localStorage.clear();
+    const userId = "legacy-user-2";
+    const password = "legacy-password";
+    const migrated = await migrateLegacyEnvelope(password, userId);
+    activateSessionKey(migrated.dek);
+    const encrypted = await encryptJSON(JSON.stringify({ real: "legacy data" }));
+    localStorage.setItem(`essa_data_${userId}`, encrypted);
+
+    const { verifyLegacyPassword } = await import("./crypto");
+    expect(await verifyLegacyPassword("a-completely-different-password", userId)).toBe(false);
   });
 });
 

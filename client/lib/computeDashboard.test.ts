@@ -416,4 +416,128 @@ describe("goal edge cases", () => {
     expect(result.goals[0].projection.pctComplete).toBe(100);
     expect(Number.isNaN(result.goals[0].projection.pctComplete)).toBe(false);
   });
+
+  it("an overdue goal shows 0 months remaining, not a phantom 1 (the div-by-zero floor leaking into display)", () => {
+    const data = makeData({
+      goals: [{ id: "g1", name: "Late goal", emoji: "🎯", targetAmount: 1000, currentAmount: 200, targetDate: "2026-01-01", createdAt: "2025-06-01T00:00:00.000Z" }],
+    });
+    const result = computeDashboard(data);
+    expect(result.goals[0].projection.monthsRemaining).toBe(0);
+  });
+});
+
+describe("sixMonthTrend income display — the incomeForMonth floor must not leak into the chart", () => {
+  it("shows $0, not $1, for a past month with genuinely $0 income and real spend", () => {
+    const data = makeData({
+      income: 3000, // today's income
+      incomeHistory: [{ ym: "2026-03", value: 0 }], // income was $0 back in March
+      transactions: [{ id: "t1", amount: 50, currency: "USD", bucket: "NEEDS", description: "Groceries", date: "2026-03-10" }],
+    });
+    const result = computeDashboard(data);
+    const mar = result.sixMonthTrend.find((t) => t.ymKey === 202603)!;
+    expect(mar.income).toBe(0);
+  });
+});
+
+describe("budget-rule history — past months judged against the rule that was actually in effect then", () => {
+  it("budgetRollover uses the historical needs/wants/savings split for a past month, not today's", () => {
+    const data = makeData({
+      income: 1000,
+      budgetRule: "80-15-5", // today's rule: high needs, low savings
+      budgetRuleHistory: [{ ym: "2026-03", needs: 50, wants: 30, savings: 20 }], // rule was 50/30/20 in March
+      transactions: [{ id: "t1", amount: 200, currency: "USD", bucket: "SAVINGS", description: "Old saving", date: "2026-03-15" }],
+    });
+    const result = computeDashboard(data);
+    // At the OLD rule (50/30/20), $1000 income -> 20% savings target = $200 -> exactly met, rollover ~0.
+    // At today's rule (80/15/5), 5% target = $50 -> would show a large surplus instead.
+    expect(result.budgetRollover.savings).toBeCloseTo(0, 0);
+  });
+
+  it("savingsStreak counts past months against the savings target that was actually in effect then, not today's higher target", () => {
+    const data = makeData({
+      income: 1000,
+      budgetRule: "40-30-30", // today: 30% savings target
+      budgetRuleHistory: [{ ym: "2026-05", needs: 50, wants: 30, savings: 20 }, { ym: "2026-06", needs: 50, wants: 30, savings: 20 }], // May & June: 20% target
+      transactions: [
+        { id: "t1", amount: 200, currency: "USD", bucket: "SAVINGS", description: "May saving", date: "2026-05-15" }, // exactly 20% of $1000
+        { id: "t2", amount: 200, currency: "USD", bucket: "SAVINGS", description: "June saving", date: "2026-06-15" }, // exactly 20% of $1000
+      ],
+    });
+    const result = computeDashboard(data);
+    // 20% saved meets each month's historical 20% target -> 2-month streak.
+    // If today's 30% target were wrongly applied, neither month would qualify.
+    expect(result.streaks.some((s) => s.key === "savings-streak")).toBe(true);
+  });
+
+  it("savingsStreak is not gated on today's income being nonzero — a real historical streak survives a $0 current income", () => {
+    const data = makeData({
+      income: 0, // between jobs / not yet re-entered
+      incomeHistory: [{ ym: "2026-06", value: 1000 }, { ym: "2026-05", value: 1000 }],
+      budgetRule: "40-30-30", // 30% savings target, same in history (no override needed for this test)
+      transactions: [
+        { id: "t1", amount: 300, currency: "USD", bucket: "SAVINGS", description: "May saving", date: "2026-05-15" },
+        { id: "t2", amount: 300, currency: "USD", bucket: "SAVINGS", description: "June saving", date: "2026-06-15" },
+      ],
+    });
+    const result = computeDashboard(data);
+    expect(result.streaks.some((s) => s.key === "savings-streak")).toBe(true);
+  });
+});
+
+describe("balanceChecks — tracked balances in a non-USD currency must be compared in the same unit as spend", () => {
+  it("converts an LBP tracked balance's starting/actual amounts to USD before computing expected/discrepancy", () => {
+    const data = makeData({
+      income: 1000,
+      lbpRate: 100000, // 100,000 LBP = $1
+      trackedBalances: [{
+        id: "tb1", name: "Cash (LBP)", paymentMethod: "cash",
+        startingBalance: 10_000_000, // 10,000,000 LBP = $100
+        startingDate: "2026-07-01",
+        currency: "LBP",
+        actualBalance: 9_000_000, // 9,000,000 LBP = $90
+        actualBalanceDate: "2026-07-10T00:00:00.000Z",
+      }],
+      transactions: [{ id: "t1", amount: 500000, currency: "LBP", bucket: "NEEDS", description: "Groceries", date: "2026-07-05", paymentMethod: "cash" }], // 500,000 LBP = $5
+    });
+    const result = computeDashboard(data);
+    const check = result.balanceChecks[0];
+    // expected = $100 starting - $5 spent = $95, not 10,000,000 - 5 (mixed units).
+    expect(check.expected).toBeCloseTo(95, 2);
+    expect(check.actual).toBeCloseTo(90, 2);
+    expect(check.discrepancy).toBeCloseTo(-5, 2);
+  });
+});
+
+describe("sixMonthTrend current-month recurring — evaluated as of today, matching month.totalSpend", () => {
+  it("a recurring item starting mid-month is counted consistently between month.totalSpend and the trend's current-month bar", () => {
+    const data = makeData({
+      income: 1000,
+      recurring: [{
+        id: "r1", name: "New subscription", emoji: "💳", amount: 20, currency: "USD",
+        frequency: "monthly", bucket: "WANTS", startDate: "2026-07-10", // starts mid-current-month
+        endDate: null, totalAmount: null, createdAt: "2026-07-10T00:00:00.000Z",
+      }],
+    });
+    const result = computeDashboard(data); // NOW is pinned to July 15 — after the 10th
+    const currentMonthBar = result.sixMonthTrend.find((t) => t.ymKey === 202607)!;
+    // Both should include the $20 recurring item (today, July 15, is after its July 10 start).
+    expect(currentMonthBar.spend).toBeCloseTo(result.month.totalSpend, 5);
+  });
+});
+
+describe("upcomingRenewals — exact calendar-day due counts, consistent regardless of local timezone", () => {
+  it("computes dueInDays as a clean integer number of calendar days to the next occurrence", () => {
+    const data = makeData({
+      income: 1000,
+      recurring: [{
+        id: "r1", name: "Due in 5 days", emoji: "🔔", amount: 50, currency: "USD",
+        frequency: "monthly", bucket: "NEEDS", startDate: "2026-06-20",
+        endDate: null, totalAmount: null, createdAt: "2026-01-01T00:00:00.000Z",
+      }],
+    });
+    // NOW is pinned to July 15, 2026 — next monthly occurrence (day 20) is July 20, exactly 5 days out.
+    const result = computeDashboard(data);
+    const renewal = result.upcomingRenewals.find((r) => r.id === "r1");
+    expect(renewal?.dueInDays).toBe(5);
+  });
 });

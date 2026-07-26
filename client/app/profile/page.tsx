@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getSession, updateProfile, deleteAccount, signOut, isAdmin, ensureFirstUserIsAdmin } from "../../lib/auth";
+import { getSession, hasValidSession, updateProfile, deleteAccount, signOut, isAdmin, ensureFirstUserIsAdmin } from "../../lib/auth";
 import type { Session } from "../../lib/auth";
 import { loadData, saveData } from "../../lib/localData";
 import { pullFromServer, getLastSyncTime } from "../../lib/syncService";
@@ -40,7 +40,13 @@ export default function ProfilePage() {
   useEffect(() => {
     ensureFirstUserIsAdmin();
     const s = getSession();
-    if (!s) { router.replace("/sign-in"); return; }
+    if (!s || !hasValidSession()) {
+      // Same session-outlives-its-key gap as the main dashboard — this page
+      // also calls loadData/saveData (export, pull), so it needs the same guard.
+      if (s) signOut();
+      router.replace("/sign-in");
+      return;
+    }
     setSession(s);
     setName(s.name);
     setLastSync(getLastSyncTime());

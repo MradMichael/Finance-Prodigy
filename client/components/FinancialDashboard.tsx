@@ -84,6 +84,7 @@ const MOCK: DashboardPayload = {
     { ymKey: 202605, income: 3500, spend: 2810 }, { ymKey: 202606, income: 3500, spend: 2830 },
   ],
   budgetRule: "50-30-20",
+  budgetTargetPct: { needs: 50, wants: 30, savings: 20 },
   budgetTargets: { needs: 1750, wants: 1050, savings: 700 },
   budgetRollover: { needs: 40, wants: -60, savings: 120 },
   effectiveBudgetTargets: { needs: 1790, wants: 990, savings: 820 },
@@ -428,7 +429,10 @@ export default function FinancialDashboard({
                   <span>lifetime interest <span style={{ ...NUMS, color: T.text }}>{money(debt.plan.totalInterest)}</span></span>
                 </div>
               </>
-            ) : debt.count === 0 ? (
+            ) : debt.totalBalance === 0 ? (
+              // totalBalance, not count — paid-off debts are kept in the
+              // array for history (see computeDashboard.ts), so count alone
+              // stays nonzero even once every debt is actually cleared.
               <p className="text-2xl" style={SERIF}>No debts. Every dollar you earn already belongs to you. 🏁</p>
             ) : (
               <p className="text-sm" style={{ color: T.coral }}>{debt.plan?.warning ?? "Add balances and rates to project your debt-free date."}</p>

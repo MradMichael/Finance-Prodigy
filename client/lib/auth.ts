@@ -1,6 +1,6 @@
 "use client";
 
-import { toB64 as b64, fromB64 as unb64 } from "./crypto";
+import { toB64 as b64, fromB64 as unb64, hasActiveKey } from "./crypto";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ESSA — local auth layer (localStorage, no backend required)
@@ -55,7 +55,18 @@ async function verifyPassword(password: string, stored: string): Promise<boolean
   if (!saltB64 || !hashB64) return false;
   const salt = unb64(saltB64);
   const bits = await deriveBits(password, salt);
-  return b64(new Uint8Array(bits)) === hashB64;
+  return constantTimeEqual(b64(new Uint8Array(bits)), hashB64);
+}
+
+// Plain `===` on a derived hash short-circuits at the first mismatched
+// character, so comparison time can correlate with how many leading bytes
+// match. Both compared strings are fixed-length (base64 of a fixed digest
+// size), so the length check below leaks nothing that isn't already public.
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
 }
 
 async function deriveBits(password: string, salt: Uint8Array): Promise<ArrayBuffer> {
@@ -101,7 +112,13 @@ export async function signUp(
   if (users.some((u) => u.email.toLowerCase() === email.toLowerCase().trim()))
     return { ok: false, error: "An account with this email already exists." };
 
-  const id = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2, 18);
+  // The account id doubles as the salt for every KEK derivation (see
+  // crypto.ts) — it needs real entropy, not just uniqueness. Math.random()
+  // isn't a CSPRNG and would weaken that salt, so a browser/context missing
+  // crypto.randomUUID (very old browser, or non-HTTPS) fails loudly here
+  // rather than silently signing up with a weaker security foundation.
+  if (!crypto.randomUUID) return { ok: false, error: "This browser doesn't support the security features ESSA needs. Please use an up-to-date browser over HTTPS." };
+  const id = crypto.randomUUID();
   const normalizedEmail = email.toLowerCase().trim();
   const { createEnvelopes, deriveRecoveryToken } = await import("./crypto");
   const [{ wrappedPassword, wrappedRecovery, recoveryCode }, pwHash] = await Promise.all([
@@ -137,9 +154,21 @@ export async function signIn(
   if (user.pwHash.startsWith("pbkdf2:")) {
     valid = await verifyPassword(password, user.pwHash);
   } else {
-    // Pre-existing account from before PBKDF2 hashing — verify against the
-    // old hash, then silently upgrade so it's never checked that way again.
-    valid = legacyHashPw(password) === user.pwHash;
+    // Pre-existing account from before PBKDF2 hashing. legacyHashPw is a
+    // 32-bit unsalted checksum — too weak to trust on its own (brute-forceable
+    // in well under a minute), and a "successful" match here used to
+    // immediately overwrite the account's password hash AND re-derive/persist
+    // its encryption key from whatever string was entered, so a forged
+    // collision could permanently corrupt a real user's data with no way
+    // back. Use it only as a cheap pre-filter, then require the candidate
+    // password to actually decrypt this account's real stored data before
+    // trusting it (verifyLegacyPassword returns null only when there's no
+    // stored data yet to check against — the one case with nothing at stake).
+    const quickCheck = legacyHashPw(password) === user.pwHash;
+    if (!quickCheck) return { ok: false, error: "Incorrect password." };
+    const { verifyLegacyPassword } = await import("./crypto");
+    const verified = await verifyLegacyPassword(password, user.id);
+    valid = verified !== false;
     if (valid) {
       const upgraded = await hashPassword(password);
       putUsers(getUsers().map((u) => (u.id === user.id ? { ...u, pwHash: upgraded } : u)));
@@ -236,6 +265,20 @@ export function getSession(): Session | null {
   if (typeof window === "undefined") return null;
   try { return JSON.parse(localStorage.getItem(SESSION_KEY) ?? "null"); }
   catch { return null; }
+}
+
+/**
+ * True only when there's BOTH a persisted session (localStorage) AND a live
+ * encryption key for it (sessionStorage) — the two live in different
+ * storages with different lifetimes on purpose (session persists across
+ * restarts; the key is scoped to the current browser session for security).
+ * That gap used to let pages treat "session exists" as "safe to load/save
+ * data," which could silently corrupt real encrypted data after a browser
+ * restart or in a fresh tab. Callers that touch loadData/saveData should
+ * gate on this, not on getSession() alone.
+ */
+export function hasValidSession(): boolean {
+  return getSession() !== null && hasActiveKey();
 }
 
 export function signOut(): void {

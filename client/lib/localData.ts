@@ -146,6 +146,8 @@ export interface LocalFinancials {
   incomeHistory?: { ym: string; value: number }[];
   /** Same idea as incomeHistory, for `lbpRate` — LBP is volatile enough that using today's rate to re-convert a past month's LBP transactions silently rewrites history every time the rate is updated. */
   lbpRateHistory?: { ym: string; value: number }[];
+  /** Same idea as incomeHistory/lbpRateHistory, for the resolved budget-rule percentages — otherwise switching budget rules silently rewrites what every past month "should have saved" (budgetRollover) and which past months count toward a savings streak. */
+  budgetRuleHistory?: { ym: string; needs: number; wants: number; savings: number }[];
   /** ISO timestamp of the last time `lbpRate` was actually edited — powers the staleness indicator in SetupScreen (day-level precision; lbpRateHistory above only tracks month granularity). Absent on accounts predating this field, or if the rate has never been edited since. */
   lbpRateUpdatedAt?: string;
   budgetRule?: BudgetRuleKey;
@@ -169,6 +171,7 @@ export const DEFAULT_DATA: LocalFinancials = {
   netWorthHistory: [],
   incomeHistory: [],
   lbpRateHistory: [],
+  budgetRuleHistory: [],
   budgetRule: "50-30-20",
 };
 
@@ -191,6 +194,20 @@ export function valueForMonth(
     if (h.ym <= ym && (best === null || h.ym > best.ym)) best = h;
   }
   return best ? best.value : fallback;
+}
+
+/** Same lookup as valueForMonth, but for the {needs, wants, savings} shape budgetRuleHistory snapshots. */
+export function budgetPctForMonth(
+  history: { ym: string; needs: number; wants: number; savings: number }[] | undefined,
+  ym: string,
+  fallback: { needs: number; wants: number; savings: number },
+): { needs: number; wants: number; savings: number } {
+  if (!history || history.length === 0) return fallback;
+  let best: { ym: string; needs: number; wants: number; savings: number } | null = null;
+  for (const h of history) {
+    if (h.ym <= ym && (best === null || h.ym > best.ym)) best = h;
+  }
+  return best ? { needs: best.needs, wants: best.wants, savings: best.savings } : fallback;
 }
 
 function storageKey(userId: string) { return `essa_data_${userId}`; }

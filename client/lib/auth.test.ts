@@ -103,6 +103,40 @@ describe("signIn", () => {
     const second = await signIn("legacy@test.com", "old-password");
     expect(second.ok && second.recoveryCode).toBeUndefined();
   });
+
+  it("rejects an incorrect password for a legacy account that already has real stored data, rather than trusting the weak checksum alone", async () => {
+    // migrateLegacyEnvelope + encryptJSON with the REAL password produce the
+    // stored data blob a genuine legacy account would have — this is the
+    // scenario the fix targets: verifyLegacyPassword must reject a wrong
+    // password even if some other code path thought it looked right.
+    const { migrateLegacyEnvelope, activateSessionKey, encryptJSON } = await import("./crypto");
+    injectLegacyUser("legacy2@test.com", "real-password");
+    const migrated = await migrateLegacyEnvelope("real-password", "legacy-id-1");
+    activateSessionKey(migrated.dek);
+    const encrypted = await encryptJSON(JSON.stringify({ real: "data" }));
+    localStorage.setItem("essa_data_legacy-id-1", encrypted);
+
+    const result = await signIn("legacy2@test.com", "wrong-password");
+    expect(result).toEqual({ ok: false, error: "Incorrect password." });
+
+    // Confirm the wrong sign-in attempt didn't touch the stored account at all.
+    const usersRaw = JSON.parse(localStorage.getItem(USERS_KEY)!) as StoredUser[];
+    const untouched = usersRaw.find((u) => u.email === "legacy2@test.com")!;
+    expect(untouched.pwHash.startsWith("pbkdf2:")).toBe(false);
+    expect(untouched.wrappedDekPassword).toBeUndefined();
+  });
+
+  it("still succeeds and migrates with the correct password when the legacy account has real stored data", async () => {
+    const { migrateLegacyEnvelope, activateSessionKey, encryptJSON } = await import("./crypto");
+    injectLegacyUser("legacy3@test.com", "real-password");
+    const migrated = await migrateLegacyEnvelope("real-password", "legacy-id-1");
+    activateSessionKey(migrated.dek);
+    const encrypted = await encryptJSON(JSON.stringify({ real: "data" }));
+    localStorage.setItem("essa_data_legacy-id-1", encrypted);
+
+    const result = await signIn("legacy3@test.com", "real-password");
+    expect(result.ok).toBe(true);
+  });
 });
 
 describe("recoverAccount", () => {

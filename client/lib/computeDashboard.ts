@@ -1,5 +1,5 @@
 import type { LocalFinancials, BudgetRuleKey } from "./localData";
-import { monthlyEquivalent, nextOccurrence, BUDGET_RULES, valueForMonth } from "./localData";
+import { monthlyEquivalent, nextOccurrence, BUDGET_RULES, valueForMonth, budgetPctForMonth } from "./localData";
 import { simulateDebtPayoff, type DebtInput } from "./debtEngine";
 
 interface Projection {
@@ -13,6 +13,8 @@ export interface DashboardPayload {
   /** Any transaction ever logged, not scoped to this month — distinct from month.totalSpend, which also counts pro-rated recurring payments even when nothing's actually been logged. */
   hasLoggedTransactions: boolean;
   budgetRule: BudgetRuleKey;
+  /** Resolved needs/wants/savings percentages (sum to 100) for THIS month, as currently configured — snapshotted by the caller into budgetRuleHistory so past months can be judged against the split that was actually in effect then. */
+  budgetTargetPct: { needs: number; wants: number; savings: number };
   budgetTargets: { needs: number; wants: number; savings: number };
   budgetRollover: { needs: number; wants: number; savings: number };
   /** budgetTargets + budgetRollover, floored at 0 — what BucketRow/budgetPace actually judge spend against. */
@@ -60,6 +62,7 @@ export interface DashboardPayload {
   }[];
   balanceChecks: {
     id: string; name: string; currency: string;
+    /** expected/actual/discrepancy are normalized to USD, like every other cross-cutting total in this payload — `currency` is the balance's own native currency, kept for display labeling only. */
     expected: number;
     actual: number | null; actualDate: string | null;
     discrepancy: number | null; // actual - expected, when actual is known
@@ -108,18 +111,29 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   const month = now.getMonth() + 1;
   const prefix = `${year}-${String(month).padStart(2, "0")}`;
 
+  // Same historized-lookup pattern as incomeForMonth/toUSDForMonth, for the
+  // budget-rule split — otherwise changing your budget rule today silently
+  // rewrites which past months' rollover/savings-streak judged themselves
+  // against, using a target they were never actually held to at the time.
+  const budgetTargetPctForMonth = (ym: string) => budgetPctForMonth(data.budgetRuleHistory, ym, budgetTargetPct);
+
   const lbpRate = data.lbpRate ?? 89500;
   const toUSD = (amount: number, currency?: string) =>
     currency === "LBP" ? amount / lbpRate : amount;
 
-  // For judging a PAST month: use the income/LBP-rate that were actually in
-  // effect that month, not whatever they are today. A raise or an updated
-  // exchange rate (LBP is volatile enough that this happens often) would
-  // otherwise silently rewrite what past months looked like every time this
-  // recomputes. Falls back to the current value for months before any
-  // history was recorded (accounts predating this, or genuinely the first
-  // month), so this only improves accuracy going forward, not retroactively.
-  const incomeForMonth = (ym: string) => Math.max(valueForMonth(data.incomeHistory, ym, data.income), 1);
+  // For judging a PAST month: use the income/LBP-rate/budget-rule that were
+  // actually in effect that month, not whatever they are today. A raise, an
+  // updated exchange rate (LBP is volatile enough that this happens often),
+  // or a budget-rule change would otherwise silently rewrite what past
+  // months looked like every time this recomputes. Falls back to the
+  // current value for months before any history was recorded (accounts
+  // predating this, or genuinely the first month), so this only improves
+  // accuracy going forward, not retroactively.
+  // Raw (unfloored) like the current-month income/incomeSafe split below —
+  // display sites (e.g. sixMonthTrend) use this directly; only the one
+  // division site (the savings-streak check) needs the floored version.
+  const incomeForMonth = (ym: string) => valueForMonth(data.incomeHistory, ym, data.income);
+  const incomeForMonthSafe = (ym: string) => Math.max(incomeForMonth(ym), 1);
   const toUSDForMonth = (amount: number, currency: string | undefined, ym: string) =>
     currency === "LBP" ? amount / valueForMonth(data.lbpRateHistory, ym, lbpRate) : amount;
 
@@ -249,7 +263,8 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   const goals = data.goals.map((g, i) => {
     const rem = Math.max(0, g.targetAmount - g.currentAmount);
     const td = new Date(g.targetDate);
-    const ms = Math.max(1, Math.round((td.getTime() - now.getTime()) / (30.44 * 24 * 3600 * 1000)));
+    const rawMs = Math.round((td.getTime() - now.getTime()) / (30.44 * 24 * 3600 * 1000));
+    const ms = Math.max(1, rawMs); // safe denominator for req below — never displayed directly
     const req = rem / ms;
     const pace = req > 0 ? Math.min(2, savingsContrib / req) : 1;
     return {
@@ -259,7 +274,10 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
         // targetAmount of exactly 0 (e.g. a goal saved before an amount was
         // entered) would otherwise divide 0/0 into NaN — treat it as met.
         pctComplete: g.targetAmount > 0 ? Math.min(100, Math.round((g.currentAmount / g.targetAmount) * 100)) : 100,
-        monthsRemaining: ms,
+        // Raw (only floored at 0, not 1) — an overdue goal should read "0 mo
+        // left", not the misleading "1 mo left" the div-by-zero-safe `ms`
+        // above would otherwise leak into display.
+        monthsRemaining: Math.max(0, rawMs),
         requiredMonthly: Math.round(req),
         paceRatio: Math.round(pace * 100) / 100,
         onTrack: pace >= 0.9,
@@ -355,8 +373,16 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     // transaction row each month, so counting only logged transactions
     // understated every month's real spend — evaluate each recurring
     // item as of that historical month, same as the current-month totals do.
-    const recurSpend = activeRecurring.reduce((s, r) => s + toUSDForMonth(monthlyEquivalent(r, d), r.currency, mo), 0);
+    // For the CURRENT month specifically, evaluate as of `now` (today),
+    // matching the top-of-function totalSpend calc — using day-1 here too
+    // would disagree with month.totalSpend for any item that starts/ends
+    // partway through the current month.
+    const recurAsOf = isCurrent ? now : d;
+    const recurSpend = activeRecurring.reduce((s, r) => s + toUSDForMonth(monthlyEquivalent(r, recurAsOf), r.currency, mo), 0);
     const sp = txSpend + recurSpend;
+    // Raw (unfloored) income for display, same reasoning as the current-
+    // month income/incomeSafe split — a genuinely $0 past month should
+    // read as $0 on the chart, not a phantom $1 from the div-by-zero guard.
     const moIncome = isCurrent ? income : incomeForMonth(mo);
     return { ymKey, income: isCurrent ? income : (sp > 0 ? moIncome : 0), spend: sp };
   });
@@ -368,14 +394,13 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   };
 
   // ── Budget rollover — unspent (or overspent) carries into this month ──
-  // Uses the income/LBP-rate that were actually in effect each past month
-  // (via incomeForMonth/toUSDForMonth) rather than today's values. Still an
-  // approximation in one respect: it assumes the current budget rule/split
-  // applied in past months too, since there's no history of past rule
-  // changes — and skips months with zero logged transactions so a blank
-  // month doesn't distort the running total. Computed before budget pace
-  // below so the pace warnings judge spend against the same rollover-
-  // adjusted target the Budget screen displays, instead of two different numbers.
+  // Uses the income/LBP-rate/budget-rule that were actually in effect each
+  // past month (via incomeForMonth/toUSDForMonth/budgetTargetPctForMonth)
+  // rather than today's values — skips months with zero logged transactions
+  // so a blank month doesn't distort the running total. Computed before
+  // budget pace below so the pace warnings judge spend against the same
+  // rollover-adjusted target the Budget screen displays, instead of two
+  // different numbers.
   const budgetRollover = { needs: 0, wants: 0, savings: 0 };
   {
     const monthsBack = Math.min(11, month - 1); // back to January of this year, capped at 11
@@ -392,9 +417,10 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
         else spend.savings += amt;
       }
       const moIncome = incomeForMonth(ym);
-      budgetRollover.needs   += (moIncome * budgetTargetPct.needs   / 100) - spend.needs;
-      budgetRollover.wants   += (moIncome * budgetTargetPct.wants   / 100) - spend.wants;
-      budgetRollover.savings += (moIncome * budgetTargetPct.savings / 100) - spend.savings;
+      const moTargetPct = budgetTargetPctForMonth(ym);
+      budgetRollover.needs   += (moIncome * moTargetPct.needs   / 100) - spend.needs;
+      budgetRollover.wants   += (moIncome * moTargetPct.wants   / 100) - spend.wants;
+      budgetRollover.savings += (moIncome * moTargetPct.savings / 100) - spend.savings;
     }
   }
 
@@ -457,14 +483,22 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
 
   // ── Streaks ─────────────────────────────────────────────────────────
   let savingsStreak = 0;
-  if (targetSavingsPct > 0 && data.income > 0) {
+  // Gated on targetSavingsPct alone, not today's income — each month below
+  // already resolves its OWN historical income via incomeForMonthSafe, so a
+  // real past streak shouldn't vanish just because CURRENT income happens
+  // to be $0 (e.g. between jobs, or not yet re-entered after a reset).
+  if (targetSavingsPct > 0) {
     for (let i = 1; i <= 12; i++) {
       const d = new Date(year, month - 1 - i, 1);
       const ym = monthKey(d);
       const tx = data.transactions.filter((t) => t.date.startsWith(ym));
       if (tx.length === 0) break;
       const monthSavings = tx.filter((t) => t.bucket === "SAVINGS").reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, ym), 0);
-      if ((monthSavings / incomeForMonth(ym)) * 100 >= targetSavingsPct) savingsStreak++;
+      // Uses the budget-rule split that was actually in effect that month,
+      // not today's — otherwise changing rules retroactively rewrites which
+      // past months count toward the streak.
+      const moTargetPct = budgetTargetPctForMonth(ym).savings;
+      if ((monthSavings / incomeForMonthSafe(ym)) * 100 >= moTargetPct) savingsStreak++;
       else break;
     }
   }
@@ -478,12 +512,15 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
 
   // ── Upcoming renewals ────────────────────────────────────────────────
   const RENEWAL_WINDOW_DAYS = 7;
-  // Anchored at today's LOCAL midnight (same local-date convention already
-  // used everywhere else in this function, e.g. daysElapsed = now.getDate())
-  // rather than the raw current instant — otherwise the sub-day time-of-day
-  // component makes dueInDays flicker by ±1 right at the 7-day window
-  // boundary depending on what time of day the user opens the app.
-  const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  // Anchored at UTC midnight of today's LOCAL calendar date, matching
+  // nextOccurrence's own basis: recurring startDate/endDate are date-only
+  // strings ("YYYY-MM-DD"), which JS parses as UTC midnight, and
+  // nextOccurrence (localData.ts) builds every occurrence it returns from
+  // that same UTC-anchored arithmetic. Anchoring todayMidnight to LOCAL
+  // midnight instead (as this used to) skews dueInDays by the user's UTC
+  // offset — off by a day for anyone not at UTC+0, which is most of this
+  // app's actual (Lebanon/MENA) audience.
+  const todayMidnight = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
   const upcomingRenewals: DashboardPayload["upcomingRenewals"] = data.recurring
     .map((r) => {
       const next = nextOccurrence(r, now);
@@ -503,13 +540,24 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   // transaction converts at the LBP rate that was in effect *for its own
   // month*, not today's rate — otherwise updating the rate would silently
   // shift the expected balance for every LBP transaction ever logged.
+  //
+  // startingBalance/actualBalance are entered (and tb.currency-labeled) in
+  // the balance's own native currency, which can be LBP — but `spent` above
+  // is already normalized to USD, like every other cross-cutting total in
+  // this function. Comparing a raw LBP starting balance against a USD spend
+  // figure produced a nonsensical expected/discrepancy for LBP-tracked
+  // balances, so convert starting/actual to USD too (at the rate in effect
+  // for each one's own date) before doing any arithmetic on them.
   const balanceChecks: DashboardPayload["balanceChecks"] = data.trackedBalances.map((tb) => {
     const spent = data.transactions
       .filter((t) => t.date >= tb.startingDate && t.paymentMethod === tb.paymentMethod
         && (tb.paymentMethod !== "card" || t.cardId === tb.cardId))
       .reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, t.date.slice(0, 7)), 0);
-    const expected = Math.round((tb.startingBalance - spent) * 100) / 100;
-    const actual = tb.actualBalance ?? null;
+    const startingUSD = toUSDForMonth(tb.startingBalance, tb.currency, tb.startingDate.slice(0, 7));
+    const expected = Math.round((startingUSD - spent) * 100) / 100;
+    const actual = tb.actualBalance != null
+      ? toUSDForMonth(tb.actualBalance, tb.currency, (tb.actualBalanceDate ?? tb.startingDate).slice(0, 7))
+      : null;
     return {
       id: tb.id, name: tb.name, currency: tb.currency, expected,
       actual, actualDate: tb.actualBalanceDate ?? null,
@@ -561,6 +609,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     effectiveBudgetTargets: { needs: bucketTargetAmt.NEEDS, wants: bucketTargetAmt.WANTS, savings: bucketTargetAmt.SAVINGS },
     netWorth: { assets: Math.round(nwAssets), liabilities: Math.round(nwLiabilities), total: Math.round(nwTotal), ...nwData },
     budgetRule: ruleKey,
+    budgetTargetPct,
     budgetTargets: {
       needs:   income * (budgetTargetPct.needs   / 100),
       wants:   income * (budgetTargetPct.wants   / 100),
