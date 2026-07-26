@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { signUp, signIn, recoverAccount, getSession, signOut, isAdmin, listUsers, getRecoveryTokenForSync, type StoredUser } from "./auth";
+import { signUp, signIn, recoverAccount, getSession, hasValidSession, signOut, isAdmin, listUsers, getRecoveryTokenForSync, type StoredUser } from "./auth";
 
 const USERS_KEY = "essa_users_v1";
 
@@ -40,6 +40,18 @@ describe("signUp", () => {
   it("rejects missing fields", async () => {
     const result = await signUp("", "Alice", "password1");
     expect(result.ok).toBe(false);
+  });
+
+  it("rejects a malformed email that the server's stricter validation would later 422 on", async () => {
+    for (const bad of ["test", "admin@localhost", "no-at-sign.com", "@missing-local.com"]) {
+      const result = await signUp(bad, "Alice", "password1");
+      expect(result).toEqual({ ok: false, error: "Enter a valid email address." });
+    }
+  });
+
+  it("accepts well-formed emails", async () => {
+    const result = await signUp("real.person+tag@example.co.uk", "Alice", "password1");
+    expect(result.ok).toBe(true);
   });
 
   it("rejects a duplicate email (case-insensitive)", async () => {
@@ -136,6 +148,36 @@ describe("signIn", () => {
 
     const result = await signIn("legacy3@test.com", "real-password");
     expect(result.ok).toBe(true);
+  });
+});
+
+describe("hasValidSession", () => {
+  it("is true right after a normal sign-in (session + active key both present)", async () => {
+    await signUp("a@test.com", "Alice", "password1");
+    await signIn("a@test.com", "password1");
+    expect(hasValidSession()).toBe(true);
+  });
+
+  it("is false with no session at all", () => {
+    expect(hasValidSession()).toBe(false);
+  });
+
+  it("is false when a session exists but its per-tab encryption key doesn't — the browser-restart/fresh-tab gap this guard exists to close", async () => {
+    await signUp("a@test.com", "Alice", "password1");
+    await signIn("a@test.com", "password1");
+    expect(getSession()).not.toBeNull(); // session (localStorage) is present
+
+    const { clearEncryptionKey } = await import("./crypto");
+    clearEncryptionKey(); // simulate sessionStorage being gone (browser restart / fresh tab)
+
+    expect(hasValidSession()).toBe(false);
+  });
+
+  it("is false after signOut", async () => {
+    await signUp("a@test.com", "Alice", "password1");
+    await signIn("a@test.com", "password1");
+    signOut();
+    expect(hasValidSession()).toBe(false);
   });
 });
 

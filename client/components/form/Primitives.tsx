@@ -202,8 +202,13 @@ export function DateFieldDMY({
 
   function commit(d: string, m: string, y: string) {
     if (d.length === 2 && m.length === 2 && y.length === 4) {
-      const dd = parseInt(d, 10), mm = parseInt(m, 10);
-      if (dd >= 1 && dd <= 31 && mm >= 1 && mm <= 12) onChange(`${y}-${m}-${d}`);
+      const dd = parseInt(d, 10), mm = parseInt(m, 10), yy = parseInt(y, 10);
+      // Day/month range alone lets through calendar-impossible dates like
+      // Feb 31 or Apr 31 — new Date(yy, mm, 0) gives the target month's
+      // actual last day (accounting for leap years), so this only commits
+      // dates that really exist.
+      const daysInMonth = mm >= 1 && mm <= 12 ? new Date(yy, mm, 0).getDate() : 0;
+      if (dd >= 1 && dd <= daysInMonth) onChange(`${y}-${m}-${d}`);
     }
   }
 

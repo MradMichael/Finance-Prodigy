@@ -13,6 +13,7 @@
  *   dim_account       (now safe)
  */
 
+import { Prisma } from "@prisma/client";
 import { logger } from "./logger";
 import { prisma } from "./prisma";
 
@@ -402,11 +403,15 @@ export async function normalizeToTables(email: string, raw: LocalFinancials): Pr
 
   for (const [ym, spend] of Object.entries(monthBuckets)) {
     const [y, m] = ym.split("-").map(Number);
-    const inc    = income || 1;
+    // Guarded value stays local to the ratio math below — storing it
+    // instead of the raw `income` would persist a fake "$1 income" row for
+    // any genuinely $0-income month (the same floor-leaks-into-stored-value
+    // bug already fixed in the client's computeDashboard.ts this session).
+    const incSafe = income || 1;
 
     // Health score: savings pace (40%) + needs discipline (40%) + base (20%)
-    const savPace   = income > 0 ? Math.min(100, (spend.savings / (inc * rule.savings / 100)) * 100) : 0;
-    const needsRatio = spend.needs / inc;
+    const savPace   = income > 0 ? Math.min(100, (spend.savings / (incSafe * rule.savings / 100)) * 100) : 0;
+    const needsRatio = spend.needs / incSafe;
     const needsDis  = needsRatio <= rule.needs / 100 ? 100 : Math.max(0, 100 - (needsRatio - rule.needs / 100) * 400);
     const health    = Math.round(savPace * 0.4 + needsDis * 0.4 + 20);
 
@@ -415,7 +420,7 @@ export async function normalizeToTables(email: string, raw: LocalFinancials): Pr
         userId:        user.id,
         year:          y,
         month:         m,
-        totalIncome:   inc,
+        totalIncome:   income,
         needsSpend:    spend.needs,
         wantsSpend:    spend.wants,
         savingsAmount: spend.savings,
@@ -449,7 +454,14 @@ export async function deleteAllDataForEmail(email: string): Promise<void> {
   await prisma.debt.deleteMany({ where: { userId: user.id } });
   await prisma.budget.deleteMany({ where: { userId: user.id } });
   await prisma.dimAccount.deleteMany({ where: { userId: user.id } });
-  await prisma.user.delete({ where: { id: user.id } });
+  try {
+    await prisma.user.delete({ where: { id: user.id } });
+  } catch (err) {
+    // P2025 = already deleted by a concurrent call (e.g. two overlapping
+    // account-deletion requests) — the end state either call wanted (no
+    // user row) is already true, so this isn't a real failure.
+    if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025")) throw err;
+  }
 
   logger.info("normalize_data_deleted", { userId: user.id });
 }

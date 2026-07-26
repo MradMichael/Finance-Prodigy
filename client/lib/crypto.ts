@@ -164,6 +164,18 @@ export async function verifyLegacyPassword(password: string, userId: string): Pr
   return result !== null;
 }
 
+/** Shared PBKDF2-derive-bits-then-base64 primitive behind both sync tokens below — keeps the iteration count at a single source of truth (PBKDF2_ITERATIONS) instead of a copy-pasted literal per token. */
+async function derivePbkdf2Token(secret: string, salt: string): Promise<string> {
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey("raw", enc.encode(secret), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt: enc.encode(salt), iterations: PBKDF2_ITERATIONS, hash: "SHA-256" },
+    keyMaterial,
+    256,
+  );
+  return toB64(new Uint8Array(bits));
+}
+
 /**
  * Derives a bearer token proving knowledge of the account password, sent
  * to the sync API instead of the password itself. Uses a different salt
@@ -172,25 +184,7 @@ export async function verifyLegacyPassword(password: string, userId: string): Pr
  * password.
  */
 async function deriveSyncToken(password: string, email: string): Promise<string> {
-  const enc = new TextEncoder();
-  const keyMaterial = await crypto.subtle.importKey(
-    "raw",
-    enc.encode(password),
-    "PBKDF2",
-    false,
-    ["deriveBits"],
-  );
-  const bits = await crypto.subtle.deriveBits(
-    {
-      name: "PBKDF2",
-      salt: enc.encode(`essa-sync-v1-${email.toLowerCase().trim()}`),
-      iterations: 120_000,
-      hash: "SHA-256",
-    },
-    keyMaterial,
-    256,
-  );
-  return btoa(String.fromCharCode(...new Uint8Array(bits)));
+  return derivePbkdf2Token(password, `essa-sync-v1-${email.toLowerCase().trim()}`);
 }
 
 /** Call this immediately after a successful sign-in or sign-up. Returns the token (e.g. for a relink call after a password reset). */
@@ -210,25 +204,7 @@ export async function initSyncToken(password: string, email: string): Promise<st
  * without ever sending the password or recovery code itself to the server.
  */
 export async function deriveRecoveryToken(recoveryCode: string, email: string): Promise<string> {
-  const enc = new TextEncoder();
-  const keyMaterial = await crypto.subtle.importKey(
-    "raw",
-    enc.encode(canonicalizeRecoveryCode(recoveryCode)),
-    "PBKDF2",
-    false,
-    ["deriveBits"],
-  );
-  const bits = await crypto.subtle.deriveBits(
-    {
-      name: "PBKDF2",
-      salt: enc.encode(`essa-sync-recovery-v1-${email.toLowerCase().trim()}`),
-      iterations: 120_000,
-      hash: "SHA-256",
-    },
-    keyMaterial,
-    256,
-  );
-  return btoa(String.fromCharCode(...new Uint8Array(bits)));
+  return derivePbkdf2Token(canonicalizeRecoveryCode(recoveryCode), `essa-sync-recovery-v1-${email.toLowerCase().trim()}`);
 }
 
 /** Clears the session token — call on sign-out. */
@@ -269,11 +245,7 @@ export async function encryptJSON(plaintext: string): Promise<string> {
     key,
     new TextEncoder().encode(plaintext),
   );
-  const env: Envelope = {
-    v: 1,
-    iv: btoa(String.fromCharCode(...iv)),
-    ct: btoa(String.fromCharCode(...new Uint8Array(buf))),
-  };
+  const env: Envelope = { v: 1, iv: toB64(iv), ct: toB64(new Uint8Array(buf)) };
   return JSON.stringify(env);
 }
 
@@ -300,8 +272,8 @@ export async function decryptJSON(input: string): Promise<string> {
   if (!key) throw new Error("ENCRYPTION_KEY_MISSING");
 
   try {
-    const iv = Uint8Array.from(atob(parsed.iv), (c) => c.charCodeAt(0));
-    const ct = Uint8Array.from(atob(parsed.ct), (c) => c.charCodeAt(0));
+    const iv = fromB64(parsed.iv) as BufferSource;
+    const ct = fromB64(parsed.ct) as BufferSource;
     const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ct);
     return new TextDecoder().decode(plain);
   } catch {

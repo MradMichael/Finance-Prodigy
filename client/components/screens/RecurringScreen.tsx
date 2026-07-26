@@ -62,7 +62,7 @@ export default function RecurringScreen({ financials }: { financials: LocalFinan
                         <div className="flex-1">
                           <p className="text-sm" style={{ color: T.text }}>{r.name}</p>
                           <p className="text-[10px]" style={{ color: T.mute }}>
-                            {money(r.amount, 2)} · {FREQ_LABELS[r.frequency]}
+                            {r.currency === "LBP" ? `LBP ${r.amount.toLocaleString()}` : money(r.amount, 2)} · {FREQ_LABELS[r.frequency]}
                           </p>
                         </div>
                         <p className="text-sm font-medium tabular-nums" style={{ color: BC[bucket] }}>

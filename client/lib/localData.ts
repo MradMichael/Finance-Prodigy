@@ -214,11 +214,25 @@ function storageKey(userId: string) { return `essa_data_${userId}`; }
 
 export async function loadData(userId: string): Promise<LocalFinancials> {
   if (typeof window === "undefined") return DEFAULT_DATA;
+  const raw = localStorage.getItem(storageKey(userId));
+  if (!raw) return DEFAULT_DATA;
+
+  const { decryptJSON } = await import("./crypto");
+  let plain: string;
   try {
-    const raw = localStorage.getItem(storageKey(userId));
-    if (!raw) return DEFAULT_DATA;
-    const { decryptJSON } = await import("./crypto");
-    const plain = await decryptJSON(raw);
+    plain = await decryptJSON(raw);
+  } catch (err) {
+    // decryptJSON throws ENCRYPTION_KEY_MISSING/DECRYPT_FAILED specifically
+    // so a real encrypted record that can't be opened isn't mistaken for an
+    // empty account — swallowing that here into DEFAULT_DATA would undo
+    // exactly the fix that made it throw in the first place. Let it
+    // propagate so the caller (gated on hasValidSession()) can tell the
+    // difference and re-authenticate instead of silently showing empty data.
+    if (err instanceof Error && (err.message === "ENCRYPTION_KEY_MISSING" || err.message === "DECRYPT_FAILED")) throw err;
+    return DEFAULT_DATA; // genuinely corrupted/unparseable storage — fail safe
+  }
+
+  try {
     return { ...DEFAULT_DATA, ...JSON.parse(plain) };
   } catch {
     return DEFAULT_DATA;

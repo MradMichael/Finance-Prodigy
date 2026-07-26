@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createHash } from "crypto";
+import { createHash, timingSafeEqual } from "crypto";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { normalizeToTables, deleteAllDataForEmail } from "../lib/normalizeSync";
@@ -55,6 +55,16 @@ const deleteSchema = z.object({
 // so only someone who knows the password can push/pull that email's data.
 const hashToken = (token: string): string => createHash("sha256").update(token).digest("hex");
 
+// Plain `!==` on hex digests is a textbook timing-side-channel smell — low
+// real-world exploitability here (SHA-256 preimage resistance means timing
+// your way to the stored hash still doesn't hand over a token that hashes
+// to it), but a constant-time compare is cheap and removes the smell
+// entirely. Both inputs are always same-length hex digests from hashToken,
+// but guard the length anyway since timingSafeEqual throws on a mismatch
+// rather than returning false.
+const hashesEqual = (a: string, b: string): boolean =>
+  a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
+
 class SyncAuthError extends Error {}
 
 // POST /api/sync/push  — body: { email, data, token }
@@ -77,7 +87,7 @@ router.post("/push", async (req, res, next) => {
     try {
       syncedAt = await prisma.$transaction(async (tx) => {
         const existing = await tx.userSync.findUnique({ where: { email: normalizedEmail } });
-        if (existing?.authTokenHash && existing.authTokenHash !== tokenHash) {
+        if (existing?.authTokenHash && !hashesEqual(existing.authTokenHash, tokenHash)) {
           throw new SyncAuthError();
         }
         const now = new Date();
@@ -124,7 +134,7 @@ router.get("/pull", async (req, res, next) => {
     if (!record.authTokenHash) {
       return res.status(401).json({ error: "This account has no sync credentials registered yet — push from an updated client first." });
     }
-    if (record.authTokenHash !== hashToken(token)) {
+    if (!hashesEqual(record.authTokenHash, hashToken(token))) {
       return res.status(401).json({ error: "Invalid sync credentials for this account." });
     }
 
@@ -169,7 +179,7 @@ router.post("/relink", async (req, res, next) => {
           throw new SyncAuthError();
         }
 
-        if (!oldRecoveryToken || hashToken(oldRecoveryToken) !== existing.recoveryTokenHash) {
+        if (!oldRecoveryToken || !hashesEqual(hashToken(oldRecoveryToken), existing.recoveryTokenHash)) {
           throw new SyncAuthError();
         }
 
@@ -206,18 +216,36 @@ router.delete("/", async (req, res, next) => {
     const tokenHash = hashToken(token);
 
     const record = await prisma.userSync.findUnique({ where: { email } });
-    if (record) {
-      // Mirror /pull's check exactly: a falsy authTokenHash must REFUSE the
-      // request, not skip it. `record.authTokenHash && ...` short-circuits
-      // to false (allowing the delete through with zero proof of ownership)
-      // whenever authTokenHash is null — the opposite of what's intended.
-      if (!record.authTokenHash) {
-        return res.status(401).json({ error: "This account has no sync credentials registered yet — nothing to verify against." });
-      }
-      if (record.authTokenHash !== tokenHash) {
-        return res.status(401).json({ error: "Invalid sync credentials for this account." });
-      }
+    if (!record) {
+      // Nothing to verify a token against — treat as the documented no-op
+      // rather than deleting any warehouse data. normalizeToTables can, in
+      // a narrow race, finish creating warehouse rows for an email whose
+      // UserSync row is already gone (see its own stillSynced comment) —
+      // wiping that orphan here with zero proof of ownership would let
+      // anyone delete another account's warehouse data just by submitting
+      // their email with any token at all.
+      return res.json({ ok: true });
+    }
+    // Mirror /pull's check exactly: a falsy authTokenHash must REFUSE the
+    // request, not skip it. `record.authTokenHash && ...` short-circuits
+    // to false (allowing the delete through with zero proof of ownership)
+    // whenever authTokenHash is null — the opposite of what's intended.
+    if (!record.authTokenHash) {
+      return res.status(401).json({ error: "This account has no sync credentials registered yet — nothing to verify against." });
+    }
+    if (!hashesEqual(record.authTokenHash, tokenHash)) {
+      return res.status(401).json({ error: "Invalid sync credentials for this account." });
+    }
+
+    try {
       await prisma.userSync.delete({ where: { email } });
+    } catch (err) {
+      // P2025 = "record to delete does not exist" — a concurrent duplicate
+      // delete request (double-click, client retry after a slow response)
+      // already removed it between the findUnique above and this call. The
+      // end state either request wanted is already true, so this is a
+      // success, not an error.
+      if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025")) throw err;
     }
 
     await deleteAllDataForEmail(email);

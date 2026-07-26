@@ -81,6 +81,13 @@ export function simulateDebtPayoff(
       ? (a: DebtInput, b: DebtInput) => a.balance - b.balance
       : (a: DebtInput, b: DebtInput) => b.aprPct - a.aprPct;
 
+  // AVALANCHE sorts by aprPct, which is static for the whole simulation —
+  // sort once up front instead of re-sorting on every one of up to 600
+  // month-iterations. SNOWBALL sorts by balance, which genuinely changes
+  // every month, so it still needs a fresh sort each pass.
+  const staticOrder = strategy === "AVALANCHE";
+  if (staticOrder) live.sort(sorter);
+
   let month = 0;
   let totalInterest = 0;
 
@@ -102,7 +109,12 @@ export function simulateDebtPayoff(
       budget -= pay;
     }
 
-    const targets = live.filter((d) => d.balance > 0).sort(sorter);
+    // AVALANCHE: `live` is already APR-sorted and filter() preserves order,
+    // so no re-sort needed. SNOWBALL: balances shift every month, so this
+    // genuinely needs a fresh sort each pass.
+    const targets = staticOrder
+      ? live.filter((d) => d.balance > 0)
+      : live.filter((d) => d.balance > 0).sort(sorter);
     for (const d of targets) {
       if (budget <= 0) break;
       const pay = Math.min(budget, d.balance);

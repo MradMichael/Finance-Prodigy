@@ -203,7 +203,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
     const debt: StoredDebt = {
       id: uid(), name: dName.trim(),
       balance: parseFloat(dBalance.replace(/,/g, "")),
-      apr: parseFloat(dApr) || 0,
+      apr: Math.max(0, parseFloat(dApr) || 0),
       minPayment: parseFloat(dMin.replace(/,/g, "")) || 0,
       createdAt: new Date().toISOString(),
       ...(dOpenedDate ? { openedDate: dOpenedDate } : {}),
@@ -326,10 +326,14 @@ export default function InputPanel({ financials, onChange, session }: Props) {
     update({
       debts: financials.debts.map((d) => d.id !== debtId ? d : {
         ...d, name: editDName.trim(), balance: bal,
-        apr: parseFloat(editDApr) || 0,
+        apr: Math.max(0, parseFloat(editDApr) || 0),
         minPayment: parseFloat(editDMin.replace(/,/g, "")) || 0,
         openedDate: editDOpened || undefined,
-        paidOffAt: bal <= 0 ? (d.paidOffAt ?? new Date().toISOString()) : d.paidOffAt,
+        // Clear paidOffAt when the edited balance goes back above 0 (e.g.
+        // correcting a mistake, or a new charge) — otherwise a live debt
+        // keeps showing the "Paid off" badge and gets excluded from the
+        // active-debt count indefinitely.
+        paidOffAt: bal <= 0 ? (d.paidOffAt ?? new Date().toISOString()) : undefined,
       }),
     });
     setEditDebtId(null);

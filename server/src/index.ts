@@ -13,6 +13,14 @@ import events from "./routes/events";
 import { logger } from "./lib/logger";
 
 const app = express();
+// Railway (like most PaaS hosts) puts exactly one reverse proxy in front of
+// this process. Without this, express-rate-limit's default keyGenerator
+// (req.ip) resolves to that proxy's own address for every request — every
+// real user collapses onto the SAME rate-limit bucket, turning "100 sync
+// requests per user per 15 min" into "100 total for the whole app." Trusting
+// exactly one hop (not `true`, which would trust an unbounded chain and let
+// a client spoof X-Forwarded-For) is the correct setting for this topology.
+app.set("trust proxy", 1);
 // crossOriginResourcePolicy defaults to "same-origin", which would make
 // browsers block the client's fetch to this API — the client is always a
 // different origin from this server (different port in dev, different
@@ -59,6 +67,12 @@ app.use("/api/events", authLimiter, events);
 app.use((err: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
   if (err instanceof ZodError) {
     return res.status(422).json({ error: "Validation failed", issues: err.issues });
+  }
+  // express.json() throws a SyntaxError for a malformed request body (bad
+  // JSON) — that's a client mistake, not a server fault, so it should come
+  // back as a 400 like the validation errors above, not a generic 500.
+  if (err instanceof SyntaxError && "body" in err) {
+    return res.status(400).json({ error: "Malformed JSON in request body." });
   }
   logger.error("unhandled_request_error", err, { method: req.method, path: req.path });
   res.status(500).json({ error: "Something went wrong on our side — your data is safe." });

@@ -158,4 +158,26 @@ describe("loadData / saveData round trip", () => {
     const loaded = await loadData("never-saved-user");
     expect(loaded).toEqual(DEFAULT_DATA);
   });
+
+  it("propagates decryptJSON's ENCRYPTION_KEY_MISSING instead of silently returning DEFAULT_DATA", async () => {
+    // Regression guard for the fix that made decryptJSON throw instead of
+    // fail-open: if loadData's own catch-all swallowed that throw, a real
+    // encrypted record that can't be opened would look identical to a fresh
+    // empty account again — exactly the bug the crypto.ts fix targeted.
+    const { createEnvelopes, activateSessionKey, clearEncryptionKey } = await import("./crypto");
+    const userId = "test-user-locked";
+    const { dek } = await createEnvelopes("pw", userId);
+    activateSessionKey(dek);
+    await saveData({ ...DEFAULT_DATA, income: 9999 }, userId);
+
+    clearEncryptionKey(); // simulate the session-outlives-its-key gap (browser restart / fresh tab)
+    await expect(loadData(userId)).rejects.toThrow("ENCRYPTION_KEY_MISSING");
+  });
+
+  it("falls back to DEFAULT_DATA for genuinely corrupted/unparseable storage, not a key-mismatch case", async () => {
+    const userId = "test-user-corrupted";
+    localStorage.setItem(`essa_data_${userId}`, "{not valid json at all");
+    const loaded = await loadData(userId);
+    expect(loaded).toEqual(DEFAULT_DATA);
+  });
 });

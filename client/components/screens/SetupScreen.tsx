@@ -72,7 +72,7 @@ export default function SetupScreen({
               style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
               type="number" min="0" step="100"
               value={financials.income || ""}
-              onChange={(e) => update({ income: parseFloat(e.target.value) || 0 })}
+              onChange={(e) => update({ income: Math.max(0, parseFloat(e.target.value) || 0) })}
               placeholder="e.g. 3500"
             />
           </div>
@@ -124,7 +124,7 @@ export default function SetupScreen({
                 style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
                 type="number" min="1" max="24"
                 value={financials.emergencyFundTargetMonths}
-                onChange={(e) => update({ emergencyFundTargetMonths: parseInt(e.target.value) || 6 })}
+                onChange={(e) => update({ emergencyFundTargetMonths: Math.max(1, parseInt(e.target.value) || 6) })}
               />
             </div>
             <div>
@@ -134,7 +134,7 @@ export default function SetupScreen({
                 style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
                 type="number" min="0" step="100"
                 value={financials.emergencyFundBalance || ""}
-                onChange={(e) => update({ emergencyFundBalance: parseFloat(e.target.value) || 0 })}
+                onChange={(e) => update({ emergencyFundBalance: Math.max(0, parseFloat(e.target.value) || 0) })}
                 placeholder="0"
               />
             </div>
