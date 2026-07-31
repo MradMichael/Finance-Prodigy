@@ -11,7 +11,14 @@
 -- 1) vw_fact_ledger — the canonical signed ledger.
 --    One row per transaction, fully conformed (date + category +
 --    account attributes flattened). This is THE table to point a BI
---    tool at; signed_amount sums to net cash flow at any grain.
+--    tool at for transaction-level detail.
+--    NOTE: income is never written as a fact_transaction row (the
+--    client's data model treats income as a flat monthly setting, not
+--    a dated transaction) — flow_type is always EXPENSE or SAVINGS in
+--    practice, so signed_amount here is always <= 0 and sums to
+--    -(total spend), not net cash flow. For a number that actually
+--    nets against income, use vw_monthly_bucket (below), which sources
+--    income from fact_monthly_snapshot instead.
 -- ---------------------------------------------------------------------
 CREATE OR REPLACE VIEW vw_fact_ledger AS
 SELECT
@@ -46,21 +53,26 @@ JOIN dim_account  a ON a.id       = t.account_id;
 -- ---------------------------------------------------------------------
 CREATE OR REPLACE VIEW vw_monthly_bucket AS
 WITH inc AS (
+    -- Income is never a fact_transaction row (see vw_fact_ledger's note
+    -- above) — fact_monthly_snapshot.total_income is the real source of
+    -- truth, written once per user × month by normalizeToTables.
     SELECT user_id,
-           date_key / 100  AS ym_key,
-           SUM(amount)     AS income
-    FROM fact_transaction
-    WHERE flow_type = 'INCOME'
-    GROUP BY 1, 2
+           year * 100 + month AS ym_key,
+           total_income        AS income
+    FROM fact_monthly_snapshot
 ),
 exp AS (
+    -- Includes SAVINGS alongside EXPENSE: normalizeToTables writes the
+    -- SAVINGS bucket's own flow_type ('SAVINGS', not 'EXPENSE'), so an
+    -- EXPENSE-only filter silently dropped every savings contribution
+    -- from this rollup — the bucket would never appear in the results.
     SELECT t.user_id,
            t.date_key / 100 AS ym_key,
            c.bucket,
            SUM(t.amount)    AS spend
     FROM fact_transaction t
     JOIN dim_category c ON c.id = t.category_id
-    WHERE t.flow_type = 'EXPENSE'
+    WHERE t.flow_type IN ('EXPENSE', 'SAVINGS')
     GROUP BY 1, 2, 3
 )
 SELECT
@@ -98,13 +110,16 @@ FROM budget b
 JOIN budget_line  bl ON bl.budget_id  = b.id
 JOIN dim_category c  ON c.id          = bl.category_id
 LEFT JOIN (
+    -- Includes SAVINGS alongside EXPENSE — same reasoning as vw_monthly_bucket's
+    -- exp CTE above: the SAVINGS budget line otherwise always shows 0% consumed
+    -- no matter how much was actually contributed.
     SELECT t.user_id,
            t.date_key / 10000        AS year,
            (t.date_key / 100) % 100  AS month,
            t.category_id,
            SUM(t.amount)             AS actual
     FROM fact_transaction t
-    WHERE t.flow_type = 'EXPENSE'
+    WHERE t.flow_type IN ('EXPENSE', 'SAVINGS')
     GROUP BY 1, 2, 3, 4
 ) act ON act.user_id     = b.user_id
      AND act.year        = b.year

@@ -18,9 +18,12 @@ export default function TopBar({ session, onProfile, onSignOut }: { session: Ses
         <Signet size={26} />
         <span className="text-sm font-semibold" style={{ color: T.text, fontFamily: "Spectral, Georgia, serif" }}>ESSA</span>
       </div>
-      <div className="relative">
+      <div className="relative" onKeyDown={(e) => { if (e.key === "Escape") setMenu(false); }}>
         <button
           onClick={() => setMenu((v) => !v)}
+          aria-haspopup="true"
+          aria-expanded={menu}
+          aria-label="Account menu"
           className="flex items-center gap-2 rounded-xl px-2.5 py-1.5"
           style={{ background: T.panelSoft }}
         >

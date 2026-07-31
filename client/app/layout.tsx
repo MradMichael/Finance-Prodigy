@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { ThemeProvider } from "../contexts/ThemeContext";
+import { THEME_SCRIPT } from "../lib/theme";
 
 export const metadata: Metadata = {
   title: "ESSA — Earn Spend Save Achieve",
@@ -13,7 +14,6 @@ export const viewport: Viewport = {
   themeColor: "#0B1F1E",
 };
 
-const THEME_INIT = `(function(){try{var t=localStorage.getItem('essa_theme')||'ledger';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();`;
 // Registers a deliberately no-op-caching service worker (see public/sw.js)
 // purely so the app is installable to a phone home screen — real offline
 // caching is intentionally not part of this, so there's no risk of anyone
@@ -27,7 +27,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Spectral:wght@400;600;700&display=swap" rel="stylesheet" />
-        <script dangerouslySetInnerHTML={{ __html: THEME_INIT }} />
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
         <script dangerouslySetInnerHTML={{ __html: SW_INIT }} />
       </head>
       <body>

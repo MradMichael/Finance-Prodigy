@@ -61,7 +61,21 @@ const authLimiter = rateLimit({
   message: { error: "Too many requests — please wait a few minutes and try again." },
 });
 app.use("/api/auth", authLimiter, auth);
-app.use("/api/events", authLimiter, events);
+
+// Separate instance from authLimiter, even though the settings match today —
+// express-rate-limit keys purely on IP, not path, so sharing one middleware
+// instance across two routes meant they silently drew from the same 30
+// req/15 min bucket. On a shared IP (office NAT, campus network), onboarding
+// event pings could burn down the budget check-email needs, 429-ing a
+// legitimate sign-up attempt for a reason that had nothing to do with it.
+const eventsLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests — please wait a few minutes and try again." },
+});
+app.use("/api/events", eventsLimiter, events);
 
 // Central error handler — Zod issues come back as 422 with details.
 app.use((err: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {

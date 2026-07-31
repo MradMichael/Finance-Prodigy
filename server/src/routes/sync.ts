@@ -27,7 +27,11 @@ const pushSchema = z.object({
   // client mid-upgrade) can still push without it.
   recoveryToken: tokenSchema.optional(),
   data: z.record(z.unknown()).refine(
-    (d) => JSON.stringify(d).length <= MAX_DATA_JSON_BYTES,
+    // .length counts UTF-16 code units, not bytes — a payload heavy in
+    // multi-byte UTF-8 characters (e.g. Arabic text in transaction notes,
+    // a real scenario for this app's target audience) could sail past the
+    // intended 2MB cap while still passing a code-unit-based check.
+    (d) => Buffer.byteLength(JSON.stringify(d), "utf8") <= MAX_DATA_JSON_BYTES,
     { message: `data exceeds the ${MAX_DATA_JSON_BYTES}-byte limit` },
   ),
 });

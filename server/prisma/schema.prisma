@@ -107,6 +107,7 @@ model DimAccount {
 
   transactions FactTransaction[]
 
+  @@index([userId])
   @@map("dim_account")
 }
 

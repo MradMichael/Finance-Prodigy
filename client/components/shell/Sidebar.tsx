@@ -84,6 +84,10 @@ export default function Sidebar({
             <button
               key={key}
               onClick={() => setScreen(key)}
+              onFocus={() => setHovered(true)}
+              onBlur={() => setHovered(false)}
+              aria-label={label}
+              aria-current={active ? "page" : undefined}
               className="w-full flex items-center gap-3 px-2.5 py-2.5 rounded-xl text-sm font-medium transition-all"
               style={{
                 background: active ? T.brass + "1A" : "transparent",

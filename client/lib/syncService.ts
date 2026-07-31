@@ -15,6 +15,15 @@ export interface SyncResult {
   error?: string;
 }
 
+// A non-2xx response isn't guaranteed to have a JSON body — a proxy/platform
+// timeout or crash page can return plain HTML. Letting res.json() throw
+// there falls into the same catch block as a genuine network failure below,
+// misreporting "server unreachable" when it actually responded, just not
+// with JSON. Parsing separately keeps those two failure modes distinct.
+async function parseJsonSafe(res: Response): Promise<{ error?: string; [key: string]: unknown } | null> {
+  try { return await res.json(); } catch { return null; }
+}
+
 export async function pushToServer(email: string, data: LocalFinancials): Promise<SyncResult> {
   const token = getSyncToken();
   if (!token) return { ok: false, error: "Not signed in — sign in again to sync." };
@@ -29,10 +38,10 @@ export async function pushToServer(email: string, data: LocalFinancials): Promis
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, data, token, ...(recoveryToken ? { recoveryToken } : {}) }),
     });
-    const json = await res.json();
-    if (!res.ok) return { ok: false, error: json.error ?? "Sync failed." };
-    localStorage.setItem(LAST_SYNC_KEY, json.syncedAt);
-    return { ok: true, syncedAt: json.syncedAt };
+    const json = await parseJsonSafe(res);
+    if (!res.ok) return { ok: false, error: json?.error ?? `Sync failed (HTTP ${res.status}).` };
+    localStorage.setItem(LAST_SYNC_KEY, json!.syncedAt as string);
+    return { ok: true, syncedAt: json!.syncedAt as string };
   } catch {
     return { ok: false, error: "Could not reach server. Is it running?" };
   }
@@ -55,8 +64,8 @@ export async function relinkSync(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, token, recoveryToken, ...(oldRecoveryToken ? { oldRecoveryToken } : {}) }),
     });
-    const json = await res.json();
-    if (!res.ok) return { ok: false, error: json.error ?? "Relink failed." };
+    const json = await parseJsonSafe(res);
+    if (!res.ok) return { ok: false, error: json?.error ?? `Relink failed (HTTP ${res.status}).` };
     return { ok: true };
   } catch {
     return { ok: false, error: "Could not reach server." };
@@ -69,10 +78,10 @@ export async function pullFromServer(email: string): Promise<{ ok: true; data: L
   try {
     const res = await fetch(`/api/sync/pull?email=${encodeURIComponent(email)}&token=${encodeURIComponent(token)}`);
     if (res.status === 404) return { ok: false, error: "No data on server yet — push first." };
-    const json = await res.json();
-    if (!res.ok) return { ok: false, error: json.error ?? "Pull failed." };
-    localStorage.setItem(LAST_SYNC_KEY, json.syncedAt);
-    return { ok: true, data: json.data, syncedAt: json.syncedAt };
+    const json = await parseJsonSafe(res);
+    if (!res.ok) return { ok: false, error: json?.error ?? `Pull failed (HTTP ${res.status}).` };
+    localStorage.setItem(LAST_SYNC_KEY, json!.syncedAt as string);
+    return { ok: true, data: json!.data as LocalFinancials, syncedAt: json!.syncedAt as string };
   } catch {
     return { ok: false, error: "Could not reach server. Is it running?" };
   }
@@ -97,8 +106,8 @@ export async function deleteFromServer(email: string, token: string): Promise<Sy
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, token }),
     });
-    const json = await res.json();
-    if (!res.ok) return { ok: false, error: json.error ?? "Delete failed." };
+    const json = await parseJsonSafe(res);
+    if (!res.ok) return { ok: false, error: json?.error ?? `Delete failed (HTTP ${res.status}).` };
     return { ok: true };
   } catch {
     return { ok: false, error: "Could not reach server." };

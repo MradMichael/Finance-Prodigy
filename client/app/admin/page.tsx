@@ -103,16 +103,30 @@ function Row({ label, value, mono = false, sensitive = false }: { label: string;
   );
 }
 
+// "isAdmin" today just means "the first account ever signed up in this
+// browser" (see auth.ts) — there's no real server-side role system yet, so
+// in an open-signup world every new visitor becomes "admin" of their own
+// session on their first try. That's harmless for the developer's own
+// local testing, but this panel also shows a masked-but-recognizable real
+// database hostname, dev-machine file paths, and other infra details that
+// shouldn't ship to anyone else.
+//
+// Gating with a runtime `if (NODE_ENV === "production") notFound()` alone
+// is NOT enough: "use client" means this whole module — every string
+// literal in it, including the ones above — still gets bundled into a
+// public, unauthenticated static JS chunk regardless of whether the
+// component ever renders. Anyone could fetch that chunk directly and read
+// it verbatim. Structuring the guard as `NODE_ENV !== "production"`
+// instead lets Next's production build substitute that to a literal
+// `if (false)` and dead-code-eliminate the real component (and everything
+// in it) out of the bundle entirely — the same pattern React itself uses
+// to strip dev-only warnings from production builds.
 export default function AdminPage() {
-  // "isAdmin" today just means "the first account ever signed up in this
-  // browser" (see auth.ts) — there's no real server-side role system yet,
-  // so in an open-signup world every new visitor becomes "admin" of their
-  // own session on their first try. That's harmless for the developer's
-  // own local testing, but this panel also shows a masked-but-recognizable
-  // real database hostname, which shouldn't ship to anyone else. Gate the
-  // whole route out of production builds until real accounts/roles exist.
-  if (process.env.NODE_ENV === "production") notFound();
+  if (process.env.NODE_ENV !== "production") return <AdminPageContent />;
+  notFound();
+}
 
+function AdminPageContent() {
   const router = useRouter();
   const T      = useTheme();
 
@@ -122,14 +136,21 @@ export default function AdminPage() {
   const [pinging, setPinging] = useState(false);
 
   useEffect(() => {
-    ensureFirstUserIsAdmin();
+    // Check the visitor's OWN admin status first — ensureFirstUserIsAdmin()
+    // can promote a *different* account (whichever is index-0 in this
+    // browser's user list) to admin as a side effect, which shouldn't run
+    // before confirming the visitor themselves is even allowed to be here.
     const s = getSession();
     if (!s || !isAdmin(s.userId)) { router.replace("/"); return; }
+    ensureFirstUserIsAdmin();
 
-    // Build user rows
+    // Build user rows. essa_last_sync is a single browser-wide key, not
+    // namespaced per account — attaching it to every row would misleadingly
+    // claim every listed user "last synced" at the same moment. Only the
+    // currently signed-in user's row can honestly show it.
     const rows: UserRow[] = listUsers().map((u) => ({
       ...u,
-      lastSync: localStorage.getItem("essa_last_sync") ?? null,
+      lastSync: u.id === s.userId ? localStorage.getItem("essa_last_sync") : null,
       hasData:  !!localStorage.getItem(`essa_data_${u.id}`),
     }));
     setUsers(rows);
