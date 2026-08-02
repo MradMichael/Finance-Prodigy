@@ -10,6 +10,7 @@ import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, monthl
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY } from "./form/Primitives";
+import ImportStatement from "./ImportStatement";
 
 type Bucket = "NEEDS" | "WANTS" | "SAVINGS";
 
@@ -51,6 +52,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
   const [showAddCard, setShowAddCard] = useState(false);
   const [newCardType, setNewCardType] = useState<StoredCard["type"]>("Visa");
   const [newCardLast4, setNewCardLast4] = useState("");
+  const [showImport, setShowImport] = useState(false);
 
   // Goal form
   const [gName,    setGName]    = useState("");
@@ -423,6 +425,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
   const fmt      = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 
   return (
+    <>
     <aside
       className="flex flex-col h-full overflow-y-auto"
       style={{ background: T.panel }}
@@ -729,6 +732,14 @@ export default function InputPanel({ financials, onChange, session }: Props) {
             + Add entry
           </PrimaryBtn>
         </Section>
+
+        <button
+          onClick={() => setShowImport(true)}
+          className="w-full text-center text-xs py-2 transition-all hover:opacity-70"
+          style={{ color: T.mute }}
+        >
+          📄 Import a bank statement (PDF)
+        </button>
 
         {/* This month */}
         <Section title="This month" icon="📋" badge={monthTx.length} defaultOpen={monthTx.length > 0}>
@@ -1749,5 +1760,9 @@ export default function InputPanel({ financials, onChange, session }: Props) {
         </button>
       </div>
     </aside>
+    {showImport && (
+      <ImportStatement financials={financials} onImport={update} onClose={() => setShowImport(false)} />
+    )}
+    </>
   );
 }
