@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
-import { fmtDate } from "../../lib/localData";
+import { fmtDate, toUSD as toUSDShared } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money } from "./shared";
 
@@ -11,7 +11,7 @@ export default function TransactionsScreen({ financials }: { financials: LocalFi
   const [filter, setFilter] = useState("all");
 
   const lbpRate = financials.lbpRate ?? 89500;
-  const toUSD   = (n: number, cur?: string) => cur === "LBP" ? n / lbpRate : n;
+  const toUSD   = (n: number, cur?: string) => toUSDShared(n, cur as "USD" | "LBP" | undefined, lbpRate);
 
   const allTx  = [...financials.transactions].sort((a, b) => b.date.localeCompare(a.date));
   const months = Array.from(new Set(allTx.map((t) => t.date.slice(0, 7)))).sort().reverse();

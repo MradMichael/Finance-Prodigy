@@ -170,270 +170,283 @@ export async function normalizeToTables(email: string, raw: LocalFinancials): Pr
     return;
   }
 
-  // ── 1. Upsert dim_user ────────────────────────────────────────────────────
-  const user = await prisma.user.upsert({
-    where:  { email: email.toLowerCase() },
-    create: {
-      email:          email.toLowerCase(),
-      name:           raw.userName ?? "User",
-      currency:       "USD",
-      payoffStrategy: "AVALANCHE",
-      efTargetMonths: raw.emergencyFundTargetMonths ?? 6,
-    },
-    update: {
-      name:           raw.userName ?? "User",
-      efTargetMonths: raw.emergencyFundTargetMonths ?? 6,
-    },
-  });
-
-  // ── 2. Ensure dim_category rows for NEEDS / WANTS / SAVINGS ──────────────
-  const catIds: Record<BucketKey, number> = {} as Record<BucketKey, number>;
-  for (const [bucket, meta] of Object.entries(BUCKET_META) as [BucketKey, typeof BUCKET_META[BucketKey]][]) {
-    const cat = await prisma.dimCategory.upsert({
-      where:  { name_bucket: { name: meta.name, bucket } },
-      create: { name: meta.name, bucket, icon: meta.icon, isActive: true },
-      update: { icon: meta.icon },
+  // Everything below is one transaction — a crash or connection drop
+  // partway through used to leave the warehouse with, say, transactions
+  // deleted but not yet re-inserted (this function deletes-then-rebuilds
+  // rather than diffing). A generous timeout since a user with a large
+  // history means many sequential creates, each its own round trip.
+  let monthCount = 0;
+  const user = await prisma.$transaction(async (tx) => {
+    // ── 1. Upsert dim_user ──────────────────────────────────────────────────
+    const user = await tx.user.upsert({
+      where:  { email: email.toLowerCase() },
+      create: {
+        email:          email.toLowerCase(),
+        name:           raw.userName ?? "User",
+        currency:       "USD",
+        payoffStrategy: "AVALANCHE",
+        efTargetMonths: raw.emergencyFundTargetMonths ?? 6,
+      },
+      update: {
+        name:           raw.userName ?? "User",
+        efTargetMonths: raw.emergencyFundTargetMonths ?? 6,
+      },
     });
-    catIds[bucket] = cat.id;
-  }
 
-  // ── 3. Ensure dim_date rows exist for every transaction date + today ──────
-  const uniqueDates = [...new Set([...transactions.map(t => t.date), todayStr])];
-  for (const ds of uniqueDates) {
-    const dd = dimDateData(ds);
-    await prisma.dimDate.upsert({
-      where:  { dateKey: dd.dateKey },
-      create: dd,
-      update: {},
-    });
-  }
-
-  // ── 4. Clear user's transactional data (FK-safe order) ───────────────────
-  //   fact_transaction  (refs dim_account → NoAction, must go first)
-  await prisma.factTransaction.deleteMany({ where: { userId: user.id } });
-  //   fact_monthly_snapshot
-  await prisma.factMonthlySnapshot.deleteMany({ where: { userId: user.id } });
-  //   goal  (cascades → fact_goal_contribution)
-  await prisma.goal.deleteMany({ where: { userId: user.id } });
-  //   debt  (cascades → fact_debt_payment)
-  await prisma.debt.deleteMany({ where: { userId: user.id } });
-  //   budget  (cascades → budget_line)
-  await prisma.budget.deleteMany({ where: { userId: user.id } });
-  //   dim_account  (fact_transaction already deleted)
-  await prisma.dimAccount.deleteMany({ where: { userId: user.id } });
-
-  // ── 5. Create dim_account rows ────────────────────────────────────────────
-  const cashAcc = await prisma.dimAccount.create({
-    data: { userId: user.id, name: "Cash",         type: "CASH",        currency: "USD", isActive: true },
-  });
-  const bankAcc = await prisma.dimAccount.create({
-    data: { userId: user.id, name: "Bank Account", type: "CHECKING",    currency: "USD", isActive: true },
-  });
-  const otherAcc = await prisma.dimAccount.create({
-    data: { userId: user.id, name: "Other / Gift", type: "CHECKING",    currency: "USD", isActive: true },
-  });
-  const efAcc = await prisma.dimAccount.create({
-    data: { userId: user.id, name: "Emergency Fund", type: "SAVINGS",   currency: "USD", isActive: true },
-  });
-
-  // One CREDIT_CARD account per saved card
-  const cardAccMap: Record<string, number> = {};
-  for (const card of cards) {
-    const acc = await prisma.dimAccount.create({
-      data: { userId: user.id, name: card.label, type: "CREDIT_CARD", currency: "USD", isActive: true },
-    });
-    cardAccMap[card.id] = acc.id;
-  }
-
-  // ── 6. Insert fact_transaction for every logged entry ────────────────────
-  for (const tx of transactions) {
-    const dd     = dimDateData(tx.date);
-    const amtUSD = toUSD(tx.amount, tx.currency);
-
-    // Resolve account
-    let accountId = bankAcc.id;
-    if (tx.paymentMethod === "cash") {
-      accountId = cashAcc.id;
-    } else if (tx.paymentMethod === "card") {
-      accountId = tx.cardId && cardAccMap[tx.cardId] ? cardAccMap[tx.cardId] : bankAcc.id;
-    } else if (tx.paymentMethod === "other") {
-      accountId = otherAcc.id;
+    // ── 2. Ensure dim_category rows for NEEDS / WANTS / SAVINGS ──────────────
+    const catIds: Record<BucketKey, number> = {} as Record<BucketKey, number>;
+    for (const [bucket, meta] of Object.entries(BUCKET_META) as [BucketKey, typeof BUCKET_META[BucketKey]][]) {
+      const cat = await tx.dimCategory.upsert({
+        where:  { name_bucket: { name: meta.name, bucket } },
+        create: { name: meta.name, bucket, icon: meta.icon, isActive: true },
+        update: { icon: meta.icon },
+      });
+      catIds[bucket] = cat.id;
     }
 
-    // Build note: description + card label + who paid (for "other")
-    const noteParts = [
-      tx.description,
-      tx.cardLabel  ? `[${tx.cardLabel}]`         : null,
-      tx.paymentNote ? `Paid by: ${tx.paymentNote}` : null,
-      tx.currency === "LBP" ? `(L£${tx.amount.toLocaleString()} at ${lbpRate}/USD)` : null,
-    ].filter(Boolean);
+    // ── 3. Ensure dim_date rows exist for every transaction date + today ──────
+    const uniqueDates = [...new Set([...transactions.map(t => t.date), todayStr])];
+    for (const ds of uniqueDates) {
+      const dd = dimDateData(ds);
+      await tx.dimDate.upsert({
+        where:  { dateKey: dd.dateKey },
+        create: dd,
+        update: {},
+      });
+    }
 
-    await prisma.factTransaction.create({
-      data: {
-        userId:      user.id,
-        dateKey:     dd.dateKey,
-        occurredAt:  new Date(tx.date + "T12:00:00Z"),
-        amount:      amtUSD,
-        flowType:    BUCKET_META[tx.bucket]?.flowType ?? "EXPENSE",
-        categoryId:  catIds[tx.bucket],
-        accountId,
-        merchant:    null,
-        note:        noteParts.join(" · ") || null,
-        isRecurring: false,
-      },
+    // ── 4. Clear user's transactional data (FK-safe order) ───────────────────
+    //   fact_transaction  (refs dim_account → NoAction, must go first)
+    await tx.factTransaction.deleteMany({ where: { userId: user.id } });
+    //   fact_monthly_snapshot
+    await tx.factMonthlySnapshot.deleteMany({ where: { userId: user.id } });
+    //   goal  (cascades → fact_goal_contribution)
+    await tx.goal.deleteMany({ where: { userId: user.id } });
+    //   debt  (cascades → fact_debt_payment)
+    await tx.debt.deleteMany({ where: { userId: user.id } });
+    //   budget for the current month only — a full deleteMany here would erase
+    //   prior months' budgets even though step 10 below only ever recreates
+    //   the current month, permanently losing history on every single push.
+    await tx.budget.deleteMany({ where: { userId: user.id, year: now.getFullYear(), month: now.getMonth() + 1 } });
+    //   dim_account  (fact_transaction already deleted)
+    await tx.dimAccount.deleteMany({ where: { userId: user.id } });
+
+    // ── 5. Create dim_account rows ────────────────────────────────────────────
+    const cashAcc = await tx.dimAccount.create({
+      data: { userId: user.id, name: "Cash",         type: "CASH",        currency: "USD", isActive: true },
     });
-  }
-
-  // ── 7. Insert fact_transaction for recurring (as planned, isRecurring=true) ──
-  //    These represent the scheduled recurring payments—separate from actuals.
-  const todayDd = dimDateData(todayStr);
-  for (const rec of recurring) {
-    const amtUSD = toUSD(rec.amount, rec.currency);
-    const freqLabel: Record<string, string> = {
-      MONTHLY: "Monthly", WEEKLY: "Weekly", BIWEEKLY: "Bi-weekly",
-      QUARTERLY: "Quarterly", ANNUAL: "Annual", DAILY: "Daily",
-    };
-    const note = [
-      `${rec.emoji ?? ""} ${rec.name}`.trim(),
-      `[Recurring · ${freqLabel[rec.frequency] ?? rec.frequency}]`,
-      rec.dayOfMonth ? `day ${rec.dayOfMonth}` : null,
-      rec.currency === "LBP" ? `(L£${rec.amount.toLocaleString()} at ${lbpRate}/USD)` : null,
-    ].filter(Boolean).join(" · ");
-
-    await prisma.factTransaction.create({
-      data: {
-        userId:      user.id,
-        dateKey:     todayDd.dateKey,
-        occurredAt:  new Date(todayStr + "T12:00:00Z"),
-        amount:      amtUSD,
-        flowType:    BUCKET_META[rec.bucket as BucketKey]?.flowType ?? "EXPENSE",
-        categoryId:  catIds[rec.bucket as BucketKey],
-        accountId:   bankAcc.id,
-        merchant:    null,
-        note,
-        isRecurring: true,
-      },
+    const bankAcc = await tx.dimAccount.create({
+      data: { userId: user.id, name: "Bank Account", type: "CHECKING",    currency: "USD", isActive: true },
     });
-  }
-
-  // ── 8. Insert goals ───────────────────────────────────────────────────────
-  for (const g of goals) {
-    await prisma.goal.create({
-      data: {
-        userId:         user.id,
-        name:           g.name,
-        emoji:          g.emoji ?? null,
-        type:           "CUSTOM",
-        targetAmount:   g.targetAmount,
-        startingAmount: 0,
-        currentAmount:  g.currentAmount,
-        targetDate:     new Date(g.targetDate + "T00:00:00Z"),
-        priority:       3,
-        status:         g.achievedAt ? "ACHIEVED" : "ACTIVE",
-      },
+    const otherAcc = await tx.dimAccount.create({
+      data: { userId: user.id, name: "Other / Gift", type: "CHECKING",    currency: "USD", isActive: true },
     });
-  }
-
-  // ── 9. Insert debts ───────────────────────────────────────────────────────
-  for (const d of debts) {
-    await prisma.debt.create({
-      data: {
-        userId:            user.id,
-        name:              d.name,
-        lender:            null,
-        originalPrincipal: d.balance,   // current balance used as proxy
-        currentBalance:    d.balance,
-        aprPct:            d.apr,
-        minimumPayment:    d.minPayment,
-        startDate:         d.openedDate ? new Date(d.openedDate + "T00:00:00Z") : null,
-        status:            d.balance <= 0 ? "PAID_OFF" : "ACTIVE",
-      },
-    });
-  }
-
-  // ── 10. Budget for current month ──────────────────────────────────────────
-  if (income > 0) {
-    const rule = raw.budgetRule ?? "50-30-20";
-    const pcts = parseBudgetPcts(rule, raw.budgetCustomNeeds, raw.budgetCustomWants);
-    const yr   = now.getFullYear();
-    const mo   = now.getMonth() + 1;
-
-    const budget = await prisma.budget.create({
-      data: {
-        userId:         user.id,
-        year:           yr,
-        month:          mo,
-        expectedIncome: income,
-        needsPct:       pcts.needs,
-        wantsPct:       pcts.wants,
-        savingsPct:     pcts.savings,
-      },
+    const efAcc = await tx.dimAccount.create({
+      data: { userId: user.id, name: "Emergency Fund", type: "SAVINGS",   currency: "USD", isActive: true },
     });
 
-    // 3 budget lines: one per bucket
-    for (const [bucket, pct] of [
-      ["NEEDS",   pcts.needs]   as const,
-      ["WANTS",   pcts.wants]   as const,
-      ["SAVINGS", pcts.savings] as const,
-    ]) {
-      await prisma.budgetLine.create({
+    // One CREDIT_CARD account per saved card
+    const cardAccMap: Record<string, number> = {};
+    for (const card of cards) {
+      const acc = await tx.dimAccount.create({
+        data: { userId: user.id, name: card.label, type: "CREDIT_CARD", currency: "USD", isActive: true },
+      });
+      cardAccMap[card.id] = acc.id;
+    }
+
+    // ── 6. Insert fact_transaction for every logged entry ────────────────────
+    for (const t of transactions) {
+      const dd     = dimDateData(t.date);
+      const amtUSD = toUSD(t.amount, t.currency);
+
+      // Resolve account
+      let accountId = bankAcc.id;
+      if (t.paymentMethod === "cash") {
+        accountId = cashAcc.id;
+      } else if (t.paymentMethod === "card") {
+        accountId = t.cardId && cardAccMap[t.cardId] ? cardAccMap[t.cardId] : bankAcc.id;
+      } else if (t.paymentMethod === "other") {
+        accountId = otherAcc.id;
+      }
+
+      // Build note: description + card label + who paid (for "other")
+      const noteParts = [
+        t.description,
+        t.cardLabel  ? `[${t.cardLabel}]`         : null,
+        t.paymentNote ? `Paid by: ${t.paymentNote}` : null,
+        t.currency === "LBP" ? `(L£${t.amount.toLocaleString()} at ${lbpRate}/USD)` : null,
+      ].filter(Boolean);
+
+      await tx.factTransaction.create({
         data: {
-          budgetId:      budget.id,
-          categoryId:    catIds[bucket],
-          plannedAmount: (income * pct) / 100,
+          userId:      user.id,
+          dateKey:     dd.dateKey,
+          occurredAt:  new Date(t.date + "T12:00:00Z"),
+          amount:      amtUSD,
+          flowType:    BUCKET_META[t.bucket]?.flowType ?? "EXPENSE",
+          categoryId:  catIds[t.bucket],
+          accountId,
+          merchant:    null,
+          note:        noteParts.join(" · ") || null,
+          isRecurring: false,
         },
       });
     }
-  }
 
-  // ── 11. fact_monthly_snapshot — one row per month with transactions ────────
-  const monthBuckets: Record<string, { needs: number; wants: number; savings: number }> = {};
-  for (const tx of transactions) {
-    const ym  = tx.date.slice(0, 7);
-    const amt = toUSD(tx.amount, tx.currency);
-    if (!monthBuckets[ym]) monthBuckets[ym] = { needs: 0, wants: 0, savings: 0 };
-    if      (tx.bucket === "NEEDS")   monthBuckets[ym].needs   += amt;
-    else if (tx.bucket === "WANTS")   monthBuckets[ym].wants   += amt;
-    else if (tx.bucket === "SAVINGS") monthBuckets[ym].savings += amt;
-  }
+    // ── 7. Insert fact_transaction for recurring (as planned, isRecurring=true) ──
+    //    These represent the scheduled recurring payments—separate from actuals.
+    const todayDd = dimDateData(todayStr);
+    for (const rec of recurring) {
+      const amtUSD = toUSD(rec.amount, rec.currency);
+      const freqLabel: Record<string, string> = {
+        MONTHLY: "Monthly", WEEKLY: "Weekly", BIWEEKLY: "Bi-weekly",
+        QUARTERLY: "Quarterly", ANNUAL: "Annual", DAILY: "Daily",
+      };
+      const note = [
+        `${rec.emoji ?? ""} ${rec.name}`.trim(),
+        `[Recurring · ${freqLabel[rec.frequency] ?? rec.frequency}]`,
+        rec.dayOfMonth ? `day ${rec.dayOfMonth}` : null,
+        rec.currency === "LBP" ? `(L£${rec.amount.toLocaleString()} at ${lbpRate}/USD)` : null,
+      ].filter(Boolean).join(" · ");
 
-  const totalDebt = debts.reduce((s, d) => s + d.balance, 0);
-  const efBalance = raw.emergencyFundBalance ?? 0;
-  const rule = parseBudgetPcts(raw.budgetRule ?? "50-30-20", raw.budgetCustomNeeds, raw.budgetCustomWants);
+      await tx.factTransaction.create({
+        data: {
+          userId:      user.id,
+          dateKey:     todayDd.dateKey,
+          occurredAt:  new Date(todayStr + "T12:00:00Z"),
+          amount:      amtUSD,
+          flowType:    BUCKET_META[rec.bucket as BucketKey]?.flowType ?? "EXPENSE",
+          categoryId:  catIds[rec.bucket as BucketKey],
+          accountId:   bankAcc.id,
+          merchant:    null,
+          note,
+          isRecurring: true,
+        },
+      });
+    }
 
-  for (const [ym, spend] of Object.entries(monthBuckets)) {
-    const [y, m] = ym.split("-").map(Number);
-    // Guarded value stays local to the ratio math below — storing it
-    // instead of the raw `income` would persist a fake "$1 income" row for
-    // any genuinely $0-income month (the same floor-leaks-into-stored-value
-    // bug already fixed in the client's computeDashboard.ts this session).
-    const incSafe = income || 1;
+    // ── 8. Insert goals ───────────────────────────────────────────────────────
+    for (const g of goals) {
+      await tx.goal.create({
+        data: {
+          userId:         user.id,
+          name:           g.name,
+          emoji:          g.emoji ?? null,
+          type:           "CUSTOM",
+          targetAmount:   g.targetAmount,
+          startingAmount: 0,
+          currentAmount:  g.currentAmount,
+          targetDate:     new Date(g.targetDate + "T00:00:00Z"),
+          priority:       3,
+          status:         g.achievedAt ? "ACHIEVED" : "ACTIVE",
+        },
+      });
+    }
 
-    // Health score: savings pace (40%) + needs discipline (40%) + base (20%)
-    const savPace   = income > 0 ? Math.min(100, (spend.savings / (incSafe * rule.savings / 100)) * 100) : 0;
-    const needsRatio = spend.needs / incSafe;
-    const needsDis  = needsRatio <= rule.needs / 100 ? 100 : Math.max(0, 100 - (needsRatio - rule.needs / 100) * 400);
-    const health    = Math.round(savPace * 0.4 + needsDis * 0.4 + 20);
+    // ── 9. Insert debts ───────────────────────────────────────────────────────
+    for (const d of debts) {
+      await tx.debt.create({
+        data: {
+          userId:            user.id,
+          name:              d.name,
+          lender:            null,
+          originalPrincipal: d.balance,   // current balance used as proxy
+          currentBalance:    d.balance,
+          aprPct:            d.apr,
+          minimumPayment:    d.minPayment,
+          startDate:         d.openedDate ? new Date(d.openedDate + "T00:00:00Z") : null,
+          status:            d.balance <= 0 ? "PAID_OFF" : "ACTIVE",
+        },
+      });
+    }
 
-    await prisma.factMonthlySnapshot.create({
-      data: {
-        userId:        user.id,
-        year:          y,
-        month:         m,
-        totalIncome:   income,
-        needsSpend:    spend.needs,
-        wantsSpend:    spend.wants,
-        savingsAmount: spend.savings,
-        debtBalanceEnd: totalDebt,
-        efBalanceEnd:   efBalance,
-        healthScore:    Math.min(100, Math.max(0, health)),
-      },
-    });
-  }
+    // ── 10. Budget for current month ──────────────────────────────────────────
+    if (income > 0) {
+      const rule = raw.budgetRule ?? "50-30-20";
+      const pcts = parseBudgetPcts(rule, raw.budgetCustomNeeds, raw.budgetCustomWants);
+      const yr   = now.getFullYear();
+      const mo   = now.getMonth() + 1;
+
+      const budget = await tx.budget.create({
+        data: {
+          userId:         user.id,
+          year:           yr,
+          month:          mo,
+          expectedIncome: income,
+          needsPct:       pcts.needs,
+          wantsPct:       pcts.wants,
+          savingsPct:     pcts.savings,
+        },
+      });
+
+      // 3 budget lines: one per bucket
+      for (const [bucket, pct] of [
+        ["NEEDS",   pcts.needs]   as const,
+        ["WANTS",   pcts.wants]   as const,
+        ["SAVINGS", pcts.savings] as const,
+      ]) {
+        await tx.budgetLine.create({
+          data: {
+            budgetId:      budget.id,
+            categoryId:    catIds[bucket],
+            plannedAmount: (income * pct) / 100,
+          },
+        });
+      }
+    }
+
+    // ── 11. fact_monthly_snapshot — one row per month with transactions ────────
+    const monthBuckets: Record<string, { needs: number; wants: number; savings: number }> = {};
+    for (const t of transactions) {
+      const ym  = t.date.slice(0, 7);
+      const amt = toUSD(t.amount, t.currency);
+      if (!monthBuckets[ym]) monthBuckets[ym] = { needs: 0, wants: 0, savings: 0 };
+      if      (t.bucket === "NEEDS")   monthBuckets[ym].needs   += amt;
+      else if (t.bucket === "WANTS")   monthBuckets[ym].wants   += amt;
+      else if (t.bucket === "SAVINGS") monthBuckets[ym].savings += amt;
+    }
+
+    const totalDebt = debts.reduce((s, d) => s + d.balance, 0);
+    const efBalance = raw.emergencyFundBalance ?? 0;
+    const rule = parseBudgetPcts(raw.budgetRule ?? "50-30-20", raw.budgetCustomNeeds, raw.budgetCustomWants);
+
+    for (const [ym, spend] of Object.entries(monthBuckets)) {
+      const [y, m] = ym.split("-").map(Number);
+      // Guarded value stays local to the ratio math below — storing it
+      // instead of the raw `income` would persist a fake "$1 income" row for
+      // any genuinely $0-income month (the same floor-leaks-into-stored-value
+      // bug already fixed in the client's computeDashboard.ts this session).
+      const incSafe = income || 1;
+
+      // Health score: savings pace (40%) + needs discipline (40%) + base (20%)
+      const savPace   = income > 0 ? Math.min(100, (spend.savings / (incSafe * rule.savings / 100)) * 100) : 0;
+      const needsRatio = spend.needs / incSafe;
+      const needsDis  = needsRatio <= rule.needs / 100 ? 100 : Math.max(0, 100 - (needsRatio - rule.needs / 100) * 400);
+      const health    = Math.round(savPace * 0.4 + needsDis * 0.4 + 20);
+
+      await tx.factMonthlySnapshot.create({
+        data: {
+          userId:        user.id,
+          year:          y,
+          month:         m,
+          totalIncome:   income,
+          needsSpend:    spend.needs,
+          wantsSpend:    spend.wants,
+          savingsAmount: spend.savings,
+          debtBalanceEnd: totalDebt,
+          efBalanceEnd:   efBalance,
+          healthScore:    Math.min(100, Math.max(0, health)),
+        },
+      });
+    }
+
+    monthCount = Object.keys(monthBuckets).length;
+    return user;
+  }, { timeout: 30_000, maxWait: 10_000 });
 
   logger.info("normalize_complete", {
     userId: user.id, transactions: transactions.length, goals: goals.length,
-    debts: debts.length, recurring: recurring.length, months: Object.keys(monthBuckets).length,
+    debts: debts.length, recurring: recurring.length, months: monthCount,
   });
 }
 

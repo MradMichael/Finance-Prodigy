@@ -113,3 +113,40 @@ describe("simulateDebtPayoff", () => {
     expect(result.monthlyCommitment).toBe(150); // 100 + 50, not 300 + 50
   });
 });
+
+describe("simulateDebtPayoff caching", () => {
+  it("returns an equal result for repeated calls with the same inputs (cache hit is transparent)", () => {
+    const debts: DebtInput[] = [{ id: "d1", name: "Card", balance: 3000, aprPct: 22, minimumPayment: 100 }];
+    const start = new Date("2026-01-01");
+    const first = simulateDebtPayoff(debts, 50, "AVALANCHE", start);
+    const second = simulateDebtPayoff(debts, 50, "AVALANCHE", start);
+    expect(second).toEqual(first);
+  });
+
+  it("still recomputes when the debts actually change, even with the same array reference (cache keys on content, not identity)", () => {
+    const debts: DebtInput[] = [{ id: "d1", name: "Card", balance: 3000, aprPct: 22, minimumPayment: 100 }];
+    const start = new Date("2026-01-01");
+    const first = simulateDebtPayoff(debts, 50, "AVALANCHE", start);
+    debts[0].balance = 5000; // mutate in place — same reference, different content
+    const second = simulateDebtPayoff(debts, 50, "AVALANCHE", start);
+    expect(second.totalInterest).not.toBe(first.totalInterest);
+  });
+
+  it("keys separately by strategy — AVALANCHE and SNOWBALL for the same debts don't collide", () => {
+    // A small high-APR balance alongside a large low-APR one: AVALANCHE
+    // clears the expensive small one first (minimal extra interest paid on
+    // the large balance in the meantime); SNOWBALL's balance-order ties
+    // here (small balance already wins on both criteria), so use three
+    // debts where the "smallest balance" and "highest APR" picks genuinely
+    // disagree on which to pay off first.
+    const debts: DebtInput[] = [
+      { id: "d1", name: "Small, cheap", balance: 500,  aprPct: 5,  minimumPayment: 25 },
+      { id: "d2", name: "Big, expensive", balance: 8000, aprPct: 27, minimumPayment: 50 },
+      { id: "d3", name: "Medium", balance: 2000, aprPct: 15, minimumPayment: 40 },
+    ];
+    const start = new Date("2026-01-01");
+    const avalanche = simulateDebtPayoff(debts, 200, "AVALANCHE", start);
+    const snowball = simulateDebtPayoff(debts, 200, "SNOWBALL", start);
+    expect(avalanche.totalInterest).not.toBe(snowball.totalInterest);
+  });
+});

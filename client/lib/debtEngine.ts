@@ -1,9 +1,16 @@
 /**
  * Debt payoff simulation — Snowball vs Avalanche, run client-side so the
- * comparison can be shown without a server round trip. Pure functions,
- * no I/O. Originally ported from a server-side financial engine that has
- * since been removed (it was unreachable — the client never called it);
- * this is now the only implementation.
+ * comparison can be shown without a server round trip. Referentially
+ * transparent (same inputs always produce the same output) but not
+ * side-effect-free in the literal sense: simulateDebtPayoff below keeps a
+ * small in-memory result cache, since it's called from computeDashboard()
+ * on every keystroke in the UI (any field edit re-derives the whole
+ * dashboard) and this is by far the most expensive computation in that
+ * path — up to 600 month-iterations, twice (AVALANCHE + SNOWBALL), for a
+ * field edit (e.g. the account name) that didn't change anything the
+ * simulation actually depends on. Originally ported from a server-side
+ * financial engine that has since been removed (it was unreachable — the
+ * client never called it); this is now the only implementation.
  */
 
 export interface DebtInput {
@@ -49,11 +56,11 @@ function addMonths(date: Date, months: number): Date {
  *   SNOWBALL  → targets sorted by smallest balance (quick wins)
  *   AVALANCHE → targets sorted by highest APR (least total interest)
  */
-export function simulateDebtPayoff(
+function runSimulation(
   debts: DebtInput[],
-  extraMonthly = 0,
-  strategy: "SNOWBALL" | "AVALANCHE" = "AVALANCHE",
-  start: Date = new Date(),
+  extraMonthly: number,
+  strategy: "SNOWBALL" | "AVALANCHE",
+  start: Date,
 ): PayoffPlan {
   const live = debts.filter((d) => d.balance > 0).map((d) => ({ ...d, paid: false }));
   // Sum only debts still owed — a caller can pass already-paid-off debts
@@ -145,4 +152,37 @@ export function simulateDebtPayoff(
     debtFreeDate: addMonths(start, month).toISOString(),
     totalInterest: round2(totalInterest),
   };
+}
+
+// Small MRU cache — a handful of recent (strategy, inputs) combinations is
+// enough to absorb "user is editing an unrelated field" without the
+// simulation re-running, while staying bounded (no unbounded growth across
+// a long session).
+const CACHE_SIZE = 8;
+const cache: { key: string; result: PayoffPlan }[] = [];
+
+function fingerprint(debts: DebtInput[], extraMonthly: number, strategy: string, start: Date): string {
+  // Only the fields runSimulation actually reads. Day-granularity (not full
+  // ISO/time) is deliberate: the only consumer of debtFreeDate is dateFmt(),
+  // which formats DD-MM-YYYY and drops time-of-day, so two calls within the
+  // same calendar day always produce an identical displayed result anyway.
+  const debtsKey = debts.map((d) => `${d.id}:${round2(d.balance)}:${d.aprPct}:${d.minimumPayment}`).join("|");
+  const dayKey = start.toISOString().slice(0, 10);
+  return `${strategy}|${dayKey}|${round2(extraMonthly)}|${debtsKey}`;
+}
+
+export function simulateDebtPayoff(
+  debts: DebtInput[],
+  extraMonthly = 0,
+  strategy: "SNOWBALL" | "AVALANCHE" = "AVALANCHE",
+  start: Date = new Date(),
+): PayoffPlan {
+  const key = fingerprint(debts, extraMonthly, strategy, start);
+  const hit = cache.find((e) => e.key === key);
+  if (hit) return hit.result;
+
+  const result = runSimulation(debts, extraMonthly, strategy, start);
+  cache.unshift({ key, result });
+  if (cache.length > CACHE_SIZE) cache.length = CACHE_SIZE;
+  return result;
 }

@@ -8,6 +8,10 @@ import { getRecoveryTokenForSync } from "./auth";
 // rewrite (server-side), so this works unchanged whether the client and
 // API are both local or deployed to separate origins (e.g. Vercel + Railway).
 const LAST_SYNC_KEY = "essa_last_sync";
+// Generous relative to the admin health check's 4s — a push can carry up to
+// a ~2MB data blob, not just a bare ping, so it needs real headroom before
+// being treated as hung rather than just slow.
+const SYNC_TIMEOUT_MS = 15_000;
 
 export interface SyncResult {
   ok: boolean;
@@ -37,11 +41,19 @@ export async function pushToServer(email: string, data: LocalFinancials): Promis
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, data, token, ...(recoveryToken ? { recoveryToken } : {}) }),
+      signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
     });
     const json = await parseJsonSafe(res);
     if (!res.ok) return { ok: false, error: json?.error ?? `Sync failed (HTTP ${res.status}).` };
-    localStorage.setItem(LAST_SYNC_KEY, json!.syncedAt as string);
-    return { ok: true, syncedAt: json!.syncedAt as string };
+    // A 200 with no/malformed JSON body (proxy glitch, truncated response)
+    // is a real but different failure from "couldn't reach the server at
+    // all" — report it as such instead of falling through to json!.syncedAt
+    // and throwing, which the outer catch would then relabel as offline.
+    if (json === null || typeof json.syncedAt !== "string") {
+      return { ok: false, error: "Server responded, but the response was malformed. Try again." };
+    }
+    localStorage.setItem(LAST_SYNC_KEY, json.syncedAt);
+    return { ok: true, syncedAt: json.syncedAt };
   } catch {
     return { ok: false, error: "Could not reach server. Is it running?" };
   }
@@ -63,6 +75,7 @@ export async function relinkSync(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, token, recoveryToken, ...(oldRecoveryToken ? { oldRecoveryToken } : {}) }),
+      signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
     });
     const json = await parseJsonSafe(res);
     if (!res.ok) return { ok: false, error: json?.error ?? `Relink failed (HTTP ${res.status}).` };
@@ -76,12 +89,22 @@ export async function pullFromServer(email: string): Promise<{ ok: true; data: L
   const token = getSyncToken();
   if (!token) return { ok: false, error: "Not signed in — sign in again to sync." };
   try {
-    const res = await fetch(`/api/sync/pull?email=${encodeURIComponent(email)}&token=${encodeURIComponent(token)}`);
+    // Token travels as a header, not a query param — push/relink/delete
+    // already send it in the POST body; a bearer secret in a URL is prone
+    // to leaking via server access logs, browser history, and proxy/CDN
+    // logs in ways a header isn't.
+    const res = await fetch(`/api/sync/pull?email=${encodeURIComponent(email)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
+    });
     if (res.status === 404) return { ok: false, error: "No data on server yet — push first." };
     const json = await parseJsonSafe(res);
     if (!res.ok) return { ok: false, error: json?.error ?? `Pull failed (HTTP ${res.status}).` };
-    localStorage.setItem(LAST_SYNC_KEY, json!.syncedAt as string);
-    return { ok: true, data: json!.data as LocalFinancials, syncedAt: json!.syncedAt as string };
+    if (json === null || typeof json.syncedAt !== "string" || !("data" in json)) {
+      return { ok: false, error: "Server responded, but the response was malformed. Try again." };
+    }
+    localStorage.setItem(LAST_SYNC_KEY, json.syncedAt);
+    return { ok: true, data: json.data as LocalFinancials, syncedAt: json.syncedAt };
   } catch {
     return { ok: false, error: "Could not reach server. Is it running?" };
   }
@@ -105,6 +128,7 @@ export async function deleteFromServer(email: string, token: string): Promise<Sy
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, token }),
+      signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
     });
     const json = await parseJsonSafe(res);
     if (!res.ok) return { ok: false, error: json?.error ?? `Delete failed (HTTP ${res.status}).` };
@@ -123,7 +147,7 @@ export async function deleteFromServer(email: string, token: string): Promise<Sy
  */
 export async function checkEmailExists(email: string): Promise<boolean> {
   try {
-    const res = await fetch(`/api/auth/check-email?email=${encodeURIComponent(email)}`);
+    const res = await fetch(`/api/auth/check-email?email=${encodeURIComponent(email)}`, { signal: AbortSignal.timeout(SYNC_TIMEOUT_MS) });
     if (!res.ok) return false;
     const json = await res.json();
     return json.exists === true;

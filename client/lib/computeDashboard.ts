@@ -1,5 +1,5 @@
 import type { LocalFinancials, BudgetRuleKey } from "./localData";
-import { monthlyEquivalent, nextOccurrence, BUDGET_RULES, valueForMonth, budgetPctForMonth } from "./localData";
+import { monthlyEquivalent, nextOccurrence, BUDGET_RULES, valueForMonth, budgetPctForMonth, toUSD as toUSDShared } from "./localData";
 import { simulateDebtPayoff, type DebtInput } from "./debtEngine";
 
 interface Projection {
@@ -118,8 +118,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   const budgetTargetPctForMonth = (ym: string) => budgetPctForMonth(data.budgetRuleHistory, ym, budgetTargetPct);
 
   const lbpRate = data.lbpRate ?? 89500;
-  const toUSD = (amount: number, currency?: string) =>
-    currency === "LBP" ? amount / lbpRate : amount;
+  const toUSD = (amount: number, currency?: string) => toUSDShared(amount, currency as "USD" | "LBP" | undefined, lbpRate);
 
   // For judging a PAST month: use the income/LBP-rate/budget-rule that were
   // actually in effect that month, not whatever they are today. A raise, an
@@ -294,72 +293,67 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   const nwTotal       = nwAssets - nwLiabilities;
 
   type NWColor = "jade" | "brass" | "coral" | "mute";
-  function netWorthTier(nw: number): { tier: string; tierColor: NWColor; suggestions: string[] } {
-    if (nw < -20000) return {
-      tier: "Heavy debt load",
-      tierColor: "coral",
+  // Sorted ascending by `max` (the upper bound each tier applies below);
+  // the last row's `max` is Infinity so every net worth lands somewhere.
+  const NET_WORTH_TIERS: { max: number; tier: string; tierColor: NWColor; suggestions: string[] }[] = [
+    {
+      max: -20000, tier: "Heavy debt load", tierColor: "coral",
       suggestions: [
         "Target the highest-APR debt first — that's where interest is burning fastest.",
         "Every dollar above the minimum payment is money that stops compounding against you.",
         "Even $50 extra per month cuts months off your payoff date — run the numbers in Debts.",
       ],
-    };
-    if (nw < -5000) return {
-      tier: "Rebuilding",
-      tierColor: "coral",
+    },
+    {
+      max: -5000, tier: "Rebuilding", tierColor: "coral",
       suggestions: [
         "You're climbing — the negative number is shrinking each month.",
         "Consider a small side income for 3–6 months; even $200/month accelerates this significantly.",
         "Once you clear the debt, redirect that minimum payment into savings automatically.",
       ],
-    };
-    if (nw < 0) return {
-      tier: "Almost positive",
-      tierColor: "brass",
+    },
+    {
+      max: 0, tier: "Almost positive", tierColor: "brass",
       suggestions: [
         "You're close to zero — that milestone shifts your psychology entirely.",
         "Focus on one debt at a time to cross into positive territory fast.",
         "Celebrate each debt closed — that freed cash is your first wealth-building tool.",
       ],
-    };
-    if (nw < 5000) return {
-      tier: "Breaking even",
-      tierColor: "brass",
+    },
+    {
+      max: 5000, tier: "Breaking even", tierColor: "brass",
       suggestions: [
         "Your liabilities are covered. Now every dollar saved is pure net worth growth.",
         "Start or grow your emergency fund — it's your first true asset.",
         "Set a goal to hit $5,000 in savings; that buffer changes how you handle surprises.",
       ],
-    };
-    if (nw < 25000) return {
-      tier: "Foundation builder",
-      tierColor: "jade",
+    },
+    {
+      max: 25000, tier: "Foundation builder", tierColor: "jade",
       suggestions: [
         "You're ahead of most people your age — keep the momentum going.",
         "Compound growth starts to matter here. Even modest returns on $10K make a difference.",
         "Consider diversifying: savings, goals, and if applicable, low-risk investments.",
       ],
-    };
-    if (nw < 100000) return {
-      tier: "Growing wealth",
-      tierColor: "jade",
+    },
+    {
+      max: 100000, tier: "Growing wealth", tierColor: "jade",
       suggestions: [
         "Significant position — you have real financial resilience now.",
         "At this level, optimizing income is often more powerful than cutting expenses.",
         "Consider whether your money is working as hard as you are.",
       ],
-    };
-    return {
-      tier: "Wealth building",
-      tierColor: "jade",
+    },
+    {
+      max: Infinity, tier: "Wealth building", tierColor: "jade",
       suggestions: [
         "Strong financial foundation — protect it with diversification.",
         "Focus shifts from accumulation to optimization and preservation.",
         "Reinvesting returns rather than spending them is what separates this level from the next.",
       ],
-    };
-  }
-  const nwData = netWorthTier(nwTotal);
+    },
+  ];
+  const nwData = NET_WORTH_TIERS.find((t) => nwTotal < t.max)!;
 
   // ── Six-month trend ───────────────────────────────────────────────
   const sixMonthTrend = Array.from({ length: 6 }, (_, i) => {

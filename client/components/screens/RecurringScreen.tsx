@@ -1,7 +1,7 @@
 "use client";
 
 import type { LocalFinancials } from "../../lib/localData";
-import { monthlyEquivalent, FREQ_LABELS } from "../../lib/localData";
+import { monthlyEquivalent, FREQ_LABELS, toUSD as toUSDShared } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money } from "./shared";
 
@@ -9,7 +9,7 @@ export default function RecurringScreen({ financials }: { financials: LocalFinan
   const T    = useTheme();
   const now  = new Date();
   const lbpRate = financials.lbpRate ?? 89500;
-  const toUSD   = (n: number, cur?: string) => cur === "LBP" ? n / lbpRate : n;
+  const toUSD   = (n: number, cur?: string) => toUSDShared(n, cur as "USD" | "LBP" | undefined, lbpRate);
   const BC   = { NEEDS: T.sky, WANTS: T.brass, SAVINGS: T.jade } as const;
   const BL   = { NEEDS: "Needs", WANTS: "Wants", SAVINGS: "Savings" } as const;
 

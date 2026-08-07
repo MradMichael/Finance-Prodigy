@@ -4,12 +4,12 @@ import { useState, useEffect, useRef } from "react";
 import type { Currency } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 
-export function Label({ children }: { children: React.ReactNode }) {
+export function Label({ children, htmlFor }: { children: React.ReactNode; htmlFor?: string }) {
   const T = useTheme();
   return (
-    <p className="text-[10px] uppercase tracking-widest mb-1.5 font-medium" style={{ color: T.mute }}>
+    <label htmlFor={htmlFor} className="block text-[10px] uppercase tracking-widest mb-1.5 font-medium" style={{ color: T.mute }}>
       {children}
-    </p>
+    </label>
   );
 }
 
@@ -37,9 +37,9 @@ export function FocusInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
 
 // Comma-formatted money input — stores raw number string, displays with commas
 export function MoneyInput({
-  value, onChange, placeholder, style,
+  value, onChange, placeholder, style, id,
 }: {
-  value: string; onChange: (raw: string) => void; placeholder?: string; style?: React.CSSProperties;
+  value: string; onChange: (raw: string) => void; placeholder?: string; style?: React.CSSProperties; id?: string;
 }) {
   const T = useTheme();
   const [focused, setFocused] = useState(false);
@@ -60,6 +60,7 @@ export function MoneyInput({
 
   return (
     <input
+      id={id}
       type="text"
       inputMode="decimal"
       value={focused ? value : fmt(value)}
@@ -81,14 +82,15 @@ export function MoneyInput({
   );
 }
 
-export function PrimaryBtn({ onClick, children, color, small }: {
-  onClick: () => void; children: React.ReactNode; color?: string; small?: boolean;
+export function PrimaryBtn({ onClick, children, color, small, disabled }: {
+  onClick: () => void; children: React.ReactNode; color?: string; small?: boolean; disabled?: boolean;
 }) {
   const T = useTheme();
   return (
     <button
       onClick={onClick}
-      className={`${small ? "px-3 py-1.5" : "w-full py-2.5"} rounded-xl text-sm font-semibold tracking-wide transition-all duration-150 hover:opacity-90 active:scale-95`}
+      disabled={disabled}
+      className={`${small ? "px-3 py-1.5" : "w-full py-2.5"} rounded-xl text-sm font-semibold tracking-wide transition-all duration-150 hover:opacity-90 active:scale-95 disabled:opacity-40 disabled:pointer-events-none`}
       style={{ background: color ?? T.jade, color: T.ink }}
     >
       {children}
@@ -142,6 +144,7 @@ export function CurrencyToggle({ value, onChange }: { value: Currency; onChange:
         <button
           key={c}
           onClick={() => onChange(c)}
+          aria-pressed={value === c}
           className="flex-1 py-2 text-xs font-semibold transition-all"
           style={{
             background: value === c ? T.jade + "25" : T.panelSoft,
@@ -175,11 +178,12 @@ export function CurrencyToggle({ value, onChange }: { value: Currency; onChange:
  * short enough that the cursor position is never ambiguous.
  */
 export function DateFieldDMY({
-  value, onChange, style,
+  value, onChange, style, id,
 }: {
   value: string; // YYYY-MM-DD, or "" for empty
   onChange: (iso: string) => void;
   style?: React.CSSProperties;
+  id?: string; // applied to the day segment — the field's first tab stop — so a paired <label htmlFor> at least lands somewhere in the group
 }) {
   const T = useTheme();
   const [focused, setFocused] = useState(false);
@@ -297,6 +301,7 @@ export function DateFieldDMY({
         style={{ position: "absolute", width: 0, height: 0, opacity: 0, pointerEvents: "none" }}
       />
       <input
+        id={id}
         ref={dayRef}
         type="text"
         inputMode="numeric"

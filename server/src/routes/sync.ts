@@ -36,9 +36,12 @@ const pushSchema = z.object({
   ),
 });
 
+// Only `email` travels in the query string; the token comes from the
+// Authorization header instead (see the route handler below) — push/relink/
+// delete already send their token in a POST body, so pull was the one
+// exception putting a bearer secret somewhere as log/history-prone as a URL.
 const pullQuerySchema = z.object({
   email: emailSchema,
-  token: tokenSchema,
 });
 
 const relinkSchema = z.object({
@@ -131,7 +134,10 @@ router.post("/push", async (req, res, next) => {
 // GET /api/sync/pull?email=xxx&token=yyy — returns latest saved data
 router.get("/pull", async (req, res, next) => {
   try {
-    const { email, token } = pullQuerySchema.parse(req.query);
+    const { email } = pullQuerySchema.parse(req.query);
+    const auth = req.header("authorization") ?? "";
+    const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+    tokenSchema.parse(token);
 
     const record = await prisma.userSync.findUnique({ where: { email } });
     if (!record) return res.status(404).json({ error: "No sync data found for this account." });

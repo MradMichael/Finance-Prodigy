@@ -33,6 +33,8 @@ export interface StatementRow {
   moneyOut: number | null;
   moneyIn: number | null;
   balance: number | null;
+  /** Money-column text that didn't match NUMBER_RE and wasn't a blank/dash "no value" cell — a real parse failure, not an absent value. Diagnostic only; not shown to the user directly, just counted. */
+  unparsedAmountCells?: string[];
 }
 
 export interface ParsedTransaction {
@@ -54,6 +56,10 @@ export interface ParseResult {
   unmatchedRefunds: UnmatchedRefund[];
   openingBalance: number | null;
   closingBalance: number | null;
+  /** Money-column cells that weren't blank/dash but didn't match the expected number format — likely a genuine purchase row that got dropped, surfaced so it isn't silently lost. */
+  unparsedAmountCount: number;
+  /** True when the file parsed (a real table with a header was found) but zero rows existed at all — as opposed to rows existing with zero of them being purchases. Lets the caller tell "wrong file" apart from "valid statement, nothing to import." */
+  noRowsFound: boolean;
 }
 
 const HEADER_LABELS = ["DATE", "TRANSACTIONS", "MONEY OUT", "MONEY IN", "BALANCE"] as const;
@@ -74,6 +80,12 @@ function parseAmount(text: string): number | null {
   if (t === "-" || t === "") return null;
   if (!NUMBER_RE.test(t)) return null;
   return parseFloat(t.replace(/,/g, ""));
+}
+
+/** True for money-column text that's neither a valid amount nor a blank/dash "no value" placeholder — a genuine parse failure worth counting, as opposed to an intentionally empty cell. */
+function isUnparseableAmountCell(text: string): boolean {
+  const t = text.trim();
+  return t !== "-" && t !== "" && !NUMBER_RE.test(t);
 }
 
 /** Scans the raw extracted text for an IBAN (LBxx...) to suggest a card's last 4 digits — purely a UI prefill, always editable. */
@@ -156,7 +168,7 @@ export function parseStatementRows(items: PositionedTextItem[]): StatementRow[] 
     if (headerItems.has(item)) continue; // skip the header row itself (matched by identity, not re-matched by text)
     if (isBoilerplate(text)) continue; // this statement's static footer (QR/verification/address block)
 
-    const column = classifyColumn(item.x, boundaries);
+    let column = classifyColumn(item.x, boundaries);
 
     if (column === "DATE") {
       const iso = toISODate(text);
@@ -165,7 +177,10 @@ export function parseStatementRows(items: PositionedTextItem[]): StatementRow[] 
         current = { date: iso, description: "", moneyOut: null, moneyIn: null, balance: null };
         continue;
       }
-      // A DATE-column item that isn't actually a date (rare) falls through as description text below.
+      // Not actually a date (a short/left-shifted description fragment
+      // landing in the DATE column's x-range) — treat it as a description
+      // continuation instead of discarding it.
+      column = "TRANSACTIONS";
     }
 
     if (!current) continue; // stray text before the first real row (shouldn't happen post-header)
@@ -175,12 +190,15 @@ export function parseStatementRows(items: PositionedTextItem[]): StatementRow[] 
     } else if (column === "MONEY OUT") {
       const n = parseAmount(text);
       if (n !== null) current.moneyOut = n;
+      else if (isUnparseableAmountCell(text)) (current.unparsedAmountCells ??= []).push(text);
     } else if (column === "MONEY IN") {
       const n = parseAmount(text);
       if (n !== null) current.moneyIn = n;
+      else if (isUnparseableAmountCell(text)) (current.unparsedAmountCells ??= []).push(text);
     } else if (column === "BALANCE") {
       const n = parseAmount(text);
       if (n !== null) current.balance = n;
+      else if (isUnparseableAmountCell(text)) (current.unparsedAmountCells ??= []).push(text);
     }
   }
   if (current) rows.push(current);
@@ -213,6 +231,8 @@ const isTransfer = (desc: string) => /^transfer from own account/i.test(desc.tri
 
 export function parseNeoStatement(items: PositionedTextItem[]): ParseResult {
   const rows = parseStatementRows(items);
+  const noRowsFound = rows.length === 0;
+  const unparsedAmountCount = rows.reduce((s, r) => s + (r.unparsedAmountCells?.length ?? 0), 0);
 
   let openingBalance: number | null = null;
   let closingBalance: number | null = null;
@@ -259,5 +279,5 @@ export function parseNeoStatement(items: PositionedTextItem[]): ParseResult {
     .filter((p) => !p.nettedRefund)
     .map(({ normDesc, ...t }) => t);
 
-  return { transactions, skippedTransferCount, unmatchedRefunds, openingBalance, closingBalance };
+  return { transactions, skippedTransferCount, unmatchedRefunds, openingBalance, closingBalance, unparsedAmountCount, noRowsFound };
 }

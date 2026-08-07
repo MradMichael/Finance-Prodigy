@@ -6,7 +6,7 @@ import type {
   StoredRecurring, StoredCard, RecurringFrequency, Currency, PaymentMethod, BudgetRuleKey, TrackedBalance,
 } from "../lib/localData";
 import type { Session } from "../lib/auth";
-import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, monthlyEquivalent, recurringPaidSoFar } from "../lib/localData";
+import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, monthlyEquivalent, recurringPaidSoFar, toUSD as toUSDShared } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY } from "./form/Primitives";
@@ -227,6 +227,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
   }
 
   function deleteAsset(id: string) {
+    if (!confirm("Remove this asset?")) return;
     update({ assets: (financials.assets ?? []).filter((a) => a.id !== id) });
   }
 
@@ -255,6 +256,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
   }
 
   function deleteTrackedBalance(id: string) {
+    if (!confirm("Remove this tracked balance?")) return;
     update({ trackedBalances: (financials.trackedBalances ?? []).filter((tb) => tb.id !== id) });
   }
 
@@ -410,7 +412,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
   const monthTx  = financials.transactions.filter((t) => t.date.startsWith(prefix));
   const now      = new Date();
   const lbpRate  = financials.lbpRate ?? 89500;
-  const toUSD    = (amt: number, cur?: Currency) => cur === "LBP" ? amt / lbpRate : amt;
+  const toUSD    = (amt: number, cur?: Currency) => toUSDShared(amt, cur, lbpRate);
   const fmtCur   = (amt: number, cur: Currency) => cur === "LBP"
     ? `L£${amt.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
     : `$${amt.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
@@ -505,16 +507,17 @@ export default function InputPanel({ financials, onChange, session }: Props) {
         <Section title="Log an entry" icon="📝" defaultOpen>
           <div className="grid grid-cols-2 gap-2.5">
             <div>
-              <Label>Amount</Label>
+              <Label htmlFor="tx-amount">Amount</Label>
               <MoneyInput
+                id="tx-amount"
                 value={txAmt}
                 onChange={setTxAmt}
                 placeholder="0"
               />
             </div>
             <div>
-              <Label>Date</Label>
-              <DateFieldDMY value={txDate} onChange={setTxDate} />
+              <Label htmlFor="tx-date">Date</Label>
+              <DateFieldDMY id="tx-date" value={txDate} onChange={setTxDate} />
             </div>
           </div>
 
@@ -525,6 +528,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                 <button
                   key={b.value}
                   onClick={() => setTxBucket(b.value)}
+                  aria-pressed={txBucket === b.value}
                   className="flex flex-col items-center gap-1 py-2.5 rounded-xl text-xs font-medium transition-all duration-150"
                   style={{
                     background: txBucket === b.value ? b.color + "22" : T.panelSoft,
@@ -598,8 +602,9 @@ export default function InputPanel({ financials, onChange, session }: Props) {
           })()}
 
           <div>
-            <Label>Description</Label>
+            <Label htmlFor="tx-desc">Description</Label>
             <FocusInput
+              id="tx-desc"
               value={txDesc}
               onChange={(e) => setTxDesc(e.target.value)}
               placeholder="Rent, groceries, gym…"
@@ -620,6 +625,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                 <button
                   key={p.value}
                   onClick={() => { setTxPayMethod(p.value); setTxCardId(null); setShowAddCard(false); }}
+                  aria-pressed={txPayMethod === p.value}
                   className="flex flex-col items-center gap-1 py-2 rounded-xl text-xs font-medium transition-all"
                   style={{
                     background: txPayMethod === p.value ? T.jade + "22" : T.panelSoft,
@@ -692,8 +698,9 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                         </select>
                       </div>
                       <div>
-                        <Label>Last 4 digits</Label>
+                        <Label htmlFor="new-card-last4">Last 4 digits</Label>
                         <FocusInput
+                          id="new-card-last4"
                           type="text"
                           inputMode="numeric"
                           maxLength={4}
@@ -764,17 +771,17 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                           <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.jade }}>Edit entry</p>
                           <div className="grid grid-cols-2 gap-2">
                             <div>
-                              <Label>Amount</Label>
-                              <MoneyInput value={editTxAmt} onChange={setEditTxAmt} placeholder="0" />
+                              <Label htmlFor="edit-tx-amount">Amount</Label>
+                              <MoneyInput id="edit-tx-amount" value={editTxAmt} onChange={setEditTxAmt} placeholder="0" />
                             </div>
                             <div>
-                              <Label>Date</Label>
-                              <DateFieldDMY value={editTxDate} onChange={setEditTxDate} />
+                              <Label htmlFor="edit-tx-date">Date</Label>
+                              <DateFieldDMY id="edit-tx-date" value={editTxDate} onChange={setEditTxDate} />
                             </div>
                           </div>
                           <div>
-                            <Label>Description</Label>
-                            <FocusInput value={editTxDesc} onChange={(e) => setEditTxDesc(e.target.value)} />
+                            <Label htmlFor="edit-tx-desc">Description</Label>
+                            <FocusInput id="edit-tx-desc" value={editTxDesc} onChange={(e) => setEditTxDesc(e.target.value)} />
                           </div>
                           <div className="grid grid-cols-3 gap-1.5">
                             {BUCKETS.map((bkt) => (
@@ -821,11 +828,13 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                             </span>
                             <button
                               onClick={() => startEditTx(tx)}
+                              aria-label="Edit transaction"
                               className="opacity-70 md:opacity-0 md:group-hover:opacity-100 hover:!opacity-100 transition-opacity text-[10px] px-1.5 py-0.5 rounded"
                               style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
                             >✎</button>
                             <button
-                              onClick={() => update({ transactions: financials.transactions.filter((t) => t.id !== tx.id) })}
+                              onClick={() => { if (confirm("Delete this transaction?")) update({ transactions: financials.transactions.filter((t) => t.id !== tx.id) }); }}
+                              aria-label="Delete transaction"
                               className="opacity-70 md:opacity-0 md:group-hover:opacity-100 hover:!opacity-100 transition-opacity text-xs px-1"
                               style={{ color: T.coral }}
                             >✕</button>
@@ -882,17 +891,17 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                                   <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.jade }}>Edit entry</p>
                                   <div className="grid grid-cols-2 gap-2">
                                     <div>
-                                      <Label>Amount</Label>
-                                      <MoneyInput value={editTxAmt} onChange={setEditTxAmt} placeholder="0" />
+                                      <Label htmlFor="edit-tx-amount">Amount</Label>
+                                      <MoneyInput id="edit-tx-amount" value={editTxAmt} onChange={setEditTxAmt} placeholder="0" />
                                     </div>
                                     <div>
-                                      <Label>Date</Label>
-                                      <DateFieldDMY value={editTxDate} onChange={setEditTxDate} />
+                                      <Label htmlFor="edit-tx-date">Date</Label>
+                                      <DateFieldDMY id="edit-tx-date" value={editTxDate} onChange={setEditTxDate} />
                                     </div>
                                   </div>
                                   <div>
-                                    <Label>Description</Label>
-                                    <FocusInput value={editTxDesc} onChange={(e) => setEditTxDesc(e.target.value)} />
+                                    <Label htmlFor="edit-tx-desc">Description</Label>
+                                    <FocusInput id="edit-tx-desc" value={editTxDesc} onChange={(e) => setEditTxDesc(e.target.value)} />
                                   </div>
                                   <div className="grid grid-cols-3 gap-1.5">
                                     {BUCKETS.map((bkt) => (
@@ -922,11 +931,13 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                                     <span className="text-xs tabular-nums font-medium" style={{ color: b.color }}>{fmtCur(tx.amount, tx.currency ?? "USD")}</span>
                                     <button
                                       onClick={() => startEditTx(tx)}
+                                      aria-label="Edit transaction"
                                       className="opacity-70 md:opacity-0 md:group-hover:opacity-100 hover:!opacity-100 transition-opacity text-[10px] px-1.5 py-0.5 rounded"
                                       style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
                                     >✎</button>
                                     <button
-                                      onClick={() => update({ transactions: financials.transactions.filter((t) => t.id !== tx.id) })}
+                                      onClick={() => { if (confirm("Delete this transaction?")) update({ transactions: financials.transactions.filter((t) => t.id !== tx.id) }); }}
+                                      aria-label="Delete transaction"
                                       className="opacity-70 md:opacity-0 md:group-hover:opacity-100 hover:!opacity-100 transition-opacity text-[10px] px-1"
                                       style={{ color: T.coral }}
                                     >✕</button>
@@ -964,21 +975,21 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                     <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.jade }}>Edit goal</p>
                     <div className="flex gap-2">
                       <div style={{ width: 68 }}>
-                        <Label>Emoji</Label>
-                        <FocusInput value={editGEmoji} onChange={(e) => setEditGEmoji(e.target.value)} />
+                        <Label htmlFor="edit-goal-emoji">Emoji</Label>
+                        <FocusInput id="edit-goal-emoji" value={editGEmoji} onChange={(e) => setEditGEmoji(e.target.value)} />
                       </div>
                       <div className="flex-1">
-                        <Label>Name</Label>
-                        <FocusInput value={editGName} onChange={(e) => setEditGName(e.target.value)} />
+                        <Label htmlFor="edit-goal-name">Name</Label>
+                        <FocusInput id="edit-goal-name" value={editGName} onChange={(e) => setEditGName(e.target.value)} />
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
-                      <div><Label>Target ($)</Label><MoneyInput value={editGTarget} onChange={setEditGTarget} placeholder="0" /></div>
-                      <div><Label>Saved ($)</Label><MoneyInput value={editGCurrent} onChange={setEditGCurrent} placeholder="0" /></div>
+                      <div><Label htmlFor="edit-goal-target">Target ($)</Label><MoneyInput id="edit-goal-target" value={editGTarget} onChange={setEditGTarget} placeholder="0" /></div>
+                      <div><Label htmlFor="edit-goal-saved">Saved ($)</Label><MoneyInput id="edit-goal-saved" value={editGCurrent} onChange={setEditGCurrent} placeholder="0" /></div>
                     </div>
                     <div>
-                      <Label>Target date</Label>
-                      <DateFieldDMY value={editGDate} onChange={setEditGDate} />
+                      <Label htmlFor="edit-goal-date">Target date</Label>
+                      <DateFieldDMY id="edit-goal-date" value={editGDate} onChange={setEditGDate} />
                     </div>
                     <div className="flex gap-2">
                       <button onClick={() => saveEditGoal(g.id)} className="px-3 py-1.5 rounded-xl text-xs font-semibold hover:opacity-90" style={{ background: T.jade, color: T.ink }}>Save</button>
@@ -1012,16 +1023,19 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                       <div className="flex gap-1.5 opacity-70 md:opacity-0 md:group-hover:opacity-100 transition-opacity flex-shrink-0">
                         <button
                           onClick={() => startEditGoal(g)}
+                          aria-label="Edit goal"
                           className="text-[10px] px-1.5 py-0.5 rounded transition-all hover:opacity-80"
                           style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
                         >✎</button>
                         <button
                           onClick={() => { setContributeGoalId(isContrib ? null : g.id); setContributeGoalAmt(""); }}
+                          aria-label="Add to this goal"
                           className="text-[10px] px-1.5 py-0.5 rounded transition-all hover:opacity-80"
                           style={{ color: T.jade, border: `1px solid ${T.jade}40` }}
                         >+add</button>
                         <button
-                          onClick={() => update({ goals: financials.goals.filter((x) => x.id !== g.id) })}
+                          onClick={() => { if (confirm("Delete this goal?")) update({ goals: financials.goals.filter((x) => x.id !== g.id) }); }}
+                          aria-label="Delete goal"
                           className="text-xs"
                           style={{ color: T.coral }}
                         >✕</button>
@@ -1068,27 +1082,27 @@ export default function InputPanel({ financials, onChange, session }: Props) {
             </p>
             <div className="flex gap-2">
               <div style={{ width: 68 }}>
-                <Label>Emoji</Label>
-                <FocusInput value={gEmoji} onChange={(e) => setGEmoji(e.target.value)} />
+                <Label htmlFor="new-goal-emoji">Emoji</Label>
+                <FocusInput id="new-goal-emoji" value={gEmoji} onChange={(e) => setGEmoji(e.target.value)} />
               </div>
               <div className="flex-1">
-                <Label>Name</Label>
-                <FocusInput value={gName} onChange={(e) => setGName(e.target.value)} placeholder="Travel fund…" />
+                <Label htmlFor="new-goal-name">Name</Label>
+                <FocusInput id="new-goal-name" value={gName} onChange={(e) => setGName(e.target.value)} placeholder="Travel fund…" />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <Label>Target ($)</Label>
-                <MoneyInput value={gTarget} onChange={setGTarget} placeholder="5,000" />
+                <Label htmlFor="new-goal-target">Target ($)</Label>
+                <MoneyInput id="new-goal-target" value={gTarget} onChange={setGTarget} placeholder="5,000" />
               </div>
               <div>
-                <Label>Saved ($)</Label>
-                <MoneyInput value={gCurrent} onChange={setGCurrent} placeholder="0" />
+                <Label htmlFor="new-goal-saved">Saved ($)</Label>
+                <MoneyInput id="new-goal-saved" value={gCurrent} onChange={setGCurrent} placeholder="0" />
               </div>
             </div>
             <div>
-              <Label>Target date</Label>
-              <DateFieldDMY value={gDate} onChange={setGDate} />
+              <Label htmlFor="new-goal-date">Target date</Label>
+              <DateFieldDMY id="new-goal-date" value={gDate} onChange={setGDate} />
             </div>
             <PrimaryBtn onClick={addGoal} color={T.brass}>+ Add goal</PrimaryBtn>
           </div>
@@ -1121,22 +1135,22 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                               <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.jade }}>Edit recurring</p>
                               <div className="flex gap-2">
                                 <div style={{ width: 68 }}>
-                                  <Label>Icon</Label>
-                                  <FocusInput value={editREmoji} onChange={(e) => setEditREmoji(e.target.value)} />
+                                  <Label htmlFor="edit-rec-emoji">Icon</Label>
+                                  <FocusInput id="edit-rec-emoji" value={editREmoji} onChange={(e) => setEditREmoji(e.target.value)} />
                                 </div>
                                 <div className="flex-1">
-                                  <Label>Name</Label>
-                                  <FocusInput value={editRName} onChange={(e) => setEditRName(e.target.value)} />
+                                  <Label htmlFor="edit-rec-name">Name</Label>
+                                  <FocusInput id="edit-rec-name" value={editRName} onChange={(e) => setEditRName(e.target.value)} />
                                 </div>
                               </div>
                               <div className="grid grid-cols-2 gap-2">
                                 <div>
-                                  <Label>Amount</Label>
-                                  <MoneyInput value={editRAmount} onChange={setEditRAmount} placeholder="0" />
+                                  <Label htmlFor="edit-rec-amount">Amount</Label>
+                                  <MoneyInput id="edit-rec-amount" value={editRAmount} onChange={setEditRAmount} placeholder="0" />
                                 </div>
                                 <div>
-                                  <Label>Frequency</Label>
-                                  <select value={editRFreq} onChange={(e) => setEditRFreq(e.target.value as RecurringFrequency)}
+                                  <Label htmlFor="edit-rec-freq">Frequency</Label>
+                                  <select id="edit-rec-freq" value={editRFreq} onChange={(e) => setEditRFreq(e.target.value as RecurringFrequency)}
                                     className="w-full rounded-xl px-3 py-2.5 text-sm"
                                     style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}>
                                     {(Object.keys(FREQ_LABELS) as RecurringFrequency[]).map((f) => (
@@ -1154,6 +1168,8 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                                 <div className="grid grid-cols-3 gap-1.5">
                                   {BUCKETS.map((bkt) => (
                                     <button key={bkt.value} onClick={() => setEditRBucket(bkt.value)}
+                                      aria-label={bkt.label}
+                                      aria-pressed={editRBucket === bkt.value}
                                       className="py-1.5 rounded-xl text-[10px] font-medium transition-all"
                                       style={{ background: editRBucket === bkt.value ? bkt.color + "22" : T.ink, border: `1px solid ${editRBucket === bkt.value ? bkt.color : T.line}`, color: editRBucket === bkt.value ? bkt.color : T.mute }}>
                                       {bkt.icon} {bkt.label}
@@ -1162,8 +1178,8 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                                 </div>
                               </div>
                               <div>
-                                <Label>Start date</Label>
-                                <DateFieldDMY value={editRStart} onChange={setEditRStart} />
+                                <Label htmlFor="edit-rec-start">Start date</Label>
+                                <DateFieldDMY id="edit-rec-start" value={editRStart} onChange={setEditRStart} />
                               </div>
                               <div>
                                 <Label>Ends</Label>
@@ -1230,12 +1246,14 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                                 <div className="flex gap-1.5 opacity-70 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                                   <button
                                     onClick={() => startEditRec(r)}
+                                    aria-label="Edit recurring payment"
                                     className="text-[10px] px-1.5 py-0.5 rounded transition-all hover:opacity-80"
                                     style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
                                   >✎</button>
                                   {!ended && (
                                     <button
                                       onClick={() => { setExtraRecId(isAddingExtra ? null : r.id); setExtraRecAmt(""); }}
+                                      aria-label="Log an extra payment"
                                       className="text-[10px] px-1.5 py-0.5 rounded transition-all hover:opacity-80"
                                       style={{ color: T.jade, border: `1px solid ${T.jade}40` }}
                                     >
@@ -1243,7 +1261,8 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                                     </button>
                                   )}
                                   <button
-                                    onClick={() => update({ recurring: recs.filter((x) => x.id !== r.id) })}
+                                    onClick={() => { if (confirm("Delete this recurring payment?")) update({ recurring: recs.filter((x) => x.id !== r.id) }); }}
+                                    aria-label="Delete recurring payment"
                                     className="text-xs"
                                     style={{ color: T.coral }}
                                   >✕</button>
@@ -1315,23 +1334,24 @@ export default function InputPanel({ financials, onChange, session }: Props) {
 
                   <div className="flex gap-2">
                     <div style={{ width: 68 }}>
-                      <Label>Icon</Label>
-                      <FocusInput value={rEmoji} onChange={(e) => setREmoji(e.target.value)} placeholder="🔄" />
+                      <Label htmlFor="new-rec-emoji">Icon</Label>
+                      <FocusInput id="new-rec-emoji" value={rEmoji} onChange={(e) => setREmoji(e.target.value)} placeholder="🔄" />
                     </div>
                     <div className="flex-1">
-                      <Label>Name</Label>
-                      <FocusInput value={rName} onChange={(e) => setRName(e.target.value)} placeholder="Rent, Netflix, gym…" />
+                      <Label htmlFor="new-rec-name">Name</Label>
+                      <FocusInput id="new-rec-name" value={rName} onChange={(e) => setRName(e.target.value)} placeholder="Rent, Netflix, gym…" />
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <Label>Amount</Label>
-                      <MoneyInput value={rAmount} onChange={setRAmount} placeholder="0" />
+                      <Label htmlFor="new-rec-amount">Amount</Label>
+                      <MoneyInput id="new-rec-amount" value={rAmount} onChange={setRAmount} placeholder="0" />
                     </div>
                     <div>
-                      <Label>Frequency</Label>
+                      <Label htmlFor="new-rec-freq">Frequency</Label>
                       <select
+                        id="new-rec-freq"
                         value={rFreq}
                         onChange={(e) => setRFreq(e.target.value as RecurringFrequency)}
                         className="w-full rounded-xl px-3 py-2.5 text-sm"
@@ -1371,8 +1391,8 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                   </div>
 
                   <div>
-                    <Label>Start date</Label>
-                    <DateFieldDMY value={rStart} onChange={setRStart} />
+                    <Label htmlFor="new-rec-start">Start date</Label>
+                    <DateFieldDMY id="new-rec-start" value={rStart} onChange={setRStart} />
                   </div>
 
                   <div>
@@ -1439,17 +1459,17 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                   <div className="rounded-xl p-3 space-y-2.5" style={{ background: T.panelSoft, border: `1px solid ${T.jade}50` }}>
                     <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.jade }}>Edit debt</p>
                     <div>
-                      <Label>Name</Label>
-                      <FocusInput value={editDName} onChange={(e) => setEditDName(e.target.value)} />
+                      <Label htmlFor="edit-debt-name">Name</Label>
+                      <FocusInput id="edit-debt-name" value={editDName} onChange={(e) => setEditDName(e.target.value)} />
                     </div>
                     <div className="grid grid-cols-3 gap-2">
-                      <div><Label>Balance ($)</Label><MoneyInput value={editDBalance} onChange={setEditDBalance} placeholder="0" /></div>
-                      <div><Label>APR (%)</Label><FocusInput type="number" min="0" step="0.1" value={editDApr} onChange={(e) => setEditDApr(e.target.value)} placeholder="0" /></div>
-                      <div><Label>Min/mo</Label><MoneyInput value={editDMin} onChange={setEditDMin} placeholder="0" /></div>
+                      <div><Label htmlFor="edit-debt-balance">Balance ($)</Label><MoneyInput id="edit-debt-balance" value={editDBalance} onChange={setEditDBalance} placeholder="0" /></div>
+                      <div><Label htmlFor="edit-debt-apr">APR (%)</Label><FocusInput id="edit-debt-apr" type="number" min="0" step="0.1" value={editDApr} onChange={(e) => setEditDApr(e.target.value)} placeholder="0" /></div>
+                      <div><Label htmlFor="edit-debt-min">Min/mo</Label><MoneyInput id="edit-debt-min" value={editDMin} onChange={setEditDMin} placeholder="0" /></div>
                     </div>
                     <div>
-                      <Label>Opened date (when this debt started)</Label>
-                      <DateFieldDMY value={editDOpened} onChange={setEditDOpened} />
+                      <Label htmlFor="edit-debt-opened">Opened date (when this debt started)</Label>
+                      <DateFieldDMY id="edit-debt-opened" value={editDOpened} onChange={setEditDOpened} />
                     </div>
                     <div className="flex gap-2">
                       <button onClick={() => saveEditDebt(d.id)} className="px-3 py-1.5 rounded-xl text-xs font-semibold hover:opacity-90" style={{ background: T.jade, color: T.ink }}>Save</button>
@@ -1485,21 +1505,24 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                           </p>
                         )}
                       </div>
-                      <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 ml-2">
+                      <div className="flex items-center gap-1.5 opacity-70 md:opacity-0 md:group-hover:opacity-100 transition-opacity flex-shrink-0 ml-2">
                         <button
                           onClick={() => startEditDebt(d)}
+                          aria-label="Edit debt"
                           className="text-[10px] px-1.5 py-0.5 rounded transition-all hover:opacity-80"
                           style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
                         >✎</button>
                         {!d.paidOffAt && (
                           <button
                             onClick={() => { setPayingDebtId(isPaying ? null : d.id); setDebtPayAmt(""); }}
+                            aria-label={isPaying ? "Cancel payment" : "Record a payment"}
                             className="text-[10px] px-1.5 py-0.5 rounded transition-all hover:opacity-80"
                             style={{ color: T.jade, border: `1px solid ${T.jade}40` }}
                           >{isPaying ? "cancel" : "pay"}</button>
                         )}
                         <button
-                          onClick={() => update({ debts: financials.debts.filter((x) => x.id !== d.id) })}
+                          onClick={() => { if (confirm("Delete this debt?")) update({ debts: financials.debts.filter((x) => x.id !== d.id) }); }}
+                          aria-label="Delete debt"
                           className="text-xs"
                           style={{ color: T.coral }}
                         >✕</button>
@@ -1543,26 +1566,26 @@ export default function InputPanel({ financials, onChange, session }: Props) {
               New debt
             </p>
             <div>
-              <Label>Name</Label>
-              <FocusInput value={dName} onChange={(e) => setDName(e.target.value)} placeholder="Credit card, car loan…" />
+              <Label htmlFor="new-debt-name">Name</Label>
+              <FocusInput id="new-debt-name" value={dName} onChange={(e) => setDName(e.target.value)} placeholder="Credit card, car loan…" />
             </div>
             <div className="grid grid-cols-3 gap-2">
               <div>
-                <Label>Balance ($)</Label>
-                <MoneyInput value={dBalance} onChange={setDBalance} placeholder="0" />
+                <Label htmlFor="new-debt-balance">Balance ($)</Label>
+                <MoneyInput id="new-debt-balance" value={dBalance} onChange={setDBalance} placeholder="0" />
               </div>
               <div>
-                <Label>APR (%)</Label>
-                <FocusInput type="number" min="0" step="0.1" value={dApr} onChange={(e) => setDApr(e.target.value)} placeholder="20" />
+                <Label htmlFor="new-debt-apr">APR (%)</Label>
+                <FocusInput id="new-debt-apr" type="number" min="0" step="0.1" value={dApr} onChange={(e) => setDApr(e.target.value)} placeholder="20" />
               </div>
               <div>
-                <Label>Min/mo</Label>
-                <MoneyInput value={dMin} onChange={setDMin} placeholder="25" />
+                <Label htmlFor="new-debt-min">Min/mo</Label>
+                <MoneyInput id="new-debt-min" value={dMin} onChange={setDMin} placeholder="25" />
               </div>
             </div>
             <div>
-              <Label>Opened date (optional — when this debt started)</Label>
-              <DateFieldDMY value={dOpenedDate} onChange={setDOpenedDate} />
+              <Label htmlFor="new-debt-opened">Opened date (optional — when this debt started)</Label>
+              <DateFieldDMY id="new-debt-opened" value={dOpenedDate} onChange={setDOpenedDate} />
             </div>
             <PrimaryBtn onClick={addDebt} color={T.coral}>+ Add debt</PrimaryBtn>
           </div>
@@ -1601,13 +1624,13 @@ export default function InputPanel({ financials, onChange, session }: Props) {
               New asset
             </p>
             <div>
-              <Label>Name</Label>
-              <FocusInput value={aName} onChange={(e) => setAName(e.target.value)} placeholder="Car, brokerage account…" />
+              <Label htmlFor="new-asset-name">Name</Label>
+              <FocusInput id="new-asset-name" value={aName} onChange={(e) => setAName(e.target.value)} placeholder="Car, brokerage account…" />
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <Label>Value</Label>
-                <MoneyInput value={aValue} onChange={setAValue} placeholder="0" />
+                <Label htmlFor="new-asset-value">Value</Label>
+                <MoneyInput id="new-asset-value" value={aValue} onChange={setAValue} placeholder="0" />
               </div>
               <div>
                 <Label>Currency</Label>
@@ -1685,14 +1708,15 @@ export default function InputPanel({ financials, onChange, session }: Props) {
               Track a new balance
             </p>
             <div>
-              <Label>Name</Label>
-              <FocusInput value={tbName} onChange={(e) => setTbName(e.target.value)} placeholder="Cash, Chase Checking…" />
+              <Label htmlFor="new-tb-name">Name</Label>
+              <FocusInput id="new-tb-name" value={tbName} onChange={(e) => setTbName(e.target.value)} placeholder="Cash, Chase Checking…" />
             </div>
             <div>
               <Label>Payment method</Label>
               <div className="grid grid-cols-3 gap-1.5">
                 {(["cash", "card", "other"] as PaymentMethod[]).map((m) => (
                   <button key={m} onClick={() => setTbMethod(m)}
+                    aria-pressed={tbMethod === m}
                     className="py-1.5 rounded-lg text-[10px] font-medium transition-all"
                     style={{ background: tbMethod === m ? T.jade + "22" : T.panelSoft, border: `1px solid ${tbMethod === m ? T.jade : T.line}`, color: tbMethod === m ? T.jade : T.mute }}>
                     {m === "cash" ? "💵 Cash" : m === "card" ? "💳 Card" : "🤝 Other"}
@@ -1702,11 +1726,12 @@ export default function InputPanel({ financials, onChange, session }: Props) {
             </div>
             {tbMethod === "card" && (
               <div>
-                <Label>Which card</Label>
+                <Label htmlFor="new-tb-card">Which card</Label>
                 {financials.cards.length === 0 ? (
                   <p className="text-xs" style={{ color: T.coral }}>No saved cards yet — add one when logging a transaction first.</p>
                 ) : (
                   <select
+                    id="new-tb-card"
                     value={tbCardId}
                     onChange={(e) => setTbCardId(e.target.value)}
                     className="w-full rounded-xl px-3 py-2.5 text-sm"
@@ -1720,8 +1745,8 @@ export default function InputPanel({ financials, onChange, session }: Props) {
             )}
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <Label>Starting balance</Label>
-                <MoneyInput value={tbStartBal} onChange={setTbStartBal} placeholder="0" />
+                <Label htmlFor="new-tb-balance">Starting balance</Label>
+                <MoneyInput id="new-tb-balance" value={tbStartBal} onChange={setTbStartBal} placeholder="0" />
               </div>
               <div>
                 <Label>Currency</Label>
@@ -1729,8 +1754,8 @@ export default function InputPanel({ financials, onChange, session }: Props) {
               </div>
             </div>
             <div>
-              <Label>As of date</Label>
-              <DateFieldDMY value={tbStartDate} onChange={setTbStartDate} />
+              <Label htmlFor="new-tb-date">As of date</Label>
+              <DateFieldDMY id="new-tb-date" value={tbStartDate} onChange={setTbStartDate} />
             </div>
             <PrimaryBtn onClick={addTrackedBalance} color={T.jade}>+ Track this balance</PrimaryBtn>
           </div>

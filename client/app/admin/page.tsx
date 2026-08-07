@@ -253,9 +253,7 @@ function AdminPageContent() {
               <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: T.coral }}>How to fix: server offline</p>
               <ol className="space-y-2 text-xs" style={{ color: T.mute }}>
                 <li className="flex gap-2"><span style={{ color: T.coral }}>1.</span> Open a terminal (PowerShell or Command Prompt)</li>
-                <li className="flex gap-2"><span style={{ color: T.coral }}>2.</span> Navigate to the server folder:
-                  <code className="ml-1 px-2 py-0.5 rounded text-[11px]" style={{ background: T.ink, color: T.jade }}>cd C:\Users\Michael\source\repos\Finance-Prodigy\server</code>
-                </li>
+                <li className="flex gap-2"><span style={{ color: T.coral }}>2.</span> Navigate to the ESSA server folder (wherever you cloned the repo)</li>
                 <li className="flex gap-2"><span style={{ color: T.coral }}>3.</span> Start the server:
                   <code className="ml-1 px-2 py-0.5 rounded text-[11px]" style={{ background: T.ink, color: T.jade }}>npm run dev</code>
                 </li>

@@ -27,42 +27,42 @@ function injectLegacyUser(email: string, password: string): void {
 
 describe("signUp", () => {
   it("creates an account and returns a recovery code", async () => {
-    const result = await signUp("a@test.com", "Alice", "password1");
+    const result = await signUp("a@test.com", "Alice", "password12345");
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.recoveryCode).toMatch(/^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/);
   });
 
-  it("rejects a password under 6 characters", async () => {
+  it("rejects a password under 10 characters", async () => {
     const result = await signUp("a@test.com", "Alice", "abc");
-    expect(result).toEqual({ ok: false, error: "Password must be at least 6 characters." });
+    expect(result).toEqual({ ok: false, error: "Password must be at least 10 characters." });
   });
 
   it("rejects missing fields", async () => {
-    const result = await signUp("", "Alice", "password1");
+    const result = await signUp("", "Alice", "password12345");
     expect(result.ok).toBe(false);
   });
 
   it("rejects a malformed email that the server's stricter validation would later 422 on", async () => {
     for (const bad of ["test", "admin@localhost", "no-at-sign.com", "@missing-local.com"]) {
-      const result = await signUp(bad, "Alice", "password1");
+      const result = await signUp(bad, "Alice", "password12345");
       expect(result).toEqual({ ok: false, error: "Enter a valid email address." });
     }
   });
 
   it("accepts well-formed emails", async () => {
-    const result = await signUp("real.person+tag@example.co.uk", "Alice", "password1");
+    const result = await signUp("real.person+tag@example.co.uk", "Alice", "password12345");
     expect(result.ok).toBe(true);
   });
 
   it("rejects a duplicate email (case-insensitive)", async () => {
-    await signUp("a@test.com", "Alice", "password1");
-    const result = await signUp("A@TEST.COM", "Alice2", "password2");
+    await signUp("a@test.com", "Alice", "password12345");
+    const result = await signUp("A@TEST.COM", "Alice2", "password23456");
     expect(result).toEqual({ ok: false, error: "An account with this email already exists." });
   });
 
   it("makes the first registered account an admin, and later ones not", async () => {
-    await signUp("first@test.com", "First", "password1");
-    await signUp("second@test.com", "Second", "password2");
+    await signUp("first@test.com", "First", "password12345");
+    await signUp("second@test.com", "Second", "password23456");
     const users = listUsers();
     const first = users.find((u) => u.email === "first@test.com")!;
     const second = users.find((u) => u.email === "second@test.com")!;
@@ -73,19 +73,19 @@ describe("signUp", () => {
 
 describe("signIn", () => {
   it("rejects an email with no account", async () => {
-    const result = await signIn("nobody@test.com", "password1");
+    const result = await signIn("nobody@test.com", "password12345");
     expect(result).toEqual({ ok: false, error: "No account found with this email." });
   });
 
   it("rejects the wrong password", async () => {
-    await signUp("a@test.com", "Alice", "password1");
+    await signUp("a@test.com", "Alice", "password12345");
     const result = await signIn("a@test.com", "wrong-password");
     expect(result).toEqual({ ok: false, error: "Incorrect password." });
   });
 
   it("succeeds with the correct password and establishes a session", async () => {
-    await signUp("a@test.com", "Alice", "password1");
-    const result = await signIn("a@test.com", "password1");
+    await signUp("a@test.com", "Alice", "password12345");
+    const result = await signIn("a@test.com", "password12345");
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.session.email).toBe("a@test.com");
@@ -94,8 +94,8 @@ describe("signIn", () => {
   });
 
   it("does not surface a recoveryCode on an ordinary sign-in (only on first-time migration)", async () => {
-    await signUp("a@test.com", "Alice", "password1");
-    const result = await signIn("a@test.com", "password1");
+    await signUp("a@test.com", "Alice", "password12345");
+    const result = await signIn("a@test.com", "password12345");
     expect(result.ok && result.recoveryCode).toBeUndefined();
   });
 
@@ -153,8 +153,8 @@ describe("signIn", () => {
 
 describe("hasValidSession", () => {
   it("is true right after a normal sign-in (session + active key both present)", async () => {
-    await signUp("a@test.com", "Alice", "password1");
-    await signIn("a@test.com", "password1");
+    await signUp("a@test.com", "Alice", "password12345");
+    await signIn("a@test.com", "password12345");
     expect(hasValidSession()).toBe(true);
   });
 
@@ -163,8 +163,8 @@ describe("hasValidSession", () => {
   });
 
   it("is false when a session exists but its per-tab encryption key doesn't — the browser-restart/fresh-tab gap this guard exists to close", async () => {
-    await signUp("a@test.com", "Alice", "password1");
-    await signIn("a@test.com", "password1");
+    await signUp("a@test.com", "Alice", "password12345");
+    await signIn("a@test.com", "password12345");
     expect(getSession()).not.toBeNull(); // session (localStorage) is present
 
     const { clearEncryptionKey } = await import("./crypto");
@@ -174,8 +174,8 @@ describe("hasValidSession", () => {
   });
 
   it("is false after signOut", async () => {
-    await signUp("a@test.com", "Alice", "password1");
-    await signIn("a@test.com", "password1");
+    await signUp("a@test.com", "Alice", "password12345");
+    await signIn("a@test.com", "password12345");
     signOut();
     expect(hasValidSession()).toBe(false);
   });
@@ -197,21 +197,21 @@ describe("recoverAccount", () => {
   });
 
   it("fails with an incorrect recovery code", async () => {
-    const reg = await signUp("a@test.com", "Alice", "password1");
+    const reg = await signUp("a@test.com", "Alice", "password12345");
     expect(reg.ok).toBe(true);
     const result = await recoverAccount("a@test.com", "WRNG-0000-0000-0000", "newpassword1");
     expect(result).toEqual({ ok: false, error: "Invalid recovery code." });
   });
 
-  it("rejects a new password under 6 characters even with a valid code", async () => {
-    const reg = await signUp("a@test.com", "Alice", "password1");
+  it("rejects a new password under 10 characters even with a valid code", async () => {
+    const reg = await signUp("a@test.com", "Alice", "password12345");
     if (!reg.ok) throw new Error("setup failed");
     const result = await recoverAccount("a@test.com", reg.recoveryCode, "abc");
-    expect(result).toEqual({ ok: false, error: "Password must be at least 6 characters." });
+    expect(result).toEqual({ ok: false, error: "Password must be at least 10 characters." });
   });
 
   it("succeeds with the correct recovery code, issues a new code, and the new password actually works afterward", async () => {
-    const reg = await signUp("a@test.com", "Alice", "password1");
+    const reg = await signUp("a@test.com", "Alice", "password12345");
     if (!reg.ok) throw new Error("setup failed");
 
     const result = await recoverAccount("a@test.com", reg.recoveryCode, "brandnewpassword");
@@ -220,7 +220,7 @@ describe("recoverAccount", () => {
     expect(result.newRecoveryCode).not.toBe(reg.recoveryCode);
 
     // Old password should no longer work; new password should.
-    const oldPwAttempt = await signIn("a@test.com", "password1");
+    const oldPwAttempt = await signIn("a@test.com", "password12345");
     expect(oldPwAttempt.ok).toBe(false);
     const newPwAttempt = await signIn("a@test.com", "brandnewpassword");
     expect(newPwAttempt.ok).toBe(true);
@@ -231,7 +231,7 @@ describe("recoverAccount", () => {
   });
 
   it("rotates the persisted recovery-sync token on every successful recovery (for the /relink fix)", async () => {
-    const reg = await signUp("a@test.com", "Alice", "password1");
+    const reg = await signUp("a@test.com", "Alice", "password12345");
     if (!reg.ok) throw new Error("setup failed");
     const beforeToken = getRecoveryTokenForSync("a@test.com");
     expect(beforeToken).toBeTruthy();
@@ -247,15 +247,15 @@ describe("recoverAccount", () => {
 
 describe("session and admin helpers", () => {
   it("signOut clears the session", async () => {
-    await signUp("a@test.com", "Alice", "password1");
-    await signIn("a@test.com", "password1");
+    await signUp("a@test.com", "Alice", "password12345");
+    await signIn("a@test.com", "password12345");
     expect(getSession()).not.toBeNull();
     signOut();
     expect(getSession()).toBeNull();
   });
 
   it("isAdmin reflects the first-account-is-admin rule", async () => {
-    const reg = await signUp("a@test.com", "Alice", "password1");
+    const reg = await signUp("a@test.com", "Alice", "password12345");
     if (!reg.ok) throw new Error("setup failed");
     const users = listUsers();
     expect(isAdmin(users[0].id)).toBe(true);

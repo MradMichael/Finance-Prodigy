@@ -107,7 +107,7 @@ export async function signUp(
   // their first sync attempt, which would then fail with a confusing 422
   // for a problem that traces back to account creation, not sync itself.
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return { ok: false, error: "Enter a valid email address." };
-  if (password.length < 6) return { ok: false, error: "Password must be at least 6 characters." };
+  if (password.length < 10) return { ok: false, error: "Password must be at least 10 characters." };
   const users = getUsers();
   if (users.some((u) => u.email.toLowerCase() === email.toLowerCase().trim()))
     return { ok: false, error: "An account with this email already exists." };
@@ -222,7 +222,7 @@ export async function signIn(
 export async function recoverAccount(
   email: string, recoveryCode: string, newPassword: string,
 ): Promise<{ ok: true; session: Session; newRecoveryCode: string } | { ok: false; error: string }> {
-  if (newPassword.length < 6) return { ok: false, error: "Password must be at least 6 characters." };
+  if (newPassword.length < 10) return { ok: false, error: "Password must be at least 10 characters." };
   const user = getUsers().find((u) => u.email === email.toLowerCase().trim());
   if (!user) return { ok: false, error: "No account found with this email." };
   if (!user.wrappedDekRecovery) {

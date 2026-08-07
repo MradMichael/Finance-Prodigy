@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import type { LocalFinancials, StoredCard, StoredTransaction, TrackedBalance } from "../lib/localData";
 import { uid, todayISO } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, DateFieldDMY } from "./form/Primitives";
-import { extractPositionedText } from "../lib/statementImport/pdfText";
+import { extractPositionedText, TooManyPagesError, CancelledError, LoadTimeoutError } from "../lib/statementImport/pdfText";
 import {
   parseNeoStatement, normalizeDescription, guessAccountLast4,
   type ParsedTransaction, type Bucket,
@@ -43,6 +43,8 @@ export default function ImportStatement({
   const [closingBalance, setClosingBalance] = useState<number | null>(null);
   const [unmatchedRefundCount, setUnmatchedRefundCount] = useState(0);
   const [skippedTransferCount, setSkippedTransferCount] = useState(0);
+  const [unparsedAmountCount, setUnparsedAmountCount] = useState(0);
+  const cancelledRef = useRef(false);
 
   // Card step
   const [cardChoice, setCardChoice] = useState<string>(financials.cards[0]?.id ?? "new");
@@ -53,14 +55,35 @@ export default function ImportStatement({
   const [rows, setRows] = useState<ReviewRow[]>([]);
   const [addBalanceCheck, setAddBalanceCheck] = useState(true);
 
+  // Stops an in-flight parse from doing (or reporting) further work once the
+  // modal's gone — otherwise closing mid-parse either wastes CPU on a result
+  // nobody will see, or worse, calls setState on an unmounted component.
+  // Resetting to false on the setup side (not just true on cleanup) matters:
+  // React 18 StrictMode (on by default in Next dev) mounts, runs this
+  // effect's cleanup, then re-runs setup once as a one-time dev-only check —
+  // a cleanup-only effect would leave cancelledRef permanently true after
+  // that simulated cycle, marking every real parse "cancelled" before it
+  // even starts. Re-arming on setup undoes that.
+  useEffect(() => {
+    cancelledRef.current = false;
+    return () => { cancelledRef.current = true; };
+  }, []);
+
   async function handleFile(file: File) {
     setStep("parsing");
     setError(null);
     try {
-      const items = await extractPositionedText(file);
+      const items = await extractPositionedText(file, () => cancelledRef.current);
+      if (cancelledRef.current) return;
       const result = parseNeoStatement(items);
-      if (result.transactions.length === 0) {
+
+      if (result.noRowsFound) {
         setError("Couldn't find any purchases in this file — is it a Neo by Bank Audi statement?");
+        setStep("error");
+        return;
+      }
+      if (result.transactions.length === 0) {
+        setError("This statement parsed fine, but it has no purchases to import for this period — nothing to do here.");
         setStep("error");
         return;
       }
@@ -71,10 +94,18 @@ export default function ImportStatement({
       setClosingBalance(result.closingBalance);
       setUnmatchedRefundCount(result.unmatchedRefunds.length);
       setSkippedTransferCount(result.skippedTransferCount);
+      setUnparsedAmountCount(result.unparsedAmountCount);
       setRows(buildReviewRows(result.transactions, financials.transactions));
       setStep("card");
     } catch (e) {
-      setError("Couldn't read this PDF. Make sure it's a real statement file, not a scanned image.");
+      if (cancelledRef.current || e instanceof CancelledError) return;
+      if (e instanceof TooManyPagesError) {
+        setError("This PDF is too long to be a bank statement — double-check it's the right file.");
+      } else if (e instanceof LoadTimeoutError) {
+        setError("This file took too long to open — it may be corrupted. Try re-exporting the statement PDF and uploading it again.");
+      } else {
+        setError("Couldn't read this PDF. Make sure it's a real statement file, not a scanned image.");
+      }
       setStep("error");
     }
   }
@@ -100,6 +131,14 @@ export default function ImportStatement({
     setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   }
 
+  // The single source of truth for "will this row actually be imported" —
+  // used for both the displayed count and commit()'s own filter, so the
+  // button's promised count and what actually gets saved can never diverge.
+  function isRowValid(r: ReviewRow): boolean {
+    const amt = parseFloat(r.amount);
+    return !isNaN(amt) && amt > 0;
+  }
+
   function commit() {
     let card: StoredCard;
     if (cardChoice === "new") {
@@ -112,22 +151,18 @@ export default function ImportStatement({
     }
 
     const newTransactions: StoredTransaction[] = rows
-      .filter((r) => r.include)
-      .map((r) => {
-        const amt = parseFloat(r.amount);
-        return {
-          id: uid(),
-          amount: amt,
-          currency: "USD" as const,
-          bucket: r.bucket,
-          description: r.description,
-          date: r.date,
-          paymentMethod: "card" as const,
-          cardId: card.id,
-          cardLabel: card.label,
-        };
-      })
-      .filter((t) => !isNaN(t.amount) && t.amount > 0);
+      .filter((r) => r.include && isRowValid(r))
+      .map((r) => ({
+        id: uid(),
+        amount: parseFloat(r.amount),
+        currency: "USD" as const,
+        bucket: r.bucket,
+        description: r.description,
+        date: r.date,
+        paymentMethod: "card" as const,
+        cardId: card.id,
+        cardLabel: card.label,
+      }));
 
     if (newTransactions.length === 0) return;
 
@@ -154,7 +189,7 @@ export default function ImportStatement({
     onClose();
   }
 
-  const includedCount = rows.filter((r) => r.include).length;
+  const includedCount = rows.filter((r) => r.include && isRowValid(r)).length;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)" }}>
@@ -247,6 +282,7 @@ export default function ImportStatement({
             <p className="text-xs" style={{ color: T.mute }}>
               {includedCount} of {rows.length} selected.
               {unmatchedRefundCount > 0 && ` ${unmatchedRefundCount} refund${unmatchedRefundCount === 1 ? "" : "s"} in this statement had no matching purchase to net against, so ${unmatchedRefundCount === 1 ? "it wasn't" : "they weren't"} imported.`}
+              {unparsedAmountCount > 0 && ` ${unparsedAmountCount} row${unparsedAmountCount === 1 ? "" : "s"} had an amount in an unexpected format and couldn't be read — check the statement for anything missing.`}
             </p>
 
             <div className="space-y-2 max-h-96 overflow-y-auto">
@@ -263,7 +299,12 @@ export default function ImportStatement({
                     />
                     <div className="flex-1 space-y-2">
                       {r.isDuplicate && (
-                        <p className="text-[10px] font-semibold" style={{ color: T.coral }}>Possible duplicate — already in your transactions</p>
+                        <p className="text-[10px] font-semibold" style={{ color: T.coral }}>
+                          Possible duplicate — same date, amount, and description as a transaction you already have. Left unchecked; check the box above if it&apos;s actually a separate purchase.
+                        </p>
+                      )}
+                      {r.include && !isRowValid(r) && (
+                        <p className="text-[10px] font-semibold" style={{ color: T.coral }}>Enter a valid amount — this row won&apos;t be imported as-is.</p>
                       )}
                       <div className="grid grid-cols-[1fr_auto] gap-2 items-center">
                         <FocusInput value={r.description} onChange={(e) => updateRow(r.key, { description: e.target.value })} />
@@ -296,7 +337,7 @@ export default function ImportStatement({
               </label>
             )}
 
-            <PrimaryBtn onClick={commit}>Import {includedCount} transaction{includedCount === 1 ? "" : "s"}</PrimaryBtn>
+            <PrimaryBtn onClick={commit} disabled={includedCount === 0}>Import {includedCount} transaction{includedCount === 1 ? "" : "s"}</PrimaryBtn>
           </div>
         )}
       </div>

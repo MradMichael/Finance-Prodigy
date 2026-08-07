@@ -63,7 +63,7 @@ export default function RecoverPage() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <Field label="Email" type="email" value={email} onChange={setEmail} placeholder="you@email.com" autoComplete="email" />
           <Field label="Recovery code" value={code} onChange={setCode} placeholder="XXXX-XXXX-XXXX-XXXX" autoComplete="off" />
-          <Field label="New password" type="password" value={newPassword} onChange={setNewPassword} placeholder="Min. 6 characters" autoComplete="new-password" />
+          <Field label="New password" type="password" value={newPassword} onChange={setNewPassword} placeholder="Min. 10 characters" autoComplete="new-password" />
           <Field label="Confirm new password" type="password" value={confirm} onChange={setConfirm} placeholder="••••••••" autoComplete="new-password" />
 
           {error && (

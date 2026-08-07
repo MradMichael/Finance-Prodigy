@@ -232,6 +232,9 @@ export default function ProfilePage() {
             <p className="text-xs mt-1" style={{ color: T.mute }}>
               Your data is automatically saved to the database whenever you make changes — no action needed.
             </p>
+            <p className="text-xs mt-2 leading-relaxed" style={{ color: T.mute }}>
+              <strong style={{ color: T.text }}>Privacy note:</strong> Your financial data is encrypted in this browser (AES-256). The sync backup stored on the server is protected by your password but is not end-to-end encrypted — the server can read it. If you prefer full privacy, disable sync by not pushing, and use <em>Download my data</em> below to back up locally.
+            </p>
             {lastSync && (
               <p className="text-[11px] mt-2 flex items-center gap-1.5" style={{ color: T.jade }}>
                 <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: T.jade }} />

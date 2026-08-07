@@ -97,7 +97,7 @@ export default function SignUpPage() {
               here won&apos;t be able to sync until that&apos;s resolved.
             </div>
           )}
-          <Field label="Password" type="password" value={password} onChange={setPassword} placeholder="Min. 6 characters" autoComplete="new-password" />
+          <Field label="Password" type="password" value={password} onChange={setPassword} placeholder="Min. 10 characters" autoComplete="new-password" />
           <Field label="Confirm password" type="password" value={confirm} onChange={setConfirm} placeholder="••••••••" autoComplete="new-password" />
 
           {error && (

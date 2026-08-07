@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import type { Session } from "../../lib/auth";
 import { useTheme } from "../../contexts/ThemeContext";
 import { Signet } from "../EssaBrand";
@@ -8,7 +8,17 @@ import { Signet } from "../EssaBrand";
 export default function TopBar({ session, onProfile, onSignOut }: { session: Session; onProfile: () => void; onSignOut: () => void }) {
   const T        = useTheme();
   const [menu, setMenu] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const initials = session.name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
+
+  // Every dismissal path (Escape, outside click, choosing an item) should
+  // return focus to the trigger — otherwise a keyboard user's focus drops
+  // to <body> with no visual indication of where it went.
+  function closeMenu() {
+    setMenu(false);
+    triggerRef.current?.focus();
+  }
+
   return (
     <header
       className="flex items-center justify-between px-4 py-2.5 flex-shrink-0 md:hidden"
@@ -18,8 +28,9 @@ export default function TopBar({ session, onProfile, onSignOut }: { session: Ses
         <Signet size={26} />
         <span className="text-sm font-semibold" style={{ color: T.text, fontFamily: "Spectral, Georgia, serif" }}>ESSA</span>
       </div>
-      <div className="relative" onKeyDown={(e) => { if (e.key === "Escape") setMenu(false); }}>
+      <div className="relative" onKeyDown={(e) => { if (e.key === "Escape") closeMenu(); }}>
         <button
+          ref={triggerRef}
           onClick={() => setMenu((v) => !v)}
           aria-haspopup="true"
           aria-expanded={menu}
@@ -33,14 +44,14 @@ export default function TopBar({ session, onProfile, onSignOut }: { session: Ses
         </button>
         {menu && (
           <>
-            <div className="fixed inset-0 z-10" onClick={() => setMenu(false)} />
+            <div className="fixed inset-0 z-10" onClick={closeMenu} />
             <div className="absolute right-0 top-full mt-2 w-48 rounded-2xl py-2 z-20 shadow-2xl"
               style={{ background: T.panel, border: `1px solid ${T.line}` }}>
-              <button onClick={() => { setMenu(false); onProfile(); }}
+              <button onClick={() => { closeMenu(); onProfile(); }}
                 className="w-full text-left px-4 py-2.5 text-sm hover:opacity-80 flex gap-2" style={{ color: T.text }}>
                 <span>⚙</span> Settings
               </button>
-              <button onClick={() => { setMenu(false); onSignOut(); }}
+              <button onClick={() => { closeMenu(); onSignOut(); }}
                 className="w-full text-left px-4 py-2.5 text-sm hover:opacity-80 flex gap-2" style={{ color: T.coral }}>
                 <span>→</span> Sign out
               </button>

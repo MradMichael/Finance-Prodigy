@@ -128,6 +128,59 @@ describe("parseNeoStatement — unmatched refund", () => {
   });
 });
 
+describe("parseStatementRows — DATE-column fallback", () => {
+  it("merges a stray non-date item landing in the DATE column's x-range into the description instead of dropping it", () => {
+    const items = [
+      it_("DATE", X.DATE), it_("TRANSACTIONS", X.DESC), it_("MONEY OUT", X.OUT), it_("MONEY IN", X.IN), it_("BALANCE", X.BAL),
+      it_("05/07/2026", X.DATE),
+      it_("POS Purchase FOO", X.DESC),
+      it_("bar", X.DATE), // not a real date — should fall through as description text, not vanish
+      it_("10.00", X.OUT),
+      it_("-", X.IN),
+      it_("50.00", X.BAL),
+    ];
+    const rows = parseStatementRows(items);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].description).toBe("POS Purchase FOO bar");
+    expect(rows[0].moneyOut).toBe(10);
+  });
+});
+
+describe("parseNeoStatement — unparsed amount tracking", () => {
+  it("counts a malformed money-column cell instead of silently dropping the row with no signal", () => {
+    const items = [
+      it_("DATE", X.DATE), it_("TRANSACTIONS", X.DESC), it_("MONEY OUT", X.OUT), it_("MONEY IN", X.IN), it_("BALANCE", X.BAL),
+      ...row("05/07/2026", ["POS Purchase WEIRD FORMAT"], "10", "-", "50.00"), // "10" has no decimals — doesn't match NUMBER_RE
+    ];
+    const result = parseNeoStatement(items);
+    expect(result.transactions).toHaveLength(0); // moneyOut never got set, so this row isn't a purchase
+    expect(result.unparsedAmountCount).toBe(1);
+  });
+
+  it("does not count a blank/dash cell as an unparsed amount — that's a legitimate absence, not a failure", () => {
+    const items = buildFixture();
+    const result = parseNeoStatement(items);
+    expect(result.unparsedAmountCount).toBe(0);
+  });
+
+  it("reports noRowsFound when the file has no header/table at all (wrong file)", () => {
+    const result = parseNeoStatement([it_("Not a statement", 10)]);
+    expect(result.noRowsFound).toBe(true);
+    expect(result.transactions).toHaveLength(0);
+  });
+
+  it("does not report noRowsFound for a real statement with zero purchases (valid, just nothing to import)", () => {
+    const items = [
+      it_("DATE", X.DATE), it_("TRANSACTIONS", X.DESC), it_("MONEY OUT", X.OUT), it_("MONEY IN", X.IN), it_("BALANCE", X.BAL),
+      ...row("01/07/2026", ["Opening Balance"], undefined, undefined, "0.00"),
+      ...row("31/07/2026", ["Closing Balance"], undefined, undefined, "0.00"),
+    ];
+    const result = parseNeoStatement(items);
+    expect(result.noRowsFound).toBe(false);
+    expect(result.transactions).toHaveLength(0);
+  });
+});
+
 describe("normalizeDescription", () => {
   it("collapses whitespace/punctuation and case for matching purposes", () => {
     expect(normalizeDescription("  Moulin  Dor -- Jeita  ")).toBe("MOULIN DOR JEITA");

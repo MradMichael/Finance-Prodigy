@@ -254,6 +254,11 @@ export function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+/** Converts an amount to USD given its own currency and the current LBP rate — was independently redefined as the same one-liner in computeDashboard.ts, InputPanel.tsx, RecurringScreen.tsx, and TransactionsScreen.tsx. */
+export function toUSD(amount: number, currency: Currency | undefined, lbpRate: number): number {
+  return currency === "LBP" ? amount / lbpRate : amount;
+}
+
 /** Format an ISO date string (YYYY-MM-DD or full ISO) as DD/MM/YYYY for display. */
 export function fmtDate(iso: string | undefined | null): string {
   if (!iso) return "";
