@@ -190,10 +190,25 @@ export async function verifyLegacyPassword(password: string, userId: string): Pr
   return result !== null;
 }
 
-/** Shared PBKDF2-derive-bits-then-base64 primitive behind both sync tokens below — keeps the iteration count at a single source of truth (PBKDF2_ITERATIONS) instead of a copy-pasted literal per token. */
+/**
+ * Shared PBKDF2-derive-bits-then-base64 primitive behind both sync tokens
+ * below — keeps the iteration count at a single source of truth
+ * (PBKDF2_ITERATIONS) instead of a copy-pasted literal per token.
+ *
+ * NFC-normalizes the secret first: a password/recovery code containing an
+ * accented letter or a "smart quote" can be delivered as different Unicode
+ * byte sequences by different keyboards for what looks like the identical
+ * string (e.g. iOS vs a desktop IME), which would otherwise derive a
+ * different token per device and desync sync credentials that a user
+ * would swear are the same password. Deliberately NOT applied to the local
+ * password-hash/DEK-wrap derivations elsewhere in this file — those
+ * protect data already encrypted under the un-normalized form for
+ * existing accounts, and changing that retroactively needs a real
+ * migration, not a one-line tweak.
+ */
 async function derivePbkdf2Token(secret: string, salt: string): Promise<string> {
   const enc = new TextEncoder();
-  const keyMaterial = await crypto.subtle.importKey("raw", enc.encode(secret), "PBKDF2", false, ["deriveBits"]);
+  const keyMaterial = await crypto.subtle.importKey("raw", enc.encode(secret.normalize("NFC")), "PBKDF2", false, ["deriveBits"]);
   const bits = await crypto.subtle.deriveBits(
     { name: "PBKDF2", salt: enc.encode(salt), iterations: PBKDF2_ITERATIONS, hash: "SHA-256" },
     keyMaterial,
