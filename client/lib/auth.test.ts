@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { signUp, signIn, recoverAccount, getSession, hasValidSession, signOut, isAdmin, listUsers, getRecoveryTokenForSync, type StoredUser } from "./auth";
-import { pullFromServer } from "./syncService";
+import { pullFromServer, relinkSync } from "./syncService";
 
 vi.mock("./syncService", () => ({
   pullFromServer: vi.fn(),
+  relinkSync: vi.fn(),
   getRecoveryTokenForSync: vi.fn(),
 }));
 
@@ -13,9 +14,13 @@ beforeEach(() => {
   localStorage.clear();
   sessionStorage.clear();
   vi.mocked(pullFromServer).mockReset();
+  vi.mocked(relinkSync).mockReset();
   // Default: no synced data anywhere — matches signIn's "no local account,
   // and nothing to pull either" case unless a test overrides this.
   vi.mocked(pullFromServer).mockResolvedValue({ ok: false, error: "No data on server yet. Push first." });
+  // Default: recoverAccount's sync fallback (recoverFromSync) finds no
+  // matching account/recovery-code server-side either, unless overridden.
+  vi.mocked(relinkSync).mockResolvedValue({ ok: false, error: "Could not verify ownership of this account's sync data." });
 });
 
 // Replicates auth.ts's private legacy djb2 hash, purely to construct a
@@ -225,9 +230,37 @@ describe("recoverAccount", () => {
     });
   });
 
-  it("fails with an unknown email", async () => {
+  it("fails with an unknown email when the server doesn't recognize it either", async () => {
     const result = await recoverAccount("nobody@test.com", "ANYT-HING-0000-0000", "newpassword1");
-    expect(result).toEqual({ ok: false, error: "No account found with this email." });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/No account found/);
+  });
+
+  it("recovers via the server when this email has no local account yet (e.g. a new device using its recovery code)", async () => {
+    vi.mocked(relinkSync).mockResolvedValue({ ok: true });
+    vi.mocked(pullFromServer).mockResolvedValue({
+      ok: true,
+      syncedAt: "2026-01-01T00:00:00.000Z",
+      data: { ...(await import("./localData")).DEFAULT_DATA, userName: "Remote Name", income: 5000 },
+    });
+    const result = await recoverAccount("newdevice@test.com", "SOME-REAL-CODE-0000", "brandnewpassword1");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.session.email).toBe("newdevice@test.com");
+      expect(result.session.name).toBe("Remote Name");
+      expect(result.newRecoveryCode).toBeTruthy();
+      // A local account now exists for next time, provisioned from the pull.
+      const users = listUsers();
+      expect(users.some((u) => u.email === "newdevice@test.com")).toBe(true);
+      // And the freshly-set password actually works afterward.
+      const signInResult = await signIn("newdevice@test.com", "brandnewpassword1");
+      expect(signInResult.ok).toBe(true);
+    }
+  });
+
+  it("does not provision a local account when the server-side relink fails (unknown email or wrong recovery code)", async () => {
+    await recoverAccount("nobody@test.com", "WRNG-0000-0000-0000", "newpassword1");
+    expect(listUsers().some((u) => u.email === "nobody@test.com")).toBe(false);
   });
 
   it("fails with an incorrect recovery code", async () => {

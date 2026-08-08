@@ -304,6 +304,76 @@ export async function regenerateRecoveryCode(userId: string): Promise<{ ok: true
 }
 
 /**
+ * Handles recoverAccount's "no local account for this email" case — the
+ * recovery-code counterpart to signInFromSync. A brand-new device has no
+ * local envelope to unwrap with the recovery code, so instead this proves
+ * ownership straight to the server: derives the token for the *old*
+ * recovery code and calls /relink, which was already built to rotate sync
+ * credentials after a password reset but had never been reachable from a
+ * device with zero local state. That registers a fresh sync token (from
+ * newPassword) and a fresh recovery token in one step, without ever
+ * checking the old password/token — sidesteps entirely whatever caused a
+ * password-based sign-in to disagree with the server. Once relinked, pulls
+ * the account's data the same way signInFromSync does and provisions a
+ * local account for this device around it.
+ */
+async function recoverFromSync(
+  email: string, recoveryCode: string, newPassword: string,
+): Promise<{ ok: true; session: Session; newRecoveryCode: string } | { ok: false; error: string }> {
+  if (newPassword.length < 10) return { ok: false, error: "Password must be at least 10 characters." };
+  const normalizedEmail = email.toLowerCase().trim();
+  const { createEnvelopes, activateSessionKey, initSyncToken, deriveRecoveryToken } = await import("./crypto");
+  const { relinkSync, pullFromServer } = await import("./syncService");
+
+  const oldRecoveryToken = await deriveRecoveryToken(recoveryCode, normalizedEmail);
+
+  if (!crypto.randomUUID) return { ok: false, error: "This browser doesn't support the security features ESSA needs. Please use an up-to-date browser over HTTPS." };
+  const id = crypto.randomUUID();
+  const [{ wrappedPassword, wrappedRecovery, recoveryCode: newRecoveryCode, dek }, pwHash, newToken] = await Promise.all([
+    createEnvelopes(newPassword, id),
+    hashPassword(newPassword),
+    initSyncToken(newPassword, normalizedEmail),
+  ]);
+  const newRecoveryToken = await deriveRecoveryToken(newRecoveryCode, normalizedEmail);
+
+  const relinked = await relinkSync(normalizedEmail, newToken, newRecoveryToken, oldRecoveryToken);
+  if (!relinked.ok) {
+    if (relinked.error?.includes("verify ownership")) {
+      return { ok: false, error: "No account found with this email, or that recovery code doesn't match it." };
+    }
+    return { ok: false, error: `Couldn't reach the server right now (${relinked.error}). Check your connection and try again.` };
+  }
+
+  const pulled = await pullFromServer(normalizedEmail);
+  if (!pulled.ok) {
+    return { ok: false, error: `Your password was reset, but retrieving your data failed (${pulled.error}). Try signing in now — the new password should work.` };
+  }
+
+  const name = pulled.data.userName || normalizedEmail.split("@")[0];
+  const users = getUsers();
+  putUsers([...users, {
+    id,
+    email:     normalizedEmail,
+    name,
+    pwHash,
+    createdAt: new Date().toISOString(),
+    isAdmin:   users.length === 0,
+    wrappedDekPassword: wrappedPassword,
+    wrappedDekRecovery: wrappedRecovery,
+    recoveryTokenForSync: newRecoveryToken,
+  }]);
+
+  const session: Session = { userId: id, email: normalizedEmail, name };
+  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  activateSessionKey(dek);
+
+  const { saveData } = await import("./localData");
+  await saveData({ ...pulled.data, userName: name }, id);
+
+  return { ok: true, session, newRecoveryCode };
+}
+
+/**
  * Resets the password using a recovery code, without losing access to
  * already-encrypted data (the DEK itself never changes, only how it's
  * wrapped). Issues a new recovery code — the old one stops working.
@@ -321,7 +391,7 @@ export async function recoverAccount(
 ): Promise<{ ok: true; session: Session; newRecoveryCode: string } | { ok: false; error: string }> {
   if (newPassword.length < 10) return { ok: false, error: "Password must be at least 10 characters." };
   const user = getUsers().find((u) => u.email === email.toLowerCase().trim());
-  if (!user) return { ok: false, error: "No account found with this email." };
+  if (!user) return recoverFromSync(email, recoveryCode, newPassword);
   if (!user.wrappedDekRecovery) {
     return { ok: false, error: "Recovery isn't set up for this account yet. It needs one successful sign-in first." };
   }
