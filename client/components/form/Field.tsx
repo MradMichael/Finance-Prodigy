@@ -25,6 +25,16 @@ export default function Field({
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           autoComplete={autoComplete}
+          // type="password" is exempt from mobile autocapitalize/autocorrect
+          // by default, but flipping to type="text" for the reveal toggle
+          // below loses that exemption — a phone keyboard would then be
+          // free to capitalize the first character or autocorrect a word
+          // mid-password, silently submitting a different string than what
+          // was typed. Applies to every field here, not just password, since
+          // none of email/name/amount should ever be autocorrected either.
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           className="w-full rounded-xl px-4 py-3 text-sm transition-all duration-150"
