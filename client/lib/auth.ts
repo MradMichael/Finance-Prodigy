@@ -165,7 +165,19 @@ async function signInFromSync(
   const { pullFromServer } = await import("./syncService");
   const pulled = await pullFromServer(normalizedEmail);
   if (!pulled.ok) {
-    return { ok: false, error: "No account found with this email, or the password doesn't match. If you've used ESSA on another device, make sure Database sync was turned on there." };
+    // Distinguish the three real cases instead of one blanket message: the
+    // server's /pull already tells them apart (404 = nothing registered
+    // for this email at all, 401 = registered but this token, i.e. this
+    // password, doesn't match it), and conflating "wrong password" with
+    // "no account anywhere" sends someone with a typo down the wrong path
+    // (trying to sign up fresh) instead of the right one (retyping it).
+    if (pulled.error.includes("Invalid sync credentials")) {
+      return { ok: false, error: "Incorrect password for this email." };
+    }
+    if (pulled.error.includes("No data on server yet") || pulled.error.includes("No sync data found") || pulled.error.includes("no sync credentials registered")) {
+      return { ok: false, error: "No account found with this email. Check the email, or sign up if this is your first time." };
+    }
+    return { ok: false, error: `Couldn't verify your account right now (${pulled.error}). Check your connection and try again.` };
   }
 
   if (!crypto.randomUUID) return { ok: false, error: "This browser doesn't support the security features ESSA needs. Please use an up-to-date browser over HTTPS." };

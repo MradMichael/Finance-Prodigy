@@ -197,7 +197,9 @@ export default function ProjectionsScreen({
             <span className="text-xs tabular-nums" style={{ color: T.mute }}>{money(emergencyFund.balance)} of {money(emergencyFund.targetAmount)}</span>
           </div>
           <Bar pct={emergencyFund.pctFunded} color={T.jade} T={T} />
-          {emergencyFund.remaining <= 0 ? (
+          {!hasIncome ? (
+            <p className="text-sm mt-4" style={{ color: T.mute }}>Set your income to calculate a real target here.</p>
+          ) : emergencyFund.remaining <= 0 ? (
             <p className="text-sm mt-4" style={{ color: T.jade }}>Fully funded already. 🎉</p>
           ) : (
             <div className="grid grid-cols-2 gap-4 mt-4">

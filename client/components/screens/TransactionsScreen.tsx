@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import type { LocalFinancials } from "../../lib/localData";
-import { fmtDate, toUSD as toUSDShared } from "../../lib/localData";
+import type { LocalFinancials, StoredRecurring } from "../../lib/localData";
+import { fmtDate, monthlyEquivalent, toUSD as toUSDShared } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money } from "./shared";
 
 type TrendPeriod = "monthly" | "quarterly" | "yearly";
+type BucketTotals = { needs: number; wants: number; savings: number };
 
 /** YYYY-MM / YYYY-Q# / YYYY grouping key for a transaction date, depending on the selected trend period. */
 function periodKey(dateStr: string, mode: TrendPeriod): string {
@@ -23,6 +24,37 @@ function periodLabel(key: string, mode: TrendPeriod): string {
   return `${["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][+m]} ${y}`;
 }
 
+/** Every calendar month (YYYY-MM) a period key covers: one for "monthly", three for "quarterly", twelve for "yearly". Recurring bills don't create a transaction row each month, so a period's real total needs each covered month evaluated separately, not just the period's own key. */
+function monthsInPeriod(key: string, mode: TrendPeriod): string[] {
+  if (mode === "monthly") return [key];
+  if (mode === "quarterly") {
+    const [y, q] = key.split("-Q");
+    const startMonth = (parseInt(q, 10) - 1) * 3 + 1;
+    return [0, 1, 2].map((i) => `${y}-${String(startMonth + i).padStart(2, "0")}`);
+  }
+  return Array.from({ length: 12 }, (_, i) => `${key}-${String(i + 1).padStart(2, "0")}`);
+}
+
+/**
+ * Recurring items' monthly-equivalent contribution for one calendar month,
+ * by bucket. Mirrors computeDashboard's own convention: the current month
+ * is evaluated as of today (so a mid-month start/end is reflected exactly
+ * like the dashboard's own totals), any other month as of its first day
+ * (all that matters for a past/future month is whether the item was
+ * active then at all).
+ */
+function recurringForMonth(recurring: StoredRecurring[], ym: string, currentYm: string, toUSD: (n: number, cur?: string) => number): BucketTotals {
+  const asOf = ym === currentYm ? new Date() : new Date(`${ym}-01T00:00:00`);
+  const out: BucketTotals = { needs: 0, wants: 0, savings: 0 };
+  for (const r of recurring) {
+    const usd = toUSD(monthlyEquivalent(r, asOf), r.currency);
+    if (r.bucket === "NEEDS") out.needs += usd;
+    else if (r.bucket === "WANTS") out.wants += usd;
+    else out.savings += usd;
+  }
+  return out;
+}
+
 export default function TransactionsScreen({ financials }: { financials: LocalFinancials }) {
   const T = useTheme();
   const [filter, setFilter] = useState("all");
@@ -33,6 +65,8 @@ export default function TransactionsScreen({ financials }: { financials: LocalFi
 
   const allTx  = [...financials.transactions].sort((a, b) => b.date.localeCompare(a.date));
   const months = Array.from(new Set(allTx.map((t) => t.date.slice(0, 7)))).sort().reverse();
+  const recurring = financials.recurring ?? [];
+  const currentYm = new Date().toISOString().slice(0, 7);
 
   const q = query.trim().toLowerCase();
   const matchesQuery = (t: (typeof allTx)[number]) => {
@@ -47,6 +81,15 @@ export default function TransactionsScreen({ financials }: { financials: LocalFi
     );
   };
   const filtered = (filter === "all" ? allTx : allTx.filter((t) => t.date.startsWith(filter))).filter(matchesQuery);
+  // Recurring bills don't create a transaction row, so a specific month's
+  // real totals need their monthly-equivalent added in (matches how the
+  // Overview dashboard already blends the two). Deliberately skipped for
+  // "all time" — summing a recurring item's contribution across its whole
+  // active history is a different, fuzzier question than "what did this
+  // month cost."
+  const recurForFilter: BucketTotals = filter !== "all"
+    ? recurringForMonth(recurring, filter, currentYm, toUSD)
+    : { needs: 0, wants: 0, savings: 0 };
 
   const fmtMo = (ym: string) => {
     const [y, m] = ym.split("-");
@@ -66,7 +109,7 @@ export default function TransactionsScreen({ financials }: { financials: LocalFi
   const [trendPeriod, setTrendPeriod] = useState<TrendPeriod>("monthly");
   const trendCap = trendPeriod === "yearly" ? 5 : 6;
   const trendData = (() => {
-    const byPeriod: Record<string, { needs: number; wants: number; savings: number }> = {};
+    const byPeriod: Record<string, BucketTotals> = {};
     for (const t of allTx) {
       const k = periodKey(t.date, trendPeriod);
       const b = byPeriod[k] ?? (byPeriod[k] = { needs: 0, wants: 0, savings: 0 });
@@ -75,7 +118,19 @@ export default function TransactionsScreen({ financials }: { financials: LocalFi
       else if (t.bucket === "WANTS") b.wants += usd;
       else b.savings += usd;
     }
-    return Object.keys(byPeriod).sort().reverse().slice(0, trendCap).reverse().map((k) => {
+    // Always include the current period even with zero logged transactions
+    // so far, otherwise a period with only recurring bills and nothing
+    // manually logged yet would silently vanish from the trend entirely.
+    const currentKey = periodKey(new Date().toISOString().slice(0, 10), trendPeriod);
+    const periodKeys = Array.from(new Set([...Object.keys(byPeriod), currentKey])).sort().reverse().slice(0, trendCap).reverse();
+    for (const k of periodKeys) {
+      const b = byPeriod[k] ?? (byPeriod[k] = { needs: 0, wants: 0, savings: 0 });
+      for (const ym of monthsInPeriod(k, trendPeriod)) {
+        const r = recurringForMonth(recurring, ym, currentYm, toUSD);
+        b.needs += r.needs; b.wants += r.wants; b.savings += r.savings;
+      }
+    }
+    return periodKeys.map((k) => {
       const { needs, wants, savings } = byPeriod[k];
       const total = needs + wants + savings;
       return {
@@ -119,11 +174,13 @@ export default function TransactionsScreen({ financials }: { financials: LocalFi
         {/* Bucket summary */}
         <div className="grid grid-cols-3 gap-3">
           {(["NEEDS","WANTS","SAVINGS"] as const).map((b) => {
-            const sum = filtered.filter((t) => t.bucket === b).reduce((s, t) => s + toUSD(t.amount, t.currency), 0);
+            const txSum = filtered.filter((t) => t.bucket === b).reduce((s, t) => s + toUSD(t.amount, t.currency), 0);
+            const recurSum = b === "NEEDS" ? recurForFilter.needs : b === "WANTS" ? recurForFilter.wants : recurForFilter.savings;
             return (
               <div key={b} className="rounded-2xl px-4 py-4" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
                 <p className="text-[10px] uppercase tracking-widest mb-2" style={{ color: T.mute }}>{BL[b]}</p>
-                <p className="text-xl font-medium tabular-nums" style={{ ...SERIF, color: BC[b] }}>{money(sum)}</p>
+                <p className="text-xl font-medium tabular-nums" style={{ ...SERIF, color: BC[b] }}>{money(txSum + recurSum)}</p>
+                {recurSum > 0 && <p className="text-[10px] mt-0.5" style={{ color: T.mute }}>incl. {money(recurSum)} recurring</p>}
               </div>
             );
           })}
