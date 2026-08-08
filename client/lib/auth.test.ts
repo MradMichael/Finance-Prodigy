@@ -1,11 +1,21 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { signUp, signIn, recoverAccount, getSession, hasValidSession, signOut, isAdmin, listUsers, getRecoveryTokenForSync, type StoredUser } from "./auth";
+import { pullFromServer } from "./syncService";
+
+vi.mock("./syncService", () => ({
+  pullFromServer: vi.fn(),
+  getRecoveryTokenForSync: vi.fn(),
+}));
 
 const USERS_KEY = "essa_users_v1";
 
 beforeEach(() => {
   localStorage.clear();
   sessionStorage.clear();
+  vi.mocked(pullFromServer).mockReset();
+  // Default: no synced data anywhere — matches signIn's "no local account,
+  // and nothing to pull either" case unless a test overrides this.
+  vi.mocked(pullFromServer).mockResolvedValue({ ok: false, error: "No data on server yet. Push first." });
 });
 
 // Replicates auth.ts's private legacy djb2 hash, purely to construct a
@@ -72,9 +82,33 @@ describe("signUp", () => {
 });
 
 describe("signIn", () => {
-  it("rejects an email with no account", async () => {
+  it("rejects an email with no local account and nothing synced for it either", async () => {
     const result = await signIn("nobody@test.com", "password12345");
-    expect(result).toEqual({ ok: false, error: "No account found with this email." });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/No account found/);
+  });
+
+  it("signs in via a synced pull when this email has no local account yet (e.g. a new device)", async () => {
+    vi.mocked(pullFromServer).mockResolvedValue({
+      ok: true,
+      syncedAt: "2026-01-01T00:00:00.000Z",
+      data: { ...(await import("./localData")).DEFAULT_DATA, userName: "Remote Name", income: 5000 },
+    });
+    const result = await signIn("newdevice@test.com", "password12345");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.session.email).toBe("newdevice@test.com");
+      expect(result.session.name).toBe("Remote Name");
+      // A local account now exists for next time, provisioned from the pull.
+      const users = listUsers();
+      expect(users.some((u) => u.email === "newdevice@test.com")).toBe(true);
+    }
+  });
+
+  it("does not provision a local account when the sync pull fails (wrong password or truly no account)", async () => {
+    vi.mocked(pullFromServer).mockResolvedValue({ ok: false, error: "Pull failed (HTTP 401)." });
+    await signIn("nobody@test.com", "wrongpassword123");
+    expect(listUsers().some((u) => u.email === "nobody@test.com")).toBe(false);
   });
 
   it("rejects the wrong password", async () => {

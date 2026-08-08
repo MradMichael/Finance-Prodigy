@@ -11,6 +11,7 @@ import BudgetScreen from "../components/screens/BudgetScreen";
 import SetupScreen from "../components/screens/SetupScreen";
 import RecurringScreen from "../components/screens/RecurringScreen";
 import ProjectionsScreen from "../components/screens/ProjectionsScreen";
+import JourneyScreen from "../components/screens/JourneyScreen";
 import Sidebar from "../components/shell/Sidebar";
 import BottomNav from "../components/shell/BottomNav";
 import TopBar from "../components/shell/TopBar";
@@ -193,6 +194,7 @@ export default function Home() {
           {screen === "debts"        && <DebtsScreen financials={financials} dashData={dashboardData} />}
           {screen === "recurring"    && <RecurringScreen financials={financials} />}
           {screen === "projections"  && <ProjectionsScreen financials={financials} dashData={dashboardData} />}
+          {screen === "journey"      && <JourneyScreen financials={financials} dashData={dashboardData} onNavigate={setScreen} />}
         </div>
 
       </div>

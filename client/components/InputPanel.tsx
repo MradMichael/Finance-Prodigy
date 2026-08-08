@@ -22,6 +22,22 @@ const PM_OPTIONS: { value: PaymentMethod; label: string; icon: string }[] = [
 
 const CARD_TYPES: StoredCard["type"][] = ["Visa", "Mastercard", "Amex", "Other"];
 
+/**
+ * Data-driven "this might be recurring" signal: the same description has
+ * already been logged in a DIFFERENT calendar month (e.g. "Claude
+ * subscription" showing up every month), and isn't already tracked as a
+ * Recurring item. Deliberately not a hardcoded list of known subscription
+ * names — that would miss anything not on the list and go stale; this
+ * catches whatever the user's own history actually repeats.
+ */
+function looksRecurring(description: string, date: string, transactions: StoredTransaction[], recurring: StoredRecurring[]): boolean {
+  const norm = description.trim().toLowerCase();
+  if (!norm) return false;
+  if (recurring.some((r) => r.name.trim().toLowerCase() === norm)) return false;
+  const thisMonth = date.slice(0, 7);
+  return transactions.some((t) => t.description.trim().toLowerCase() === norm && t.date.slice(0, 7) !== thisMonth);
+}
+
 // ── main panel ──────────────────────────────────────────────────── //
 
 interface Props {
@@ -48,6 +64,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
   const [txPayMethod, setTxPayMethod] = useState<PaymentMethod>("cash");
   const [txPayNote,   setTxPayNote]   = useState("");
   const [txAddToEF,   setTxAddToEF]   = useState(false);
+  const [txFromEF,    setTxFromEF]    = useState(false);
   const [txCardId,    setTxCardId]    = useState<string | null>(null);
   const [showAddCard, setShowAddCard] = useState(false);
   const [newCardType, setNewCardType] = useState<StoredCard["type"]>("Visa");
@@ -158,6 +175,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
   function addTransaction() {
     const amt = parseFloat(txAmt);
     if (!amt || amt <= 0) return;
+    if (txCurrency === "LBP" && amt < 500 && !confirm(`${amt.toLocaleString()} LBP is unusually low for a real purchase. Did you mean to log this in USD instead? Click Cancel to fix the currency, or OK to save it as LBP.`)) return;
     let cardId: string | undefined;
     let cardLabel: string | undefined;
     if (txPayMethod === "card") {
@@ -183,8 +201,11 @@ export default function InputPanel({ financials, onChange, session }: Props) {
       ...(txBucket === "SAVINGS" && txAddToEF
         ? { emergencyFundBalance: (financials.emergencyFundBalance ?? 0) + amtUSD }
         : {}),
+      ...(txBucket !== "SAVINGS" && txFromEF
+        ? { emergencyFundBalance: Math.max(0, (financials.emergencyFundBalance ?? 0) - amtUSD) }
+        : {}),
     });
-    setTxAmt(""); setTxDesc(""); setTxPayNote(""); setTxAddToEF(false);
+    setTxAmt(""); setTxDesc(""); setTxPayNote(""); setTxAddToEF(false); setTxFromEF(false);
   }
 
   function addGoal() {
@@ -284,6 +305,19 @@ export default function InputPanel({ financials, onChange, session }: Props) {
     };
     update({ recurring: [...(financials.recurring ?? []), rec] });
     setRName(""); setRAmount(""); setREmoji("🔄"); setRStart(todayISO()); setREnd(""); setRTotalAmount(""); setREndType("infinite");
+  }
+
+  /** Quick-add a Recurring item from a transaction that looksRecurring flagged — starts today, monthly, editable further in the Recurring screen. Past transactions are left untouched; this only affects future months. */
+  function convertToRecurring(name: string, amount: string, currency: Currency, bucket: Bucket) {
+    const amt = parseFloat(amount.replace(/,/g, ""));
+    if (!name.trim() || !amt) return;
+    const rec: StoredRecurring = {
+      id: uid(), name: name.trim(), emoji: "🔄",
+      amount: amt, currency, frequency: "monthly", bucket,
+      startDate: todayISO(), endDate: null, totalAmount: null,
+      createdAt: new Date().toISOString(),
+    };
+    update({ recurring: [...(financials.recurring ?? []), rec] });
   }
 
   function contributeToGoal(goalId: string) {
@@ -394,6 +428,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
   function saveEditTx(txId: string) {
     const amt = parseFloat(editTxAmt.replace(/,/g, ""));
     if (!editTxDesc.trim() || isNaN(amt) || !editTxDate) return;
+    if (editTxCurrency === "LBP" && amt < 500 && !confirm(`${amt.toLocaleString()} LBP is unusually low for a real purchase. Did you mean to log this in USD instead? Click Cancel to fix the currency, or OK to save it as LBP.`)) return;
     update({
       transactions: financials.transactions.map((t) => t.id !== txId ? t : {
         ...t, amount: amt, description: editTxDesc.trim(),
@@ -415,7 +450,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
   const toUSD    = (amt: number, cur?: Currency) => toUSDShared(amt, cur, lbpRate);
   const fmtCur   = (amt: number, cur: Currency) => cur === "LBP"
     ? `L£${amt.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
-    : `$${amt.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+    : `$${amt.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const recs     = financials.recurring ?? [];
   const needsOut = monthTx.filter((t) => t.bucket === "NEEDS").reduce((s, t)   => s + toUSD(t.amount, t.currency), 0)
                  + recs.filter((r) => r.bucket === "NEEDS").reduce((s, r)   => s + toUSD(monthlyEquivalent(r, now), r.currency), 0);
@@ -601,6 +636,28 @@ export default function InputPanel({ financials, onChange, session }: Props) {
             );
           })()}
 
+          {/* Needs/Wants: option to pay this from the Emergency Fund instead of new spending */}
+          {txBucket !== "SAVINGS" && (financials.emergencyFundBalance ?? 0) > 0 && (
+            <button
+              onClick={() => setTxFromEF((v) => !v)}
+              className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-left transition-all"
+              style={{
+                background: txFromEF ? T.coral + "18" : T.panelSoft,
+                border: `1px solid ${txFromEF ? T.coral : T.line}`,
+              }}
+            >
+              <div>
+                <p className="text-xs font-medium" style={{ color: txFromEF ? T.coral : T.text }}>
+                  Pay this from Emergency Fund
+                </p>
+                <p className="text-[10px]" style={{ color: T.mute }}>
+                  EF balance: ${(financials.emergencyFundBalance ?? 0).toLocaleString()} · reduces it by this amount
+                </p>
+              </div>
+              <span className="text-base ml-2">{txFromEF ? "✓" : "○"}</span>
+            </button>
+          )}
+
           <div>
             <Label htmlFor="tx-desc">Description</Label>
             <FocusInput
@@ -610,6 +667,19 @@ export default function InputPanel({ financials, onChange, session }: Props) {
               placeholder="Rent, groceries, gym…"
               onKeyDown={(e) => e.key === "Enter" && addTransaction()}
             />
+            {looksRecurring(txDesc, txDate, financials.transactions, financials.recurring ?? []) && (
+              <div className="mt-2 rounded-xl px-3 py-2.5 flex items-center justify-between gap-2" style={{ background: T.brass + "14", border: `1px solid ${T.brass}30` }}>
+                <p className="text-[11px]" style={{ color: T.brass }}>You&apos;ve logged this before in another month. Looks recurring.</p>
+                <button
+                  type="button"
+                  onClick={() => convertToRecurring(txDesc, txAmt, txCurrency, txBucket)}
+                  className="text-[11px] font-semibold px-2.5 py-1 rounded-lg flex-shrink-0 hover:opacity-80 transition-opacity"
+                  style={{ background: T.brass + "22", color: T.brass }}
+                >
+                  Add to Recurring
+                </button>
+              </div>
+            )}
           </div>
 
           <div>
@@ -782,6 +852,19 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                           <div>
                             <Label htmlFor="edit-tx-desc">Description</Label>
                             <FocusInput id="edit-tx-desc" value={editTxDesc} onChange={(e) => setEditTxDesc(e.target.value)} />
+                            {looksRecurring(editTxDesc, editTxDate, financials.transactions.filter((t) => t.id !== tx.id), financials.recurring ?? []) && (
+                              <div className="mt-2 rounded-xl px-3 py-2.5 flex items-center justify-between gap-2" style={{ background: T.brass + "14", border: `1px solid ${T.brass}30` }}>
+                                <p className="text-[11px]" style={{ color: T.brass }}>You&apos;ve logged this before in another month. Looks recurring.</p>
+                                <button
+                                  type="button"
+                                  onClick={() => convertToRecurring(editTxDesc, editTxAmt, editTxCurrency, editTxBucket)}
+                                  className="text-[11px] font-semibold px-2.5 py-1 rounded-lg flex-shrink-0 hover:opacity-80 transition-opacity"
+                                  style={{ background: T.brass + "22", color: T.brass }}
+                                >
+                                  Add to Recurring
+                                </button>
+                              </div>
+                            )}
                           </div>
                           <div className="grid grid-cols-3 gap-1.5">
                             {BUCKETS.map((bkt) => (

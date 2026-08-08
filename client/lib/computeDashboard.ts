@@ -447,11 +447,17 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     WANTS: Math.max(0, income * budgetTargetPct.wants / 100 + budgetRollover.wants),
     SAVINGS: Math.max(0, income * budgetTargetPct.savings / 100 + budgetRollover.savings),
   };
-  // Projecting a full month's spend from only the first few days grossly
-  // overreacts to lumpy early-month payments (rent, annual renewals) — a
-  // single day-1 charge can imply "you'll exceed this by $7,000". Below
-  // this threshold, flag it lightly without a specific dollar claim.
-  const MIN_DAYS_FOR_PROJECTION = 5;
+  // Projecting a full month's spend from only the first handful of days
+  // grossly overreacts to ordinary lumpy spending (one grocery run, one
+  // subscription renewal) — real report: $276 of Wants logged by day 8
+  // read as "you'll exceed it by ~$610", a bigger overage than a bucket
+  // that had already spent 90% of its budget, purely because day 8 of 31
+  // is a 3.9x extrapolation multiplier on whatever happened to land early.
+  // 10 days (roughly a third of a month) keeps that multiplier under 3.1x
+  // and gives spending a few more data points to average out before a
+  // specific dollar claim is made. Below this threshold, flag it lightly
+  // without a specific dollar claim instead.
+  const MIN_DAYS_FOR_PROJECTION = 10;
   // Recurring contributions (recurNeeds/recurWants/recurSavings) are already
   // each recurring item's full monthly-equivalent amount, not something that
   // accrues day-by-day — a $1,000 rent payment is "owed" in full from day 1,

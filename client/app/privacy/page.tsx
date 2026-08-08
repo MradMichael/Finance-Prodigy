@@ -77,7 +77,7 @@ export default function PrivacyPage() {
             currently read it back. It exists for future internal use only.
           </p>
           <p>
-            Separately, Profile → Help improve ESSA is an <strong style={{ color: T.text }}>opt-in, off by default</strong> toggle
+            Separately, Profile → Help improve ESSA is a toggle, <strong style={{ color: T.text }}>on by default but a real opt-out</strong>,
             that sends anonymous counts for a handful of named product actions (like completing an onboarding step) to
             our own server, no third-party analytics SDK, no identity attached, never your financial data. Turning
             it on or off takes effect immediately.

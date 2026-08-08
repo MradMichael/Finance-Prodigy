@@ -409,7 +409,7 @@ export default function FinancialDashboard({
               </ResponsiveContainer>
             </div>
             <p className="text-xs mt-2" style={{ color: T.mute }}>
-              The gap between the lines is your monthly progress.
+              The gap between the lines is your monthly progress. {monthName} is still in progress, so its spend line will keep rising (and the gap will keep shrinking) as the rest of the month gets logged.
             </p>
           </Panel>
         </div>

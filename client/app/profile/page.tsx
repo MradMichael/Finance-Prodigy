@@ -3,9 +3,12 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getSession, hasValidSession, updateProfile, deleteAccount, signOut, isAdmin, ensureFirstUserIsAdmin } from "../../lib/auth";
+import { getSession, hasValidSession, updateProfile, deleteAccount, signOut, isAdmin, ensureFirstUserIsAdmin, regenerateRecoveryCode } from "../../lib/auth";
+import RecoveryCodeModal from "../../components/RecoveryCodeModal";
 import type { Session } from "../../lib/auth";
 import { loadData, saveData } from "../../lib/localData";
+import { computeDashboard } from "../../lib/computeDashboard";
+import { buildReportHtml } from "../../lib/printReport";
 import { pullFromServer, getLastSyncTime } from "../../lib/syncService";
 import { isAnalyticsOptedIn, setAnalyticsOptIn } from "../../lib/analytics";
 import { useTheme, useThemeControl } from "../../contexts/ThemeContext";
@@ -34,6 +37,11 @@ export default function ProfilePage() {
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [syncMsg,       setSyncMsg]       = useState("");
   const [syncing,       setSyncing]       = useState(false);
+  const [pdfDetailed,   setPdfDetailed]   = useState(false);
+  const [pdfDateFrom,   setPdfDateFrom]   = useState("");
+  const [pdfDateTo,     setPdfDateTo]     = useState("");
+  const [newRecoveryCode, setNewRecoveryCode] = useState<string | null>(null);
+  const [recoveryMsg,     setRecoveryMsg]     = useState("");
   const [lastSync,      setLastSync]      = useState<string | null>(null);
   const [analyticsOn,   setAnalyticsOn]   = useState(false);
 
@@ -106,6 +114,40 @@ export default function ProfilePage() {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+  }
+
+  // "Download as PDF" is just printing a report to the browser's own Save
+  // as PDF destination — no PDF-generation library needed. Opens in a new
+  // tab (rather than printing the profile page itself) so the report gets
+  // its own clean, print-optimized layout instead of fighting the app's
+  // dark theme and navigation chrome.
+  async function handleDownloadPdf() {
+    if (!session) return;
+    // Opened synchronously, before any await, so browsers still treat it as
+    // a direct response to the click rather than a popup to block — once an
+    // await separates window.open() from the click event, most browsers no
+    // longer consider it user-initiated.
+    const win = window.open("", "_blank");
+    if (!win) return; // popup blocked — nothing more we can do here
+    const data = await loadData(session.userId);
+    const dash = computeDashboard(data);
+    const html = buildReportHtml(session.name, data, dash, {
+      detailed: pdfDetailed,
+      dateFrom: pdfDetailed && pdfDateFrom ? pdfDateFrom : undefined,
+      dateTo: pdfDetailed && pdfDateTo ? pdfDateTo : undefined,
+    });
+    win.document.write(html);
+    win.document.close();
+    win.onload = () => win.print();
+  }
+
+  async function handleRegenerateRecovery() {
+    if (!session) return;
+    setRecoveryMsg("");
+    if (!confirm("Generate a new recovery code? Your old recovery code will stop working immediately.")) return;
+    const result = await regenerateRecoveryCode(session.userId);
+    if (result.ok) setNewRecoveryCode(result.recoveryCode);
+    else setRecoveryMsg(result.error);
   }
 
   const initials = session ? session.name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2) : "…";
@@ -201,6 +243,28 @@ export default function ProfilePage() {
               <span className="text-xs ml-3" style={{ color: T.jade }}>{saveMsg}</span>
             )}
           </form>
+        </div>
+
+        {/* Account recovery */}
+        <div
+          className="rounded-2xl p-6 space-y-3"
+          style={{ background: T.panel, border: `1px solid ${T.line}` }}
+        >
+          <h2 className="text-sm font-semibold" style={{ color: T.text, fontFamily: "Spectral, Georgia, serif" }}>
+            Account recovery
+          </h2>
+          <p className="text-xs" style={{ color: T.mute }}>
+            Your recovery code is shown once and never stored, so it can&apos;t be displayed again. Lost it? Generate a
+            new one now, while you know you&apos;re safely signed in. The old code stops working immediately.
+          </p>
+          <button
+            onClick={handleRegenerateRecovery}
+            className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+            style={{ background: T.line, color: T.text }}
+          >
+            Generate new recovery code
+          </button>
+          {recoveryMsg && <p className="text-xs" style={{ color: T.coral }}>{recoveryMsg}</p>}
         </div>
 
         {/* Sign out */}
@@ -316,13 +380,69 @@ export default function ProfilePage() {
               settings, as a JSON file. Yours to keep, move elsewhere, or back up by hand.
             </p>
           </div>
-          <button
-            onClick={handleExport}
-            className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 flex items-center gap-2"
-            style={{ background: T.line, color: T.text }}
-          >
-            ⬇ Download my data
-          </button>
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={handleExport}
+              className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 flex items-center gap-2"
+              style={{ background: T.line, color: T.text }}
+            >
+              ⬇ Download my data
+            </button>
+            <button
+              onClick={handleDownloadPdf}
+              className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 flex items-center gap-2"
+              style={{ background: T.line, color: T.text }}
+            >
+              ⬇ Download as PDF
+            </button>
+          </div>
+
+          {/* PDF report options */}
+          <div className="rounded-xl px-4 py-3 space-y-3" style={{ background: T.panelSoft }}>
+            <div className="flex gap-2">
+              {([
+                { key: false, label: "Summary" },
+                { key: true, label: "Detailed" },
+              ] as const).map((opt) => (
+                <button
+                  key={String(opt.key)}
+                  onClick={() => setPdfDetailed(opt.key)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                  style={{
+                    background: pdfDetailed === opt.key ? T.jade + "22" : T.ink,
+                    border: `1px solid ${pdfDetailed === opt.key ? T.jade : T.line}`,
+                    color: pdfDetailed === opt.key ? T.jade : T.mute,
+                  }}
+                >
+                  {opt.label} PDF
+                </button>
+              ))}
+            </div>
+            {pdfDetailed && (
+              <div>
+                <p className="text-[11px] mb-1.5" style={{ color: T.mute }}>
+                  Include transactions from this date range (leave blank for all time):
+                </p>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={pdfDateFrom}
+                    onChange={(e) => setPdfDateFrom(e.target.value)}
+                    className="rounded-lg px-2.5 py-1.5 text-xs"
+                    style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, colorScheme: "dark" }}
+                  />
+                  <span className="text-xs" style={{ color: T.mute }}>to</span>
+                  <input
+                    type="date"
+                    value={pdfDateTo}
+                    onChange={(e) => setPdfDateTo(e.target.value)}
+                    className="rounded-lg px-2.5 py-1.5 text-xs"
+                    style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, colorScheme: "dark" }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Analytics opt-in */}
@@ -336,8 +456,8 @@ export default function ProfilePage() {
                 Help improve ESSA
               </h2>
               <p className="text-xs mt-1" style={{ color: T.mute }}>
-                Off by default. If enabled, sends anonymous counts for a handful of named actions (like completing
-                onboarding steps), no third-party tracker, no identity attached, never your financial data.
+                On by default, sends anonymous counts for a handful of named actions (like completing onboarding
+                steps), no third-party tracker, no identity attached, never your financial data. Turn it off anytime.
               </p>
             </div>
             <button
@@ -404,6 +524,10 @@ export default function ProfilePage() {
         </div>
 
       </div>
+
+      {newRecoveryCode && (
+        <RecoveryCodeModal code={newRecoveryCode} onContinue={() => setNewRecoveryCode(null)} />
+      )}
     </div>
   );
 }

@@ -12,7 +12,7 @@ interface ThemeCtx {
 const Ctx = createContext<ThemeCtx | null>(null);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<ThemeKey>("ledger");
+  const [theme, setThemeState] = useState<ThemeKey>("ivory");
 
   useEffect(() => {
     setThemeState(getStoredTheme());
@@ -31,7 +31,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   );
 }
 
-const FALLBACK = THEMES.ledger;
+const FALLBACK = THEMES.ivory;
 
 export function useTheme(): ThemeColors {
   const ctx = useContext(Ctx);

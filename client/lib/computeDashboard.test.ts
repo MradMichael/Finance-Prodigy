@@ -6,7 +6,7 @@ function makeData(overrides: Partial<LocalFinancials> = {}): LocalFinancials {
   return { ...DEFAULT_DATA, ...overrides };
 }
 
-// Pinned mid-month so daysElapsed(15) clears MIN_DAYS_FOR_PROJECTION(5) and
+// Pinned mid-month so daysElapsed(15) clears MIN_DAYS_FOR_PROJECTION(10) and
 // daysInMonth(31, July) gives clean percentages — every test that cares about
 // "now" relies on this unless it explicitly re-pins a different date.
 const NOW = new Date(2026, 6, 15); // July 15, 2026
@@ -144,7 +144,7 @@ describe("budget pace", () => {
   });
 
   it("does not claim a specific dollar overage before MIN_DAYS_FOR_PROJECTION", () => {
-    vi.setSystemTime(new Date(2026, 6, 2)); // July 2 — daysElapsed=2, below the threshold of 5
+    vi.setSystemTime(new Date(2026, 6, 2)); // July 2 — daysElapsed=2, below the threshold of 10
     const data = makeData({
       income: 1000, budgetRule: "50-30-20",
       transactions: [{ id: "t1", amount: 400, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-07-01" }],
@@ -153,6 +153,22 @@ describe("budget pace", () => {
     const needs = result.budgetPace.find((p) => p.bucket === "NEEDS")!;
     expect(needs.status).toBe("watch");
     expect(needs.message).not.toMatch(/\$\d/); // no dollar-figure projection this early
+  });
+
+  it("does not claim a specific dollar overage on day 8 of a 31-day month, even at 90% used (regression: a lightly-used bucket with no recurring floor could previously project a bigger overage than a heavily-used one, purely from the day-8 multiplier)", () => {
+    vi.setSystemTime(new Date(2026, 7, 8)); // Aug 8, 2026 — daysElapsed=8, daysInMonth=31
+    const data = makeData({
+      income: 1000, budgetRule: "50-30-20", // needs target = 500, wants target = 300
+      transactions: [
+        { id: "t1", amount: 450, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-08-01" }, // 90% used
+        { id: "t2", amount: 180, currency: "USD", bucket: "WANTS", description: "Shopping", date: "2026-08-02" }, // 60% used
+      ],
+    });
+    const result = computeDashboard(data);
+    const needs = result.budgetPace.find((p) => p.bucket === "NEEDS")!;
+    const wants = result.budgetPace.find((p) => p.bucket === "WANTS")!;
+    expect(needs.message).not.toMatch(/\$\d/);
+    expect(wants.message).not.toMatch(/\$\d/);
   });
 
   it("does claim a specific dollar overage once past MIN_DAYS_FOR_PROJECTION", () => {

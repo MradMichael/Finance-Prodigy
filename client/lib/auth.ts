@@ -144,11 +144,70 @@ export async function signUp(
   return { ok: true, recoveryCode };
 }
 
+/**
+ * Handles signIn's "no local account for this email" case. Derives the sync
+ * token straight from the entered password (same derivation initSyncToken
+ * uses) and tries a pull with it — the server only accepts a pull whose
+ * token matches what a previous push registered, so a successful pull is
+ * itself proof this is the right password for a real, previously-synced
+ * account. On success, provisions a brand-new local account for this
+ * device (a fresh device always needs its own local DEK envelope; only the
+ * plaintext sync backup is portable) and adopts the pulled data as-is, the
+ * same end state "sign up, then Pull" already produces manually.
+ */
+async function signInFromSync(
+  email: string, password: string,
+): Promise<{ ok: true; session: Session; recoveryCode?: string } | { ok: false; error: string }> {
+  if (!password) return { ok: false, error: "No account found with this email." };
+  const normalizedEmail = email.toLowerCase().trim();
+  const { initSyncToken, createEnvelopes, activateSessionKey } = await import("./crypto");
+  await initSyncToken(password, normalizedEmail);
+  const { pullFromServer } = await import("./syncService");
+  const pulled = await pullFromServer(normalizedEmail);
+  if (!pulled.ok) {
+    return { ok: false, error: "No account found with this email, or the password doesn't match. If you've used ESSA on another device, make sure Database sync was turned on there." };
+  }
+
+  if (!crypto.randomUUID) return { ok: false, error: "This browser doesn't support the security features ESSA needs. Please use an up-to-date browser over HTTPS." };
+  const id = crypto.randomUUID();
+  const [{ wrappedPassword, wrappedRecovery, recoveryCode, dek }, pwHash] = await Promise.all([
+    createEnvelopes(password, id),
+    hashPassword(password),
+  ]);
+  const name = pulled.data.userName || normalizedEmail.split("@")[0];
+  const users = getUsers();
+  putUsers([...users, {
+    id,
+    email:     normalizedEmail,
+    name,
+    pwHash,
+    createdAt: new Date().toISOString(),
+    isAdmin:   users.length === 0,
+    wrappedDekPassword: wrappedPassword,
+    wrappedDekRecovery: wrappedRecovery,
+  }]);
+
+  const session: Session = { userId: id, email: normalizedEmail, name };
+  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  activateSessionKey(dek);
+
+  const { saveData } = await import("./localData");
+  await saveData({ ...pulled.data, userName: name }, id);
+
+  return { ok: true, session, recoveryCode };
+}
+
 export async function signIn(
   email: string, password: string,
 ): Promise<{ ok: true; session: Session; recoveryCode?: string } | { ok: false; error: string }> {
   const user = getUsers().find((u) => u.email === email.toLowerCase().trim());
-  if (!user) return { ok: false, error: "No account found with this email." };
+  // No local account for this email on this device — the common case is a
+  // second device (new phone) for an email that's only ever signed up
+  // elsewhere. There's no local password hash to check yet, but a
+  // successful pull using the password-derived sync token is equally
+  // strong proof the password is correct: a wrong password derives a
+  // different token and the server rejects it. See signInFromSync.
+  if (!user) return signInFromSync(email, password);
 
   let valid: boolean;
   if (user.pwHash.startsWith("pbkdf2:")) {
@@ -204,6 +263,32 @@ export async function signIn(
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
   activateSessionKey(dek);
   return { ok: true, session, recoveryCode };
+}
+
+/**
+ * Issues a fresh recovery code for the CURRENTLY signed-in account, for a
+ * user who lost/never saved the original and wants a new one while they
+ * still know they're safely logged in — not a password reset, and doesn't
+ * need one: it only re-wraps the already-unlocked session DEK under a new
+ * code, using getActiveDek() rather than the plaintext password (which a
+ * normal signed-in session never has lying around to begin with). The
+ * original code cannot be recovered or displayed again by design — it was
+ * never stored anywhere, only used once to derive a wrapping key — so this
+ * is the only way back for someone who's lost it, not a workaround for one.
+ */
+export async function regenerateRecoveryCode(userId: string): Promise<{ ok: true; recoveryCode: string } | { ok: false; error: string }> {
+  const { getActiveDek, rewrapRecoveryOnly, deriveRecoveryToken } = await import("./crypto");
+  const dek = getActiveDek();
+  if (!dek) return { ok: false, error: "Your session isn't fully unlocked. Sign out and back in, then try again." };
+  const user = getUsers().find((u) => u.id === userId);
+  if (!user) return { ok: false, error: "Account not found." };
+
+  const { wrappedRecovery, recoveryCode } = await rewrapRecoveryOnly(dek, userId);
+  const recoveryTokenForSync = await deriveRecoveryToken(recoveryCode, user.email);
+  putUsers(getUsers().map((u) => (u.id === userId
+    ? { ...u, wrappedDekRecovery: wrappedRecovery, recoveryTokenForSync }
+    : u)));
+  return { ok: true, recoveryCode };
 }
 
 /**

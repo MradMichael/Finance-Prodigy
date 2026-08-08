@@ -107,6 +107,24 @@ export async function rewrapEnvelopes(dek: Uint8Array, password: string, userId:
   return { wrappedPassword, wrappedRecovery, recoveryCode };
 }
 
+/**
+ * Re-wraps the CURRENT session's already-unlocked DEK under a freshly
+ * generated recovery code, leaving the password-wrapped side untouched.
+ * For a signed-in user who wants a new recovery code (lost the old one,
+ * or just wants to rotate it) without a full password-reset flow — unlike
+ * rewrapEnvelopes, this never needs the plaintext password at all, which
+ * matters because a normal signed-in session never has it: only the
+ * unlocked DEK lives in sessionStorage after sign-in, never the password
+ * itself. The old recovery code (and the wrappedDekRecovery envelope it
+ * unwraps) stops working the moment this replaces it.
+ */
+export async function rewrapRecoveryOnly(dek: Uint8Array, userId: string): Promise<{ wrappedRecovery: Envelope; recoveryCode: string }> {
+  const recoveryCode = generateRecoveryCode();
+  const kekRecovery = await deriveKek(canonicalizeRecoveryCode(recoveryCode), `essa-recovery-v1-${userId}`);
+  const wrappedRecovery = await wrapDek(dek, kekRecovery);
+  return { wrappedRecovery, recoveryCode };
+}
+
 /** Unwraps the DEK using the password. Returns null if the envelope doesn't match (shouldn't happen if the password was already verified against pwHash). */
 export async function unwrapWithPassword(password: string, userId: string, wrapped: Envelope): Promise<Uint8Array | null> {
   const kek = await deriveKek(password, `essa-kek-v1-${userId}`);
@@ -140,6 +158,14 @@ export function clearEncryptionKey(): void {
 export function hasActiveKey(): boolean {
   try { return sessionStorage.getItem(KEY_STORE) !== null; }
   catch { return false; }
+}
+
+/** The current session's active DEK, if one's unlocked, for callers (like rewrapRecoveryOnly) that need the raw key rather than just a yes/no check. */
+export function getActiveDek(): Uint8Array | null {
+  try {
+    const b64 = sessionStorage.getItem(KEY_STORE);
+    return b64 ? fromB64(b64) : null;
+  } catch { return null; }
 }
 
 /**

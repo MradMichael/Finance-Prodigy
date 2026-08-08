@@ -87,13 +87,13 @@ export const THEMES: Record<ThemeKey, ThemeColors & { name: string; desc: string
 const KEY = "essa_theme";
 
 export function getStoredTheme(): ThemeKey {
-  if (typeof window === "undefined") return "ledger";
+  if (typeof window === "undefined") return "ivory";
   const v = localStorage.getItem(KEY);
-  return (v && v in THEMES) ? v as ThemeKey : "ledger";
+  return (v && v in THEMES) ? v as ThemeKey : "ivory";
 }
 
 export function setStoredTheme(k: ThemeKey) {
   if (typeof window !== "undefined") localStorage.setItem(KEY, k);
 }
 
-export const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem('essa_theme')||'ledger';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();`;
+export const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem('essa_theme')||'ivory';document.documentElement.setAttribute('data-theme',t);}catch(e){}})();`;

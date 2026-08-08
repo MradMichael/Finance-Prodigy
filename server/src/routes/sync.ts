@@ -9,6 +9,41 @@ import { emailSchema, tokenSchema } from "../lib/validation";
 
 const router = Router();
 
+/**
+ * Neon's pooled connection can intermittently fail to establish the
+ * dedicated backend an interactive transaction needs — observed directly
+ * against this project's own pooler in two different shapes: a connection-
+ * level PrismaClientInitializationError ("Can't reach database server"),
+ * and P2028 ("Transaction API error: Unable to start a transaction in the
+ * given time") once the pooler is under real load. Both are infrastructure
+ * flakiness, separate from and far more often than a genuine P2034 write
+ * conflict (which already has its own 409 contract below and is
+ * deliberately NOT retried here, since that's a real conflict the client
+ * should decide whether to retry). A short bounded retry keeps a routine
+ * push/relink from failing outright on a blip that a fraction of a second
+ * would have resolved on its own.
+ */
+function isRetryableTransactionError(err: unknown): boolean {
+  if (err instanceof Prisma.PrismaClientInitializationError) return true;
+  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2028") return true;
+  return false;
+}
+
+async function withTransactionRetry<T>(fn: () => Promise<T>): Promise<T> {
+  const MAX_ATTEMPTS = 3;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (isRetryableTransactionError(err) && attempt < MAX_ATTEMPTS) {
+        await new Promise((r) => setTimeout(r, 250 * attempt));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 // `data` is the client's LocalFinancials blob — its exact shape is
 // intentionally NOT modeled here (that would couple this route to every
 // field the client ever adds/changes, for a JSON store that's supposed to
@@ -92,7 +127,7 @@ router.post("/push", async (req, res, next) => {
     // one of two conflicting transactions instead.
     let syncedAt: Date;
     try {
-      syncedAt = await prisma.$transaction(async (tx) => {
+      syncedAt = await withTransactionRetry(() => prisma.$transaction(async (tx) => {
         const existing = await tx.userSync.findUnique({ where: { email: normalizedEmail } });
         if (existing?.authTokenHash && !hashesEqual(existing.authTokenHash, tokenHash)) {
           throw new SyncAuthError();
@@ -107,7 +142,7 @@ router.post("/push", async (req, res, next) => {
           update: { dataJson, syncedAt: now, authTokenHash: tokenHash, ...(recoveryTokenHash ? { recoveryTokenHash } : {}) },
         });
         return now;
-      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
     } catch (err) {
       if (err instanceof SyncAuthError) {
         return res.status(401).json({ error: "Invalid sync credentials for this account." });
@@ -168,7 +203,7 @@ router.post("/relink", async (req, res, next) => {
     const recoveryTokenHash = hashToken(recoveryToken);
 
     try {
-      await prisma.$transaction(async (tx) => {
+      await withTransactionRetry(() => prisma.$transaction(async (tx) => {
         const existing = await tx.userSync.findUnique({ where: { email } });
 
         if (!existing || (!existing.authTokenHash && !existing.recoveryTokenHash)) {
@@ -197,7 +232,7 @@ router.post("/relink", async (req, res, next) => {
           where: { email },
           data: { authTokenHash: tokenHash, recoveryTokenHash },
         });
-      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
     } catch (err) {
       if (err instanceof SyncAuthError) {
         return res.status(401).json({ error: "Could not verify ownership of this account's sync data." });

@@ -69,9 +69,17 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
   );
 }
 
-function Row({ label, value, mono = false, sensitive = false }: { label: string; value: React.ReactNode; mono?: boolean; sensitive?: boolean }) {
+function Row({ label, value, mono = false, sensitive = false, copyable = false }: { label: string; value: React.ReactNode; mono?: boolean; sensitive?: boolean; copyable?: boolean }) {
   const T = useTheme();
   const [revealed, setRevealed] = useState(false);
+  const [copied, setCopied] = useState(false);
+  function copy() {
+    if (typeof value !== "string") return;
+    navigator.clipboard?.writeText(value).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }
   return (
     <div className="flex items-start justify-between gap-4 py-2.5" style={{ borderBottom: `1px solid ${T.line}` }}>
       <span className="text-sm flex-shrink-0" style={{ color: T.mute }}>{label}</span>
@@ -96,6 +104,15 @@ function Row({ label, value, mono = false, sensitive = false }: { label: string;
             style={{ color: T.mute, border: `1px solid ${T.line}` }}
           >
             {revealed ? "hide" : "show"}
+          </button>
+        )}
+        {copyable && typeof value === "string" && (
+          <button
+            onClick={copy}
+            className="text-[10px] px-2 py-1 rounded-lg flex-shrink-0 transition-opacity hover:opacity-70"
+            style={{ color: T.mute, border: `1px solid ${T.line}` }}
+          >
+            {copied ? "copied ✓" : "copy"}
           </button>
         )}
       </div>
@@ -242,8 +259,8 @@ function AdminPageContent() {
 
           <div className="space-y-0" style={{ borderTop: `1px solid ${T.line}` }}>
             <Row label="API base URL" value="/api (proxied, see API_URL in client/.env)" mono />
-            <Row label="Health endpoint" value={`${API}/api/health`} mono />
-            <Row label="Sync push" value={`POST ${API}/api/sync/push`} mono />
+            <Row label="Health endpoint" value={`${API}/api/health`} mono copyable />
+            <Row label="Sync push" value={`POST ${API}/api/sync/push`} mono copyable />
             <Row label="Sync pull" value={`GET ${API}/api/sync/pull?email=…`} mono />
           </div>
 
@@ -273,15 +290,29 @@ function AdminPageContent() {
             <Row label="Provider" value="Neon (Postgres 16)" />
             <Row label="Database" value="neondb" mono />
             <Row label="Auth" value="Password (in connection string)" />
-            <Row label="Pooled connection string" value={maskedUrl} mono sensitive />
+            <Row label="Pooled connection string" value={maskedUrl} mono sensitive copyable />
             <Row label="Migrations" value="Run against DIRECT_URL. Neon's pooler doesn't support the prepared statements Prisma Migrate needs" />
+            <Row label="Push/relink retries" value="Up to 3 attempts on a transaction connection blip, ~250-750ms apart" />
           </div>
           <div className="rounded-xl p-4 space-y-2 text-xs" style={{ background: T.panelSoft, color: T.mute }}>
             <p className="font-semibold" style={{ color: T.text }}>Common database issues</p>
             <p><span style={{ color: T.brass }}>•</span> <strong style={{ color: T.text }}>Connection refused / project suspended:</strong> Neon&apos;s free tier suspends idle compute after inactivity; the first request after a while wakes it up and can take a few seconds.</p>
+            <p><span style={{ color: T.brass }}>•</span> <strong style={{ color: T.text }}>Push/relink fails with &quot;something went wrong on our side&quot;:</strong> Neon&apos;s pooler can intermittently fail to open the dedicated connection an interactive transaction needs, especially under bursty load (PrismaClientInitializationError or P2028). The server already retries this automatically up to 3 times; a failure after that means it genuinely couldn&apos;t get a connection in time, try again in a few seconds.</p>
             <p><span style={{ color: T.brass }}>•</span> <strong style={{ color: T.text }}>Migration fails with a prepared-statement error:</strong> Make sure <code className="px-1 py-0.5 rounded" style={{ background: T.ink, color: T.jade }}>DIRECT_URL</code> in <code className="px-1 py-0.5 rounded" style={{ background: T.ink, color: T.jade }}>server/.env</code> points at the non-pooled host (no <code className="px-1 py-0.5 rounded" style={{ background: T.ink, color: T.jade }}>-pooler</code> in the hostname).</p>
             <p><span style={{ color: T.brass }}>•</span> <strong style={{ color: T.text }}>Prisma error:</strong> Run <code className="px-1 py-0.5 rounded" style={{ background: T.ink, color: T.jade }}>npx prisma migrate deploy</code> in the server folder to apply any pending migrations.</p>
           </div>
+        </Card>
+
+        {/* Rate limits */}
+        <Card title="Rate limits">
+          <div className="space-y-0" style={{ borderTop: `1px solid ${T.line}` }}>
+            <Row label="/api/sync/*" value="100 requests / 15 min / IP" />
+            <Row label="/api/auth/check-email" value="30 requests / 15 min / IP" />
+            <Row label="/api/events" value="30 requests / 15 min / IP" />
+          </div>
+          <p className="text-[11px]" style={{ color: T.mute }}>
+            Each route has its own limiter (keyed by IP), so heavy use of one never eats into another&apos;s budget. A 429 response means this IP hit its window; it resets on a rolling basis, not a fixed clock.
+          </p>
         </Card>
 
         {/* Sync status */}
