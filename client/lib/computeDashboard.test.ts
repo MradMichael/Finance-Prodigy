@@ -80,6 +80,7 @@ describe("net worth tiers", () => {
   const cases: { assets: number; debtBalance: number; expectedTier: string; expectedColor: string }[] = [
     { assets: 0, debtBalance: 25000, expectedTier: "Heavy debt load", expectedColor: "coral" },
     { assets: 0, debtBalance: 10000, expectedTier: "Rebuilding", expectedColor: "coral" },
+    { assets: 200, debtBalance: 2000, expectedTier: "Closing the gap", expectedColor: "brass" },
     { assets: 4000, debtBalance: 5000, expectedTier: "Almost positive", expectedColor: "brass" },
     { assets: 3000, debtBalance: 0, expectedTier: "Breaking even", expectedColor: "brass" },
     { assets: 10000, debtBalance: 0, expectedTier: "Foundation builder", expectedColor: "jade" },

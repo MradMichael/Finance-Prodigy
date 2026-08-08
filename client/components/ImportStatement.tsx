@@ -78,12 +78,12 @@ export default function ImportStatement({
       const result = parseNeoStatement(items);
 
       if (result.noRowsFound) {
-        setError("Couldn't find any purchases in this file — is it a Neo by Bank Audi statement?");
+        setError("Couldn't find any purchases in this file. Is it a Neo by Bank Audi statement?");
         setStep("error");
         return;
       }
       if (result.transactions.length === 0) {
-        setError("This statement parsed fine, but it has no purchases to import for this period — nothing to do here.");
+        setError("This statement parsed fine, but it has no purchases to import for this period. Nothing to do here.");
         setStep("error");
         return;
       }
@@ -100,9 +100,9 @@ export default function ImportStatement({
     } catch (e) {
       if (cancelledRef.current || e instanceof CancelledError) return;
       if (e instanceof TooManyPagesError) {
-        setError("This PDF is too long to be a bank statement — double-check it's the right file.");
+        setError("This PDF is too long to be a bank statement. Double-check it's the right file.");
       } else if (e instanceof LoadTimeoutError) {
-        setError("This file took too long to open — it may be corrupted. Try re-exporting the statement PDF and uploading it again.");
+        setError("This file took too long to open. It may be corrupted. Try re-exporting the statement PDF and uploading it again.");
       } else {
         setError("Couldn't read this PDF. Make sure it's a real statement file, not a scanned image.");
       }
@@ -210,7 +210,7 @@ export default function ImportStatement({
         {step === "pick" && (
           <div className="text-center py-10">
             <p className="text-xs mb-4" style={{ color: T.mute }}>
-              Upload a PDF statement — everything is parsed in your browser, the file never leaves your device.
+              Upload a PDF statement. Everything is parsed in your browser, the file never leaves your device.
             </p>
             <label
               className="inline-block px-5 py-3 rounded-xl text-sm font-semibold cursor-pointer transition-all hover:opacity-90"
@@ -242,7 +242,7 @@ export default function ImportStatement({
           <div className="space-y-4">
             <p className="text-xs" style={{ color: T.mute }}>
               Which card/account should these {rows.length} purchases be logged against?
-              {skippedTransferCount > 0 && ` (${skippedTransferCount} account top-up transfer${skippedTransferCount === 1 ? "" : "s"} skipped — not spending.)`}
+              {skippedTransferCount > 0 && ` (${skippedTransferCount} account top-up transfer${skippedTransferCount === 1 ? "" : "s"} skipped, not spending.)`}
             </p>
             {financials.cards.length > 0 && (
               <div>
@@ -282,7 +282,7 @@ export default function ImportStatement({
             <p className="text-xs" style={{ color: T.mute }}>
               {includedCount} of {rows.length} selected.
               {unmatchedRefundCount > 0 && ` ${unmatchedRefundCount} refund${unmatchedRefundCount === 1 ? "" : "s"} in this statement had no matching purchase to net against, so ${unmatchedRefundCount === 1 ? "it wasn't" : "they weren't"} imported.`}
-              {unparsedAmountCount > 0 && ` ${unparsedAmountCount} row${unparsedAmountCount === 1 ? "" : "s"} had an amount in an unexpected format and couldn't be read — check the statement for anything missing.`}
+              {unparsedAmountCount > 0 && ` ${unparsedAmountCount} row${unparsedAmountCount === 1 ? "" : "s"} had an amount in an unexpected format and couldn't be read. Check the statement for anything missing.`}
             </p>
 
             <div className="space-y-2 max-h-96 overflow-y-auto">
@@ -300,11 +300,11 @@ export default function ImportStatement({
                     <div className="flex-1 space-y-2">
                       {r.isDuplicate && (
                         <p className="text-[10px] font-semibold" style={{ color: T.coral }}>
-                          Possible duplicate — same date, amount, and description as a transaction you already have. Left unchecked; check the box above if it&apos;s actually a separate purchase.
+                          Possible duplicate: same date, amount, and description as a transaction you already have. Left unchecked; check the box above if it&apos;s actually a separate purchase.
                         </p>
                       )}
                       {r.include && !isRowValid(r) && (
-                        <p className="text-[10px] font-semibold" style={{ color: T.coral }}>Enter a valid amount — this row won&apos;t be imported as-is.</p>
+                        <p className="text-[10px] font-semibold" style={{ color: T.coral }}>Enter a valid amount. This row won&apos;t be imported as-is.</p>
                       )}
                       <div className="grid grid-cols-[1fr_auto] gap-2 items-center">
                         <FocusInput value={r.description} onChange={(e) => updateRow(r.key, { description: e.target.value })} />

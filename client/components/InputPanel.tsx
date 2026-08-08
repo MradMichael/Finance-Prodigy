@@ -648,7 +648,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                   placeholder="Who paid or how? e.g. Dad filled gas tank"
                 />
                 <p className="text-[10px] px-1" style={{ color: T.mute }}>
-                  Still counted in your budget — you consumed the expense.
+                  Still counted in your budget. You consumed the expense.
                 </p>
               </div>
             )}
@@ -1547,7 +1547,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                         <p className="text-[10px]" style={{ color: T.mute }}>
                           Balance after: ${Math.max(0, d.balance - (parseFloat(debtPayAmt.replace(/,/g, "")) || 0)).toLocaleString()}
                           {parseFloat(debtPayAmt.replace(/,/g, "")) >= d.balance && (
-                            <span style={{ color: T.jade }}> — fully paid off 🏁</span>
+                            <span style={{ color: T.jade }}>, fully paid off 🏁</span>
                           )}
                         </p>
                       </div>
@@ -1584,7 +1584,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
               </div>
             </div>
             <div>
-              <Label htmlFor="new-debt-opened">Opened date (optional — when this debt started)</Label>
+              <Label htmlFor="new-debt-opened">Opened date (optional: when this debt started)</Label>
               <DateFieldDMY id="new-debt-opened" value={dOpenedDate} onChange={setDOpenedDate} />
             </div>
             <PrimaryBtn onClick={addDebt} color={T.coral}>+ Add debt</PrimaryBtn>
@@ -1593,7 +1593,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
 
         <Section title="Other Assets" icon="🏦" badge={(financials.assets ?? []).length} defaultOpen={false}>
           <p className="text-xs" style={{ color: T.mute }}>
-            Anything besides goals and your emergency fund — a car, a brokerage account, crypto. Counted toward net worth.
+            Anything besides goals and your emergency fund: a car, a brokerage account, crypto. Counted toward net worth.
           </p>
           {(financials.assets ?? []).length > 0 && (
             <div className="space-y-2">
@@ -1644,9 +1644,9 @@ export default function InputPanel({ financials, onChange, session }: Props) {
         <Section title="Balance Check" icon="🔍" badge={(financials.trackedBalances ?? []).length} defaultOpen={false}>
           <p className="text-xs" style={{ color: T.mute }}>
             Set a starting balance for your cash or a card. ESSA subtracts every transaction logged on that payment
-            method since then to tell you what you <em>should</em> have — compare it to what you actually see, and a
+            method since then to tell you what you <em>should</em> have. Compare it to what you actually see, and a
             gap usually means a payment never got logged. (Debt payments and recurring charges without an &quot;+extra&quot;
-            log won&apos;t show up here — a known limit, not a bug.)
+            log won&apos;t show up here: a known limit, not a bug.)
           </p>
           {(financials.trackedBalances ?? []).length > 0 && (
             <div className="space-y-2">
@@ -1728,7 +1728,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
               <div>
                 <Label htmlFor="new-tb-card">Which card</Label>
                 {financials.cards.length === 0 ? (
-                  <p className="text-xs" style={{ color: T.coral }}>No saved cards yet — add one when logging a transaction first.</p>
+                  <p className="text-xs" style={{ color: T.coral }}>No saved cards yet. Add one when logging a transaction first.</p>
                 ) : (
                   <select
                     id="new-tb-card"

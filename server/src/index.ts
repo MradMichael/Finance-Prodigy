@@ -45,7 +45,7 @@ const syncLimiter = rateLimit({
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: "Too many sync requests — please wait a few minutes and try again." },
+  message: { error: "Too many sync requests. Please wait a few minutes and try again." },
 });
 app.use("/api/sync", syncLimiter, sync);
 
@@ -58,7 +58,7 @@ const authLimiter = rateLimit({
   limit: 30,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: "Too many requests — please wait a few minutes and try again." },
+  message: { error: "Too many requests. Please wait a few minutes and try again." },
 });
 app.use("/api/auth", authLimiter, auth);
 
@@ -73,7 +73,7 @@ const eventsLimiter = rateLimit({
   limit: 30,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: "Too many requests — please wait a few minutes and try again." },
+  message: { error: "Too many requests. Please wait a few minutes and try again." },
 });
 app.use("/api/events", eventsLimiter, events);
 
@@ -89,7 +89,7 @@ app.use((err: unknown, req: express.Request, res: express.Response, _next: expre
     return res.status(400).json({ error: "Malformed JSON in request body." });
   }
   logger.error("unhandled_request_error", err, { method: req.method, path: req.path });
-  res.status(500).json({ error: "Something went wrong on our side — your data is safe." });
+  res.status(500).json({ error: "Something went wrong on our side. Your data is safe." });
 });
 
 const PORT = Number(process.env.PORT ?? 4000);

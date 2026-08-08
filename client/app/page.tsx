@@ -10,16 +10,17 @@ import DebtsScreen from "../components/screens/DebtsScreen";
 import BudgetScreen from "../components/screens/BudgetScreen";
 import SetupScreen from "../components/screens/SetupScreen";
 import RecurringScreen from "../components/screens/RecurringScreen";
+import ProjectionsScreen from "../components/screens/ProjectionsScreen";
 import Sidebar from "../components/shell/Sidebar";
 import BottomNav from "../components/shell/BottomNav";
 import TopBar from "../components/shell/TopBar";
 import type { Screen, SyncStatus } from "../components/screens/shared";
-import { loadData, saveData } from "../lib/localData";
+import { loadData, saveData, isEmptyFinancials } from "../lib/localData";
 import type { LocalFinancials } from "../lib/localData";
 import { computeDashboard } from "../lib/computeDashboard";
 import { getSession, hasValidSession, signOut } from "../lib/auth";
 import type { Session } from "../lib/auth";
-import { pushToServer } from "../lib/syncService";
+import { pushToServer, pullFromServer, hasAutoPulled, markAutoPulled } from "../lib/syncService";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "../components/EssaBrand";
 
@@ -62,7 +63,23 @@ export default function Home() {
       return;
     }
     setSession(s);
-    loadData(s.userId).then((data) => {
+    loadData(s.userId).then(async (data) => {
+      // A brand-new local account (fresh sign-up, or a fresh browser/device)
+      // has nothing to lose, so it's safe to silently try restoring it from
+      // the server once — covers "signed up on my phone with the same
+      // email, why isn't my data there" without ever risking a real local
+      // edit being overwritten (isEmptyFinancials gates that; the
+      // hasAutoPulled flag makes it a one-time attempt, not a retry loop).
+      if (isEmptyFinancials(data) && !hasAutoPulled(s.userId)) {
+        markAutoPulled(s.userId);
+        const result = await pullFromServer(s.email);
+        if (result.ok && !isEmptyFinancials(result.data)) {
+          const pulled = { ...result.data, userName: s.name };
+          await saveData(pulled, s.userId);
+          setFinancials(pulled);
+          return;
+        }
+      }
       setFinancials({ ...data, userName: s.name });
     });
   }, [router]);
@@ -175,6 +192,7 @@ export default function Home() {
           {screen === "goals"        && <GoalsScreen dashData={dashboardData} financials={financials} onChange={handleChange} />}
           {screen === "debts"        && <DebtsScreen financials={financials} dashData={dashboardData} />}
           {screen === "recurring"    && <RecurringScreen financials={financials} />}
+          {screen === "projections"  && <ProjectionsScreen financials={financials} dashData={dashboardData} />}
         </div>
 
       </div>

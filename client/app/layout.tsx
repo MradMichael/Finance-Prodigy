@@ -4,8 +4,8 @@ import { ThemeProvider } from "../contexts/ThemeContext";
 import { THEME_SCRIPT } from "../lib/theme";
 
 export const metadata: Metadata = {
-  title: "ESSA — Earn Spend Save Achieve",
-  description: "Earn Spend Save Achieve — your financial command center",
+  title: "ESSA: Earn Spend Save Achieve",
+  description: "Earn Spend Save Achieve: your financial command center",
   manifest: "/manifest.webmanifest",
   icons: { apple: "/apple-touch-icon.png" },
 };

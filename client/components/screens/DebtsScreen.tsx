@@ -71,7 +71,7 @@ export default function DebtsScreen({ financials, dashData }: { financials: Loca
                 </div>
                 {dashData.debt.comparison.avalancheSavesVsSnowball > 0 && (
                   <p className="text-xs mt-4" style={{ color: T.jade }}>
-                    Avalanche saves {money(dashData.debt.comparison.avalancheSavesVsSnowball)} in interest over Snowball on this debt load — the tradeoff is fewer quick wins along the way.
+                    Avalanche saves {money(dashData.debt.comparison.avalancheSavesVsSnowball)} in interest over Snowball on this debt load. The tradeoff is fewer quick wins along the way.
                   </p>
                 )}
               </div>

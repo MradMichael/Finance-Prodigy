@@ -38,7 +38,7 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 // fixed in localData.ts's nextOccurrence: a naive d.setMonth(d.getMonth()+1)
 // on Jan 31 lands on March 3 (Feb only has 28/29 days), which would show a
 // debt-free date a full month later than it actually is.
-function addMonths(date: Date, months: number): Date {
+export function addMonths(date: Date, months: number): Date {
   const targetDay = date.getDate();
   const candidate = new Date(date.getFullYear(), date.getMonth() + months, 1);
   const daysInTargetMonth = new Date(candidate.getFullYear(), candidate.getMonth() + 1, 0).getDate();
@@ -79,7 +79,7 @@ function runSimulation(
   if (monthlyCommitment <= firstInterest) {
     return {
       ...base, feasible: false, months: -1, debtFreeDate: null,
-      warning: "Current payments don't cover monthly interest — balances would grow.",
+      warning: "Current payments don't cover monthly interest. Balances would grow.",
     };
   }
 
@@ -142,7 +142,7 @@ function runSimulation(
   if (live.some((d) => d.balance > 0)) {
     return {
       ...base, feasible: false, months: -1, debtFreeDate: null,
-      warning: "This payment amount is too slow to project a payoff date within 50 years — try increasing the monthly commitment.",
+      warning: "This payment amount is too slow to project a payoff date within 50 years. Try increasing the monthly commitment.",
     };
   }
 

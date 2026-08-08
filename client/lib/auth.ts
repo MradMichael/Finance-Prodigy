@@ -226,7 +226,7 @@ export async function recoverAccount(
   const user = getUsers().find((u) => u.email === email.toLowerCase().trim());
   if (!user) return { ok: false, error: "No account found with this email." };
   if (!user.wrappedDekRecovery) {
-    return { ok: false, error: "Recovery isn't set up for this account yet — it needs one successful sign-in first." };
+    return { ok: false, error: "Recovery isn't set up for this account yet. It needs one successful sign-in first." };
   }
 
   const { unwrapWithRecoveryCode, rewrapEnvelopes, activateSessionKey, initSyncToken, deriveRecoveryToken } = await import("./crypto");

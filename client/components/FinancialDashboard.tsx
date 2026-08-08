@@ -56,9 +56,9 @@ const MOCK: DashboardPayload = {
     ],
   },
   encouragements: [
-    "Your safety net is 52% built. Past halfway — the rest is downhill.",
-    "Stay the course and you're debt-free by 14-09-2028 — the date is already on the calendar.",
-    "30 Before 30 Travel Fund is on pace — 31% there.",
+    "Your safety net is 52% built. Past halfway, the rest is downhill.",
+    "Stay the course and you're debt-free by 14-09-2028. The date is already on the calendar.",
+    "30 Before 30 Travel Fund is on pace: 31% there.",
   ],
   streaks: [{ key: "savings-streak", label: "Savings streak", count: 3, message: "🔥 3 months in a row hitting your savings target." }],
   month: { income: 3500, needsSpend: 1640, wantsSpend: 710, savingsContrib: 480, totalSpend: 2830, netCashFlow: 670, savingsRatePct: 13.7 },
@@ -107,7 +107,7 @@ const MOCK: DashboardPayload = {
     assets: 6620, liabilities: 13260, total: -6640,
     tier: "Rebuilding", tierColor: "coral",
     suggestions: [
-      "You're climbing — the negative number is shrinking each month.",
+      "You're climbing: the negative number is shrinking each month.",
       "Consider a small side income for 3–6 months; even $200/month accelerates this significantly.",
       "Once you clear the debt, redirect that minimum payment into savings automatically.",
     ],
@@ -179,7 +179,7 @@ function BucketRow({ label, actual, target, color }: { label: string; actual: nu
       </div>
       <Bar pct={pct} color={pct > 100 ? T.coral : color} />
       <p className="text-xs mt-1" style={{ color: headroom >= 0 ? T.mute : T.coral }}>
-        {headroom >= 0 ? `${money(headroom)} of room left` : `${money(-headroom)} over — next month resets the line`}
+        {headroom >= 0 ? `${money(headroom)} of room left` : `${money(-headroom)} over. Next month resets the line`}
       </p>
     </div>
   );
@@ -238,7 +238,7 @@ export default function FinancialDashboard({
               {month.income === 0
                 ? <>Set your income to see the full picture, {user.name.split(" ")[0]}.</>
                 : month.netCashFlow >= month.income * 0.2
-                ? <>{user.name.split(" ")[0]}, you kept <span style={{ color: T.jade }}>{money(month.netCashFlow)}</span> — above your 20% target.</>
+                ? <>{user.name.split(" ")[0]}, you kept <span style={{ color: T.jade }}>{money(month.netCashFlow)}</span>, above your 20% target.</>
                 : month.netCashFlow > 0
                 ? <>You kept <span style={{ color: T.brass }}>{money(month.netCashFlow)}</span> this month, {user.name.split(" ")[0]}. Every dollar counts.</>
                 : <>Spending exceeded income by <span style={{ color: T.coral }}>{money(-month.netCashFlow)}</span> this month, {user.name.split(" ")[0]}. The plan below shows the path.</>}
@@ -246,7 +246,7 @@ export default function FinancialDashboard({
           </div>
           {demo && (
             <span className="text-xs px-3 py-1 rounded-full" style={{ border: `1px solid ${T.line}`, color: T.mute }}>
-              demo data — API offline
+              demo data, API offline
             </span>
           )}
         </header>
@@ -321,7 +321,7 @@ export default function FinancialDashboard({
                     expected {money(b.expected)} · you said {money(b.actual as number)}
                     {mismatch && (
                       <span style={{ color: T.coral }}>
-                        {" · "}{gap < 0 ? `$${Math.abs(gap).toFixed(0)} unaccounted for — check for a missed entry` : `$${gap.toFixed(0)} more than expected`}
+                        {" · "}{gap < 0 ? `$${Math.abs(gap).toFixed(0)} unaccounted for, check for a missed entry` : `$${gap.toFixed(0)} more than expected`}
                       </span>
                     )}
                   </span>
@@ -448,7 +448,7 @@ export default function FinancialDashboard({
             </div>
             <div className="mt-3"><Bar pct={ef.pctFunded} color={T.jade} /></div>
             <p className="text-xs mt-3" style={{ color: T.mute }}>
-              {money(ef.balance)} banked · {ef.remaining > 0 ? `${money(ef.remaining)} to a fully funded net` : "fully funded — exhale"}
+              {money(ef.balance)} banked · {ef.remaining > 0 ? `${money(ef.remaining)} to a fully funded net` : "fully funded, exhale"}
             </p>
           </Panel>
         </div>
@@ -538,7 +538,7 @@ export default function FinancialDashboard({
               </div>
             ))}
             {goals.length === 0 && (
-              <p className="text-sm" style={{ color: T.mute }}>An empty canvas — add your first milestone and the math starts working for you.</p>
+              <p className="text-sm" style={{ color: T.mute }}>An empty canvas. Add your first milestone and the math starts working for you.</p>
             )}
           </div>
         </Panel>

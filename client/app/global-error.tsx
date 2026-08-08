@@ -21,7 +21,7 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
             <div style={{ fontSize: 40, marginBottom: 16 }}>⚠️</div>
             <h1 style={{ fontSize: 20, marginBottom: 8 }}>Something went wrong</h1>
             <p style={{ fontSize: 14, opacity: 0.7, marginBottom: 20 }}>
-              Your financial data is safe — it lives in your browser, not on this screen. Try reloading the page.
+              Your financial data is safe. It lives in your browser, not on this screen. Try reloading the page.
             </p>
             <button
               onClick={reset}

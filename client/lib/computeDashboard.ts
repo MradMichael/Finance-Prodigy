@@ -77,7 +77,7 @@ export interface DashboardPayload {
   };
 }
 
-function dateFmt(d: Date) {
+export function dateFmt(d: Date) {
   return `${String(d.getDate()).padStart(2, "0")}-${String(d.getMonth() + 1).padStart(2, "0")}-${d.getFullYear()}`;
 }
 
@@ -164,7 +164,15 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   const needsPct = needsSpend / incomeSafe;
   const needsScore = needsPct <= targetNeedsPct ? 100 : Math.max(0, 100 - (needsPct - targetNeedsPct) * 400);
 
-  const efMonthlyBase = needsSpend || income * 0.5;
+  // Uses the BUDGETED needs allocation (income × needs%), not this month's
+  // partial actual spend — needsSpend only reflects however many days have
+  // elapsed so far (understating a typical month early on, or overstating
+  // it once a lump-sum recurring bill lands — the same "partial month"
+  // issue fixed in budgetPace below), so "how many months does my
+  // emergency fund cover" would otherwise shift day to day for reasons
+  // that have nothing to do with the fund itself. Falls back to the old
+  // logic only when there's no income yet to budget against.
+  const efMonthlyBase = income > 0 ? income * targetNeedsPct : (needsSpend || income * 0.5);
   const efTarget  = data.emergencyFundTargetMonths * efMonthlyBase;
   const efBalance = data.emergencyFundBalance;
   const efPct     = efTarget > 0 ? Math.min(100, (efBalance / efTarget) * 100) : 0;
@@ -202,25 +210,25 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   // ── Encouragements ───────────────────────────────────────────────
   const enc: string[] = [];
   if (data.income === 0) {
-    enc.push("Set your monthly income in the panel — that one number unlocks everything else.");
+    enc.push("Set your monthly income in the panel. That one number unlocks everything else.");
   } else if (savingsRatePct >= 20) {
-    enc.push(`${savingsRatePct.toFixed(1)}% savings rate — you've cleared the 20% bar. Every extra dollar is compounding quietly in the background.`);
+    enc.push(`${savingsRatePct.toFixed(1)}% savings rate: you've cleared the 20% bar. Every extra dollar is compounding quietly in the background.`);
   } else if (savingsRatePct >= 10) {
-    enc.push(`Saving ${savingsRatePct.toFixed(1)}% this month. You're ${(20 - savingsRatePct).toFixed(1)} points from the ideal 20% — closer than you think.`);
+    enc.push(`Saving ${savingsRatePct.toFixed(1)}% this month. You're ${(20 - savingsRatePct).toFixed(1)} points from the ideal 20%, closer than you think.`);
   } else if (savingsRatePct > 0) {
     enc.push(`${savingsRatePct.toFixed(1)}% saved this month. Small, but it's real. The habit matters more than the amount right now.`);
   }
   if (efPct >= 100) {
-    enc.push("Emergency fund fully funded — you've built the buffer that lets you take smart risks.");
+    enc.push("Emergency fund fully funded. You've built the buffer that lets you take smart risks.");
   } else if (efPct >= 50) {
-    enc.push(`Safety net is ${Math.round(efPct)}% built. Past halfway — the hard part is behind you.`);
+    enc.push(`Safety net is ${Math.round(efPct)}% built and past halfway. The hard part is behind you.`);
   } else if (efPct > 0) {
     enc.push(`Emergency fund at ${Math.round(efPct)}%. Even a partial buffer changes how you handle surprises.`);
   }
   if (data.debts.length === 0 && data.income > 0) {
     enc.push("Zero debts. Every dollar you earn goes to your future, not your past.");
   } else if (debtPressurePct > 0.25) {
-    enc.push(`Debt payments are ${Math.round(debtPressurePct * 100)}% of income — a priority worth attacking. Add extra payments in the debt section to see the timeline shrink.`);
+    enc.push(`Debt payments are ${Math.round(debtPressurePct * 100)}% of income, a priority worth attacking. Add extra payments in the debt section to see the timeline shrink.`);
   }
   if (enc.length === 0) {
     enc.push("Log your first transaction below. The picture sharpens quickly once data starts flowing in.");
@@ -254,7 +262,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
         avalancheSavesVsSnowball: Math.round((snowball.totalInterest - avalanche.totalInterest) * 100) / 100,
       };
     } else {
-      debtPlan = { feasible: false, months: 0, debtFreeDateDisplay: null, totalInterest: 0, monthlyCommitment: 0, warning: "Monthly income is fully consumed by needs and wants — try trimming wants to free up cash for debt." };
+      debtPlan = { feasible: false, months: 0, debtFreeDateDisplay: null, totalInterest: 0, monthlyCommitment: 0, warning: "Monthly income is fully consumed by needs and wants. Try trimming wants to free up cash for debt." };
     }
   }
 
@@ -299,39 +307,47 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     {
       max: -20000, tier: "Heavy debt load", tierColor: "coral",
       suggestions: [
-        "Target the highest-APR debt first — that's where interest is burning fastest.",
+        "Target the highest-APR debt first: that's where interest is burning fastest.",
         "Every dollar above the minimum payment is money that stops compounding against you.",
-        "Even $50 extra per month cuts months off your payoff date — run the numbers in Debts.",
+        "Even $50 extra per month cuts months off your payoff date. Run the numbers in Debts.",
       ],
     },
     {
       max: -5000, tier: "Rebuilding", tierColor: "coral",
       suggestions: [
-        "You're climbing — the negative number is shrinking each month.",
+        "You're climbing: the negative number is shrinking each month.",
         "Consider a small side income for 3–6 months; even $200/month accelerates this significantly.",
         "Once you clear the debt, redirect that minimum payment into savings automatically.",
       ],
     },
     {
+      max: -1500, tier: "Closing the gap", tierColor: "brass",
+      suggestions: [
+        "You're within reach of zero. A few focused months can get you there.",
+        "Direct any extra income straight at your smallest remaining debt to build momentum.",
+        "You've already cut the deficit a lot. This is the home stretch, not the starting line.",
+      ],
+    },
+    {
       max: 0, tier: "Almost positive", tierColor: "brass",
       suggestions: [
-        "You're close to zero — that milestone shifts your psychology entirely.",
+        "You're close to zero: that milestone shifts your psychology entirely.",
         "Focus on one debt at a time to cross into positive territory fast.",
-        "Celebrate each debt closed — that freed cash is your first wealth-building tool.",
+        "Celebrate each debt closed: that freed cash is your first wealth-building tool.",
       ],
     },
     {
       max: 5000, tier: "Breaking even", tierColor: "brass",
       suggestions: [
         "Your liabilities are covered. Now every dollar saved is pure net worth growth.",
-        "Start or grow your emergency fund — it's your first true asset.",
+        "Start or grow your emergency fund: it's your first true asset.",
         "Set a goal to hit $5,000 in savings; that buffer changes how you handle surprises.",
       ],
     },
     {
       max: 25000, tier: "Foundation builder", tierColor: "jade",
       suggestions: [
-        "You're ahead of most people your age — keep the momentum going.",
+        "You're ahead of most people your age. Keep the momentum going.",
         "Compound growth starts to matter here. Even modest returns on $10K make a difference.",
         "Consider diversifying: savings, goals, and if applicable, low-risk investments.",
       ],
@@ -339,7 +355,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     {
       max: 100000, tier: "Growing wealth", tierColor: "jade",
       suggestions: [
-        "Significant position — you have real financial resilience now.",
+        "Significant position: you have real financial resilience now.",
         "At this level, optimizing income is often more powerful than cutting expenses.",
         "Consider whether your money is working as hard as you are.",
       ],
@@ -347,7 +363,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     {
       max: Infinity, tier: "Wealth building", tierColor: "jade",
       suggestions: [
-        "Strong financial foundation — protect it with diversification.",
+        "Strong financial foundation. Protect it with diversification.",
         "Focus shifts from accumulation to optimization and preservation.",
         "Reinvesting returns rather than spending them is what separates this level from the next.",
       ],
@@ -436,14 +452,27 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   // single day-1 charge can imply "you'll exceed this by $7,000". Below
   // this threshold, flag it lightly without a specific dollar claim.
   const MIN_DAYS_FOR_PROJECTION = 5;
+  // Recurring contributions (recurNeeds/recurWants/recurSavings) are already
+  // each recurring item's full monthly-equivalent amount, not something that
+  // accrues day-by-day — a $1,000 rent payment is "owed" in full from day 1,
+  // not $32/day. Rate-projecting the combined (transactions + recurring)
+  // total by daysInMonth/daysElapsed would re-multiply that already-full
+  // recurring amount again, e.g. by ~3.9x on the 8th of a 31-day month. Only
+  // the actual logged-transaction portion should be extrapolated; the
+  // recurring portion gets added back in at its real, known, un-projected
+  // value.
+  const bucketRecur = { NEEDS: recurNeeds, WANTS: recurWants, SAVINGS: recurSavings };
   const budgetPace: DashboardPayload["budgetPace"] = (["NEEDS", "WANTS", "SAVINGS"] as const)
     .filter((b) => bucketTargetAmt[b] > 0)
     .map((b) => {
       const spend = bucketSpend[b];
       const target = bucketTargetAmt[b];
+      const recurContrib = bucketRecur[b];
+      const txSpend = spend - recurContrib;
+      const projectedSpend = (txSpend / daysElapsed) * daysInMonth + recurContrib;
       const pctOfMonthElapsed = Math.round((daysElapsed / daysInMonth) * 100);
       const pctOfBudgetUsed = Math.round((spend / target) * 100);
-      const projectedPct = Math.round(((spend / daysElapsed) * daysInMonth / target) * 100);
+      const projectedPct = Math.round((projectedSpend / target) * 100);
       const reliableProjection = daysElapsed >= MIN_DAYS_FOR_PROJECTION;
 
       if (b === "SAVINGS") {
@@ -464,11 +493,11 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
         message = `${BUCKET_LABEL[b]} budget is already used up, with ${Math.max(0, 100 - pctOfMonthElapsed)}% of the month left.`;
       } else if (projectedPct >= 100 && reliableProjection) {
         status = "watch";
-        const overBy = Math.round((spend / daysElapsed) * daysInMonth - target);
+        const overBy = Math.round(projectedSpend - target);
         message = `${pctOfBudgetUsed}% of ${BUCKET_LABEL[b]} budget spent and it's only the ${ordinal(daysElapsed)}. At this rate, you'll exceed it by ~$${overBy}.`;
       } else if (projectedPct >= 100) {
         status = "watch";
-        message = `${pctOfBudgetUsed}% of ${BUCKET_LABEL[b]} budget spent already, this early in the month — worth keeping an eye on.`;
+        message = `${pctOfBudgetUsed}% of ${BUCKET_LABEL[b]} budget spent already, this early in the month. Worth keeping an eye on.`;
       } else {
         message = `${BUCKET_LABEL[b]} spending is on pace (${pctOfBudgetUsed}% used, ${pctOfMonthElapsed}% of the month elapsed).`;
       }

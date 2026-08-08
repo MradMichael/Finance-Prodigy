@@ -76,7 +76,7 @@ export default function BudgetScreen({
           <div className="rounded-2xl p-4 space-y-2" style={{ background: T.brass + "14", border: `1px solid ${T.brass}40` }}>
             <p className="text-sm font-semibold" style={{ color: T.brass }}>A better fit might be available</p>
             <p className="text-xs leading-relaxed" style={{ color: T.mute }}>
-              Your needs are taking <strong style={{ color: T.text }}>{Math.round(actualNeedsPct)}%</strong> of income this month —
+              Your needs are taking <strong style={{ color: T.text }}>{Math.round(actualNeedsPct)}%</strong> of income this month,
               more than the <strong style={{ color: T.text }}>{BUDGET_RULES[ruleKey].needs}%</strong> your current split allows.
               The <strong style={{ color: T.text }}>{BUDGET_RULES[suggested].label}</strong> model ({BUDGET_RULES[suggested].desc.toLowerCase()}) would be a more realistic fit.
             </p>
@@ -204,7 +204,7 @@ export default function BudgetScreen({
                   </div>
                   <p className="text-[10px] mt-1" style={{ color: over ? T.coral : T.mute }}>
                     {over
-                      ? `${money(-headroom)} over — consider trimming ${label.toLowerCase()} or switching to a looser model`
+                      ? `${money(-headroom)} over. Consider trimming ${label.toLowerCase()} or switching to a looser model`
                       : `${money(headroom)} of headroom left`}
                   </p>
                 </div>
@@ -236,7 +236,7 @@ export default function BudgetScreen({
             <p className="text-xs font-semibold mb-1" style={{ color: T.text }}>A note on tight budgets</p>
             <p className="text-xs leading-relaxed" style={{ color: T.mute }}>
               When most of your income goes to essentials, classical budget rules stop being useful benchmarks.
-              The goal isn&apos;t to hit an arbitrary split — it&apos;s to keep essentials covered, avoid debt, and save
+              The goal isn&apos;t to hit an arbitrary split. It&apos;s to keep essentials covered, avoid debt, and save
               whatever margin exists. The <strong style={{ color: T.text }}>Survival (80/15/5)</strong> model or
               <strong style={{ color: T.text }}> Custom</strong> mode let you set targets that actually reflect your reality.
             </p>

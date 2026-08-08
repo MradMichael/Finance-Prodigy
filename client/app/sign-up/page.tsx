@@ -93,7 +93,7 @@ export default function SignUpPage() {
               style={{ background: T.brass + "18", border: `1px solid ${T.brass}40`, color: T.brass }}
             >
               This email already has synced data from another device. If that&apos;s you,{" "}
-              <Link href="/sign-in" className="underline font-medium">sign in</Link> instead — a new account
+              <Link href="/sign-in" className="underline font-medium">sign in</Link> instead. A new account
               here won&apos;t be able to sync until that&apos;s resolved.
             </div>
           )}

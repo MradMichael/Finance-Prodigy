@@ -18,7 +18,7 @@ function RateStaleness({ updatedAt }: { updatedAt?: string }) {
   const label = `${days} days ago`; // never 1 (unreachable, gated above at days < 3)
   return (
     <p className="text-[11px] mt-1.5 px-1 font-medium" style={{ color }}>
-      ⚠ Rate last updated {label}{stale ? " — LBP moves fast, double-check it's still accurate" : ""}.
+      ⚠ Rate last updated {label}{stale ? ". LBP moves fast, double-check it's still accurate" : ""}.
     </p>
   );
 }

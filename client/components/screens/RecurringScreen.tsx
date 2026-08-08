@@ -32,7 +32,7 @@ export default function RecurringScreen({ financials }: { financials: LocalFinan
 
         {financials.recurring.length === 0 ? (
           <div className="text-center py-20">
-            <p className="text-sm" style={{ color: T.mute }}>No recurring items yet — add them in My Finances.</p>
+            <p className="text-sm" style={{ color: T.mute }}>No recurring items yet. Add them in My Finances.</p>
           </div>
         ) : (
           <>

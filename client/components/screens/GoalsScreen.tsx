@@ -100,7 +100,7 @@ export default function GoalsScreen({
         {goals.length === 0 ? (
           <div className="text-center py-20">
             <p className="text-2xl mb-2">🎯</p>
-            <p className="text-sm" style={{ color: T.mute }}>No goals yet — add one in My Finances.</p>
+            <p className="text-sm" style={{ color: T.mute }}>No goals yet. Add one in My Finances.</p>
           </div>
         ) : (
           <div className="grid gap-5 sm:grid-cols-2">
@@ -199,7 +199,7 @@ export default function GoalsScreen({
                       {isSuccess ? (
                         <div className="px-5 py-3 flex items-center gap-2" style={{ background: T.jade + "14" }}>
                           <span>✓</span>
-                          <p className="text-xs font-medium" style={{ color: T.jade }}>Payment added — great work!</p>
+                          <p className="text-xs font-medium" style={{ color: T.jade }}>Payment added, great work!</p>
                         </div>
                       ) : !isPaying ? (
                         <button

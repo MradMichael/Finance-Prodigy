@@ -38,7 +38,7 @@ export default function PrivacyPage() {
           style={{ background: T.brass + "12", border: `1px solid ${T.brass}30`, color: T.brass }}
         >
           Draft policy written to describe ESSA&apos;s actual behavior as of {LAST_UPDATED}. Have it reviewed by
-          a lawyer familiar with your jurisdiction before relying on it for a public launch — this is not legal advice.
+          a lawyer familiar with your jurisdiction before relying on it for a public launch. This is not legal advice.
         </div>
 
         <div>
@@ -51,14 +51,14 @@ export default function PrivacyPage() {
         </Section>
 
         <Section title="What we collect">
-          <p><strong style={{ color: T.text }}>Account info:</strong> your name, email address, and a password hash — never your raw password.</p>
-          <p><strong style={{ color: T.text }}>Financial data:</strong> transactions, goals, debts, recurring payments, and anything else you enter. This is encrypted (AES-256-GCM) and stored in your own browser&apos;s local storage — it never touches our servers unless you turn on Database sync.</p>
-          <p><strong style={{ color: T.text }}>Optional sync backup:</strong> if you use Profile → Push, a copy of your data is sent to our database (currently hosted on Neon/Postgres) so you can restore it on another device. This is opt-in — nothing is uploaded unless you choose to push. <strong style={{ color: T.text }}>Unlike your local browser storage, this server-side copy is not client-side-encrypted</strong> — it&apos;s stored as readable data, because the analytics decomposition described below needs to read actual field values. It&apos;s protected instead by database access controls, TLS in transit, and requiring your password-derived sync token to read it back — a materially different guarantee than the local encryption, and worth knowing plainly rather than assuming it carries over.</p>
+          <p><strong style={{ color: T.text }}>Account info:</strong> your name, email address, and a password hash, never your raw password.</p>
+          <p><strong style={{ color: T.text }}>Financial data:</strong> transactions, goals, debts, recurring payments, and anything else you enter. This is encrypted (AES-256-GCM) and stored in your own browser&apos;s local storage. It never touches our servers unless you turn on Database sync.</p>
+          <p><strong style={{ color: T.text }}>Optional sync backup:</strong> if you use Profile → Push, a copy of your data is sent to our database (currently hosted on Neon/Postgres) so you can restore it on another device. This is opt-in: nothing is uploaded unless you choose to push. <strong style={{ color: T.text }}>Unlike your local browser storage, this server-side copy is not client-side-encrypted:</strong> it&apos;s stored as readable data, because the analytics decomposition described below needs to read actual field values. It&apos;s protected instead by database access controls, TLS in transit, and requiring your password-derived sync token to read it back, a materially different guarantee than the local encryption, and worth knowing plainly rather than assuming it carries over.</p>
         </Section>
 
         <Section title="How it's protected">
-          <p>Your data-encryption key is random and never derived directly from your password. It&apos;s locked two ways — once by your password, once by a one-time recovery code shown at sign-up — so either one unlocks it. This protects the copy in your browser; see the sync-backup note above for what protects the server-side copy instead, if you use it.</p>
-          <p><strong style={{ color: T.text }}>There is no email-based password reset.</strong> If you lose both your password and your recovery code, your account&apos;s data cannot be recovered by us or anyone else — that&apos;s a direct consequence of how the encryption works, not a support limitation we can override.</p>
+          <p>Your data-encryption key is random and never derived directly from your password. It&apos;s locked two ways (once by your password, once by a one-time recovery code shown at sign-up) so either one unlocks it. This protects the copy in your browser; see the sync-backup note above for what protects the server-side copy instead, if you use it.</p>
+          <p><strong style={{ color: T.text }}>There is no email-based password reset.</strong> If you lose both your password and your recovery code, your account&apos;s data cannot be recovered by us or anyone else. That&apos;s a direct consequence of how the encryption works, not a support limitation we can override.</p>
         </Section>
 
         <Section title="What we don't do">
@@ -74,12 +74,12 @@ export default function PrivacyPage() {
             When you push data to sync, a decomposed copy is also written into an internal analytics warehouse
             (categorized transactions, dates, accounts) so future features can eventually query trends across your
             own data. This stays on our own database, is not shared externally, and the app itself doesn&apos;t
-            currently read it back — it exists for future internal use only.
+            currently read it back. It exists for future internal use only.
           </p>
           <p>
             Separately, Profile → Help improve ESSA is an <strong style={{ color: T.text }}>opt-in, off by default</strong> toggle
             that sends anonymous counts for a handful of named product actions (like completing an onboarding step) to
-            our own server — no third-party analytics SDK, no identity attached, never your financial data. Turning
+            our own server, no third-party analytics SDK, no identity attached, never your financial data. Turning
             it on or off takes effect immediately.
           </p>
         </Section>
@@ -93,14 +93,14 @@ export default function PrivacyPage() {
             <strong style={{ color: T.text }}>If you&apos;ve ever used Database sync</strong>, deleting your account
             also removes that backup copy (and anything derived from it) from our server automatically, on a
             best-effort basis. If you&apos;re offline at the moment you delete, or the server is unreachable, that
-            part won&apos;t complete — email us and we&apos;ll remove it by hand.
+            part won&apos;t complete. Email us and we&apos;ll remove it by hand.
           </p>
         </Section>
 
         <Section title="Taking your data with you">
           <p>
-            Profile → Download my data exports everything — transactions, goals, debts, recurring payments,
-            settings — as a JSON file, anytime, with no restriction. Yours to keep, move elsewhere, or back up by hand.
+            Profile → Download my data exports everything: transactions, goals, debts, recurring payments,
+            settings, as a JSON file, anytime, with no restriction. Yours to keep, move elsewhere, or back up by hand.
           </p>
         </Section>
 

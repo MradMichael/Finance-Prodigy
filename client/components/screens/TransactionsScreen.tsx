@@ -107,7 +107,7 @@ export default function TransactionsScreen({ financials }: { financials: LocalFi
 
         {filtered.length === 0 && (
           <div className="text-center py-20">
-            <p className="text-sm" style={{ color: T.mute }}>No transactions yet — add them in My Finances.</p>
+            <p className="text-sm" style={{ color: T.mute }}>No transactions yet. Add them in My Finances.</p>
           </div>
         )}
       </div>

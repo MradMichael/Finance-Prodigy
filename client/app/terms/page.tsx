@@ -40,7 +40,7 @@ export default function TermsPage() {
         >
           Draft terms written to describe ESSA&apos;s actual behavior as of {LAST_UPDATED}, including a placeholder
           governing-law jurisdiction below. Have this reviewed by a lawyer familiar with your jurisdiction before
-          relying on it for a public launch — this is not legal advice.
+          relying on it for a public launch. This is not legal advice.
         </div>
 
         <div>
@@ -64,7 +64,7 @@ export default function TermsPage() {
           <p>
             ESSA shows you a health score, budget-pace warnings, debt payoff projections, and other suggestions
             based on the numbers you enter. <strong style={{ color: T.text }}>None of this is professional
-            financial, tax, or legal advice</strong> — it&apos;s informational, based on simple rules and the data
+            financial, tax, or legal advice</strong>: it&apos;s informational, based on simple rules and the data
             you&apos;ve provided, and it can be wrong (a projection is only as good as the numbers behind it).
             Make your own financial decisions, and talk to a licensed professional for anything that actually
             matters to your finances.
@@ -72,7 +72,7 @@ export default function TermsPage() {
         </Section>
 
         <Section title="Your account and recovery code">
-          <p>You&apos;re responsible for keeping your password and your recovery code safe. There is no email-based password reset — if you lose both, your data cannot be recovered by us or anyone else. See the <Link href="/privacy" style={{ color: T.jade }}>Privacy Policy</Link> for how the encryption behind this works.</p>
+          <p>You&apos;re responsible for keeping your password and your recovery code safe. There is no email-based password reset. If you lose both, your data cannot be recovered by us or anyone else. See the <Link href="/privacy" style={{ color: T.jade }}>Privacy Policy</Link> for how the encryption behind this works.</p>
         </Section>
 
         <Section title="Acceptable use">
@@ -104,7 +104,7 @@ export default function TermsPage() {
         </Section>
 
         <Section title="Governing law">
-          <p>[Placeholder — specify the jurisdiction whose laws govern these terms before public launch.]</p>
+          <p>[Placeholder: specify the jurisdiction whose laws govern these terms before public launch.]</p>
         </Section>
 
         <Section title="Contact">

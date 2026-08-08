@@ -115,7 +115,7 @@ router.post("/push", async (req, res, next) => {
       // P2034 = write conflict / deadlock from the isolation level above —
       // the losing side of a genuine race. Safe to ask the client to retry.
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2034") {
-        return res.status(409).json({ error: "Sync is busy — please try again." });
+        return res.status(409).json({ error: "Sync is busy. Please try again." });
       }
       throw err;
     }
@@ -142,7 +142,7 @@ router.get("/pull", async (req, res, next) => {
     const record = await prisma.userSync.findUnique({ where: { email } });
     if (!record) return res.status(404).json({ error: "No sync data found for this account." });
     if (!record.authTokenHash) {
-      return res.status(401).json({ error: "This account has no sync credentials registered yet — push from an updated client first." });
+      return res.status(401).json({ error: "This account has no sync credentials registered yet. Push from an updated client first." });
     }
     if (!hashesEqual(record.authTokenHash, hashToken(token))) {
       return res.status(401).json({ error: "Invalid sync credentials for this account." });
@@ -203,7 +203,7 @@ router.post("/relink", async (req, res, next) => {
         return res.status(401).json({ error: "Could not verify ownership of this account's sync data." });
       }
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2034") {
-        return res.status(409).json({ error: "Sync is busy — please try again." });
+        return res.status(409).json({ error: "Sync is busy. Please try again." });
       }
       throw err;
     }
@@ -241,7 +241,7 @@ router.delete("/", async (req, res, next) => {
     // to false (allowing the delete through with zero proof of ownership)
     // whenever authTokenHash is null — the opposite of what's intended.
     if (!record.authTokenHash) {
-      return res.status(401).json({ error: "This account has no sync credentials registered yet — nothing to verify against." });
+      return res.status(401).json({ error: "This account has no sync credentials registered yet. Nothing to verify against." });
     }
     if (!hashesEqual(record.authTokenHash, tokenHash)) {
       return res.status(401).json({ error: "Invalid sync credentials for this account." });

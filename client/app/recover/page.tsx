@@ -94,7 +94,7 @@ export default function RecoverPage() {
       </div>
 
       <p className="text-[10px] mt-8 text-center max-w-xs" style={{ color: T.mute }}>
-        No recovery code saved? There&apos;s no other way back into an account&apos;s data — that&apos;s the tradeoff for it being encrypted only you can unlock.
+        No recovery code saved? There&apos;s no other way back into an account&apos;s data. That&apos;s the tradeoff for it being encrypted only you can unlock.
       </p>
 
       {newRecoveryCode && (

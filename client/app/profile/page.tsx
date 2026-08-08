@@ -230,10 +230,10 @@ export default function ProfilePage() {
               Database sync
             </h2>
             <p className="text-xs mt-1" style={{ color: T.mute }}>
-              Your data is automatically saved to the database whenever you make changes — no action needed.
+              Your data is automatically saved to the database whenever you make changes. No action needed.
             </p>
             <p className="text-xs mt-2 leading-relaxed" style={{ color: T.mute }}>
-              <strong style={{ color: T.text }}>Privacy note:</strong> Your financial data is encrypted in this browser (AES-256). The sync backup stored on the server is protected by your password but is not end-to-end encrypted — the server can read it. If you prefer full privacy, disable sync by not pushing, and use <em>Download my data</em> below to back up locally.
+              <strong style={{ color: T.text }}>Privacy note:</strong> Your financial data is encrypted in this browser (AES-256). The sync backup stored on the server is protected by your password but is not end-to-end encrypted: the server can read it. If you prefer full privacy, disable sync by not pushing, and use <em>Download my data</em> below to back up locally.
             </p>
             {lastSync && (
               <p className="text-[11px] mt-2 flex items-center gap-1.5" style={{ color: T.jade }}>
@@ -312,8 +312,8 @@ export default function ProfilePage() {
               Your data
             </h2>
             <p className="text-xs mt-1" style={{ color: T.mute }}>
-              Download everything ESSA has for your account — transactions, goals, debts, recurring payments, and
-              settings — as a JSON file. Yours to keep, move elsewhere, or back up by hand.
+              Download everything ESSA has for your account: transactions, goals, debts, recurring payments, and
+              settings, as a JSON file. Yours to keep, move elsewhere, or back up by hand.
             </p>
           </div>
           <button
@@ -337,7 +337,7 @@ export default function ProfilePage() {
               </h2>
               <p className="text-xs mt-1" style={{ color: T.mute }}>
                 Off by default. If enabled, sends anonymous counts for a handful of named actions (like completing
-                onboarding steps) — no third-party tracker, no identity attached, never your financial data.
+                onboarding steps), no third-party tracker, no identity attached, never your financial data.
               </p>
             </div>
             <button

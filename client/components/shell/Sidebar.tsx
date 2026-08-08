@@ -108,7 +108,7 @@ export default function Sidebar({
           onClick={onProfile}
           onFocus={() => setHovered(true)}
           onBlur={() => setHovered(false)}
-          aria-label={`${session.name} — account settings`}
+          aria-label={`${session.name}: account settings`}
           className="w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-xl transition-all hover:opacity-80"
           style={{ whiteSpace: "nowrap" }}
         >

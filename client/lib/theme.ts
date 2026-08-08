@@ -35,7 +35,7 @@ function build(c: Base): ThemeColors {
 
 export const THEMES: Record<ThemeKey, ThemeColors & { name: string; desc: string }> = {
   ledger: {
-    name: "Ledger", desc: "Forest green — the classic",
+    name: "Ledger", desc: "Forest green, the classic",
     ...build({
       ink: "#0B1F1E", panel: "#11302C", panelSoft: "#16403A", line: "#1E4A43",
       text: "#EAF2EF", mute: "#8FAFA7",
@@ -43,7 +43,7 @@ export const THEMES: Record<ThemeKey, ThemeColors & { name: string; desc: string
     }),
   },
   midnight: {
-    name: "Midnight", desc: "Navy blue — Wall Street",
+    name: "Midnight", desc: "Navy blue, Wall Street",
     ...build({
       ink: "#070B1E", panel: "#0C1230", panelSoft: "#111840", line: "#192450",
       text: "#E4E8F8", mute: "#7080B0",
@@ -51,7 +51,7 @@ export const THEMES: Record<ThemeKey, ThemeColors & { name: string; desc: string
     }),
   },
   obsidian: {
-    name: "Obsidian", desc: "Warm black — premium",
+    name: "Obsidian", desc: "Warm black, premium",
     ...build({
       ink: "#13110F", panel: "#1C1A17", panelSoft: "#242220", line: "#323028",
       text: "#F0EDE8", mute: "#90887E",
@@ -59,7 +59,7 @@ export const THEMES: Record<ThemeKey, ThemeColors & { name: string; desc: string
     }),
   },
   aurora: {
-    name: "Aurora", desc: "Vivid violet — electric",
+    name: "Aurora", desc: "Vivid violet, electric",
     ...build({
       ink: "#0C0818", panel: "#130F28", panelSoft: "#1A1534", line: "#261F48",
       text: "#F2EEFF", mute: "#8878C0",
@@ -67,7 +67,7 @@ export const THEMES: Record<ThemeKey, ThemeColors & { name: string; desc: string
     }),
   },
   ember: {
-    name: "Ember", desc: "Flame orange — bold",
+    name: "Ember", desc: "Flame orange, bold",
     ...build({
       ink: "#180A00", panel: "#221200", panelSoft: "#2C1800", line: "#3C2400",
       text: "#FFF4EC", mute: "#A07050",
@@ -75,7 +75,7 @@ export const THEMES: Record<ThemeKey, ThemeColors & { name: string; desc: string
     }),
   },
   ivory: {
-    name: "Ivory", desc: "Clean white — light mode",
+    name: "Ivory", desc: "Clean white, light mode",
     ...build({
       ink: "#F5F1EB", panel: "#EDE8E1", panelSoft: "#E3DDD6", line: "#CDC7BF",
       text: "#1A1510", mute: "#7A7068",

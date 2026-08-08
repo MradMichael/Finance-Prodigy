@@ -241,7 +241,7 @@ function AdminPageContent() {
           </div>
 
           <div className="space-y-0" style={{ borderTop: `1px solid ${T.line}` }}>
-            <Row label="API base URL" value="/api (proxied — see API_URL in client/.env)" mono />
+            <Row label="API base URL" value="/api (proxied, see API_URL in client/.env)" mono />
             <Row label="Health endpoint" value={`${API}/api/health`} mono />
             <Row label="Sync push" value={`POST ${API}/api/sync/push`} mono />
             <Row label="Sync pull" value={`GET ${API}/api/sync/pull?email=…`} mono />
@@ -274,20 +274,20 @@ function AdminPageContent() {
             <Row label="Database" value="neondb" mono />
             <Row label="Auth" value="Password (in connection string)" />
             <Row label="Pooled connection string" value={maskedUrl} mono sensitive />
-            <Row label="Migrations" value="Run against DIRECT_URL — Neon's pooler doesn't support the prepared statements Prisma Migrate needs" />
+            <Row label="Migrations" value="Run against DIRECT_URL. Neon's pooler doesn't support the prepared statements Prisma Migrate needs" />
           </div>
           <div className="rounded-xl p-4 space-y-2 text-xs" style={{ background: T.panelSoft, color: T.mute }}>
             <p className="font-semibold" style={{ color: T.text }}>Common database issues</p>
-            <p><span style={{ color: T.brass }}>•</span> <strong style={{ color: T.text }}>Connection refused / project suspended</strong> — Neon&apos;s free tier suspends idle compute after inactivity; the first request after a while wakes it up and can take a few seconds.</p>
-            <p><span style={{ color: T.brass }}>•</span> <strong style={{ color: T.text }}>Migration fails with a prepared-statement error</strong> — Make sure <code className="px-1 py-0.5 rounded" style={{ background: T.ink, color: T.jade }}>DIRECT_URL</code> in <code className="px-1 py-0.5 rounded" style={{ background: T.ink, color: T.jade }}>server/.env</code> points at the non-pooled host (no <code className="px-1 py-0.5 rounded" style={{ background: T.ink, color: T.jade }}>-pooler</code> in the hostname).</p>
-            <p><span style={{ color: T.brass }}>•</span> <strong style={{ color: T.text }}>Prisma error</strong> — Run <code className="px-1 py-0.5 rounded" style={{ background: T.ink, color: T.jade }}>npx prisma migrate deploy</code> in the server folder to apply any pending migrations.</p>
+            <p><span style={{ color: T.brass }}>•</span> <strong style={{ color: T.text }}>Connection refused / project suspended:</strong> Neon&apos;s free tier suspends idle compute after inactivity; the first request after a while wakes it up and can take a few seconds.</p>
+            <p><span style={{ color: T.brass }}>•</span> <strong style={{ color: T.text }}>Migration fails with a prepared-statement error:</strong> Make sure <code className="px-1 py-0.5 rounded" style={{ background: T.ink, color: T.jade }}>DIRECT_URL</code> in <code className="px-1 py-0.5 rounded" style={{ background: T.ink, color: T.jade }}>server/.env</code> points at the non-pooled host (no <code className="px-1 py-0.5 rounded" style={{ background: T.ink, color: T.jade }}>-pooler</code> in the hostname).</p>
+            <p><span style={{ color: T.brass }}>•</span> <strong style={{ color: T.text }}>Prisma error:</strong> Run <code className="px-1 py-0.5 rounded" style={{ background: T.ink, color: T.jade }}>npx prisma migrate deploy</code> in the server folder to apply any pending migrations.</p>
           </div>
         </Card>
 
         {/* Sync status */}
         <Card title="Sync status">
           <div className="space-y-0" style={{ borderTop: `1px solid ${T.line}` }}>
-            <Row label="Auto-sync" value={<StatusBadge ok label="Enabled — fires 2.5 s after each change" />} />
+            <Row label="Auto-sync" value={<StatusBadge ok label="Enabled: fires 2.5 s after each change" />} />
             <Row label="Last synced" value={lastSync ? new Date(lastSync).toLocaleString("en-GB") : "Never"} />
             <Row label="Sync endpoint" value={`${API}/api/sync/push`} mono />
             <Row label="Storage model" value="Full snapshot per user (push overwrites, pull restores)" />
@@ -335,13 +335,13 @@ function AdminPageContent() {
         {/* App info */}
         <Card title="Application">
           <div className="space-y-0" style={{ borderTop: `1px solid ${T.line}` }}>
-            <Row label="App name" value="ESSA — Earn · Spend · Save · Achieve" />
+            <Row label="App name" value="ESSA: Earn · Spend · Save · Achieve" />
             <Row label="Version" value="1.0.0" />
             <Row label="Framework" value="Next.js 14 App Router" />
             <Row label="Financial data" value="AES-256-GCM encrypted · PBKDF2 key derivation · 120,000 iterations" />
-            <Row label="User registry" value="Stored in localStorage (essa_users_v1) — passwords hashed, not encrypted" />
+            <Row label="User registry" value="Stored in localStorage (essa_users_v1); passwords hashed, not encrypted" />
             <Row label="Storage" value="localStorage (financial data encrypted) + Postgres/Neon (auto-sync)" />
-            <Row label="Themes" value="6 themes — Ledger · Midnight · Obsidian · Aurora · Ember · Ivory" />
+            <Row label="Themes" value="6 themes: Ledger · Midnight · Obsidian · Aurora · Ember · Ivory" />
           </div>
           <div className="rounded-xl px-4 py-3 text-xs leading-relaxed" style={{ background: T.brass + "12", color: T.brass, border: `1px solid ${T.brass}28` }}>
             Sensitive fields on this page are blurred by default. Click <strong>show</strong> to reveal them.

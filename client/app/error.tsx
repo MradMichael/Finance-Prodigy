@@ -21,7 +21,7 @@ export default function Error({ error, reset }: { error: Error & { digest?: stri
           Something went wrong
         </h1>
         <p className="text-sm" style={{ color: T.mute }}>
-          Your financial data is safe — it lives in your browser, not on this screen. Try again, or reload the page.
+          Your financial data is safe. It lives in your browser, not on this screen. Try again, or reload the page.
         </p>
         <button
           onClick={reset}

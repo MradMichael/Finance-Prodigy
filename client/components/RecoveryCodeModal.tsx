@@ -43,7 +43,7 @@ export default function RecoveryCodeModal({
           This is shown once
         </h2>
         <p className="text-xs mb-5" style={{ color: T.mute }}>
-          If you ever forget your password, this code is the only way back into your data — there&apos;s no email reset.
+          If you ever forget your password, this code is the only way back into your data. There&apos;s no email reset.
           Write it down or save it in a password manager now.
         </p>
 

@@ -16,7 +16,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: "How secure is the encryption?",
-    a: "Your data is encrypted with AES-GCM 256-bit using a random key generated for your account — never derived directly from your password. That key is locked two ways: once by your password, once by a one-time recovery code shown at sign-up (PBKDF2, 120,000 iterations). It's never stored unlocked — only held in sessionStorage while you're logged in.",
+    a: "Your data is encrypted with AES-GCM 256-bit using a random key generated for your account, never derived directly from your password. That key is locked two ways: once by your password, once by a one-time recovery code shown at sign-up (PBKDF2, 120,000 iterations). It's never stored unlocked, only held in sessionStorage while you're logged in.",
   },
   {
     q: "What happens if I clear my browser data?",
@@ -24,7 +24,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: "Can I use ESSA on multiple devices?",
-    a: "Yes — push your data from one device (Profile → Database sync → Push), then pull it on another (Profile → Database sync → Restore from database). Both devices just need to be able to reach ESSA itself.",
+    a: "Yes. Push your data from one device (Profile → Database sync → Push), then pull it on another (Profile → Database sync → Restore from database). Both devices just need to be able to reach ESSA itself.",
   },
   {
     q: "What currencies are supported?",
@@ -40,7 +40,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: "How do I record a debt payment?",
-    a: "Go to My Finances → Debts. Hover over a debt and click 'Pay'. Enter the payment amount — the balance is reduced automatically.",
+    a: "Go to My Finances → Debts. Hover over a debt and click 'Pay'. Enter the payment amount, and the balance is reduced automatically.",
   },
 ];
 
@@ -108,13 +108,13 @@ export default function AboutPage() {
           </div>
           <p className="text-sm max-w-md leading-relaxed" style={{ color: T.mute }}>
             A personal finance companion built for clarity and control. Track every dollar, plan every goal,
-            and understand your financial health — all from your browser, with your data staying yours.
+            and understand your financial health, all from your browser, with your data staying yours.
           </p>
           <div
             className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs"
             style={{ background: T.jade + "18", color: T.jade, border: `1px solid ${T.jade}30` }}
           >
-            Version 1.0 — offline-first, encrypted
+            Version 1.0 · offline-first, encrypted
           </div>
         </section>
 
@@ -283,7 +283,7 @@ export default function AboutPage() {
         {/* Footer */}
         <footer className="text-center pt-4 pb-8">
           <p className="text-[11px]" style={{ color: T.mute }}>
-            ESSA — built with Next.js, Tailwind, and Recharts.
+            ESSA, built with Next.js, Tailwind, and Recharts.
           </p>
           <p className="text-[10px] mt-1" style={{ color: T.mute + "80" }}>
             Your data never leaves your device without your permission.

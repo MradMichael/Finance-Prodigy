@@ -187,7 +187,7 @@ describe("recoverAccount", () => {
     const result = await recoverAccount("legacy@test.com", "ANYT-HING-0000-0000", "newpassword1");
     expect(result).toEqual({
       ok: false,
-      error: "Recovery isn't set up for this account yet — it needs one successful sign-in first.",
+      error: "Recovery isn't set up for this account yet. It needs one successful sign-in first.",
     });
   });
 

@@ -30,7 +30,7 @@ async function parseJsonSafe(res: Response): Promise<{ error?: string; [key: str
 
 export async function pushToServer(email: string, data: LocalFinancials): Promise<SyncResult> {
   const token = getSyncToken();
-  if (!token) return { ok: false, error: "Not signed in — sign in again to sync." };
+  if (!token) return { ok: false, error: "Not signed in. Sign in again to sync." };
   // Registers this account's recovery-derived token server-side (if one
   // exists locally) so a future password reset can relink sync via
   // relinkSync below instead of hitting the old "server rejects every push
@@ -87,7 +87,7 @@ export async function relinkSync(
 
 export async function pullFromServer(email: string): Promise<{ ok: true; data: LocalFinancials; syncedAt: string } | { ok: false; error: string }> {
   const token = getSyncToken();
-  if (!token) return { ok: false, error: "Not signed in — sign in again to sync." };
+  if (!token) return { ok: false, error: "Not signed in. Sign in again to sync." };
   try {
     // Token travels as a header, not a query param — push/relink/delete
     // already send it in the POST body; a bearer secret in a URL is prone
@@ -97,7 +97,7 @@ export async function pullFromServer(email: string): Promise<{ ok: true; data: L
       headers: { Authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
     });
-    if (res.status === 404) return { ok: false, error: "No data on server yet — push first." };
+    if (res.status === 404) return { ok: false, error: "No data on server yet. Push first." };
     const json = await parseJsonSafe(res);
     if (!res.ok) return { ok: false, error: json?.error ?? `Pull failed (HTTP ${res.status}).` };
     if (json === null || typeof json.syncedAt !== "string" || !("data" in json)) {
@@ -113,6 +113,19 @@ export async function pullFromServer(email: string): Promise<{ ok: true; data: L
 export function getLastSyncTime(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem(LAST_SYNC_KEY);
+}
+
+const AUTO_PULL_KEY_PREFIX = "essa_auto_pull_done_";
+
+/** Whether the one-time "pull on first load of an empty account" (see app/page.tsx) has already been attempted for this user on this device. Scoped per-userId, not global, so signing into a second account on the same browser still gets its own attempt. */
+export function hasAutoPulled(userId: string): boolean {
+  if (typeof window === "undefined") return true;
+  return localStorage.getItem(AUTO_PULL_KEY_PREFIX + userId) === "1";
+}
+
+export function markAutoPulled(userId: string): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(AUTO_PULL_KEY_PREFIX + userId, "1");
 }
 
 /**
