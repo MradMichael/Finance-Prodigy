@@ -9,6 +9,15 @@ import { projectCompletion } from "../../lib/projections";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money } from "./shared";
 
+type PriorityKey = "ef" | "debt" | "goals";
+const PRIORITY_META: Record<PriorityKey, { label: string; color: (T: ReturnType<typeof useTheme>) => string }> = {
+  ef:    { label: "Emergency fund", color: (T) => T.jade },
+  debt:  { label: "Debt",           color: (T) => T.coral },
+  goals: { label: "Goals",          color: (T) => T.brass },
+};
+
+interface StageResult { months: number | null; startMonths: number; dateDisplay: string | null; warning?: string | null; skipped?: boolean }
+
 function Bar({ pct, color, T }: { pct: number; color: string; T: ReturnType<typeof useTheme> }) {
   return (
     <div className="h-1.5 rounded-full overflow-hidden" style={{ background: T.line }}>
@@ -17,7 +26,7 @@ function Bar({ pct, color, T }: { pct: number; color: string; T: ReturnType<type
   );
 }
 
-/** "3 mo, by 14-09-2028" / "not at this rate" — the shared current-vs-boosted readout used by all three scenario cards below. */
+/** "3 mo, by 14-09-2028" / "not at this rate" — the shared readout used by the current-pace-vs-plan cards below. */
 function PaceRow({ label, months, dateDisplay, color, T }: { label: string; months: number | null; dateDisplay: string | null; color: string; T: ReturnType<typeof useTheme> }) {
   return (
     <div>
@@ -45,50 +54,84 @@ export default function ProjectionsScreen({
   const T = useTheme();
   const { emergencyFund, debt, goals, effectiveBudgetTargets, budgetTargetPct, budgetRule, month } = dashData;
 
-  const defaultExtra = Math.max(0, Math.round(month.netCashFlow));
-  const [extra, setExtra] = useState(defaultExtra);
-  const sliderMax = Math.max(200, defaultExtra * 3);
-
   const hasIncome = month.income > 0;
-  const efBaseRate = effectiveBudgetTargets.savings;
-  const efCurrent  = projectCompletion(emergencyFund.remaining, efBaseRate);
-  const efBoosted  = projectCompletion(emergencyFund.remaining, efBaseRate + extra);
-
+  const efRemaining = Math.max(0, emergencyFund.remaining);
   const liveDebts: DebtInput[] = financials.debts
     .filter((d) => d.balance > 0)
     .map((d) => ({ id: d.id, name: d.name, balance: d.balance, aprPct: d.apr, minimumPayment: d.minPayment }));
-  const debtBoosted = liveDebts.length > 0 ? simulateDebtPayoff(liveDebts, extra, "AVALANCHE") : null;
-
   const openGoals = goals.filter((g) => g.projection.pctComplete < 100);
-
-  // ── Combined "path to financial stability" ──────────────────────────
-  // A single realistic timeline instead of the three independent what-ifs
-  // below: fund the emergency fund first (the standard safety-net-before-
-  // anything-else order), then extra debt payoff, then goals, each fully
-  // resolved before the next stage starts, all drawing on the same monthly
-  // capacity (recommended savings + whatever extra is dialed in above).
-  const capacity = effectiveBudgetTargets.savings + extra;
-  const efRemaining = Math.max(0, emergencyFund.remaining);
-  const efMonths = efRemaining <= 0 ? 0 : (capacity > 0 ? Math.ceil(efRemaining / capacity) : null);
-
-  const debtStartDate = efMonths !== null ? addMonths(new Date(), efMonths) : null;
-  const debtStage = debtStartDate && liveDebts.length > 0 ? simulateDebtPayoff(liveDebts, capacity, "AVALANCHE", debtStartDate) : null;
-  const debtMonths = liveDebts.length === 0 ? 0 : (debtStage?.feasible ? debtStage.months : null);
-
-  const goalsStartMonths = efMonths !== null && debtMonths !== null ? efMonths + debtMonths : null;
-  const goalsStartDate = goalsStartMonths !== null ? addMonths(new Date(), goalsStartMonths) : null;
   const totalGoalsRemaining = openGoals.reduce((s, g) => s + Math.max(0, g.targetAmount - g.currentAmount), 0);
-  const goalsStage = goalsStartDate ? projectCompletion(totalGoalsRemaining, capacity, goalsStartDate) : null;
 
-  const totalMonths = goalsStartMonths !== null && goalsStage?.months != null ? goalsStartMonths + goalsStage.months : null;
+  // The one number that drives every projection below — directly set, not a
+  // hidden sum of "recommended savings + something else" (that combination
+  // read as a bug the first time it shipped: dial the slider to $150 and
+  // the plan quietly used $425). Starts at the recommended savings figure
+  // since that's a real, explained number, not zero.
+  const [testAmount, setTestAmount] = useState(() => Math.max(0, Math.round(effectiveBudgetTargets.savings)));
+  const surplus = Math.max(0, Math.round(month.netCashFlow));
+  const sliderMax = Math.max(200, testAmount * 2, surplus * 2);
+
+  // What order the plan tackles things in — user-controlled, not hardcoded.
+  // A dollar can only be spent once: this is what makes the plan below a
+  // single realistic sequence instead of the same amount tested against
+  // each goal independently (which is what shipped before this and was
+  // confusing: "I can't put $150 toward three different things at once").
+  const [priority, setPriority] = useState<PriorityKey[]>(["ef", "debt", "goals"]);
+  function movePriority(index: number, dir: -1 | 1) {
+    setPriority((prev) => {
+      const next = [...prev];
+      const target = index + dir;
+      if (target < 0 || target >= next.length) return prev;
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
+
+  // ── The plan: walk `priority` in order, each stage starting only once ──
+  // the one before it finishes, all drawing on the same testAmount/mo.
+  const stages: Record<PriorityKey, StageResult> = {
+    ef:    { months: null, startMonths: 0, dateDisplay: null },
+    debt:  { months: null, startMonths: 0, dateDisplay: null },
+    goals: { months: null, startMonths: 0, dateDisplay: null },
+  };
+  let cursor = 0;
+  let feasible = hasIncome && testAmount > 0;
+  let stopReason: string | null = null;
+  for (const key of priority) {
+    if (!feasible) { stages[key] = { months: null, startMonths: cursor, dateDisplay: null, skipped: true }; continue; }
+    const startDate = addMonths(new Date(), cursor);
+    if (key === "ef") {
+      const proj = projectCompletion(efRemaining, testAmount, startDate);
+      stages.ef = { months: proj.months, startMonths: cursor, dateDisplay: proj.dateDisplay };
+      if (proj.months === null) { feasible = false; stopReason = "Not reachable at this monthly amount."; } else cursor += proj.months;
+    } else if (key === "debt") {
+      if (liveDebts.length === 0) {
+        stages.debt = { months: 0, startMonths: cursor, dateDisplay: dateFmt(startDate) };
+      } else {
+        const plan = simulateDebtPayoff(liveDebts, testAmount, "AVALANCHE", startDate);
+        if (plan.feasible) {
+          stages.debt = { months: plan.months, startMonths: cursor, dateDisplay: plan.debtFreeDate ? dateFmt(new Date(plan.debtFreeDate)) : null };
+          cursor += plan.months;
+        } else {
+          stages.debt = { months: null, startMonths: cursor, dateDisplay: null, warning: plan.warning };
+          feasible = false; stopReason = plan.warning ?? "Debt isn't reachable at this monthly amount.";
+        }
+      }
+    } else {
+      const proj = projectCompletion(totalGoalsRemaining, testAmount, startDate);
+      stages.goals = { months: proj.months, startMonths: cursor, dateDisplay: proj.dateDisplay };
+      if (proj.months === null) { feasible = false; stopReason = "Goals aren't reachable at this monthly amount."; } else cursor += proj.months;
+    }
+  }
+  const totalMonths = feasible ? cursor : null;
   const stabilityDateDisplay = totalMonths !== null ? dateFmt(addMonths(new Date(), totalMonths)) : null;
-  const debtInfeasibleWarning = liveDebts.length > 0 && debtStage && !debtStage.feasible ? debtStage.warning : null;
 
   // Straight sum of what's actually still owed/short right now, independent
-  // of the timeline above: EF's remaining gap + total debt balance (not
-  // just this waterfall's extra payments) + every open goal's remaining
-  // amount. What it would take, today, in one lump sum, to already be there.
+  // of the plan above: EF's remaining gap + total debt balance + every open
+  // goal's remaining amount. What it would take, today, in one lump sum.
   const totalNeededNow = efRemaining + debt.totalBalance + totalGoalsRemaining;
+  const planTotal = efRemaining + debt.totalBalance + totalGoalsRemaining || 1;
+  const efShare = liveDebts.length + openGoals.length + (efRemaining > 0 ? 1 : 0) > 0 ? efRemaining / planTotal : 0;
 
   return (
     <main className="min-h-screen px-4 py-8 md:px-10" style={{ background: T.ink }}>
@@ -98,44 +141,20 @@ export default function ProjectionsScreen({
           <p className="text-[10px] uppercase tracking-widest" style={{ color: T.mute }}>ESSA</p>
           <h1 className="text-3xl mt-1" style={SERIF}>Projections</h1>
           <p className="text-sm mt-2" style={{ color: T.mute }}>
-            Where your emergency fund, debt, and goals are headed at your current pace, and how much sooner extra money gets you there.
+            One realistic plan for your emergency fund, debt, and goals, in whatever order you prioritize them.
           </p>
         </div>
 
-        {/* Combined path to financial stability */}
-        <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.brass}50` }}>
-          <p className="text-xs uppercase tracking-widest mb-2" style={{ color: T.brass }}>Path to financial stability</p>
-
-          {totalNeededNow > 0 && (
-            <div className="rounded-xl px-4 py-3 mb-4" style={{ background: T.brass + "14", border: `1px solid ${T.brass}30` }}>
-              <p className="text-[10px] uppercase tracking-widest" style={{ color: T.mute }}>Total needed right now, in one lump sum</p>
-              <p className="text-2xl mt-0.5" style={{ ...SERIF, ...NUMS, color: T.brass }}>{money(totalNeededNow)}</p>
-              <p className="text-[11px] mt-1" style={{ color: T.mute }}>
-                {money(efRemaining)} to finish the emergency fund + {money(debt.totalBalance)} of debt + {money(totalGoalsRemaining)} across open goals.
-              </p>
-            </div>
-          )}
-
-          {!hasIncome ? (
-            <p className="text-sm" style={{ color: T.mute }}>Set your monthly income to see this.</p>
-          ) : capacity <= 0 ? (
-            <p className="text-sm" style={{ color: T.mute }}>Your budget has no monthly capacity left to put toward this. Free up room in Needs or Wants, or try the slider below.</p>
-          ) : totalMonths !== null ? (
-            <>
-              <p className="text-4xl" style={{ ...SERIF, ...NUMS, color: T.brass }}>{stabilityDateDisplay}</p>
-              <p className="text-xs mt-1" style={{ color: T.mute }}>
-                Emergency fund funded, debt-free, and every current goal met, {totalMonths === 0 ? "today" : `${totalMonths} month${totalMonths === 1 ? "" : "s"} from now`}, at {money(capacity)}/mo.
-              </p>
-              <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs mt-3" style={{ color: T.mute }}>
-                <span>1. Emergency fund: <span style={{ color: T.text }}>{efMonths === 0 ? "already funded" : dateFmt(addMonths(new Date(), efMonths!))}</span></span>
-                <span>2. Debt-free: <span style={{ color: T.text }}>{liveDebts.length === 0 ? "already there" : dateFmt(addMonths(new Date(), goalsStartMonths!))}</span></span>
-                <span>3. Goals complete: <span style={{ color: T.text }}>{stabilityDateDisplay}</span></span>
-              </div>
-            </>
-          ) : (
-            <p className="text-sm" style={{ color: T.coral }}>{debtInfeasibleWarning ?? "Not reachable at this pace. Try adding more with the slider below."}</p>
-          )}
-        </div>
+        {/* Total needed now */}
+        {totalNeededNow > 0 && (
+          <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
+            <p className="text-xs uppercase tracking-widest mb-2" style={{ color: T.mute }}>Total needed right now, in one lump sum</p>
+            <p className="text-3xl" style={{ ...SERIF, ...NUMS, color: T.brass }}>{money(totalNeededNow)}</p>
+            <p className="text-[11px] mt-1" style={{ color: T.mute }}>
+              {money(efRemaining)} to finish the emergency fund + {money(debt.totalBalance)} of debt + {money(totalGoalsRemaining)} across open goals.
+            </p>
+          </div>
+        )}
 
         {/* Recommended savings */}
         <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
@@ -152,42 +171,101 @@ export default function ProjectionsScreen({
           )}
         </div>
 
-        {/* Interactive lever */}
-        <div className="rounded-2xl p-5 space-y-3" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-xs uppercase tracking-widest" style={{ color: T.mute }}>Extra monthly amount to test</p>
-            <p className="text-lg font-semibold tabular-nums" style={{ ...SERIF, color: T.brass }}>{money(extra)}</p>
+        {/* Monthly amount + priority order */}
+        <div className="rounded-2xl p-5 space-y-4" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
+          <div>
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <p className="text-xs uppercase tracking-widest" style={{ color: T.mute }}>Monthly amount to plan with</p>
+              <div className="flex items-center gap-1.5">
+                <span style={{ color: T.brass }}>$</span>
+                <input
+                  type="number" min={0} step={10}
+                  value={testAmount}
+                  onChange={(e) => setTestAmount(Math.max(0, Math.round(Number(e.target.value) || 0)))}
+                  className="w-24 rounded-lg px-2 py-1 text-sm font-semibold tabular-nums text-right"
+                  style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.brass }}
+                />
+              </div>
+            </div>
+            <input
+              type="range" min={0} max={sliderMax} step={10}
+              value={Math.min(testAmount, sliderMax)}
+              onChange={(e) => setTestAmount(Number(e.target.value))}
+              className="w-full"
+              style={{ accentColor: T.brass }}
+            />
+            <div className="flex flex-wrap gap-2 mt-2">
+              {[
+                { label: "Recommended savings", v: Math.round(effectiveBudgetTargets.savings) },
+                { label: `My full surplus (${money(surplus)})`, v: surplus },
+              ].map((p) => (
+                <button
+                  key={p.label}
+                  onClick={() => setTestAmount(p.v)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80"
+                  style={{
+                    background: testAmount === p.v ? T.brass + "22" : T.panelSoft,
+                    border: `1px solid ${testAmount === p.v ? T.brass : T.line}`,
+                    color: testAmount === p.v ? T.brass : T.mute,
+                  }}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
           </div>
-          <input
-            type="range" min={0} max={sliderMax} step={10}
-            value={Math.min(extra, sliderMax)}
-            onChange={(e) => setExtra(Number(e.target.value))}
-            className="w-full"
-            style={{ accentColor: T.brass }}
-          />
-          <div className="flex flex-wrap gap-2">
-            {[
-              { label: "None", v: 0 },
-              { label: "Half my surplus", v: Math.round(defaultExtra / 2) },
-              { label: `Full surplus (${money(defaultExtra)})`, v: defaultExtra },
-            ].map((p) => (
-              <button
-                key={p.label}
-                onClick={() => setExtra(p.v)}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80"
-                style={{
-                  background: extra === p.v ? T.brass + "22" : T.panelSoft,
-                  border: `1px solid ${extra === p.v ? T.brass : T.line}`,
-                  color: extra === p.v ? T.brass : T.mute,
-                }}
-              >
-                {p.label}
-              </button>
-            ))}
+
+          <div>
+            <p className="text-xs uppercase tracking-widest mb-2" style={{ color: T.mute }}>Priority order</p>
+            <div className="space-y-1.5">
+              {priority.map((key, i) => (
+                <div key={key} className="flex items-center gap-3 rounded-xl px-3 py-2" style={{ background: T.panelSoft }}>
+                  <span className="text-xs font-semibold w-4" style={{ color: T.mute }}>{i + 1}</span>
+                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: PRIORITY_META[key].color(T) }} />
+                  <span className="text-sm flex-1" style={{ color: T.text }}>{PRIORITY_META[key].label}</span>
+                  <button onClick={() => movePriority(i, -1)} disabled={i === 0} className="text-xs px-2 py-1 rounded-lg disabled:opacity-30 hover:opacity-70 transition-opacity" style={{ color: T.mute }}>↑</button>
+                  <button onClick={() => movePriority(i, 1)} disabled={i === priority.length - 1} className="text-xs px-2 py-1 rounded-lg disabled:opacity-30 hover:opacity-70 transition-opacity" style={{ color: T.mute }}>↓</button>
+                </div>
+              ))}
+            </div>
+            <p className="text-[10px] mt-2" style={{ color: T.mute }}>
+              Every dollar of the amount above goes to whichever is first, in full, until it&apos;s done, then moves to the next.
+            </p>
           </div>
-          <p className="text-[10px]" style={{ color: T.mute }}>
-            Each card below shows what happens if this whole amount went to that one goal on its own, not all three added together.
-          </p>
+        </div>
+
+        {/* The plan */}
+        <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.brass}50` }}>
+          <p className="text-xs uppercase tracking-widest mb-2" style={{ color: T.brass }}>Your plan</p>
+          {!hasIncome ? (
+            <p className="text-sm" style={{ color: T.mute }}>Set your monthly income to see this.</p>
+          ) : testAmount <= 0 ? (
+            <p className="text-sm" style={{ color: T.mute }}>Set a monthly amount above to see where this plan leads.</p>
+          ) : totalMonths !== null ? (
+            <>
+              <p className="text-4xl" style={{ ...SERIF, ...NUMS, color: T.brass }}>{stabilityDateDisplay}</p>
+              <p className="text-xs mt-1" style={{ color: T.mute }}>
+                Emergency fund funded, debt-free, and every current goal met, {totalMonths === 0 ? "today" : `${totalMonths} month${totalMonths === 1 ? "" : "s"} from now`}, at {money(testAmount)}/mo.
+              </p>
+
+              {/* Simple proportional timeline "graph" */}
+              <div className="h-3 rounded-full overflow-hidden flex mt-4" style={{ background: T.line }}>
+                {priority.map((key) => {
+                  const s = stages[key];
+                  const widthPct = totalMonths > 0 ? Math.max(2, ((s.months ?? 0) / totalMonths) * 100) : 0;
+                  return <div key={key} style={{ width: `${widthPct}%`, background: PRIORITY_META[key].color(T) }} title={PRIORITY_META[key].label} />;
+                })}
+              </div>
+
+              <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs mt-3" style={{ color: T.mute }}>
+                {priority.map((key, i) => (
+                  <span key={key}>{i + 1}. {PRIORITY_META[key].label}: <span style={{ color: T.text }}>{stages[key].months === 0 ? "already there" : stages[key].dateDisplay ?? "…"}</span></span>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="text-sm" style={{ color: T.coral }}>{stopReason ?? "Not reachable at this monthly amount."}</p>
+          )}
         </div>
 
         {/* Emergency fund */}
@@ -203,8 +281,8 @@ export default function ProjectionsScreen({
             <p className="text-sm mt-4" style={{ color: T.jade }}>Fully funded already. 🎉</p>
           ) : (
             <div className="grid grid-cols-2 gap-4 mt-4">
-              <PaceRow label="At recommended pace" months={efCurrent.months} dateDisplay={efCurrent.dateDisplay} color={T.text} T={T} />
-              <PaceRow label={`With +${money(extra)}/mo`} months={efBoosted.months} dateDisplay={efBoosted.dateDisplay} color={T.jade} T={T} />
+              <PaceRow label="At recommended pace" months={projectCompletion(efRemaining, effectiveBudgetTargets.savings).months} dateDisplay={projectCompletion(efRemaining, effectiveBudgetTargets.savings).dateDisplay} color={T.text} T={T} />
+              <PaceRow label="In your plan" months={stages.ef.months} dateDisplay={stages.ef.dateDisplay} color={T.jade} T={T} />
             </div>
           )}
         </div>
@@ -225,16 +303,11 @@ export default function ProjectionsScreen({
                 dateDisplay={debt.plan?.feasible ? debt.plan.debtFreeDateDisplay : null}
                 color={T.text} T={T}
               />
-              <PaceRow
-                label={`With +${money(extra)}/mo extra`}
-                months={debtBoosted?.feasible ? debtBoosted.months : null}
-                dateDisplay={debtBoosted?.feasible && debtBoosted.debtFreeDate ? dateFmt(new Date(debtBoosted.debtFreeDate)) : null}
-                color={T.jade} T={T}
-              />
+              <PaceRow label="In your plan" months={stages.debt.months} dateDisplay={stages.debt.dateDisplay} color={T.jade} T={T} />
             </div>
           )}
-          {debtBoosted && !debtBoosted.feasible && debtBoosted.warning && (
-            <p className="text-xs mt-3" style={{ color: T.coral }}>{debtBoosted.warning}</p>
+          {stages.debt.warning && (
+            <p className="text-xs mt-3" style={{ color: T.coral }}>{stages.debt.warning}</p>
           )}
         </div>
 
@@ -244,21 +317,20 @@ export default function ProjectionsScreen({
           {openGoals.length === 0 ? (
             <p className="text-sm" style={{ color: T.mute }}>{goals.length === 0 ? "No goals yet. Add one in Goals." : "All goals achieved. 🎉"}</p>
           ) : (
-            <div className="space-y-4">
-              {openGoals.map((g) => {
-                const remaining = Math.max(0, g.targetAmount - g.currentAmount);
-                const boosted = projectCompletion(remaining, g.projection.requiredMonthly + extra);
-                return (
-                  <div key={g.id} className="pb-4 last:pb-0" style={{ borderBottom: `1px solid ${T.line}` }}>
-                    <p className="text-sm font-medium mb-2" style={{ color: T.text }}>{g.emoji} {g.name}</p>
-                    <div className="grid grid-cols-2 gap-4">
-                      <PaceRow label="At required pace" months={g.projection.monthsRemaining} dateDisplay={g.projection.targetDateDisplay} color={T.text} T={T} />
-                      <PaceRow label={`With +${money(extra)}/mo`} months={boosted.months} dateDisplay={boosted.dateDisplay} color={T.jade} T={T} />
-                    </div>
+            <>
+              <div className="grid grid-cols-2 gap-4 pb-4" style={{ borderBottom: `1px solid ${T.line}` }}>
+                <PaceRow label="At required pace (combined)" months={Math.max(0, ...openGoals.map((g) => g.projection.monthsRemaining))} dateDisplay={null} color={T.text} T={T} />
+                <PaceRow label="In your plan (combined)" months={stages.goals.months} dateDisplay={stages.goals.dateDisplay} color={T.jade} T={T} />
+              </div>
+              <div className="space-y-2 mt-3">
+                {openGoals.map((g) => (
+                  <div key={g.id} className="flex items-center justify-between text-sm">
+                    <span style={{ color: T.text }}>{g.emoji} {g.name}</span>
+                    <span style={{ color: T.mute }}>{g.projection.pctComplete}% saved · target {g.projection.targetDateDisplay}</span>
                   </div>
-                );
-              })}
-            </div>
+                ))}
+              </div>
+            </>
           )}
         </div>
 
