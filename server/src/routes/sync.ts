@@ -173,13 +173,23 @@ router.get("/pull", async (req, res, next) => {
     const auth = req.header("authorization") ?? "";
     const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
     tokenSchema.parse(token);
+    // Metadata only — never the token/password or anything derived from
+    // them. This is currently the ONLY place a failed sign-in-on-new-device
+    // attempt leaves any trace at all; without it, diagnosing a real report
+    // of "wrong password" from a specific device is pure guesswork.
+    const meta = { email, userAgent: req.header("user-agent") ?? null };
 
     const record = await prisma.userSync.findUnique({ where: { email } });
-    if (!record) return res.status(404).json({ error: "No sync data found for this account." });
+    if (!record) {
+      logger.warn("pull_denied_no_record", meta);
+      return res.status(404).json({ error: "No sync data found for this account." });
+    }
     if (!record.authTokenHash) {
+      logger.warn("pull_denied_no_token_registered", meta);
       return res.status(401).json({ error: "This account has no sync credentials registered yet. Push from an updated client first." });
     }
     if (!hashesEqual(record.authTokenHash, hashToken(token))) {
+      logger.warn("pull_denied_token_mismatch", { ...meta, tokenLength: token.length, lastSyncedAt: record.syncedAt });
       return res.status(401).json({ error: "Invalid sync credentials for this account." });
     }
 
