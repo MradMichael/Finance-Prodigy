@@ -9,7 +9,7 @@ import type { Session } from "../../lib/auth";
 import { loadData, saveData } from "../../lib/localData";
 import { computeDashboard } from "../../lib/computeDashboard";
 import { buildReportHtml } from "../../lib/printReport";
-import { pullFromServer, getLastSyncTime } from "../../lib/syncService";
+import { pushToServer, pullFromServer, getLastSyncTime } from "../../lib/syncService";
 import { isAnalyticsOptedIn, setAnalyticsOptIn } from "../../lib/analytics";
 import { useTheme, useThemeControl } from "../../contexts/ThemeContext";
 import { THEMES, type ThemeKey } from "../../lib/theme";
@@ -82,6 +82,20 @@ export default function ProfilePage() {
     }
   }
 
+  async function handlePush() {
+    if (!session) return;
+    setSyncing(true); setSyncMsg("");
+    const data = await loadData(session.userId);
+    const result = await pushToServer(session.email, data);
+    setSyncing(false);
+    if (result.ok) {
+      setLastSync(result.syncedAt ?? null);
+      setSyncMsg("✓ Pushed to database.");
+    } else {
+      setSyncMsg("✗ " + result.error);
+    }
+  }
+
   function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!session || !name.trim()) return;
@@ -146,8 +160,16 @@ export default function ProfilePage() {
     setRecoveryMsg("");
     if (!confirm("Generate a new recovery code? Your old recovery code will stop working immediately.")) return;
     const result = await regenerateRecoveryCode(session.userId);
-    if (result.ok) setNewRecoveryCode(result.recoveryCode);
-    else setRecoveryMsg(result.error);
+    if (!result.ok) { setRecoveryMsg(result.error); return; }
+    setNewRecoveryCode(result.recoveryCode);
+    // Regenerating only updates this device's local record — the server
+    // still has whatever recovery token the last push carried, which is
+    // now stale. Push immediately so the new code actually works from
+    // another device right away, instead of silently waiting on the next
+    // unrelated data edit to carry it up (the gap that made an already-
+    // regenerated code fail to recover from a second device).
+    const data = await loadData(session.userId);
+    await pushToServer(session.email, data);
   }
 
   const initials = session ? session.name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2) : "…";
@@ -294,7 +316,7 @@ export default function ProfilePage() {
               Database sync
             </h2>
             <p className="text-xs mt-1" style={{ color: T.mute }}>
-              Your data is automatically saved to the database whenever you make changes. No action needed.
+              Most changes sync to the database automatically a few seconds after you make them. Use the buttons below to push or restore immediately instead of waiting.
             </p>
             <p className="text-xs mt-2 leading-relaxed" style={{ color: T.mute }}>
               <strong style={{ color: T.text }}>Privacy note:</strong> Your financial data is encrypted in this browser (AES-256). The sync backup stored on the server is protected by your password but is not end-to-end encrypted: the server can read it. If you prefer full privacy, disable sync by not pushing, and use <em>Download my data</em> below to back up locally.
@@ -307,18 +329,33 @@ export default function ProfilePage() {
             )}
           </div>
 
-          <div>
-            <p className="text-xs mb-2" style={{ color: T.mute }}>
-              To restore data from the database (e.g. on a new device):
-            </p>
-            <button
-              onClick={handlePull}
-              disabled={syncing}
-              className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 flex items-center gap-2"
-              style={{ background: T.line, color: T.text }}
-            >
-              {syncing ? "⏳ Restoring…" : "⬇ Restore from database"}
-            </button>
+          <div className="flex flex-wrap gap-3">
+            <div>
+              <p className="text-xs mb-2" style={{ color: T.mute }}>
+                Push this device&apos;s data to the database now:
+              </p>
+              <button
+                onClick={handlePush}
+                disabled={syncing}
+                className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 flex items-center gap-2"
+                style={{ background: T.line, color: T.text }}
+              >
+                {syncing ? "⏳ Syncing…" : "⬆ Push to database"}
+              </button>
+            </div>
+            <div>
+              <p className="text-xs mb-2" style={{ color: T.mute }}>
+                Restore data from the database (e.g. on a new device):
+              </p>
+              <button
+                onClick={handlePull}
+                disabled={syncing}
+                className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 flex items-center gap-2"
+                style={{ background: T.line, color: T.text }}
+              >
+                {syncing ? "⏳ Restoring…" : "⬇ Restore from database"}
+              </button>
+            </div>
           </div>
 
           {syncMsg && (
