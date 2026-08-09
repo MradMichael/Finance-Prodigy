@@ -10,6 +10,8 @@ import Donut from "../charts/Donut";
 type TrendPeriod = "monthly" | "quarterly" | "yearly";
 type BucketTotals = { needs: number; wants: number; savings: number };
 
+const FREQ_LABEL = { weekly: "Weekly", biweekly: "Every 2 weeks", monthly: "Monthly", every2months: "Every 2 months", quarterly: "Quarterly", biannually: "Every 6 months", yearly: "Yearly" } as const;
+
 /** YYYY-MM / YYYY-Q# / YYYY grouping key for a transaction date, depending on the selected trend period. */
 function periodKey(dateStr: string, mode: TrendPeriod): string {
   const [y, m] = dateStr.slice(0, 7).split("-");
@@ -103,6 +105,22 @@ export default function TransactionsScreen({ financials }: { financials: LocalFi
   }, {});
   const BC = { NEEDS: T.sky, WANTS: T.brass, SAVINGS: T.jade } as const;
   const BL = { NEEDS: "Needs", WANTS: "Wants", SAVINGS: "Savings" } as const;
+
+  // Recurring items already fed the bucket-summary totals and category
+  // trends above, but never appeared as rows here -- someone scanning the
+  // month's list for "did my tuition payment show up" would never find it,
+  // even though it was already counted in every total on this page. Shown
+  // only for months that already have a real logged-transaction group
+  // (matches this list's existing per-month structure); a month with only
+  // recurring and nothing logged yet doesn't get a group here at all,
+  // same as before this change.
+  function recurringRowsForMonth(mo: string) {
+    const asOf = mo === currentYm ? new Date() : new Date(`${mo}-01T00:00:00`);
+    return recurring
+      .map((r) => ({ r, usd: toUSD(monthlyEquivalent(r, asOf), r.currency) }))
+      .filter(({ usd }) => usd > 0)
+      .filter(({ r }) => !q || r.name.toLowerCase().includes(q) || r.bucket.toLowerCase().includes(q));
+  }
 
   // Same totals the bucket-summary cards use (logged transactions in the
   // current filter + that filter's recurring contribution), reshaped for
@@ -273,7 +291,8 @@ export default function TransactionsScreen({ financials }: { financials: LocalFi
         {/* List by month */}
         {Object.keys(grouped).sort().reverse().map((mo) => {
           const txs = grouped[mo];
-          const moTotal = txs.reduce((s, t) => s + toUSD(t.amount, t.currency), 0);
+          const recurRows = recurringRowsForMonth(mo);
+          const moTotal = txs.reduce((s, t) => s + toUSD(t.amount, t.currency), 0) + recurRows.reduce((s, rr) => s + rr.usd, 0);
           return (
             <div key={mo}>
               <div className="flex justify-between items-baseline mb-2 px-1">
@@ -306,6 +325,24 @@ export default function TransactionsScreen({ financials }: { financials: LocalFi
                       {t.currency === "LBP" && (
                         <p className="text-[10px]" style={{ color: T.mute }}>LBP {t.amount.toLocaleString()}</p>
                       )}
+                    </div>
+                  </div>
+                ))}
+                {recurRows.map(({ r, usd }, i) => (
+                  <div
+                    key={`recur-${r.id}`}
+                    className="flex items-center gap-3 px-4 py-3"
+                    style={{ background: T.panelSoft, borderTop: (txs.length > 0 || i > 0) ? `1px solid ${T.line}` : undefined }}
+                  >
+                    <span className="text-xs flex-shrink-0" style={{ color: T.mute }}>↻</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm truncate" style={{ color: T.text }}>{r.emoji ? `${r.emoji} ` : ""}{r.name}</p>
+                      <p className="text-[10px]" style={{ color: T.mute }}>
+                        Recurring · {BL[r.bucket]} · {FREQ_LABEL[r.frequency]}
+                      </p>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-sm font-medium tabular-nums" style={{ color: BC[r.bucket] }}>{money(usd, 2)}</p>
                     </div>
                   </div>
                 ))}
