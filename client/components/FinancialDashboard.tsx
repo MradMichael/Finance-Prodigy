@@ -307,27 +307,55 @@ export default function FinancialDashboard({
           </div>
         )}
 
-        {/* Balance check — expected (from logged transactions) vs. what you actually have */}
+        {/* Balance check — expected (from logged transactions) vs. what you actually have.
+            Purely a display of TrackedBalance data computed independently in
+            computeDashboard.ts; nothing else on this page reads balanceChecks, so
+            it cannot affect the health score, budget, or net worth above/below it. */}
         {balanceChecks.some((b) => b.actual != null) && (
-          <div className="rounded-2xl px-5 py-4 space-y-2.5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
-            <p className="text-xs uppercase tracking-widest" style={{ color: T.mute }}>Balance check</p>
-            {balanceChecks.filter((b) => b.actual != null).map((b) => {
-              const gap = b.discrepancy ?? 0;
-              const mismatch = Math.abs(gap) >= 1;
-              return (
-                <div key={b.id} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 text-sm">
-                  <span style={{ color: T.text }}>{b.name}</span>
-                  <span style={{ color: T.mute }}>
-                    expected {money(b.expected)} · you said {money(b.actual as number)}
-                    {mismatch && (
-                      <span style={{ color: T.coral }}>
-                        {" · "}{gap < 0 ? `$${Math.abs(gap).toFixed(0)} unaccounted for, check for a missed entry` : `$${gap.toFixed(0)} more than expected`}
+          <div className="space-y-3">
+            <p className="text-xs uppercase tracking-widest px-1" style={{ color: T.mute }}>Balance check</p>
+            <div className="grid gap-3 md:grid-cols-2">
+              {balanceChecks.filter((b) => b.actual != null).map((b) => {
+                const gap = b.discrepancy ?? 0;
+                const mismatch = Math.abs(gap) >= 1;
+                const accent = mismatch ? T.coral : T.jade;
+                return (
+                  <div
+                    key={b.id}
+                    className="rounded-2xl px-5 py-4"
+                    style={{ background: T.panel, border: `1px solid ${mismatch ? T.coral + "40" : T.line}` }}
+                  >
+                    <div className="flex items-center justify-between gap-2 mb-3">
+                      <span className="text-sm font-medium" style={{ color: T.text }}>{b.name}</span>
+                      <span
+                        className="text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide"
+                        style={{ background: accent + "18", color: accent }}
+                      >
+                        {mismatch ? "Mismatch" : "Matches"}
                       </span>
+                    </div>
+                    <div className="flex items-end justify-between gap-4">
+                      <div>
+                        <p className="text-[10px] uppercase tracking-widest" style={{ color: T.mute }}>Expected</p>
+                        <p className="text-lg tabular-nums" style={{ ...SERIF, color: T.text }}>{money(b.expected)}</p>
+                      </div>
+                      <span style={{ color: T.mute }}>vs</span>
+                      <div className="text-right">
+                        <p className="text-[10px] uppercase tracking-widest" style={{ color: T.mute }}>You said</p>
+                        <p className="text-lg tabular-nums" style={{ ...SERIF, color: T.text }}>{money(b.actual as number)}</p>
+                      </div>
+                    </div>
+                    {mismatch && (
+                      <p className="text-xs mt-3 pt-3" style={{ color: T.coral, borderTop: `1px solid ${T.coral}30` }}>
+                        {gap < 0
+                          ? `${money(Math.abs(gap))} unaccounted for — check for a missed entry.`
+                          : `${money(gap)} more than expected — got extra cash, or a transaction logged twice?`}
+                      </p>
                     )}
-                  </span>
-                </div>
-              );
-            })}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 
