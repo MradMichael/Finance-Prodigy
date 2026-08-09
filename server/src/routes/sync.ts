@@ -130,6 +130,7 @@ router.post("/push", async (req, res, next) => {
       syncedAt = await withTransactionRetry(() => prisma.$transaction(async (tx) => {
         const existing = await tx.userSync.findUnique({ where: { email: normalizedEmail } });
         if (existing?.authTokenHash && !hashesEqual(existing.authTokenHash, tokenHash)) {
+          logger.warn("push_denied_token_mismatch", { email: normalizedEmail, userAgent: req.header("user-agent") ?? null, lastSyncedAt: existing.syncedAt });
           throw new SyncAuthError();
         }
         const now = new Date();
@@ -211,6 +212,7 @@ router.post("/relink", async (req, res, next) => {
     const { email, token, recoveryToken, oldRecoveryToken } = relinkSchema.parse(req.body);
     const tokenHash = hashToken(token);
     const recoveryTokenHash = hashToken(recoveryToken);
+    const meta = { email, userAgent: req.header("user-agent") ?? null };
 
     try {
       await withTransactionRetry(() => prisma.$transaction(async (tx) => {
@@ -219,6 +221,7 @@ router.post("/relink", async (req, res, next) => {
         if (!existing || (!existing.authTokenHash && !existing.recoveryTokenHash)) {
           // Nothing registered yet (this account has never actually synced) —
           // safe to register fresh, the same trust-on-first-use logic push uses.
+          logger.info("relink_registered_fresh", { ...meta, hadExistingRow: !!existing });
           await tx.userSync.upsert({
             where: { email },
             create: { email, dataJson: existing?.dataJson ?? "{}", authTokenHash: tokenHash, recoveryTokenHash },
@@ -231,13 +234,16 @@ router.post("/relink", async (req, res, next) => {
           // Synced before this feature existed — no recovery proof on file to
           // check against. Refuse rather than let anyone who merely knows *a*
           // recovery code silently take over an already-claimed sync slot.
+          logger.warn("relink_denied_no_recovery_token_registered", meta);
           throw new SyncAuthError();
         }
 
         if (!oldRecoveryToken || !hashesEqual(hashToken(oldRecoveryToken), existing.recoveryTokenHash)) {
+          logger.warn("relink_denied_old_recovery_token_mismatch", { ...meta, hadOldRecoveryToken: !!oldRecoveryToken });
           throw new SyncAuthError();
         }
 
+        logger.info("relink_succeeded", meta);
         await tx.userSync.update({
           where: { email },
           data: { authTokenHash: tokenHash, recoveryTokenHash },
