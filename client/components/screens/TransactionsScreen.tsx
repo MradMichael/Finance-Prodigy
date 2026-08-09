@@ -5,6 +5,7 @@ import type { LocalFinancials, StoredRecurring } from "../../lib/localData";
 import { fmtDate, monthlyEquivalent, toUSD as toUSDShared } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money } from "./shared";
+import Donut from "../charts/Donut";
 
 type TrendPeriod = "monthly" | "quarterly" | "yearly";
 type BucketTotals = { needs: number; wants: number; savings: number };
@@ -103,6 +104,16 @@ export default function TransactionsScreen({ financials }: { financials: LocalFi
   const BC = { NEEDS: T.sky, WANTS: T.brass, SAVINGS: T.jade } as const;
   const BL = { NEEDS: "Needs", WANTS: "Wants", SAVINGS: "Savings" } as const;
 
+  // Same totals the bucket-summary cards use (logged transactions in the
+  // current filter + that filter's recurring contribution), reshaped for
+  // the donut below so the chart and the cards never disagree.
+  const bucketBreakdown = (["NEEDS", "WANTS", "SAVINGS"] as const).map((b) => {
+    const txSum = filtered.filter((t) => t.bucket === b).reduce((s, t) => s + toUSD(t.amount, t.currency), 0);
+    const recurSum = b === "NEEDS" ? recurForFilter.needs : b === "WANTS" ? recurForFilter.wants : recurForFilter.savings;
+    return { bucket: b, value: txSum + recurSum };
+  });
+  const bucketTotal = bucketBreakdown.reduce((s, b) => s + b.value, 0);
+
   // Category trends: % of spend in each bucket per period, across ALL
   // history (not the search/month filter above, which is about finding one
   // transaction, not seeing the long-run pattern).
@@ -173,18 +184,44 @@ export default function TransactionsScreen({ financials }: { financials: LocalFi
 
         {/* Bucket summary */}
         <div className="grid grid-cols-3 gap-3">
-          {(["NEEDS","WANTS","SAVINGS"] as const).map((b) => {
-            const txSum = filtered.filter((t) => t.bucket === b).reduce((s, t) => s + toUSD(t.amount, t.currency), 0);
+          {bucketBreakdown.map(({ bucket: b, value }) => {
             const recurSum = b === "NEEDS" ? recurForFilter.needs : b === "WANTS" ? recurForFilter.wants : recurForFilter.savings;
             return (
               <div key={b} className="rounded-2xl px-4 py-4" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
                 <p className="text-[10px] uppercase tracking-widest mb-2" style={{ color: T.mute }}>{BL[b]}</p>
-                <p className="text-xl font-medium tabular-nums" style={{ ...SERIF, color: BC[b] }}>{money(txSum + recurSum)}</p>
+                <p className="text-xl font-medium tabular-nums" style={{ ...SERIF, color: BC[b] }}>{money(value)}</p>
                 {recurSum > 0 && <p className="text-[10px] mt-0.5" style={{ color: T.mute }}>incl. {money(recurSum)} recurring</p>}
               </div>
             );
           })}
         </div>
+
+        {/* Where it went — visual breakdown for the current filter */}
+        {bucketTotal > 0 && (
+          <div className="rounded-2xl p-5 flex items-center gap-6 flex-wrap" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
+            <Donut
+              segments={bucketBreakdown.map((b) => ({ value: b.value, color: BC[b.bucket], label: BL[b.bucket] }))}
+              trackColor={T.line}
+              labelColor={T.text}
+              centerLabel={money(bucketTotal)}
+              centerSublabel={filter === "all" ? "all time" : fmtMo(filter)}
+            />
+            <div className="flex-1 min-w-[160px] space-y-2.5">
+              <p className="text-xs uppercase tracking-widest mb-1" style={{ color: T.mute }}>Where it went{filter !== "all" ? ` · ${fmtMo(filter)}` : ""}</p>
+              {bucketBreakdown.map(({ bucket: b, value }) => (
+                <div key={b} className="flex items-center justify-between text-sm">
+                  <span className="flex items-center gap-2" style={{ color: T.text }}>
+                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: BC[b] }} />
+                    {BL[b]}
+                  </span>
+                  <span style={{ ...NUMS, color: T.mute }}>
+                    {money(value)} <span style={{ color: T.text }}>· {bucketTotal > 0 ? Math.round((value / bucketTotal) * 100) : 0}%</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Category trends */}
         {allTx.length > 0 && (
