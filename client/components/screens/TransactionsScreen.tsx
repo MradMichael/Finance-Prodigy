@@ -103,8 +103,8 @@ export default function TransactionsScreen({ financials }: { financials: LocalFi
     (acc[k] = acc[k] ?? []).push(t);
     return acc;
   }, {});
-  const BC = { NEEDS: T.sky, WANTS: T.brass, SAVINGS: T.jade } as const;
-  const BL = { NEEDS: "Needs", WANTS: "Wants", SAVINGS: "Savings" } as const;
+  const BC = { NEEDS: T.sky, WANTS: T.brass, SAVINGS: T.jade, INCOME: T.jade } as const;
+  const BL = { NEEDS: "Needs", WANTS: "Wants", SAVINGS: "Savings", INCOME: "Income" } as const;
 
   // Recurring items already fed the bucket-summary totals and category
   // trends above, but never appeared as rows here -- someone scanning the
@@ -140,6 +140,10 @@ export default function TransactionsScreen({ financials }: { financials: LocalFi
   const trendData = (() => {
     const byPeriod: Record<string, BucketTotals> = {};
     for (const t of allTx) {
+      // Trends are specifically the Needs/Wants/Savings spend mix -- INCOME
+      // transactions aren't spend, and the old catch-all would have
+      // miscounted them as extra savings.
+      if (t.bucket === "INCOME") continue;
       const k = periodKey(t.date, trendPeriod);
       const b = byPeriod[k] ?? (byPeriod[k] = { needs: 0, wants: 0, savings: 0 });
       const usd = toUSD(t.amount, t.currency);
@@ -292,7 +296,10 @@ export default function TransactionsScreen({ financials }: { financials: LocalFi
         {Object.keys(grouped).sort().reverse().map((mo) => {
           const txs = grouped[mo];
           const recurRows = recurringRowsForMonth(mo);
-          const moTotal = txs.reduce((s, t) => s + toUSD(t.amount, t.currency), 0) + recurRows.reduce((s, rr) => s + rr.usd, 0);
+          // Spend total for the header -- INCOME rows are shown in the list
+          // below but excluded here, same as everywhere else on this page
+          // that means "spend" (bucket-summary cards, the donut, trends).
+          const moTotal = txs.filter((t) => t.bucket !== "INCOME").reduce((s, t) => s + toUSD(t.amount, t.currency), 0) + recurRows.reduce((s, rr) => s + rr.usd, 0);
           return (
             <div key={mo}>
               <div className="flex justify-between items-baseline mb-2 px-1">

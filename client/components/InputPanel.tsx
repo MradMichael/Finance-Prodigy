@@ -13,6 +13,10 @@ import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, Dat
 import ImportStatement from "./ImportStatement";
 
 type Bucket = "NEEDS" | "WANTS" | "SAVINGS";
+// Transactions (not recurring items) can also be logged as one-off INCOME --
+// see StoredTransaction's doc comment in localData.ts for why recurring stays
+// 3-way.
+type TxBucket = Bucket | "INCOME";
 
 const PM_OPTIONS: { value: PaymentMethod; label: string; icon: string }[] = [
   { value: "cash",  label: "Cash",  icon: "💵" },
@@ -53,11 +57,18 @@ export default function InputPanel({ financials, onChange, session }: Props) {
     { value: "WANTS",   label: "Wants",   icon: "✨", color: T.brass },
     { value: "SAVINGS", label: "Savings", icon: "💰", color: T.jade  },
   ];
+  // Transaction-only picker (adds Income) -- recurring pickers keep using
+  // BUCKETS above unchanged, since recurring income already has its own home
+  // in the Setup income field.
+  const TX_BUCKETS: { value: TxBucket; label: string; icon: string; color: string }[] = [
+    ...BUCKETS,
+    { value: "INCOME", label: "Income", icon: "📥", color: T.jade },
+  ];
   const update = (patch: Partial<LocalFinancials>) => onChange({ ...financials, ...patch });
 
   // Transaction form
   const [txAmt,    setTxAmt]    = useState("");
-  const [txBucket, setTxBucket] = useState<Bucket>("NEEDS");
+  const [txBucket, setTxBucket] = useState<TxBucket>("NEEDS");
   const [txDesc,   setTxDesc]   = useState("");
   const [txDate,   setTxDate]   = useState(todayISO());
   const [txCurrency,  setTxCurrency]  = useState<Currency>("USD");
@@ -152,7 +163,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
   const [editTxAmt,        setEditTxAmt]        = useState("");
   const [editTxDesc,       setEditTxDesc]       = useState("");
   const [editTxDate,       setEditTxDate]       = useState("");
-  const [editTxBucket,     setEditTxBucket]     = useState<Bucket>("NEEDS");
+  const [editTxBucket,     setEditTxBucket]     = useState<TxBucket>("NEEDS");
   const [editTxCurrency,   setEditTxCurrency]   = useState<Currency>("USD");
 
   // ── helpers ────────────────────────────────────────────────────── //
@@ -201,7 +212,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
       ...(txBucket === "SAVINGS" && txAddToEF
         ? { emergencyFundBalance: (financials.emergencyFundBalance ?? 0) + amtUSD }
         : {}),
-      ...(txBucket !== "SAVINGS" && txFromEF
+      ...(txBucket !== "SAVINGS" && txBucket !== "INCOME" && txFromEF
         ? { emergencyFundBalance: Math.max(0, (financials.emergencyFundBalance ?? 0) - amtUSD) }
         : {}),
     });
@@ -423,7 +434,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
   function startEditTx(tx: StoredTransaction) {
     setEditTxId(tx.id); setEditTxAmt(String(tx.amount));
     setEditTxDesc(tx.description); setEditTxDate(tx.date);
-    setEditTxBucket(tx.bucket as Bucket); setEditTxCurrency(tx.currency ?? "USD");
+    setEditTxBucket(tx.bucket); setEditTxCurrency(tx.currency ?? "USD");
   }
   function saveEditTx(txId: string) {
     const amt = parseFloat(editTxAmt.replace(/,/g, ""));
@@ -558,8 +569,8 @@ export default function InputPanel({ financials, onChange, session }: Props) {
 
           <div>
             <Label>Category</Label>
-            <div className="grid grid-cols-3 gap-2">
-              {BUCKETS.map((b) => (
+            <div className="grid grid-cols-2 gap-2">
+              {TX_BUCKETS.map((b) => (
                 <button
                   key={b.value}
                   onClick={() => setTxBucket(b.value)}
@@ -642,7 +653,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
           })()}
 
           {/* Needs/Wants: option to pay this from the Emergency Fund instead of new spending */}
-          {txBucket !== "SAVINGS" && (financials.emergencyFundBalance ?? 0) > 0 && (
+          {txBucket !== "SAVINGS" && txBucket !== "INCOME" && (financials.emergencyFundBalance ?? 0) > 0 && (
             <button
               onClick={() => setTxFromEF((v) => !v)}
               className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-left transition-all"
@@ -672,7 +683,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
               placeholder="Rent, groceries, gym…"
               onKeyDown={(e) => e.key === "Enter" && addTransaction()}
             />
-            {looksRecurring(txDesc, txDate, financials.transactions, financials.recurring ?? []) && (
+            {txBucket !== "INCOME" && looksRecurring(txDesc, txDate, financials.transactions, financials.recurring ?? []) && (
               <div className="mt-2 rounded-xl px-3 py-2.5 flex items-center justify-between gap-2" style={{ background: T.brass + "14", border: `1px solid ${T.brass}30` }}>
                 <p className="text-[11px]" style={{ color: T.brass }}>You&apos;ve logged this before in another month. Looks recurring.</p>
                 <button
@@ -837,7 +848,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
             <>
               <div className="space-y-2 max-h-72 overflow-y-auto pr-0.5">
                 {monthTx.map((tx) => {
-                  const b = BUCKETS.find((b) => b.value === tx.bucket)!;
+                  const b = TX_BUCKETS.find((b) => b.value === tx.bucket)!;
                   const isEditingTx = editTxId === tx.id;
                   return (
                     <div key={tx.id}>
@@ -857,7 +868,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                           <div>
                             <Label htmlFor="edit-tx-desc">Description</Label>
                             <FocusInput id="edit-tx-desc" value={editTxDesc} onChange={(e) => setEditTxDesc(e.target.value)} />
-                            {looksRecurring(editTxDesc, editTxDate, financials.transactions.filter((t) => t.id !== tx.id), financials.recurring ?? []) && (
+                            {editTxBucket !== "INCOME" && looksRecurring(editTxDesc, editTxDate, financials.transactions.filter((t) => t.id !== tx.id), financials.recurring ?? []) && (
                               <div className="mt-2 rounded-xl px-3 py-2.5 flex items-center justify-between gap-2" style={{ background: T.brass + "14", border: `1px solid ${T.brass}30` }}>
                                 <p className="text-[11px]" style={{ color: T.brass }}>You&apos;ve logged this before in another month. Looks recurring.</p>
                                 <button
@@ -871,8 +882,8 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                               </div>
                             )}
                           </div>
-                          <div className="grid grid-cols-3 gap-1.5">
-                            {BUCKETS.map((bkt) => (
+                          <div className="grid grid-cols-2 gap-1.5">
+                            {TX_BUCKETS.map((bkt) => (
                               <button key={bkt.value} onClick={() => setEditTxBucket(bkt.value)}
                                 className="py-1.5 rounded-lg text-[10px] font-medium transition-all"
                                 style={{ background: editTxBucket === bkt.value ? bkt.color + "22" : T.ink, border: `1px solid ${editTxBucket === bkt.value ? bkt.color : T.line}`, color: editTxBucket === bkt.value ? bkt.color : T.mute }}>
@@ -970,7 +981,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                       </div>
                       <div className="space-y-1.5">
                         {txs.sort((a, b) => b.date.localeCompare(a.date)).map((tx) => {
-                          const b = BUCKETS.find((b) => b.value === tx.bucket)!;
+                          const b = TX_BUCKETS.find((b) => b.value === tx.bucket)!;
                           const isEditingTx = editTxId === tx.id;
                           return (
                             <div key={tx.id}>
@@ -991,8 +1002,8 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                                     <Label htmlFor="edit-tx-desc">Description</Label>
                                     <FocusInput id="edit-tx-desc" value={editTxDesc} onChange={(e) => setEditTxDesc(e.target.value)} />
                                   </div>
-                                  <div className="grid grid-cols-3 gap-1.5">
-                                    {BUCKETS.map((bkt) => (
+                                  <div className="grid grid-cols-2 gap-1.5">
+                                    {TX_BUCKETS.map((bkt) => (
                                       <button key={bkt.value} onClick={() => setEditTxBucket(bkt.value)}
                                         className="py-1.5 rounded-lg text-[10px] font-medium transition-all"
                                         style={{ background: editTxBucket === bkt.value ? bkt.color + "22" : T.ink, border: `1px solid ${editTxBucket === bkt.value ? bkt.color : T.line}`, color: editTxBucket === bkt.value ? bkt.color : T.mute }}>

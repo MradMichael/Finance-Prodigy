@@ -558,3 +558,81 @@ describe("upcomingRenewals — exact calendar-day due counts, consistent regardl
     expect(renewal?.dueInDays).toBe(5);
   });
 });
+
+describe("INCOME transactions — one-off receipts boost effective income without counting as spend", () => {
+  it("increases month.income and netCashFlow but never appears in needsSpend/wantsSpend/savingsContrib", () => {
+    const data = makeData({
+      income: 1000,
+      transactions: [
+        { id: "t1", amount: 200, currency: "USD", bucket: "INCOME", description: "Gift from Dad", date: "2026-07-05" },
+        { id: "t2", amount: 50, currency: "USD", bucket: "NEEDS", description: "Groceries", date: "2026-07-06" },
+      ],
+    });
+    const result = computeDashboard(data);
+    expect(result.month.income).toBe(1200); // 1000 salary + 200 gift
+    expect(result.month.needsSpend).toBe(50); // the gift never lands here
+    expect(result.month.wantsSpend).toBe(0);
+    expect(result.month.savingsContrib).toBe(0); // old catch-all would have miscounted it here
+    expect(result.month.totalSpend).toBe(50);
+    expect(result.month.netCashFlow).toBe(1150); // 1200 - 50
+  });
+
+  it("excludes INCOME transactions from sixMonthTrend's spend line but includes them in its income line", () => {
+    const data = makeData({
+      income: 1000,
+      transactions: [
+        { id: "t1", amount: 300, currency: "USD", bucket: "INCOME", description: "Reimbursement", date: "2026-07-05" },
+        { id: "t2", amount: 100, currency: "USD", bucket: "WANTS", description: "Dinner", date: "2026-07-06" },
+      ],
+    });
+    const result = computeDashboard(data);
+    const currentMonthBar = result.sixMonthTrend[5];
+    expect(currentMonthBar.income).toBe(1300);
+    expect(currentMonthBar.spend).toBeCloseTo(100, 5); // the reimbursement must not inflate "spend"
+  });
+
+  it("increases the expected balance on a tracked cash balance instead of being counted as a deduction", () => {
+    const data = makeData({
+      trackedBalances: [{ id: "b1", name: "Wallet", paymentMethod: "cash", startingBalance: 100, startingDate: "2026-07-01", currency: "USD" }],
+      transactions: [
+        { id: "t1", amount: 20, currency: "USD", bucket: "WANTS", description: "Coffee", date: "2026-07-05", paymentMethod: "cash" },
+        { id: "t2", amount: 30, currency: "USD", bucket: "INCOME", description: "Cash gift", date: "2026-07-06", paymentMethod: "cash" },
+      ],
+    });
+    const result = computeDashboard(data);
+    // 100 - 20 spend + 30 income = 110, not 100 - 20 - 30 = 50
+    expect(result.balanceChecks[0].expected).toBe(110);
+  });
+
+  it("is excluded from budgetRollover's savings bucket for a past month (no catch-all double-count)", () => {
+    const data = makeData({
+      income: 1000,
+      incomeHistory: [{ ym: "2026-06", value: 1000 }],
+      transactions: [
+        { id: "t1", amount: 500, currency: "USD", bucket: "INCOME", description: "Bonus", date: "2026-06-10" },
+      ],
+    });
+    const result = computeDashboard(data);
+    // June's effective income is boosted to 1000 + 500 = 1500 (the bonus
+    // raises the real savings target too), and none of it was actually
+    // logged as SAVINGS, so the full 20% target on the BOOSTED income goes
+    // to rollover -- not the un-boosted 1000, and not reduced by the old
+    // catch-all miscounting the bonus itself as "spend".
+    expect(result.budgetRollover.savings).toBeCloseTo(1500 * 0.2, 5);
+  });
+});
+
+describe("Safety net target of 0 — must never be indistinguishable from 'fully funded' at the data level", () => {
+  it("targetAmount is 0 (not a phantom positive number) when needs% is 0 under a custom budget rule, even with real income and a real balance", () => {
+    const data = makeData({
+      income: 3000, emergencyFundBalance: 1200, emergencyFundTargetMonths: 6,
+      budgetRule: "custom", budgetCustomNeeds: 0, budgetCustomWants: 30,
+    });
+    const result = computeDashboard(data);
+    expect(result.emergencyFund.targetAmount).toBe(0);
+    // remaining still floors at 0 here -- callers MUST check targetAmount > 0
+    // before treating remaining <= 0 as "fully funded" (see ProjectionsScreen,
+    // FinancialDashboard, InputPanel's EF hint, all fixed this session).
+    expect(result.emergencyFund.remaining).toBe(0);
+  });
+});

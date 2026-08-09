@@ -14,7 +14,11 @@ export interface StoredTransaction {
   id: string;
   amount: number;
   currency: Currency;
-  bucket: "NEEDS" | "WANTS" | "SAVINGS";
+  // INCOME is a one-off/incidental receipt (a gift, a reimbursement) logged as
+  // a dated transaction like any other -- distinct from the recurring salary
+  // set in Setup. StoredRecurring.bucket deliberately stays NEEDS/WANTS/SAVINGS
+  // only: recurring income already has its own home (the Setup income field).
+  bucket: "NEEDS" | "WANTS" | "SAVINGS" | "INCOME";
   description: string;
   date: string; // YYYY-MM-DD
   paymentMethod?: PaymentMethod;

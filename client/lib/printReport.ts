@@ -25,7 +25,7 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
   const ruleLabel = BUDGET_RULES[dash.budgetRule]?.label ?? dash.budgetRule;
   const lbpRate = data.lbpRate ?? 89500;
   const toUSD = (n: number, cur?: string) => toUSDShared(n, cur as "USD" | "LBP" | undefined, lbpRate);
-  const BL = { NEEDS: "Needs", WANTS: "Wants", SAVINGS: "Savings" } as const;
+  const BL = { NEEDS: "Needs", WANTS: "Wants", SAVINGS: "Savings", INCOME: "Income" } as const;
 
   const ledgerTx = options.detailed
     ? [...data.transactions]

@@ -12,13 +12,16 @@
 --    One row per transaction, fully conformed (date + category +
 --    account attributes flattened). This is THE table to point a BI
 --    tool at for transaction-level detail.
---    NOTE: income is never written as a fact_transaction row (the
---    client's data model treats income as a flat monthly setting, not
---    a dated transaction) — flow_type is always EXPENSE or SAVINGS in
---    practice, so signed_amount here is always <= 0 and sums to
---    -(total spend), not net cash flow. For a number that actually
---    nets against income, use vw_monthly_bucket (below), which sources
---    income from fact_monthly_snapshot instead.
+--    NOTE: the client's data model treats a user's regular salary as a
+--    flat monthly setting, not a dated transaction, so most income
+--    never appears here — but a one-off INCOME-bucket transaction (a
+--    gift, a reimbursement) does get written as a real fact_transaction
+--    row with flow_type = 'INCOME', and signed_amount below already
+--    accounts for it (positive, not negated like EXPENSE/SAVINGS). So
+--    summing signed_amount here nets ad-hoc income against spend, but
+--    still excludes the flat salary figure — for THAT, use
+--    vw_monthly_bucket (below), which sources it from
+--    fact_monthly_snapshot instead.
 -- ---------------------------------------------------------------------
 CREATE OR REPLACE VIEW vw_fact_ledger AS
 SELECT

@@ -20,12 +20,16 @@ import { prisma } from "./prisma";
 // ── local types (mirror LocalFinancials shape) ──────────────────────────────
 
 type BucketKey = "NEEDS" | "WANTS" | "SAVINGS";
+// Transactions (not recurring) can also be one-off INCOME -- mirrors the
+// same Bucket/TxBucket split in the client's InputPanel.tsx and
+// StoredTransaction's doc comment in localData.ts.
+type TxBucketKey = BucketKey | "INCOME";
 
 interface StoredTransaction {
   id: string;
   amount: number;
   currency?: string;
-  bucket: BucketKey;
+  bucket: TxBucketKey;
   description: string;
   date: string;           // YYYY-MM-DD
   paymentMethod?: string; // "cash" | "card" | "other"
@@ -124,10 +128,16 @@ function dimDateData(dateStr: string) {
   };
 }
 
-const BUCKET_META: Record<BucketKey, { name: string; icon: string; flowType: string }> = {
+// Keyed by the wider TxBucketKey so a real transaction's bucket always
+// resolves (a mismatch here used to mean catIds[t.bucket] was undefined,
+// making the fact_transaction insert below throw on its required FK).
+// Recurring items only ever use the BucketKey subset, which indexes into
+// this the same way.
+const BUCKET_META: Record<TxBucketKey, { name: string; icon: string; flowType: string }> = {
   NEEDS:   { name: "Needs",   icon: "🏠", flowType: "EXPENSE"  },
   WANTS:   { name: "Wants",   icon: "✨", flowType: "EXPENSE"  },
   SAVINGS: { name: "Savings", icon: "💰", flowType: "SAVINGS"  },
+  INCOME:  { name: "Income",  icon: "📥", flowType: "INCOME"   },
 };
 
 function parseBudgetPcts(rule: string, customNeeds?: number, customWants?: number) {
@@ -193,9 +203,9 @@ export async function normalizeToTables(email: string, raw: LocalFinancials): Pr
       },
     });
 
-    // ── 2. Ensure dim_category rows for NEEDS / WANTS / SAVINGS ──────────────
-    const catIds: Record<BucketKey, number> = {} as Record<BucketKey, number>;
-    for (const [bucket, meta] of Object.entries(BUCKET_META) as [BucketKey, typeof BUCKET_META[BucketKey]][]) {
+    // ── 2. Ensure dim_category rows for NEEDS / WANTS / SAVINGS / INCOME ─────
+    const catIds: Record<TxBucketKey, number> = {} as Record<TxBucketKey, number>;
+    for (const [bucket, meta] of Object.entries(BUCKET_META) as [TxBucketKey, typeof BUCKET_META[TxBucketKey]][]) {
       const cat = await tx.dimCategory.upsert({
         where:  { name_bucket: { name: meta.name, bucket } },
         create: { name: meta.name, bucket, icon: meta.icon, isActive: true },
@@ -401,6 +411,12 @@ export async function normalizeToTables(email: string, raw: LocalFinancials): Pr
       const ym  = t.date.slice(0, 7);
       const amt = toUSD(t.amount, t.currency);
       if (!monthBuckets[ym]) monthBuckets[ym] = { needs: 0, wants: 0, savings: 0 };
+      // No catch-all on purpose: an INCOME transaction matches none of
+      // these and is correctly left out of the spend breakdown. Known
+      // gap, not a bug: `income` below stays the flat Setup figure and
+      // isn't boosted by that month's INCOME transactions the way the
+      // client's computeDashboard.ts now does -- this warehouse snapshot
+      // is a BI/reporting mirror, not what the live app displays.
       if      (t.bucket === "NEEDS")   monthBuckets[ym].needs   += amt;
       else if (t.bucket === "WANTS")   monthBuckets[ym].wants   += amt;
       else if (t.bucket === "SAVINGS") monthBuckets[ym].savings += amt;

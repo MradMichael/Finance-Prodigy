@@ -131,10 +131,19 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   // Raw (unfloored) like the current-month income/incomeSafe split below —
   // display sites (e.g. sixMonthTrend) use this directly; only the one
   // division site (the savings-streak check) needs the floored version.
-  const incomeForMonth = (ym: string) => valueForMonth(data.incomeHistory, ym, data.income);
-  const incomeForMonthSafe = (ym: string) => Math.max(incomeForMonth(ym), 1);
   const toUSDForMonth = (amount: number, currency: string | undefined, ym: string) =>
     currency === "LBP" ? amount / valueForMonth(data.lbpRateHistory, ym, lbpRate) : amount;
+  // Base salary for that month plus any one-off INCOME transactions logged
+  // in it (a gift, a reimbursement) -- both are real money that month, so
+  // "effective income" for every downstream ratio/target/trend should
+  // reflect both, not just the fixed Setup figure. No caller of
+  // incomeForMonth wants the un-boosted salary alone, so this is folded in
+  // at the source instead of threading a second figure through every site.
+  const incomeTxForMonth = (ym: string) => (data.transactions ?? [])
+    .filter((t) => t.date.startsWith(ym) && t.bucket === "INCOME")
+    .reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, ym), 0);
+  const incomeForMonth = (ym: string) => valueForMonth(data.incomeHistory, ym, data.income) + incomeTxForMonth(ym);
+  const incomeForMonthSafe = (ym: string) => Math.max(incomeForMonth(ym), 1);
 
   const monthTx = (data.transactions ?? []).filter((t) => t.date.startsWith(prefix));
 
@@ -148,12 +157,17 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   const wantsSpend  = monthTx.filter((t) => t.bucket === "WANTS").reduce((s, t) => s + toUSD(t.amount, t.currency), 0)   + recurWants;
   const savingsContrib = monthTx.filter((t) => t.bucket === "SAVINGS").reduce((s, t) => s + toUSD(t.amount, t.currency), 0) + recurSavings;
   const totalSpend  = needsSpend + wantsSpend + savingsContrib;
-  // `income` stays the RAW stored value everywhere it's displayed or used
-  // as a multiplier (month.income, netCashFlow, budget targets) so a fresh
-  // $0-income account reads as $0, not a phantom $1. `incomeSafe` exists
-  // only to keep the ratio calculations below from dividing by zero.
-  const income      = data.income;
-  const incomeSafe  = Math.max(data.income, 1); // guard div-by-zero (ratios only)
+  // One-off INCOME transactions this month (a gift, a reimbursement) — real
+  // money on top of the fixed Setup salary, so it belongs in `income`
+  // itself rather than a side figure only some callers remember to add.
+  const incomeTx = monthTx.filter((t) => t.bucket === "INCOME").reduce((s, t) => s + toUSD(t.amount, t.currency), 0);
+  // `income` stays the RAW stored value (+ any logged income transactions)
+  // everywhere it's displayed or used as a multiplier (month.income,
+  // netCashFlow, budget targets) so a fresh $0-income account reads as $0,
+  // not a phantom $1. `incomeSafe` exists only to keep the ratio
+  // calculations below from dividing by zero.
+  const income      = data.income + incomeTx;
+  const incomeSafe  = Math.max(income, 1); // guard div-by-zero (ratios only)
   const netCashFlow = income - totalSpend;
   const savingsRatePct = (savingsContrib / incomeSafe) * 100;
 
@@ -378,7 +392,10 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     const isCurrent = i === 5;
     const mo = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
     const tx = data.transactions.filter((t) => t.date.startsWith(mo));
-    const txSpend = tx.reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, mo), 0);
+    // INCOME transactions aren't spend -- they're already folded into
+    // moIncome below via incomeForMonth. Summing them here too would
+    // inflate the spend line by exactly what should be inflating income.
+    const txSpend = tx.filter((t) => t.bucket !== "INCOME").reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, mo), 0);
     // Recurring payments (rent, subscriptions, etc.) don't create a
     // transaction row each month, so counting only logged transactions
     // understated every month's real spend — evaluate each recurring
@@ -421,6 +438,11 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
       if (tx.length === 0) continue;
       const spend = { needs: 0, wants: 0, savings: 0 };
       for (const t of tx) {
+        // INCOME transactions already boosted moIncome via incomeForMonth
+        // below — counting them here too (the old catch-all landed anything
+        // that wasn't NEEDS/WANTS in "savings") would double-count them as
+        // both extra income AND extra savings rollover.
+        if (t.bucket === "INCOME") continue;
         const amt = toUSDForMonth(t.amount, t.currency, ym);
         if (t.bucket === "NEEDS") spend.needs += amt;
         else if (t.bucket === "WANTS") spend.wants += amt;
@@ -581,7 +603,10 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     const spent = data.transactions
       .filter((t) => t.date >= tb.startingDate && t.paymentMethod === tb.paymentMethod
         && (tb.paymentMethod !== "card" || t.cardId === tb.cardId))
-      .reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, t.date.slice(0, 7)), 0);
+      // INCOME transactions received on this same payment method put money
+      // IN, so they subtract from "spent" (raising the expected balance)
+      // instead of adding to it like every other bucket does.
+      .reduce((s, t) => s + (t.bucket === "INCOME" ? -1 : 1) * toUSDForMonth(t.amount, t.currency, t.date.slice(0, 7)), 0);
     const startingUSD = toUSDForMonth(tb.startingBalance, tb.currency, tb.startingDate.slice(0, 7));
     const expected = Math.round((startingUSD - spent) * 100) / 100;
     const actual = tb.actualBalance != null

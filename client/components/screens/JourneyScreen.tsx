@@ -58,6 +58,11 @@ export default function JourneyScreen({
   const toUSD = (n: number, cur?: string) => (cur === "LBP" ? n / lbpRate : n);
   const byMonth: Record<string, { needs: number; wants: number; savings: number }> = {};
   for (const t of financials.transactions) {
+    // This arc is specifically about the Needs/Wants/Savings spend mix --
+    // one-off INCOME transactions aren't spend, and the old catch-all
+    // (anything not NEEDS/WANTS landed in savings) would have miscounted
+    // them as extra savings.
+    if (t.bucket === "INCOME") continue;
     const k = t.date.slice(0, 7);
     const b = byMonth[k] ?? (byMonth[k] = { needs: 0, wants: 0, savings: 0 });
     const usd = toUSD(t.amount, t.currency);
