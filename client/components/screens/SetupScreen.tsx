@@ -33,6 +33,14 @@ export default function SetupScreen({
   const T = useTheme();
   const update = (patch: Partial<LocalFinancials>) => onChange({ ...financials, ...patch });
 
+  // Mirrors computeDashboard.ts's efMonthlyBase/efTarget exactly (months of
+  // NEEDS, not months of full income) -- this used to multiply income by
+  // target-months directly, showing a target here roughly 2x the real one
+  // shown everywhere else (Overview, Projections, the transaction form).
+  const ruleKey: BudgetRuleKey = financials.budgetRule ?? "50-30-20";
+  const needsPct = ruleKey === "custom" ? (financials.budgetCustomNeeds ?? 50) : BUDGET_RULES[ruleKey].needs;
+  const efTarget = Math.round(financials.income * needsPct / 100 * financials.emergencyFundTargetMonths);
+
   return (
     <main className="min-h-screen px-4 py-8 md:px-10" style={{ background: T.ink }}>
       <div className="max-w-xl mx-auto space-y-6">
@@ -124,7 +132,7 @@ export default function SetupScreen({
                 style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
                 type="number" min="1" max="24"
                 value={financials.emergencyFundTargetMonths}
-                onChange={(e) => update({ emergencyFundTargetMonths: Math.max(1, parseInt(e.target.value) || 6) })}
+                onChange={(e) => update({ emergencyFundTargetMonths: Math.min(24, Math.max(1, parseInt(e.target.value) || 6)) })}
               />
             </div>
             <div>
@@ -143,7 +151,7 @@ export default function SetupScreen({
             <div className="rounded-xl px-4 py-3 flex items-center justify-between" style={{ background: T.ink }}>
               <span className="text-xs" style={{ color: T.mute }}>Target amount</span>
               <span className="text-sm font-medium tabular-nums" style={{ color: T.jade }}>
-                ${(financials.income * financials.emergencyFundTargetMonths).toLocaleString()}
+                ${efTarget.toLocaleString()}
               </span>
             </div>
           )}

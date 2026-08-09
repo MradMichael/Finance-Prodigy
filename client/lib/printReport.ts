@@ -32,7 +32,10 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
         .filter((t) => (!options.dateFrom || t.date >= options.dateFrom) && (!options.dateTo || t.date <= options.dateTo))
         .sort((a, b) => b.date.localeCompare(a.date))
     : [];
-  const ledgerTotal = ledgerTx.reduce((s, t) => s + toUSD(t.amount, t.currency), 0);
+  // Excludes INCOME, matching what "Spent" means in the summary card above
+  // (dash.month.totalSpend) -- otherwise a range containing a logged INCOME
+  // transaction shows two different, contradicting totals in the same report.
+  const ledgerTotal = ledgerTx.filter((t) => t.bucket !== "INCOME").reduce((s, t) => s + toUSD(t.amount, t.currency), 0);
   const ledgerRows = ledgerTx.map((t) => `
     <tr>
       <td>${t.date.split("-").reverse().join("/")}</td>

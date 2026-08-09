@@ -260,6 +260,8 @@ export default function JourneyScreen({
         <Beat eyebrow="What's next" color={T.brass}>
           {dashData.month.income <= 0 ? (
             <p className="text-sm" style={{ color: T.mute }}>Set your income to see where this story is headed.</p>
+          ) : dashData.emergencyFund.targetAmount <= 0 ? (
+            <p className="text-sm" style={{ color: T.mute }}>Set a needs percentage above 0% in Budget to see where this story is headed.</p>
           ) : efProjection.months === 0 ? (
             <p className="text-xl leading-snug" style={SERIF}>Your safety net is fully built. That&apos;s the foundation the rest of this story stands on.</p>
           ) : efProjection.months !== null ? (

@@ -27,11 +27,13 @@ export default function BudgetScreen({
     ? { needs: customNeeds, wants: customWants, savings: Math.max(0, 100 - customNeeds - customWants) }
     : { needs: BUDGET_RULES[ruleKey].needs, wants: BUDGET_RULES[ruleKey].wants, savings: BUDGET_RULES[ruleKey].savings };
 
-  const targetAmt = {
-    needs:   income * targetPct.needs   / 100,
-    wants:   income * targetPct.wants   / 100,
-    savings: income * targetPct.savings / 100,
-  };
+  // dashData.effectiveBudgetTargets, not a local recompute -- this is the
+  // rollover-adjusted target that Overview's BucketRow (and budgetPace's
+  // "on track"/"over" status) actually judges spend against. Recomputing
+  // income * pct/100 here ignored rollover entirely, so this screen could
+  // show "healthy headroom" against a looser un-rolled-over target while
+  // Overview showed a "watch"/"over" warning for the identical spend.
+  const targetAmt = dashData.effectiveBudgetTargets;
 
   const actual = { needs: month.needsSpend, wants: month.wantsSpend, savings: month.savingsContrib };
 
