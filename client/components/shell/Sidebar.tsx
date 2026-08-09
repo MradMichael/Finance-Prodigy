@@ -62,6 +62,7 @@ export default function Sidebar({
             <button
               onClick={togglePin}
               title={pinned ? "Unpin sidebar" : "Pin sidebar open"}
+              aria-label={pinned ? "Unpin sidebar" : "Pin sidebar open"}
               className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-lg transition-all hover:opacity-80"
               style={{
                 color: pinned ? T.brass : T.mute,

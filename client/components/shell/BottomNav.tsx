@@ -16,6 +16,7 @@ export default function BottomNav({ screen, setScreen }: { screen: Screen; setSc
           <button
             key={key}
             onClick={() => setScreen(key)}
+            aria-current={active ? "page" : undefined}
             className="flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded-xl transition-all flex-shrink-0"
             style={{ color: active ? T.brass : T.mute }}
           >

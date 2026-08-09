@@ -265,6 +265,7 @@ export default function GoalsScreen({
                             </button>
                             <button
                               onClick={() => { setPayGoalId(null); setPayAmt(""); }}
+                              aria-label="Cancel contribution"
                               className="px-3 py-2 rounded-xl text-xs transition-all hover:opacity-70"
                               style={{ color: T.mute }}
                             >

@@ -223,8 +223,8 @@ export default function ProjectionsScreen({
                   <span className="text-xs font-semibold w-4" style={{ color: T.mute }}>{i + 1}</span>
                   <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: PRIORITY_META[key].color(T) }} />
                   <span className="text-sm flex-1" style={{ color: T.text }}>{PRIORITY_META[key].label}</span>
-                  <button onClick={() => movePriority(i, -1)} disabled={i === 0} className="text-xs px-2 py-1 rounded-lg disabled:opacity-30 hover:opacity-70 transition-opacity" style={{ color: T.mute }}>↑</button>
-                  <button onClick={() => movePriority(i, 1)} disabled={i === priority.length - 1} className="text-xs px-2 py-1 rounded-lg disabled:opacity-30 hover:opacity-70 transition-opacity" style={{ color: T.mute }}>↓</button>
+                  <button onClick={() => movePriority(i, -1)} disabled={i === 0} aria-label={`Move ${PRIORITY_META[key].label} up in priority`} className="text-xs px-2 py-1 rounded-lg disabled:opacity-30 hover:opacity-70 transition-opacity" style={{ color: T.mute }}>↑</button>
+                  <button onClick={() => movePriority(i, 1)} disabled={i === priority.length - 1} aria-label={`Move ${PRIORITY_META[key].label} down in priority`} className="text-xs px-2 py-1 rounded-lg disabled:opacity-30 hover:opacity-70 transition-opacity" style={{ color: T.mute }}>↓</button>
                 </div>
               ))}
             </div>
