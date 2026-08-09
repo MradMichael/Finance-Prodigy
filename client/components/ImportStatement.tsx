@@ -192,8 +192,16 @@ export default function ImportStatement({
   const includedCount = rows.filter((r) => r.include && isRowValid(r)).length;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)" }}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.6)" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
+    >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Import statement"
         className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl p-6 shadow-2xl"
         style={{ background: T.panel, border: `1px solid ${T.line}` }}
       >
@@ -204,7 +212,7 @@ export default function ImportStatement({
               {step === "review" ? "Review before importing" : "Neo by Bank Audi"}
             </h2>
           </div>
-          <button onClick={onClose} className="text-sm px-2" style={{ color: T.mute }}>✕</button>
+          <button onClick={onClose} aria-label="Close import dialog" className="text-sm px-2" style={{ color: T.mute }}>✕</button>
         </div>
 
         {step === "pick" && (
@@ -273,7 +281,12 @@ export default function ImportStatement({
                 </div>
               </div>
             )}
-            <PrimaryBtn onClick={() => setStep("review")}>Continue</PrimaryBtn>
+            <PrimaryBtn
+              onClick={() => setStep("review")}
+              disabled={cardChoice === "new" && !/^\d{4}$/.test(newCardLast4)}
+            >
+              Continue
+            </PrimaryBtn>
           </div>
         )}
 
