@@ -120,7 +120,7 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
     <tr><td>Savings</td><td class="num">${dash.budgetTargetPct.savings}%</td><td class="num">${money(dash.budgetTargets.savings)}</td><td class="num">${money(dash.month.savingsContrib)}</td></tr>
   </table>
 
-  <h2>Emergency fund</h2>
+  <h2>Safety net</h2>
   <div class="grid">
     <div class="card"><div class="label">Balance</div><div class="value">${money(dash.emergencyFund.balance)} / ${money(dash.emergencyFund.targetAmount)}</div></div>
     <div class="card"><div class="label">Funded</div><div class="value">${dash.emergencyFund.pctFunded}%</div></div>

@@ -230,11 +230,11 @@ export default function JourneyScreen({
           {dashData.month.income <= 0 ? (
             <p className="text-sm" style={{ color: T.mute }}>Set your income to see where this story is headed.</p>
           ) : efProjection.months === 0 ? (
-            <p className="text-xl leading-snug" style={SERIF}>Your emergency fund is fully built. That&apos;s the foundation the rest of this story stands on.</p>
+            <p className="text-xl leading-snug" style={SERIF}>Your safety net is fully built. That&apos;s the foundation the rest of this story stands on.</p>
           ) : efProjection.months !== null ? (
             <>
               <p className="text-xl leading-snug" style={SERIF}>
-                Keep this pace and your emergency fund is complete by <span style={{ ...NUMS, color: T.brass }}>{efProjection.dateDisplay}</span>.
+                Keep this pace and your safety net is complete by <span style={{ ...NUMS, color: T.brass }}>{efProjection.dateDisplay}</span>.
               </p>
               <button
                 onClick={() => onNavigate("projections")}

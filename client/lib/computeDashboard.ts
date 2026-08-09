@@ -219,11 +219,11 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     enc.push(`${savingsRatePct.toFixed(1)}% saved this month. Small, but it's real. The habit matters more than the amount right now.`);
   }
   if (efPct >= 100) {
-    enc.push("Emergency fund fully funded. You've built the buffer that lets you take smart risks.");
+    enc.push("Safety net fully funded. You've built the buffer that lets you take smart risks.");
   } else if (efPct >= 50) {
     enc.push(`Safety net is ${Math.round(efPct)}% built and past halfway. The hard part is behind you.`);
   } else if (efPct > 0) {
-    enc.push(`Emergency fund at ${Math.round(efPct)}%. Even a partial buffer changes how you handle surprises.`);
+    enc.push(`Safety net at ${Math.round(efPct)}%. Even a partial buffer changes how you handle surprises.`);
   }
   if (data.debts.length === 0 && data.income > 0) {
     enc.push("Zero debts. Every dollar you earn goes to your future, not your past.");
@@ -340,7 +340,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
       max: 5000, tier: "Breaking even", tierColor: "brass",
       suggestions: [
         "Your liabilities are covered. Now every dollar saved is pure net worth growth.",
-        "Start or grow your emergency fund: it's your first true asset.",
+        "Start or grow your safety net: it's your first true asset.",
         "Set a goal to hit $5,000 in savings; that buffer changes how you handle surprises.",
       ],
     },
@@ -611,7 +611,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
       components: [
         { key: "savings", label: "Savings rate", score: Math.round(savingsScore), weight: 25, detail: `${savingsRatePct.toFixed(1)}% of income saved (target ${targetSavingsPct}%)` },
         { key: "needs",   label: "Needs discipline", score: Math.round(needsScore), weight: 20, detail: `Essentials take ${Math.round(needsPct * 100)}% of income (target ≤${budgetTargetPct.needs}%)` },
-        { key: "ef",      label: "Safety net", score: Math.round(efScore), weight: 25, detail: `Emergency fund ${Math.round(efPct)}% funded` },
+        { key: "ef",      label: "Safety net", score: Math.round(efScore), weight: 25, detail: `Safety net ${Math.round(efPct)}% funded` },
         { key: "debt",    label: "Debt pressure", score: Math.round(debtScore), weight: 20, detail: `Debt payments are ${Math.round(debtPressurePct * 100)}% of income` },
         { key: "goals",   label: "Goal momentum", score: Math.round(goalScore), weight: 10, detail: `Average pace across ${data.goals.length} active goal${data.goals.length !== 1 ? "s" : ""}` },
       ],

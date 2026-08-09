@@ -624,7 +624,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                   >
                     <div>
                       <p className="text-xs font-medium" style={{ color: txAddToEF ? T.jade : T.text }}>
-                        Also add to Emergency Fund
+                        Also add to Safety net
                       </p>
                       <p className="text-[10px]" style={{ color: T.mute }}>
                         EF: ${efBalance.toLocaleString()} of ${efTarget.toLocaleString()} · ${efRemaining.toLocaleString()} remaining
@@ -634,7 +634,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                   </button>
                 ) : (
                   <div className="rounded-xl px-3 py-2" style={{ background: T.jade + "14", border: `1px solid ${T.jade}30` }}>
-                    <p className="text-xs font-medium" style={{ color: T.jade }}>✓ Emergency Fund is fully funded</p>
+                    <p className="text-xs font-medium" style={{ color: T.jade }}>✓ Safety net is fully funded</p>
                   </div>
                 )}
               </div>
@@ -653,7 +653,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
             >
               <div>
                 <p className="text-xs font-medium" style={{ color: txFromEF ? T.coral : T.text }}>
-                  Pay this from Emergency Fund
+                  Pay this from Safety net
                 </p>
                 <p className="text-[10px]" style={{ color: T.mute }}>
                   EF balance: ${(financials.emergencyFundBalance ?? 0).toLocaleString()} · reduces it by this amount
@@ -1681,7 +1681,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
 
         <Section title="Other Assets" icon="🏦" badge={(financials.assets ?? []).length} defaultOpen={false}>
           <p className="text-xs" style={{ color: T.mute }}>
-            Anything besides goals and your emergency fund: a car, a brokerage account, crypto. Counted toward net worth.
+            Anything besides goals and your safety net: a car, a brokerage account, crypto. Counted toward net worth.
           </p>
           {(financials.assets ?? []).length > 0 && (
             <div className="space-y-2">

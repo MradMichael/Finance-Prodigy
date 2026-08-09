@@ -11,7 +11,7 @@ import { SERIF, NUMS, money } from "./shared";
 
 type PriorityKey = "ef" | "debt" | "goals";
 const PRIORITY_META: Record<PriorityKey, { label: string; color: (T: ReturnType<typeof useTheme>) => string }> = {
-  ef:    { label: "Emergency fund", color: (T) => T.jade },
+  ef:    { label: "Safety net", color: (T) => T.jade },
   debt:  { label: "Debt",           color: (T) => T.coral },
   goals: { label: "Goals",          color: (T) => T.brass },
 };
@@ -141,7 +141,7 @@ export default function ProjectionsScreen({
           <p className="text-[10px] uppercase tracking-widest" style={{ color: T.mute }}>ESSA</p>
           <h1 className="text-3xl mt-1" style={SERIF}>Projections</h1>
           <p className="text-sm mt-2" style={{ color: T.mute }}>
-            One realistic plan for your emergency fund, debt, and goals, in whatever order you prioritize them.
+            One realistic plan for your safety net, debt, and goals, in whatever order you prioritize them.
           </p>
         </div>
 
@@ -151,7 +151,7 @@ export default function ProjectionsScreen({
             <p className="text-xs uppercase tracking-widest mb-2" style={{ color: T.mute }}>Total needed right now, in one lump sum</p>
             <p className="text-3xl" style={{ ...SERIF, ...NUMS, color: T.brass }}>{money(totalNeededNow)}</p>
             <p className="text-[11px] mt-1" style={{ color: T.mute }}>
-              {money(efRemaining)} to finish the emergency fund + {money(debt.totalBalance)} of debt + {money(totalGoalsRemaining)} across open goals.
+              {money(efRemaining)} to finish the safety net + {money(debt.totalBalance)} of debt + {money(totalGoalsRemaining)} across open goals.
             </p>
           </div>
         )}
@@ -240,14 +240,14 @@ export default function ProjectionsScreen({
           {!hasIncome ? (
             <p className="text-sm" style={{ color: T.mute }}>Set your monthly income to see this.</p>
           ) : emergencyFund.targetAmount <= 0 ? (
-            <p className="text-sm" style={{ color: T.mute }}>Set a needs percentage above 0% in Budget to calculate a real emergency fund target — it&apos;s part of this plan.</p>
+            <p className="text-sm" style={{ color: T.mute }}>Set a needs percentage above 0% in Budget to calculate a real safety net target — it&apos;s part of this plan.</p>
           ) : testAmount <= 0 ? (
             <p className="text-sm" style={{ color: T.mute }}>Set a monthly amount above to see where this plan leads.</p>
           ) : totalMonths !== null ? (
             <>
               <p className="text-4xl" style={{ ...SERIF, ...NUMS, color: T.brass }}>{stabilityDateDisplay}</p>
               <p className="text-xs mt-1" style={{ color: T.mute }}>
-                Emergency fund funded, debt-free, and every current goal met, {totalMonths === 0 ? "today" : `${totalMonths} month${totalMonths === 1 ? "" : "s"} from now`}, at {money(testAmount)}/mo.
+                Safety net funded, debt-free, and every current goal met, {totalMonths === 0 ? "today" : `${totalMonths} month${totalMonths === 1 ? "" : "s"} from now`}, at {money(testAmount)}/mo.
               </p>
 
               {/* Simple proportional timeline "graph" */}
@@ -270,10 +270,10 @@ export default function ProjectionsScreen({
           )}
         </div>
 
-        {/* Emergency fund */}
+        {/* Safety net */}
         <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
           <div className="flex items-center justify-between gap-3 mb-3">
-            <p className="text-xs uppercase tracking-widest" style={{ color: T.mute }}>Emergency fund</p>
+            <p className="text-xs uppercase tracking-widest" style={{ color: T.mute }}>Safety net</p>
             <span className="text-xs tabular-nums" style={{ color: T.mute }}>{money(emergencyFund.balance)} of {money(emergencyFund.targetAmount)}</span>
           </div>
           <Bar pct={emergencyFund.pctFunded} color={T.jade} T={T} />

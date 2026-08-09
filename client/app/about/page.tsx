@@ -32,7 +32,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: "How is the health score calculated?",
-    a: "It's a weighted score across five dimensions: savings rate (25%), needs discipline (20%), emergency fund (25%), debt pressure (20%), and goal momentum (10%).",
+    a: "It's a weighted score across five dimensions: savings rate (25%), needs discipline (20%), safety net (25%), debt pressure (20%), and goal momentum (10%).",
   },
   {
     q: "What does the 50/30/20 rule mean?",

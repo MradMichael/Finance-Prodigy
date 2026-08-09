@@ -50,7 +50,7 @@ const MOCK: DashboardPayload = {
     components: [
       { key: "savings", label: "Savings rate", score: 72, weight: 25, detail: "14% of income saved (target 20%)" },
       { key: "needs", label: "Needs discipline", score: 88, weight: 20, detail: "Essentials take 47% of income (target ≤50%)" },
-      { key: "ef", label: "Safety net", score: 52, weight: 25, detail: "Emergency fund 52% funded" },
+      { key: "ef", label: "Safety net", score: 52, weight: 25, detail: "Safety net 52% funded" },
       { key: "debt", label: "Debt pressure", score: 61, weight: 20, detail: "Debt payments are 19% of income" },
       { key: "goals", label: "Goal momentum", score: 81, weight: 10, detail: "Average pace across active goals" },
     ],
