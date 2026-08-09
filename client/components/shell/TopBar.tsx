@@ -4,8 +4,9 @@ import { useState, useRef } from "react";
 import type { Session } from "../../lib/auth";
 import { useTheme } from "../../contexts/ThemeContext";
 import { Signet } from "../EssaBrand";
+import type { SyncStatus } from "../screens/shared";
 
-export default function TopBar({ session, onProfile, onSignOut }: { session: Session; onProfile: () => void; onSignOut: () => void }) {
+export default function TopBar({ session, onProfile, onSignOut, syncStatus }: { session: Session; onProfile: () => void; onSignOut: () => void; syncStatus: SyncStatus }) {
   const T        = useTheme();
   const [menu, setMenu] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -38,8 +39,19 @@ export default function TopBar({ session, onProfile, onSignOut }: { session: Ses
           className="flex items-center gap-2 rounded-xl px-2.5 py-1.5"
           style={{ background: T.panelSoft }}
         >
-          <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold"
-            style={{ background: T.jade + "2A", color: T.jade }}>{initials}</div>
+          <div className="relative flex-shrink-0">
+            <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold"
+              style={{ background: T.jade + "2A", color: T.jade }}>{initials}</div>
+            {syncStatus !== "idle" && (
+              <span
+                className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border"
+                style={{
+                  background: syncStatus === "synced" ? T.jade : syncStatus === "syncing" ? T.brass : T.mute,
+                  borderColor: T.panel,
+                }}
+              />
+            )}
+          </div>
           <span className="text-[10px]" style={{ color: T.mute }}>▾</span>
         </button>
         {menu && (
@@ -47,6 +59,15 @@ export default function TopBar({ session, onProfile, onSignOut }: { session: Ses
             <div className="fixed inset-0 z-10" onClick={closeMenu} />
             <div className="absolute right-0 top-full mt-2 w-48 rounded-2xl py-2 z-20 shadow-2xl"
               style={{ background: T.panel, border: `1px solid ${T.line}` }}>
+              {syncStatus !== "idle" && (
+                <p className="px-4 pb-2 mb-1 text-[10px] flex items-center gap-1.5" style={{ color: T.mute, borderBottom: `1px solid ${T.line}` }}>
+                  <span
+                    className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                    style={{ background: syncStatus === "synced" ? T.jade : syncStatus === "syncing" ? T.brass : T.mute }}
+                  />
+                  {syncStatus === "syncing" ? "Syncing…" : syncStatus === "synced" ? "Synced" : "Sync offline — changes saved on this device only"}
+                </p>
+              )}
               <button onClick={() => { closeMenu(); onProfile(); }}
                 className="w-full text-left px-4 py-2.5 text-sm hover:opacity-80 flex gap-2" style={{ color: T.text }}>
                 <span>⚙</span> Settings

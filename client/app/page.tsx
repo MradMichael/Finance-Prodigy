@@ -171,7 +171,7 @@ export default function Home() {
     <div style={{ display: "flex", flexDirection: "column", height: "100dvh", background: T.ink }}>
 
       {/* Mobile header */}
-      <TopBar session={session} onProfile={handleProfile} onSignOut={handleSignOut} />
+      <TopBar session={session} onProfile={handleProfile} onSignOut={handleSignOut} syncStatus={syncStatus} />
 
       {/* Body row */}
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
