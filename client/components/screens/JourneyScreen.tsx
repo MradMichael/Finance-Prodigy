@@ -1,10 +1,16 @@
 "use client";
 
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import type { LocalFinancials } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { projectCompletion } from "../../lib/projections";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money, type Screen } from "./shared";
+
+const ymStrLabel = (ym: string) => {
+  const [y, m] = ym.split("-").map(Number);
+  return `${["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][m]} '${String(y).slice(2)}`;
+};
 
 function Beat({ eyebrow, children, color }: { eyebrow: string; children: React.ReactNode; color?: string }) {
   const T = useTheme();
@@ -25,6 +31,7 @@ export default function JourneyScreen({
 }) {
   const T = useTheme();
   const firstName = (dashData.user.name || "You").split(" ")[0];
+  const nwColor = dashData.netWorth.tierColor === "jade" ? T.jade : dashData.netWorth.tierColor === "brass" ? T.brass : dashData.netWorth.tierColor === "coral" ? T.coral : T.mute;
 
   // ── Net worth arc ────────────────────────────────────────────────
   const nwHistory = financials.netWorthHistory ?? [];
@@ -39,6 +46,11 @@ export default function JourneyScreen({
   const hasRateArc = activeMonths.length >= 2;
   const rateFirst = hasRateArc ? rateOf(activeMonths[0]) : null;
   const rateLatest = hasRateArc ? rateOf(activeMonths[activeMonths.length - 1]) : dashData.month.savingsRatePct > 0 ? Math.round(dashData.month.savingsRatePct) : null;
+  const rateChartData = activeMonths.map((m) => ({ ymKey: m.ymKey, rate: rateOf(m) }));
+  const ymKeyLabel = (k: number) => {
+    const y = Math.floor(k / 100), m = k % 100;
+    return `${["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][m]} '${String(y).slice(2)}`;
+  };
 
   // ── Category shift: earliest vs. latest calendar month with logged transactions ──
   const lbpRate = financials.lbpRate ?? 89500;
@@ -95,6 +107,23 @@ export default function JourneyScreen({
               <p className="text-sm mt-2" style={{ color: T.mute }}>
                 That&apos;s {nwChange >= 0 ? "up" : "down"} <span style={{ color: nwChange >= 0 ? T.jade : T.coral, ...NUMS }}>{money(Math.abs(nwChange))}</span> since your first tracked month, {nwChange >= 0 ? "real progress worth noticing." : "and now you know exactly where to focus."}
               </p>
+              {dashData.netWorthTrend.length >= 2 && (
+                <div className="h-36 mt-4 -ml-2">
+                  <ResponsiveContainer>
+                    <LineChart data={dashData.netWorthTrend} margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
+                      <CartesianGrid stroke={T.line} strokeDasharray="2 6" vertical={false} />
+                      <XAxis dataKey="ym" tickFormatter={ymStrLabel} tick={{ fill: T.mute, fontSize: 11 }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fill: T.mute, fontSize: 11 }} axisLine={false} tickLine={false} width={54} />
+                      <Tooltip
+                        contentStyle={{ background: T.panelSoft, border: `1px solid ${T.line}`, borderRadius: 12, color: T.text }}
+                        labelFormatter={(v) => ymStrLabel(String(v))}
+                        formatter={(v: number) => [money(v), "Net worth"]}
+                      />
+                      <Line type="monotone" dataKey="value" stroke={nwColor} strokeWidth={2} dot={{ r: 3, fill: nwColor }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
             </>
           ) : (
             <p className="text-xl leading-snug" style={SERIF}>
@@ -118,6 +147,21 @@ export default function JourneyScreen({
                   ? "Steady as it goes. Consistency is its own kind of win."
                   : "It slipped a bit, worth a look at what changed, not a reason to give up."}
               </p>
+              <div className="h-36 mt-4 -ml-2">
+                <ResponsiveContainer>
+                  <LineChart data={rateChartData} margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
+                    <CartesianGrid stroke={T.line} strokeDasharray="2 6" vertical={false} />
+                    <XAxis dataKey="ymKey" tickFormatter={ymKeyLabel} tick={{ fill: T.mute, fontSize: 11 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fill: T.mute, fontSize: 11 }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => `${v}%`} />
+                    <Tooltip
+                      contentStyle={{ background: T.panelSoft, border: `1px solid ${T.line}`, borderRadius: 12, color: T.text }}
+                      labelFormatter={(v) => ymKeyLabel(Number(v))}
+                      formatter={(v: number) => [`${v}%`, "Savings rate"]}
+                    />
+                    <Line type="monotone" dataKey="rate" stroke={T.jade} strokeWidth={2} dot={{ r: 3, fill: T.jade }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
             </>
           ) : rateLatest !== null ? (
             <p className="text-xl leading-snug" style={SERIF}>
