@@ -6,6 +6,7 @@ import type { computeDashboard } from "../../lib/computeDashboard";
 import { projectCompletion } from "../../lib/projections";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money, type Screen } from "./shared";
+import Donut from "../charts/Donut";
 
 const ymStrLabel = (ym: string) => {
   const [y, m] = ym.split("-").map(Number);
@@ -70,6 +71,9 @@ export default function JourneyScreen({
   const hasCategoryArc = txMonths.length >= 2;
   const catFirst = hasCategoryArc ? pctOf(byMonth[txMonths[0]]) : null;
   const catLatest = hasCategoryArc ? pctOf(byMonth[txMonths[txMonths.length - 1]]) : null;
+  const latestMonthKey = txMonths.length > 0 ? txMonths[txMonths.length - 1] : null;
+  const latestMonthTotals = latestMonthKey ? byMonth[latestMonthKey] : null;
+  const latestMonthLabel = latestMonthKey ? ymStrLabel(latestMonthKey) : null;
 
   // ── Milestones ───────────────────────────────────────────────────
   const totalTx = financials.transactions.length;
@@ -174,7 +178,7 @@ export default function JourneyScreen({
 
         {/* Category shift */}
         <Beat eyebrow="How your spending has shifted">
-          {hasCategoryArc && catFirst && catLatest ? (
+          {hasCategoryArc && catFirst && catLatest && (
             <>
               <p className="text-xl leading-snug" style={SERIF}>
                 Wants went from <span style={{ ...NUMS, color: T.mute }}>{catFirst.wants}%</span> of your spending to{" "}
@@ -188,7 +192,29 @@ export default function JourneyScreen({
                   : "Wants crept up a little. Not a crisis, just a pattern worth noticing next time you log a purchase."}
               </p>
             </>
-          ) : (
+          )}
+          {latestMonthTotals && (latestMonthTotals.needs + latestMonthTotals.wants + latestMonthTotals.savings) > 0 ? (
+            <div className={`flex items-center gap-6 flex-wrap ${hasCategoryArc ? "mt-5 pt-5" : ""}`} style={hasCategoryArc ? { borderTop: `1px solid ${T.line}` } : undefined}>
+              <Donut
+                segments={[
+                  { value: latestMonthTotals.needs, color: T.sky, label: "Needs" },
+                  { value: latestMonthTotals.wants, color: T.brass, label: "Wants" },
+                  { value: latestMonthTotals.savings, color: T.jade, label: "Savings" },
+                ]}
+                trackColor={T.line}
+                labelColor={T.text}
+                size={110}
+                thickness={16}
+                centerLabel={money(latestMonthTotals.needs + latestMonthTotals.wants + latestMonthTotals.savings)}
+                centerSublabel={latestMonthLabel ?? undefined}
+              />
+              <div className="flex-1 min-w-[160px] space-y-1.5 text-sm">
+                <span className="flex items-center gap-2" style={{ color: T.mute }}><span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: T.sky }} /> Needs · <span style={{ color: T.text }}>{money(latestMonthTotals.needs)}</span></span>
+                <span className="flex items-center gap-2" style={{ color: T.mute }}><span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: T.brass }} /> Wants · <span style={{ color: T.text }}>{money(latestMonthTotals.wants)}</span></span>
+                <span className="flex items-center gap-2" style={{ color: T.mute }}><span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: T.jade }} /> Savings · <span style={{ color: T.text }}>{money(latestMonthTotals.savings)}</span></span>
+              </div>
+            </div>
+          ) : !hasCategoryArc && (
             <p className="text-sm" style={{ color: T.mute }}>Once you&apos;ve logged transactions across a couple of months, this section shows how your Needs, Wants, and Savings mix has changed. See the full breakdown anytime in Transactions.</p>
           )}
         </Beat>
