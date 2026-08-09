@@ -581,14 +581,19 @@ export default function InputPanel({ financials, onChange, session }: Props) {
           {/* Savings context: target hint + EF toggle */}
           {txBucket === "SAVINGS" && financials.income > 0 && (() => {
             const ruleKey: BudgetRuleKey = financials.budgetRule ?? "50-30-20";
+            const needsPct = ruleKey === "custom" ? (financials.budgetCustomNeeds ?? 50) : BUDGET_RULES[ruleKey].needs;
             const savPct  = ruleKey === "custom"
               ? Math.max(0, 100 - (financials.budgetCustomNeeds ?? 50) - (financials.budgetCustomWants ?? 30))
               : BUDGET_RULES[ruleKey].savings;
             const targetAmt = Math.round(financials.income * savPct / 100);
-            const efTarget  = (financials.emergencyFundTargetMonths ?? 6) * financials.income;
+            // Mirrors computeDashboard.ts's efMonthlyBase/efTarget exactly (months
+            // of NEEDS, not months of full income) -- these two used to disagree,
+            // showing a materially different EF target here than on Overview/
+            // Projections for the same account.
+            const efTarget  = Math.round((financials.emergencyFundTargetMonths ?? 6) * financials.income * needsPct / 100);
             const efBalance = financials.emergencyFundBalance ?? 0;
             const efRemaining = Math.max(0, efTarget - efBalance);
-            const efFull = efBalance >= efTarget;
+            const efFull = efTarget > 0 && efBalance >= efTarget;
             return (
               <div className="space-y-2">
                 {/* Target hint */}

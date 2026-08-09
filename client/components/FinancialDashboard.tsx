@@ -476,7 +476,10 @@ export default function FinancialDashboard({
             </div>
             <div className="mt-3"><Bar pct={ef.pctFunded} color={T.jade} /></div>
             <p className="text-xs mt-3" style={{ color: T.mute }}>
-              {money(ef.balance)} banked · {ef.remaining > 0 ? `${money(ef.remaining)} to a fully funded net` : "fully funded, exhale"}
+              {money(ef.balance)} banked ·{" "}
+              {ef.targetAmount <= 0
+                ? "set your income to calculate a real target"
+                : ef.remaining > 0 ? `${money(ef.remaining)} to a fully funded net` : "fully funded, exhale"}
             </p>
           </Panel>
         </div>

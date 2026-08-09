@@ -239,6 +239,8 @@ export default function ProjectionsScreen({
           <p className="text-xs uppercase tracking-widest mb-2" style={{ color: T.brass }}>Your plan</p>
           {!hasIncome ? (
             <p className="text-sm" style={{ color: T.mute }}>Set your monthly income to see this.</p>
+          ) : emergencyFund.targetAmount <= 0 ? (
+            <p className="text-sm" style={{ color: T.mute }}>Set a needs percentage above 0% in Budget to calculate a real emergency fund target — it&apos;s part of this plan.</p>
           ) : testAmount <= 0 ? (
             <p className="text-sm" style={{ color: T.mute }}>Set a monthly amount above to see where this plan leads.</p>
           ) : totalMonths !== null ? (
@@ -275,7 +277,7 @@ export default function ProjectionsScreen({
             <span className="text-xs tabular-nums" style={{ color: T.mute }}>{money(emergencyFund.balance)} of {money(emergencyFund.targetAmount)}</span>
           </div>
           <Bar pct={emergencyFund.pctFunded} color={T.jade} T={T} />
-          {!hasIncome ? (
+          {!hasIncome || emergencyFund.targetAmount <= 0 ? (
             <p className="text-sm mt-4" style={{ color: T.mute }}>Set your income to calculate a real target here.</p>
           ) : emergencyFund.remaining <= 0 ? (
             <p className="text-sm mt-4" style={{ color: T.jade }}>Fully funded already. 🎉</p>
