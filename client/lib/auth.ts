@@ -239,7 +239,21 @@ export async function signIn(
     if (!quickCheck) return { ok: false, error: "Incorrect password." };
     const { verifyLegacyPassword } = await import("./crypto");
     const verified = await verifyLegacyPassword(password, user.id);
-    valid = verified !== false;
+    // verified === null means there's no stored encrypted data to check the
+    // candidate password against at all (this device's legacy account was
+    // never actually used) — deliberately still let sign-in proceed rather
+    // than permanently lock out that edge case (this account predates
+    // recovery codes too, so there'd be no way back in otherwise). Written
+    // as an explicit === true || === null rather than the equivalent
+    // !== false, since a reader skimming this needs "null is intentionally
+    // accepted" to be obvious, not an inference from what it isn't. Still
+    // upgrading pwHash here (not gating it on verified === true) is also
+    // deliberate: quickCheck alone is a weak, brute-forceable checksum, but
+    // leaving the account on that same weak format forever so this
+    // hypothetical attacker's one shot is "safer" is backwards — it would
+    // leave every future sign-in attempt exposed to the identical gap
+    // instead of closing it after this one.
+    valid = verified === true || verified === null;
     if (valid) {
       const upgraded = await hashPassword(password);
       putUsers(getUsers().map((u) => (u.id === user.id ? { ...u, pwHash: upgraded } : u)));

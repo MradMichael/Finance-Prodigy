@@ -186,7 +186,21 @@ export async function normalizeToTables(email: string, raw: LocalFinancials): Pr
   // rather than diffing). A generous timeout since a user with a large
   // history means many sequential creates, each its own round trip.
   let monthCount = 0;
-  const user = await prisma.$transaction(async (tx) => {
+  let user;
+  try {
+    user = await prisma.$transaction(async (tx) => {
+    // Re-check inside the transaction, not just before it — the gap between
+    // the check above and the transaction actually starting (connection-pool
+    // contention, etc.) is exactly where a concurrent DELETE could land.
+    // This narrows the race window considerably but isn't airtight against
+    // a delete landing mid-transaction (would need Serializable isolation,
+    // which isn't worth the added conflict/retry cost on an already-long,
+    // many-write transaction for a self-triggered, same-user-only race).
+    const stillSyncedInTx = await tx.userSync.findUnique({ where: { email: email.toLowerCase() }, select: { id: true } });
+    if (!stillSyncedInTx) {
+      throw new NormalizeAbortedError();
+    }
+
     // ── 1. Upsert dim_user ──────────────────────────────────────────────────
     const user = await tx.user.upsert({
       where:  { email: email.toLowerCase() },
@@ -458,13 +472,23 @@ export async function normalizeToTables(email: string, raw: LocalFinancials): Pr
 
     monthCount = Object.keys(monthBuckets).length;
     return user;
-  }, { timeout: 30_000, maxWait: 10_000 });
+    }, { timeout: 30_000, maxWait: 10_000 });
+  } catch (err) {
+    if (err instanceof NormalizeAbortedError) {
+      logger.info("normalize_skipped_deleted_mid_transaction", { email: email.toLowerCase() });
+      return;
+    }
+    throw err;
+  }
 
   logger.info("normalize_complete", {
     userId: user.id, transactions: transactions.length, goals: goals.length,
     debts: debts.length, recurring: recurring.length, months: monthCount,
   });
 }
+
+/** Thrown (and caught) only to abort normalizeToTables's transaction cleanly when a concurrent delete is detected mid-run — never surfaced as a real error. */
+class NormalizeAbortedError extends Error {}
 
 /**
  * Deletes everything this analytics warehouse holds for an email — called
@@ -477,20 +501,26 @@ export async function deleteAllDataForEmail(email: string): Promise<void> {
   const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
   if (!user) return;
 
-  await prisma.factTransaction.deleteMany({ where: { userId: user.id } });
-  await prisma.factMonthlySnapshot.deleteMany({ where: { userId: user.id } });
-  await prisma.goal.deleteMany({ where: { userId: user.id } });
-  await prisma.debt.deleteMany({ where: { userId: user.id } });
-  await prisma.budget.deleteMany({ where: { userId: user.id } });
-  await prisma.dimAccount.deleteMany({ where: { userId: user.id } });
-  try {
-    await prisma.user.delete({ where: { id: user.id } });
-  } catch (err) {
-    // P2025 = already deleted by a concurrent call (e.g. two overlapping
-    // account-deletion requests) — the end state either call wanted (no
-    // user row) is already true, so this isn't a real failure.
-    if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025")) throw err;
-  }
+  // One transaction, matching normalizeToTables's own pattern — a crash or
+  // connection drop between two of these deleteMany calls used to leave
+  // orphaned rows (a goal/debt/budget with no UserSync row pointing back
+  // at it) with nothing left to clean them up later.
+  await prisma.$transaction(async (tx) => {
+    await tx.factTransaction.deleteMany({ where: { userId: user.id } });
+    await tx.factMonthlySnapshot.deleteMany({ where: { userId: user.id } });
+    await tx.goal.deleteMany({ where: { userId: user.id } });
+    await tx.debt.deleteMany({ where: { userId: user.id } });
+    await tx.budget.deleteMany({ where: { userId: user.id } });
+    await tx.dimAccount.deleteMany({ where: { userId: user.id } });
+    try {
+      await tx.user.delete({ where: { id: user.id } });
+    } catch (err) {
+      // P2025 = already deleted by a concurrent call (e.g. two overlapping
+      // account-deletion requests) — the end state either call wanted (no
+      // user row) is already true, so this isn't a real failure.
+      if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025")) throw err;
+    }
+  }, { timeout: 30_000, maxWait: 10_000 });
 
   logger.info("normalize_data_deleted", { userId: user.id });
 }

@@ -275,6 +275,9 @@ router.delete("/", async (req, res, next) => {
   try {
     const { email, token } = deleteSchema.parse(req.body);
     const tokenHash = hashToken(token);
+    // Metadata only, matching the same pattern already on /pull/relink —
+    // this was the one auth-denial path on this route with zero trace.
+    const meta = { email, userAgent: req.header("user-agent") ?? null };
 
     const record = await prisma.userSync.findUnique({ where: { email } });
     if (!record) {
@@ -292,9 +295,11 @@ router.delete("/", async (req, res, next) => {
     // to false (allowing the delete through with zero proof of ownership)
     // whenever authTokenHash is null — the opposite of what's intended.
     if (!record.authTokenHash) {
+      logger.warn("delete_denied_no_token_registered", meta);
       return res.status(401).json({ error: "This account has no sync credentials registered yet. Nothing to verify against." });
     }
     if (!hashesEqual(record.authTokenHash, tokenHash)) {
+      logger.warn("delete_denied_token_mismatch", meta);
       return res.status(401).json({ error: "Invalid sync credentials for this account." });
     }
 
