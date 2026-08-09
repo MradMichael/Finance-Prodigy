@@ -329,7 +329,7 @@ export default function ProfilePage() {
             )}
           </div>
 
-          <div className="flex flex-wrap gap-3">
+          <div className="space-y-4">
             <div>
               <p className="text-xs mb-2" style={{ color: T.mute }}>
                 Push this device&apos;s data to the database now:
@@ -337,7 +337,7 @@ export default function ProfilePage() {
               <button
                 onClick={handlePush}
                 disabled={syncing}
-                className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 flex items-center gap-2"
+                className="w-full px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
                 style={{ background: T.line, color: T.text }}
               >
                 {syncing ? "⏳ Syncing…" : "⬆ Push to database"}
@@ -350,7 +350,7 @@ export default function ProfilePage() {
               <button
                 onClick={handlePull}
                 disabled={syncing}
-                className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 flex items-center gap-2"
+                className="w-full px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
                 style={{ background: T.line, color: T.text }}
               >
                 {syncing ? "⏳ Restoring…" : "⬇ Restore from database"}
