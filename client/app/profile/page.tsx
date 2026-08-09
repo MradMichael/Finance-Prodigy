@@ -40,6 +40,8 @@ export default function ProfilePage() {
   const [pdfDetailed,   setPdfDetailed]   = useState(false);
   const [pdfDateFrom,   setPdfDateFrom]   = useState("");
   const [pdfDateTo,     setPdfDateTo]     = useState("");
+  const [downloading,   setDownloading]   = useState<"data" | "pdf" | null>(null);
+  const [downloadMsg,   setDownloadMsg]   = useState("");
   const [newRecoveryCode, setNewRecoveryCode] = useState<string | null>(null);
   const [recoveryMsg,     setRecoveryMsg]     = useState("");
   const [lastSync,      setLastSync]      = useState<string | null>(null);
@@ -118,16 +120,21 @@ export default function ProfilePage() {
   // since LocalFinancials is already a single serializable object.
   async function handleExport() {
     if (!session) return;
-    const data = await loadData(session.userId);
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `essa-data-${new Date().toISOString().slice(0, 10)}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    setDownloading("data"); setDownloadMsg("");
+    try {
+      const data = await loadData(session.userId);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `essa-data-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } finally {
+      setDownloading(null);
+    }
   }
 
   // "Download as PDF" is just printing a report to the browser's own Save
@@ -137,22 +144,33 @@ export default function ProfilePage() {
   // dark theme and navigation chrome.
   async function handleDownloadPdf() {
     if (!session) return;
+    setDownloadMsg("");
     // Opened synchronously, before any await, so browsers still treat it as
     // a direct response to the click rather than a popup to block — once an
     // await separates window.open() from the click event, most browsers no
     // longer consider it user-initiated.
     const win = window.open("", "_blank");
-    if (!win) return; // popup blocked — nothing more we can do here
-    const data = await loadData(session.userId);
-    const dash = computeDashboard(data);
-    const html = buildReportHtml(session.name, data, dash, {
-      detailed: pdfDetailed,
-      dateFrom: pdfDetailed && pdfDateFrom ? pdfDateFrom : undefined,
-      dateTo: pdfDetailed && pdfDateTo ? pdfDateTo : undefined,
-    });
-    win.document.write(html);
-    win.document.close();
-    win.onload = () => win.print();
+    if (!win) {
+      // popup blocked — this used to fail with zero feedback, leaving the
+      // user thinking the button just didn't work.
+      setDownloadMsg("✗ Your browser blocked the report from opening. Allow popups for this site and try again.");
+      return;
+    }
+    setDownloading("pdf");
+    try {
+      const data = await loadData(session.userId);
+      const dash = computeDashboard(data);
+      const html = buildReportHtml(session.name, data, dash, {
+        detailed: pdfDetailed,
+        dateFrom: pdfDetailed && pdfDateFrom ? pdfDateFrom : undefined,
+        dateTo: pdfDetailed && pdfDateTo ? pdfDateTo : undefined,
+      });
+      win.document.write(html);
+      win.document.close();
+      win.onload = () => win.print();
+    } finally {
+      setDownloading(null);
+    }
   }
 
   async function handleRegenerateRecovery() {
@@ -420,19 +438,26 @@ export default function ProfilePage() {
           <div className="flex flex-wrap gap-3">
             <button
               onClick={handleExport}
-              className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 flex items-center gap-2"
+              disabled={downloading !== null}
+              className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 flex items-center gap-2"
               style={{ background: T.line, color: T.text }}
             >
-              ⬇ Download my data
+              {downloading === "data" ? "⏳ Preparing…" : "⬇ Download my data"}
             </button>
             <button
               onClick={handleDownloadPdf}
-              className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 flex items-center gap-2"
+              disabled={downloading !== null}
+              className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 flex items-center gap-2"
               style={{ background: T.line, color: T.text }}
             >
-              ⬇ Download as PDF
+              {downloading === "pdf" ? "⏳ Preparing…" : "⬇ Download as PDF"}
             </button>
           </div>
+          {downloadMsg && (
+            <p className="text-xs" style={{ color: downloadMsg.startsWith("✓") ? T.jade : T.coral }}>
+              {downloadMsg}
+            </p>
+          )}
 
           {/* PDF report options */}
           <div className="rounded-xl px-4 py-3 space-y-3" style={{ background: T.panelSoft }}>
