@@ -81,6 +81,11 @@ export default function InputPanel({ financials, onChange, session }: Props) {
   const [newCardType, setNewCardType] = useState<StoredCard["type"]>("Visa");
   const [newCardLast4, setNewCardLast4] = useState("");
   const [showImport, setShowImport] = useState(false);
+  // Replaces native confirm() for the "LBP amount looks like a typo'd USD
+  // entry" guard below -- OK/Cancel semantics don't map cleanly onto "save
+  // it anyway" vs "let me fix the currency", so this stores enough to
+  // resume whichever save flow (add or edit) triggered it.
+  const [lbpConfirm, setLbpConfirm] = useState<{ amount: number; proceed: () => void } | null>(null);
 
   // Goal form
   const [gName,    setGName]    = useState("");
@@ -186,7 +191,16 @@ export default function InputPanel({ financials, onChange, session }: Props) {
   function addTransaction() {
     const amt = parseFloat(txAmt);
     if (!amt || amt <= 0) return;
-    if (txCurrency === "LBP" && amt < 500 && !confirm(`${amt.toLocaleString()} LBP is unusually low for a real purchase. Did you mean to log this in USD instead? Click Cancel to fix the currency, or OK to save it as LBP.`)) return;
+    if (txCurrency === "LBP" && amt < 500) {
+      setLbpConfirm({ amount: amt, proceed: commitTransaction });
+      return;
+    }
+    commitTransaction();
+  }
+
+  function commitTransaction() {
+    const amt = parseFloat(txAmt);
+    if (!amt || amt <= 0) return;
     let cardId: string | undefined;
     let cardLabel: string | undefined;
     if (txPayMethod === "card") {
@@ -396,7 +410,11 @@ export default function InputPanel({ financials, onChange, session }: Props) {
   function saveEditGoal(goalId: string) {
     const target  = parseFloat(editGTarget.replace(/,/g, ""));
     const current = parseFloat(editGCurrent.replace(/,/g, "")) || 0;
-    if (!editGName.trim() || isNaN(target) || !editGDate) return;
+    // target <= 0 used to be reachable here (only isNaN was checked), which
+    // made every goal display elsewhere read it as 100%/achieved -- a $0
+    // target isn't a real goal, so reject it the same way the add-goal form
+    // already requires a truthy gTarget.
+    if (!editGName.trim() || isNaN(target) || target <= 0 || !editGDate) return;
     update({
       goals: financials.goals.map((g) => g.id !== goalId ? g : {
         ...g, name: editGName.trim(), emoji: editGEmoji || "🎯",
@@ -439,7 +457,16 @@ export default function InputPanel({ financials, onChange, session }: Props) {
   function saveEditTx(txId: string) {
     const amt = parseFloat(editTxAmt.replace(/,/g, ""));
     if (!editTxDesc.trim() || isNaN(amt) || !editTxDate) return;
-    if (editTxCurrency === "LBP" && amt < 500 && !confirm(`${amt.toLocaleString()} LBP is unusually low for a real purchase. Did you mean to log this in USD instead? Click Cancel to fix the currency, or OK to save it as LBP.`)) return;
+    if (editTxCurrency === "LBP" && amt < 500) {
+      setLbpConfirm({ amount: amt, proceed: () => commitEditTx(txId) });
+      return;
+    }
+    commitEditTx(txId);
+  }
+
+  function commitEditTx(txId: string) {
+    const amt = parseFloat(editTxAmt.replace(/,/g, ""));
+    if (!editTxDesc.trim() || isNaN(amt) || !editTxDate) return;
     update({
       transactions: financials.transactions.map((t) => t.id !== txId ? t : {
         ...t, amount: amt, description: editTxDesc.trim(),
@@ -821,7 +848,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
             )}
           </div>
 
-          <PrimaryBtn onClick={addTransaction} color={T.jade}>
+          <PrimaryBtn onClick={addTransaction} color={T.jade} disabled={!(parseFloat(txAmt) > 0)}>
             + Add entry
           </PrimaryBtn>
         </Section>
@@ -972,7 +999,11 @@ export default function InputPanel({ financials, onChange, session }: Props) {
               <div className="space-y-4">
                 {Object.keys(byMonth).sort().reverse().map((ym) => {
                   const txs = byMonth[ym];
-                  const total = txs.reduce((s, t) => s + toUSD(t.amount, t.currency), 0);
+                  // Excludes INCOME, matching the current month's total just
+                  // above (totalOut) and every other "spend" figure in the
+                  // app -- this used to include it, inflating past months'
+                  // totals for anyone who ever logged a gift/reimbursement.
+                  const total = txs.filter((t) => t.bucket !== "INCOME").reduce((s, t) => s + toUSD(t.amount, t.currency), 0);
                   return (
                     <div key={ym}>
                       <div className="flex justify-between items-center mb-2">
@@ -1063,7 +1094,11 @@ export default function InputPanel({ financials, onChange, session }: Props) {
         {/* Goals */}
         <Section title="Goals" icon="🎯" badge={financials.goals.length} defaultOpen={false}>
           {financials.goals.map((g) => {
-            const pct = g.targetAmount > 0 ? Math.min(100, (g.currentAmount / g.targetAmount) * 100) : 0;
+            // Matches computeDashboard.ts's own convention exactly (targetAmount
+            // of exactly 0 reads as met, not 0%) -- this used to disagree with
+            // every other goal display (GoalsScreen, FinancialDashboard, all of
+            // which read dashData.goals) for a goal edited down to a $0 target.
+            const pct = g.targetAmount > 0 ? Math.min(100, (g.currentAmount / g.targetAmount) * 100) : 100;
             const remaining = Math.max(0, g.targetAmount - g.currentAmount);
             const isContrib  = contributeGoalId === g.id;
             const isEditing  = editGoalId === g.id;
@@ -1163,7 +1198,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                         className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all hover:opacity-90"
                         style={{ background: T.jade, color: T.ink }}
                       >Save</button>
-                      <button onClick={() => setContributeGoalId(null)} className="px-2 py-1.5 rounded-xl text-xs" style={{ color: T.mute }}>✕</button>
+                      <button onClick={() => setContributeGoalId(null)} aria-label="Cancel contribution" className="px-2 py-1.5 rounded-xl text-xs" style={{ color: T.mute }}>✕</button>
                     </div>
                     <p className="text-[10px]" style={{ color: T.mute }}>Logged as a Savings transaction today.</p>
                   </div>
@@ -1203,7 +1238,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
               <Label htmlFor="new-goal-date">Target date</Label>
               <DateFieldDMY id="new-goal-date" value={gDate} onChange={setGDate} />
             </div>
-            <PrimaryBtn onClick={addGoal} color={T.brass}>+ Add goal</PrimaryBtn>
+            <PrimaryBtn onClick={addGoal} color={T.brass} disabled={!gName.trim() || !gTarget || !gDate}>+ Add goal</PrimaryBtn>
           </div>
         </Section>
 
@@ -1391,6 +1426,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                                   </button>
                                   <button
                                     onClick={() => setExtraRecId(null)}
+                                    aria-label="Cancel extra payment"
                                     className="px-2 py-1.5 rounded-xl text-xs transition-all hover:opacity-70"
                                     style={{ color: T.mute }}
                                   >✕</button>
@@ -1540,7 +1576,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                     </p>
                   )}
 
-                  <PrimaryBtn onClick={addRecurring} color={T.jade}>+ Add recurring</PrimaryBtn>
+                  <PrimaryBtn onClick={addRecurring} color={T.jade} disabled={!rName.trim() || !rAmount || !rStart}>+ Add recurring</PrimaryBtn>
                 </div>
               </>
             );
@@ -1686,7 +1722,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
               <Label htmlFor="new-debt-opened">Opened date (optional: when this debt started)</Label>
               <DateFieldDMY id="new-debt-opened" value={dOpenedDate} onChange={setDOpenedDate} />
             </div>
-            <PrimaryBtn onClick={addDebt} color={T.coral}>+ Add debt</PrimaryBtn>
+            <PrimaryBtn onClick={addDebt} color={T.coral} disabled={!dName.trim() || !dBalance}>+ Add debt</PrimaryBtn>
           </div>
         </Section>
 
@@ -1736,7 +1772,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                 <CurrencyToggle value={aCurrency} onChange={setACurrency} />
               </div>
             </div>
-            <PrimaryBtn onClick={addAsset} color={T.jade}>+ Add asset</PrimaryBtn>
+            <PrimaryBtn onClick={addAsset} color={T.jade} disabled={!aName.trim() || !aValue}>+ Add asset</PrimaryBtn>
           </div>
         </Section>
 
@@ -1856,7 +1892,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
               <Label htmlFor="new-tb-date">As of date</Label>
               <DateFieldDMY id="new-tb-date" value={tbStartDate} onChange={setTbStartDate} />
             </div>
-            <PrimaryBtn onClick={addTrackedBalance} color={T.jade}>+ Track this balance</PrimaryBtn>
+            <PrimaryBtn onClick={addTrackedBalance} color={T.jade} disabled={!tbName.trim() || !tbStartBal || (tbMethod === "card" && !tbCardId)}>+ Track this balance</PrimaryBtn>
           </div>
         </Section>
 
@@ -1886,6 +1922,43 @@ export default function InputPanel({ financials, onChange, session }: Props) {
     </aside>
     {showImport && (
       <ImportStatement financials={financials} onImport={update} onClose={() => setShowImport(false)} />
+    )}
+    {lbpConfirm && (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        style={{ background: "rgba(0,0,0,0.6)" }}
+        onClick={(e) => { if (e.target === e.currentTarget) setLbpConfirm(null); }}
+        onKeyDown={(e) => { if (e.key === "Escape") setLbpConfirm(null); }}
+      >
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Confirm low LBP amount"
+          className="w-full max-w-sm rounded-2xl p-6 shadow-2xl"
+          style={{ background: T.panel, border: `1px solid ${T.line}` }}
+        >
+          <p className="text-[10px] uppercase tracking-widest font-semibold mb-2" style={{ color: T.brass }}>Double-check this amount</p>
+          <p className="text-sm mb-5" style={{ color: T.text }}>
+            <strong>{lbpConfirm.amount.toLocaleString()} LBP</strong> is unusually low for a real purchase — most things this cheap are actually meant to be USD. Did you mean to log this in USD instead?
+          </p>
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={() => setLbpConfirm(null)}
+              className="w-full py-2.5 rounded-xl text-sm font-semibold hover:opacity-90"
+              style={{ background: T.jade, color: T.ink }}
+            >
+              Let me fix the currency
+            </button>
+            <button
+              onClick={() => { const proceed = lbpConfirm.proceed; setLbpConfirm(null); proceed(); }}
+              className="w-full py-2.5 rounded-xl text-sm hover:opacity-90"
+              style={{ background: T.panelSoft, color: T.mute, border: `1px solid ${T.line}` }}
+            >
+              No, save it as {lbpConfirm.amount.toLocaleString()} LBP
+            </button>
+          </div>
+        </div>
+      </div>
     )}
     </>
   );
