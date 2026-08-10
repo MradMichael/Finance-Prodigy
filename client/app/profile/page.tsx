@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getSession, hasValidSession, updateProfile, deleteAccount, signOut, isAdmin, ensureFirstUserIsAdmin, regenerateRecoveryCode } from "../../lib/auth";
+import { getSession, hasValidSession, updateProfile, deleteAccount, signOut, isAppAdmin, ensureFirstUserIsAdmin, regenerateRecoveryCode } from "../../lib/auth";
 import RecoveryCodeModal from "../../components/RecoveryCodeModal";
 import type { Session } from "../../lib/auth";
 import { loadData, saveData } from "../../lib/localData";
@@ -60,7 +60,7 @@ export default function ProfilePage() {
     setSession(s);
     setName(s.name);
     setLastSync(getLastSyncTime());
-    setAdmin(isAdmin(s.userId));
+    setAdmin(isAppAdmin(s.email));
     setAnalyticsOn(isAnalyticsOptedIn());
   }, [router]);
 

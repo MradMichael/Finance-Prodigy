@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter, notFound } from "next/navigation";
-import { getSession, isAdmin, ensureFirstUserIsAdmin, listUsers } from "../../lib/auth";
+import { useRouter } from "next/navigation";
+import { getSession, isAppAdmin, ensureFirstUserIsAdmin, listUsers } from "../../lib/auth";
 import { getLastSyncTime } from "../../lib/syncService";
 import { useTheme } from "../../contexts/ThemeContext";
 import { Signet } from "../../components/EssaBrand";
@@ -120,27 +120,22 @@ function Row({ label, value, mono = false, sensitive = false, copyable = false }
   );
 }
 
-// "isAdmin" today just means "the first account ever signed up in this
-// browser" (see auth.ts) — there's no real server-side role system yet, so
-// in an open-signup world every new visitor becomes "admin" of their own
-// session on their first try. That's harmless for the developer's own
-// local testing, but this panel also shows a masked-but-recognizable real
-// database hostname, dev-machine file paths, and other infra details that
-// shouldn't ship to anyone else.
-//
-// Gating with a runtime `if (NODE_ENV === "production") notFound()` alone
-// is NOT enough: "use client" means this whole module — every string
-// literal in it, including the ones above — still gets bundled into a
-// public, unauthenticated static JS chunk regardless of whether the
-// component ever renders. Anyone could fetch that chunk directly and read
-// it verbatim. Structuring the guard as `NODE_ENV !== "production"`
-// instead lets Next's production build substitute that to a literal
-// `if (false)` and dead-code-eliminate the real component (and everything
-// in it) out of the bundle entirely — the same pattern React itself uses
-// to strip dev-only warnings from production builds.
+// Gated by one specific account's email (isAppAdmin, in auth.ts), not by
+// environment -- this panel is meant to be reachable on the live production
+// site for that one real account, not just during local dev. Unlike the
+// previous NODE_ENV-based version of this gate, that means AdminPageContent's
+// full source (the DB/rate-limit/architecture details below) does ship in
+// the public JS bundle to every visitor: a runtime session check can't be
+// proven false at build time, so it can't be dead-code-eliminated the way
+// the old dev-only check could. That's still safe to ship, because nothing
+// below is an actual credential -- NEXT_PUBLIC_DB_URL is never set in
+// production (verified against the live deploy), so the connection string
+// shown always falls back to the placeholder, and everything else (rate
+// limits, PBKDF2 iteration count, theme names) is operational trivia, not a
+// secret. The real access gate is the session check in AdminPageContent's
+// effect below.
 export default function AdminPage() {
-  if (process.env.NODE_ENV !== "production") return <AdminPageContent />;
-  notFound();
+  return <AdminPageContent />;
 }
 
 function AdminPageContent() {
@@ -153,12 +148,11 @@ function AdminPageContent() {
   const [pinging, setPinging] = useState(false);
 
   useEffect(() => {
-    // Check the visitor's OWN admin status first — ensureFirstUserIsAdmin()
-    // can promote a *different* account (whichever is index-0 in this
-    // browser's user list) to admin as a side effect, which shouldn't run
-    // before confirming the visitor themselves is even allowed to be here.
     const s = getSession();
-    if (!s || !isAdmin(s.userId)) { router.replace("/"); return; }
+    if (!s || !isAppAdmin(s.email)) { router.replace("/"); return; }
+    // Unrelated to the gate above (isAppAdmin checks the session's email,
+    // not this per-browser flag) -- kept only to back the per-row "Admin"
+    // badge in the Registered users list below.
     ensureFirstUserIsAdmin();
 
     // Build user rows. essa_last_sync is a single browser-wide key, not
