@@ -44,6 +44,7 @@ export default function ProfilePage() {
   const [downloadMsg,   setDownloadMsg]   = useState("");
   const [newRecoveryCode, setNewRecoveryCode] = useState<string | null>(null);
   const [recoveryMsg,     setRecoveryMsg]     = useState("");
+  const [regenerating,    setRegenerating]    = useState(false);
   const [lastSync,      setLastSync]      = useState<string | null>(null);
   const [analyticsOn,   setAnalyticsOn]   = useState(false);
 
@@ -177,17 +178,22 @@ export default function ProfilePage() {
     if (!session) return;
     setRecoveryMsg("");
     if (!confirm("Generate a new recovery code? Your old recovery code will stop working immediately.")) return;
-    const result = await regenerateRecoveryCode(session.userId);
-    if (!result.ok) { setRecoveryMsg(result.error); return; }
-    setNewRecoveryCode(result.recoveryCode);
-    // Regenerating only updates this device's local record — the server
-    // still has whatever recovery token the last push carried, which is
-    // now stale. Push immediately so the new code actually works from
-    // another device right away, instead of silently waiting on the next
-    // unrelated data edit to carry it up (the gap that made an already-
-    // regenerated code fail to recover from a second device).
-    const data = await loadData(session.userId);
-    await pushToServer(session.email, data);
+    setRegenerating(true);
+    try {
+      const result = await regenerateRecoveryCode(session.userId);
+      if (!result.ok) { setRecoveryMsg(result.error); return; }
+      setNewRecoveryCode(result.recoveryCode);
+      // Regenerating only updates this device's local record — the server
+      // still has whatever recovery token the last push carried, which is
+      // now stale. Push immediately so the new code actually works from
+      // another device right away, instead of silently waiting on the next
+      // unrelated data edit to carry it up (the gap that made an already-
+      // regenerated code fail to recover from a second device).
+      const data = await loadData(session.userId);
+      await pushToServer(session.email, data);
+    } finally {
+      setRegenerating(false);
+    }
   }
 
   const initials = session ? session.name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2) : "…";
@@ -274,7 +280,8 @@ export default function ProfilePage() {
             <Field label="Display name" value={name} onChange={setName} placeholder="Your name" />
             <button
               type="submit"
-              className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 active:scale-95"
+              disabled={!name.trim()}
+              className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 active:scale-95 disabled:opacity-40 disabled:pointer-events-none"
               style={{ background: T.jade, color: T.ink }}
             >
               Save changes
@@ -299,10 +306,11 @@ export default function ProfilePage() {
           </p>
           <button
             onClick={handleRegenerateRecovery}
-            className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+            disabled={regenerating}
+            className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-40 disabled:pointer-events-none"
             style={{ background: T.line, color: T.text }}
           >
-            Generate new recovery code
+            {regenerating ? "Generating…" : "Generate new recovery code"}
           </button>
           {recoveryMsg && <p className="text-xs" style={{ color: T.coral }}>{recoveryMsg}</p>}
         </div>
