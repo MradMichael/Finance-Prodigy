@@ -470,6 +470,27 @@ describe("budget-rule history — past months judged against the rule that was a
     expect(result.budgetRollover.savings).toBeCloseTo(0, 0);
   });
 
+  it("budgetRollover counts a recurring item's spend in a past month even with no logged transaction that month", () => {
+    const data = makeData({
+      income: 1000,
+      budgetRule: "50-30-20", // 50% needs target = $500/mo
+      recurring: [{
+        id: "r1", name: "Rent", emoji: "🏠", amount: 300, currency: "USD",
+        frequency: "monthly", bucket: "NEEDS", startDate: "2025-01-01",
+        endDate: null, totalAmount: null, createdAt: "2025-01-01T00:00:00.000Z",
+      }],
+      // No transactions logged at all -- rent is only ever recurring.
+    });
+    const result = computeDashboard(data);
+    // 6 rollover-eligible past months (Jan-Jun 2026), each: $500 needs
+    // target - $300 real recurring rent = $200 unspent, rolled forward.
+    // Before this fix, every one of these months had zero logged
+    // transactions and was skipped from rollover entirely, silently
+    // dropping all $1,200 of it (and, for a month where recurring spend
+    // exceeds the target, silently dropping a real deficit the same way).
+    expect(result.budgetRollover.needs).toBeCloseTo(200 * 6, 5);
+  });
+
   it("savingsStreak counts past months against the savings target that was actually in effect then, not today's higher target", () => {
     const data = makeData({
       income: 1000,

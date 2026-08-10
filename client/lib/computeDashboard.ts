@@ -423,11 +423,12 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   // ── Budget rollover — unspent (or overspent) carries into this month ──
   // Uses the income/LBP-rate/budget-rule that were actually in effect each
   // past month (via incomeForMonth/toUSDForMonth/budgetTargetPctForMonth)
-  // rather than today's values — skips months with zero logged transactions
-  // so a blank month doesn't distort the running total. Computed before
-  // budget pace below so the pace warnings judge spend against the same
-  // rollover-adjusted target the Budget screen displays, instead of two
-  // different numbers.
+  // rather than today's values — skips months with no real activity at all
+  // (no logged transaction AND no active recurring item) so a blank month
+  // before the account had any data doesn't distort the running total.
+  // Computed before budget pace below so the pace warnings judge spend
+  // against the same rollover-adjusted target the Budget screen displays,
+  // instead of two different numbers.
   const budgetRollover = { needs: 0, wants: 0, savings: 0 };
   {
     const monthsBack = Math.min(11, month - 1); // back to January of this year, capped at 11
@@ -435,7 +436,6 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
       const d = new Date(year, month - 1 - i, 1);
       const ym = monthKey(d);
       const tx = data.transactions.filter((t) => t.date.startsWith(ym));
-      if (tx.length === 0) continue;
       const spend = { needs: 0, wants: 0, savings: 0 };
       for (const t of tx) {
         // INCOME transactions already boosted moIncome via incomeForMonth
@@ -448,6 +448,21 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
         else if (t.bucket === "WANTS") spend.wants += amt;
         else spend.savings += amt;
       }
+      // Recurring bills don't create a transaction row, so a past month's
+      // real spend was understated (sometimes all the way to "skip this
+      // month entirely" below) whenever nothing was also manually logged
+      // that month — the same gap already handled for the *current*
+      // month's needsSpend/wantsSpend/savingsContrib above.
+      let recurActive = false;
+      for (const r of activeRecurring) {
+        const amt = toUSDForMonth(monthlyEquivalent(r, d), r.currency, ym);
+        if (amt <= 0) continue;
+        recurActive = true;
+        if (r.bucket === "NEEDS") spend.needs += amt;
+        else if (r.bucket === "WANTS") spend.wants += amt;
+        else spend.savings += amt;
+      }
+      if (tx.length === 0 && !recurActive) continue;
       const moIncome = incomeForMonth(ym);
       const moTargetPct = budgetTargetPctForMonth(ym);
       budgetRollover.needs   += (moIncome * moTargetPct.needs   / 100) - spend.needs;
