@@ -1,14 +1,23 @@
 "use client";
 
 import type { LocalFinancials } from "../../lib/localData";
+import { fmtDate } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money } from "./shared";
 
 export default function DebtsScreen({ financials, dashData }: { financials: LocalFinancials; dashData: ReturnType<typeof computeDashboard> }) {
   const T = useTheme();
-  const totalBal  = financials.debts.reduce((s, d) => s + d.balance, 0);
-  const totalMin  = financials.debts.reduce((s, d) => s + d.minPayment, 0);
+  // Paid-off debts stay in the array for history (balance 0, paidOffAt set)
+  // -- their minPayment is never cleared, so summing over every debt
+  // unfiltered keeps counting a payment obligation that no longer exists,
+  // and never triggers the debt-free state once the last active debt is
+  // paid. computeDashboard.ts already filters the same way for the health
+  // score and payoff plan; matching it here keeps this screen's own
+  // numbers from disagreeing with those.
+  const activeDebts = financials.debts.filter((d) => d.balance > 0);
+  const totalBal  = activeDebts.reduce((s, d) => s + d.balance, 0);
+  const totalMin  = activeDebts.reduce((s, d) => s + d.minPayment, 0);
   const plan      = dashData.debt.plan;
 
   return (
@@ -19,7 +28,7 @@ export default function DebtsScreen({ financials, dashData }: { financials: Loca
           <h1 className="text-3xl mt-1" style={SERIF}>Debts</h1>
         </div>
 
-        {financials.debts.length === 0 ? (
+        {activeDebts.length === 0 ? (
           <div className="text-center py-20">
             <p className="text-3xl mb-3" style={SERIF}>Debt-free. 🏁</p>
             <p className="text-sm" style={{ color: T.mute }}>Every dollar you earn works for your future.</p>
@@ -82,15 +91,21 @@ export default function DebtsScreen({ financials, dashData }: { financials: Loca
               {financials.debts.map((d) => {
                 const monthlyInt = (d.apr / 100 / 12) * d.balance;
                 return (
-                  <div key={d.id} className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
+                  <div key={d.id} className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}`, opacity: d.paidOffAt ? 0.65 : 1 }}>
                     <div className="flex justify-between items-start gap-2 mb-3">
-                      <p className="font-medium" style={{ color: T.text }}>{d.name}</p>
-                      <p className="text-xl font-semibold tabular-nums flex-shrink-0" style={{ ...SERIF, color: T.coral }}>{money(d.balance)}</p>
+                      <p className="font-medium" style={{ color: T.text }}>
+                        {d.name}
+                        {d.paidOffAt && (
+                          <span className="ml-1.5 text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full" style={{ background: T.jade + "22", color: T.jade }}>Paid off</span>
+                        )}
+                      </p>
+                      <p className="text-xl font-semibold tabular-nums flex-shrink-0" style={{ ...SERIF, color: d.paidOffAt ? T.jade : T.coral }}>{money(d.balance)}</p>
                     </div>
                     <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs" style={{ color: T.mute }}>
                       <span>APR <span style={{ color: T.text }}>{d.apr}%</span></span>
                       <span>Min payment <span style={{ color: T.text }}>{money(d.minPayment)}/mo</span></span>
                       <span>Monthly interest <span style={{ color: T.coral }}>{money(monthlyInt)}</span></span>
+                      {d.paidOffAt && <span style={{ color: T.jade }}>Paid {fmtDate(d.paidOffAt)}</span>}
                     </div>
                   </div>
                 );
