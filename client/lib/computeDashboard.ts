@@ -558,8 +558,21 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
       const d = new Date(year, month - 1 - i, 1);
       const ym = monthKey(d);
       const tx = data.transactions.filter((t) => t.date.startsWith(ym));
-      if (tx.length === 0) break;
-      const monthSavings = tx.filter((t) => t.bucket === "SAVINGS").reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, ym), 0);
+      let monthSavings = tx.filter((t) => t.bucket === "SAVINGS").reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, ym), 0);
+      // Recurring bills don't create a transaction row, so a past month's
+      // real savings contribution was understated (sometimes all the way to
+      // "treat this as a blank month and end the streak" below) whenever
+      // nothing was also manually logged that month — the same gap already
+      // fixed in budgetRollover above.
+      let recurActive = false;
+      for (const r of activeRecurring) {
+        if (r.bucket !== "SAVINGS") continue;
+        const amt = toUSDForMonth(monthlyEquivalent(r, d), r.currency, ym);
+        if (amt <= 0) continue;
+        recurActive = true;
+        monthSavings += amt;
+      }
+      if (tx.length === 0 && !recurActive) break;
       // Uses the budget-rule split that was actually in effect that month,
       // not today's — otherwise changing rules retroactively rewrites which
       // past months count toward the streak.

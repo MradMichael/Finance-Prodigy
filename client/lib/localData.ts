@@ -357,16 +357,28 @@ const MONTH_FREQ_LENGTH: Partial<Record<RecurringFrequency, number>> = {
 
 /** Next date this recurring item is due on/after `asOf`, or null if it's already ended (by end date or total-amount cap). */
 export function nextOccurrence(r: StoredRecurring, asOf: Date = new Date()): Date | null {
+  // Normalized to UTC midnight of asOf's own (local) calendar date --
+  // "due on/after asOf" is a calendar-day question, not an exact-instant
+  // one (start/end dates are themselves UTC-midnight-parsed, and callers
+  // like Upcoming Renewals treat a match as "due today" for the whole
+  // day). Comparing against the raw current instant instead made an
+  // item's own due day read as already past — and skip ahead a full
+  // period — as soon as any time had elapsed since UTC midnight, i.e.
+  // almost immediately, on nearly every day it was actually due.
+  const asOfDay = new Date(Date.UTC(asOf.getFullYear(), asOf.getMonth(), asOf.getDate()));
   const start = new Date(r.startDate);
-  if (r.endDate && asOf > new Date(r.endDate)) return null;
-  if (r.totalAmount != null && r.totalAmount > 0 && recurringPaidSoFar(r, asOf) >= r.totalAmount) return null;
-  if (asOf <= start) return start;
+  if (r.endDate && asOfDay > new Date(r.endDate)) return null;
+  if (r.totalAmount != null && r.totalAmount > 0 && recurringPaidSoFar(r, asOfDay) >= r.totalAmount) return null;
+  if (asOfDay <= start) return start;
 
   const dayLen = DAY_FREQ_LENGTH[r.frequency];
   if (dayLen != null) {
     const msPerPeriod = dayLen * 24 * 60 * 60 * 1000;
-    const periodsElapsed = Math.floor((asOf.getTime() - start.getTime()) / msPerPeriod);
-    return new Date(start.getTime() + (periodsElapsed + 1) * msPerPeriod);
+    // ceil, not floor+1 -- when asOfDay lands exactly on a period boundary
+    // (due exactly today), floor+1 skips past it to the following period;
+    // ceil correctly returns that boundary itself, matching "on/after".
+    const periodsElapsed = Math.ceil((asOfDay.getTime() - start.getTime()) / msPerPeriod);
+    return new Date(start.getTime() + periodsElapsed * msPerPeriod);
   }
 
   // Clamp to the target month's actual last day instead of letting
@@ -377,7 +389,10 @@ export function nextOccurrence(r: StoredRecurring, asOf: Date = new Date()): Dat
   const monthLen = MONTH_FREQ_LENGTH[r.frequency] ?? 1;
   const targetDay = start.getUTCDate();
   let next = new Date(start);
-  while (next <= asOf) {
+  // Strictly-less-than: stop as soon as `next` is on/after asOfDay and
+  // return that value, instead of advancing past an exact match (the
+  // same boundary bug as the day-frequency branch above, just as a loop).
+  while (next < asOfDay) {
     const candidate = new Date(Date.UTC(next.getUTCFullYear(), next.getUTCMonth() + monthLen, 1));
     const daysInTargetMonth = new Date(Date.UTC(candidate.getUTCFullYear(), candidate.getUTCMonth() + 1, 0)).getUTCDate();
     candidate.setUTCDate(Math.min(targetDay, daysInTargetMonth));

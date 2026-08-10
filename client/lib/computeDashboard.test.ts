@@ -578,6 +578,27 @@ describe("upcomingRenewals — exact calendar-day due counts, consistent regardl
     const renewal = result.upcomingRenewals.find((r) => r.id === "r1");
     expect(renewal?.dueInDays).toBe(5);
   });
+
+  it("shows a recurring item due today with dueInDays 0, even when checked partway through the day", () => {
+    vi.setSystemTime(new Date(2026, 6, 15, 14, 30)); // 2:30pm local, same calendar day as NOW
+    const data = makeData({
+      income: 1000,
+      recurring: [{
+        id: "r1", name: "Due today", emoji: "🔔", amount: 15, currency: "USD",
+        frequency: "monthly", bucket: "WANTS", startDate: "2026-06-15",
+        endDate: null, totalAmount: null, createdAt: "2026-01-01T00:00:00.000Z",
+      }],
+    });
+    // Started June 15, monthly -> next occurrence is July 15, "today" under
+    // NOW. Checking partway through that day (14:30, not midnight) used to
+    // overshoot a full period to August 15 -- both from asOf carrying a
+    // nonzero time-of-day, and separately from an off-by-one where the
+    // month-stepping loop advanced past an exact boundary match instead of
+    // returning it.
+    const result = computeDashboard(data);
+    const renewal = result.upcomingRenewals.find((r) => r.id === "r1");
+    expect(renewal?.dueInDays).toBe(0);
+  });
 });
 
 describe("INCOME transactions — one-off receipts boost effective income without counting as spend", () => {
