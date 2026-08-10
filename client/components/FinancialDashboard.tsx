@@ -439,6 +439,23 @@ export default function FinancialDashboard({
             <p className="text-xs mt-2" style={{ color: T.mute }}>
               The gap between the lines is your monthly progress. {monthName} is still in progress, so its spend line will keep rising (and the gap will keep shrinking) as the rest of the month gets logged.
             </p>
+            <div className="mt-4 pt-4" style={{ borderTop: `1px solid ${T.line}` }}>
+              <div className="flex items-baseline justify-between">
+                <span className="text-xs" style={{ color: T.mute }}>Left this month · income minus spending so far</span>
+                <span className="text-lg" style={{ ...SERIF, ...NUMS, color: month.netCashFlow >= 0 ? T.jade : T.coral }}>
+                  {money(month.netCashFlow)}
+                </span>
+              </div>
+              {balanceChecks.length > 0 && (
+                <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3">
+                  {balanceChecks.map((b) => (
+                    <span key={b.id} className="text-xs" style={{ color: T.mute }}>
+                      {b.name}: <span style={{ ...NUMS, color: T.text }}>{money(b.expected)}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
           </Panel>
         </div>
 
