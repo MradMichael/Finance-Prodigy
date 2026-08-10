@@ -315,10 +315,6 @@ export default function TransactionsScreen({ financials }: { financials: LocalFi
                     ))}
                   </div>
                 </>
-              ) : categoryTotal === 0 ? (
-                <p className="text-sm" style={{ color: T.mute }}>
-                  Nothing here has a category yet. Add one when logging a transaction or recurring payment to see it broken out here.
-                </p>
               ) : (
                 <>
                   <Donut

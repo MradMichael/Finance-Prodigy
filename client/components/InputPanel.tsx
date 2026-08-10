@@ -338,12 +338,13 @@ export default function InputPanel({ financials, onChange, session }: Props) {
   }
 
   /** Quick-add a Recurring item from a transaction that looksRecurring flagged — starts today, monthly, editable further in the Recurring screen. Past transactions are left untouched; this only affects future months. */
-  function convertToRecurring(name: string, amount: string, currency: Currency, bucket: Bucket) {
+  function convertToRecurring(name: string, amount: string, currency: Currency, bucket: Bucket, category: CategoryKey | "") {
     const amt = parseFloat(amount.replace(/,/g, ""));
     if (!name.trim() || !amt) return;
     const rec: StoredRecurring = {
       id: uid(), name: name.trim(), emoji: "🔄",
       amount: amt, currency, frequency: "monthly", bucket,
+      ...(category ? { category } : {}),
       startDate: todayISO(), endDate: null, totalAmount: null,
       createdAt: new Date().toISOString(),
     };
@@ -372,6 +373,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
     const tx: StoredTransaction = {
       id: uid(), amount: amt, currency: rec.currency,
       bucket: rec.bucket,
+      ...(rec.category ? { category: rec.category } : {}),
       description: `Extra: ${rec.name}`,
       date: todayISO(),
       paymentMethod: "cash",
@@ -736,7 +738,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                 <p className="text-[11px]" style={{ color: T.brass }}>You&apos;ve logged this before in another month. Looks recurring.</p>
                 <button
                   type="button"
-                  onClick={() => convertToRecurring(txDesc, txAmt, txCurrency, txBucket)}
+                  onClick={() => convertToRecurring(txDesc, txAmt, txCurrency, txBucket, txCategory)}
                   className="text-[11px] font-semibold px-2.5 py-1 rounded-lg flex-shrink-0 hover:opacity-80 transition-opacity"
                   style={{ background: T.brass + "22", color: T.brass }}
                 >
@@ -921,7 +923,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                                 <p className="text-[11px]" style={{ color: T.brass }}>You&apos;ve logged this before in another month. Looks recurring.</p>
                                 <button
                                   type="button"
-                                  onClick={() => convertToRecurring(editTxDesc, editTxAmt, editTxCurrency, editTxBucket)}
+                                  onClick={() => convertToRecurring(editTxDesc, editTxAmt, editTxCurrency, editTxBucket, editTxCategory)}
                                   className="text-[11px] font-semibold px-2.5 py-1 rounded-lg flex-shrink-0 hover:opacity-80 transition-opacity"
                                   style={{ background: T.brass + "22", color: T.brass }}
                                 >

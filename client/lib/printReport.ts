@@ -1,5 +1,5 @@
 import type { LocalFinancials } from "./localData";
-import { BUDGET_RULES, monthlyEquivalent, toUSD as toUSDShared } from "./localData";
+import { BUDGET_RULES, monthlyEquivalent, toUSD as toUSDShared, CATEGORY_LABEL } from "./localData";
 import type { computeDashboard } from "./computeDashboard";
 
 type DashboardPayload = ReturnType<typeof computeDashboard>;
@@ -41,6 +41,7 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
       <td>${t.date.split("-").reverse().join("/")}</td>
       <td>${escapeHtml(t.description)}</td>
       <td>${BL[t.bucket]}</td>
+      <td>${t.category ? escapeHtml(CATEGORY_LABEL[t.category]) : "—"}</td>
       <td class="num">${money(toUSD(t.amount, t.currency))}</td>
     </tr>`).join("");
   const rangeLabel = options.dateFrom || options.dateTo
@@ -71,6 +72,7 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
     <tr>
       <td>${escapeHtml(r.emoji ?? "")} ${escapeHtml(r.name)}</td>
       <td>${BL[r.bucket]}</td>
+      <td>${r.category ? escapeHtml(CATEGORY_LABEL[r.category]) : "—"}</td>
       <td>${FREQ_LABEL[r.frequency]}</td>
       <td class="num">${money(toUSD(r.amount, r.currency))}</td>
     </tr>`).join("");
@@ -140,7 +142,7 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
   ${activeRecurring.length > 0 ? `
   <h2>Recurring payments &middot; ${money(recurringMonthlyTotal)}/mo</h2>
   <table>
-    <tr><th>Name</th><th>Category</th><th>Frequency</th><th class="num">Amount</th></tr>
+    <tr><th>Name</th><th>Bucket</th><th>Category</th><th>Frequency</th><th class="num">Amount</th></tr>
     ${recurringRows}
   </table>` : ""}
 
@@ -154,8 +156,8 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
   ${options.detailed ? `
   <h2>Transaction ledger &middot; ${escapeHtml(rangeLabel)} &middot; ${ledgerTx.length} entries &middot; ${money(ledgerTotal)}</h2>
   <table>
-    <tr><th>Date</th><th>Description</th><th>Category</th><th class="num">Amount</th></tr>
-    ${ledgerRows || `<tr><td colspan="4" style="color:#8a958f;">No transactions in this range.</td></tr>`}
+    <tr><th>Date</th><th>Description</th><th>Bucket</th><th>Category</th><th class="num">Amount</th></tr>
+    ${ledgerRows || `<tr><td colspan="5" style="color:#8a958f;">No transactions in this range.</td></tr>`}
   </table>` : ""}
 
   <p class="footer">Generated locally in your browser by ESSA. This data never left your device to produce this report.</p>
