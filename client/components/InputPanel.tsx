@@ -3,10 +3,10 @@
 import { useState } from "react";
 import type {
   LocalFinancials, StoredTransaction, StoredGoal, StoredDebt,
-  StoredRecurring, StoredCard, RecurringFrequency, Currency, PaymentMethod, BudgetRuleKey, TrackedBalance,
+  StoredRecurring, StoredCard, RecurringFrequency, Currency, PaymentMethod, BudgetRuleKey, TrackedBalance, CategoryKey,
 } from "../lib/localData";
 import type { Session } from "../lib/auth";
-import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, monthlyEquivalent, recurringPaidSoFar, toUSD as toUSDShared } from "../lib/localData";
+import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, monthlyEquivalent, recurringPaidSoFar, toUSD as toUSDShared, CATEGORIES, CATEGORY_LABEL, CATEGORY_ICON } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY } from "./form/Primitives";
@@ -69,6 +69,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
   // Transaction form
   const [txAmt,    setTxAmt]    = useState("");
   const [txBucket, setTxBucket] = useState<TxBucket>("NEEDS");
+  const [txCategory, setTxCategory] = useState<CategoryKey | "">("");
   const [txDesc,   setTxDesc]   = useState("");
   const [txDate,   setTxDate]   = useState(todayISO());
   const [txCurrency,  setTxCurrency]  = useState<Currency>("USD");
@@ -124,6 +125,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
   const [rCurrency,    setRCurrency]    = useState<Currency>("USD");
   const [rFreq,        setRFreq]        = useState<RecurringFrequency>("monthly");
   const [rBucket,      setRBucket]      = useState<"NEEDS" | "WANTS" | "SAVINGS">("NEEDS");
+  const [rCategory,    setRCategory]    = useState<CategoryKey | "">("");
   const [rStart,       setRStart]       = useState(todayISO());
   const [rEndType,     setREndType]     = useState<"infinite" | "date" | "amount">("infinite");
   const [rEnd,         setREnd]         = useState("");
@@ -159,6 +161,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
   const [editRCurrency,    setEditRCurrency]    = useState<Currency>("USD");
   const [editRFreq,        setEditRFreq]        = useState<RecurringFrequency>("monthly");
   const [editRBucket,      setEditRBucket]      = useState<Bucket>("NEEDS");
+  const [editRCategory,    setEditRCategory]    = useState<CategoryKey | "">("");
   const [editRStart,       setEditRStart]       = useState("");
   const [editREndType,     setEditREndType]     = useState<"infinite" | "date" | "amount">("infinite");
   const [editREnd,         setEditREnd]         = useState("");
@@ -169,6 +172,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
   const [editTxDesc,       setEditTxDesc]       = useState("");
   const [editTxDate,       setEditTxDate]       = useState("");
   const [editTxBucket,     setEditTxBucket]     = useState<TxBucket>("NEEDS");
+  const [editTxCategory,   setEditTxCategory]   = useState<CategoryKey | "">("");
   const [editTxCurrency,   setEditTxCurrency]   = useState<Currency>("USD");
 
   // ── helpers ────────────────────────────────────────────────────── //
@@ -218,6 +222,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
       description: txDesc.trim() || txBucket.charAt(0) + txBucket.slice(1).toLowerCase(),
       date: txDate,
       paymentMethod: txPayMethod,
+      ...(txCategory ? { category: txCategory } : {}),
       ...(txPayMethod === "other" && txPayNote.trim() ? { paymentNote: txPayNote.trim() } : {}),
       ...(cardId ? { cardId, cardLabel } : {}),
     };
@@ -230,7 +235,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
         ? { emergencyFundBalance: Math.max(0, (financials.emergencyFundBalance ?? 0) - amtUSD) }
         : {}),
     });
-    setTxAmt(""); setTxDesc(""); setTxPayNote(""); setTxAddToEF(false); setTxFromEF(false);
+    setTxAmt(""); setTxDesc(""); setTxPayNote(""); setTxAddToEF(false); setTxFromEF(false); setTxCategory("");
   }
 
   function addGoal() {
@@ -323,13 +328,13 @@ export default function InputPanel({ financials, onChange, session }: Props) {
     const rec: StoredRecurring = {
       id: uid(), name: rName.trim(), emoji: rEmoji || "🔄",
       amount: parseFloat(rAmount.replace(/,/g, "")), currency: rCurrency, frequency: rFreq,
-      bucket: rBucket, startDate: rStart,
+      bucket: rBucket, ...(rCategory ? { category: rCategory } : {}), startDate: rStart,
       endDate:     rEndType === "date"   ? (rEnd.trim() || null) : null,
       totalAmount: rEndType === "amount" ? (parseFloat(rTotalAmount.replace(/,/g, "")) || null) : null,
       createdAt: new Date().toISOString(),
     };
     update({ recurring: [...(financials.recurring ?? []), rec] });
-    setRName(""); setRAmount(""); setREmoji("🔄"); setRStart(todayISO()); setREnd(""); setRTotalAmount(""); setREndType("infinite");
+    setRName(""); setRAmount(""); setREmoji("🔄"); setRCategory(""); setRStart(todayISO()); setREnd(""); setRTotalAmount(""); setREndType("infinite");
   }
 
   /** Quick-add a Recurring item from a transaction that looksRecurring flagged — starts today, monthly, editable further in the Recurring screen. Past transactions are left untouched; this only affects future months. */
@@ -428,7 +433,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
   function startEditRec(r: StoredRecurring) {
     setEditRecId(r.id); setEditRName(r.name); setEditREmoji(r.emoji);
     setEditRAmount(String(r.amount)); setEditRCurrency(r.currency);
-    setEditRFreq(r.frequency); setEditRBucket(r.bucket); setEditRStart(r.startDate);
+    setEditRFreq(r.frequency); setEditRBucket(r.bucket); setEditRCategory(r.category ?? ""); setEditRStart(r.startDate);
     if (r.endDate)       { setEditREndType("date");   setEditREnd(r.endDate); setEditRTotalAmount(""); }
     else if (r.totalAmount) { setEditREndType("amount"); setEditRTotalAmount(String(r.totalAmount)); setEditREnd(""); }
     else                 { setEditREndType("infinite"); setEditREnd(""); setEditRTotalAmount(""); }
@@ -441,7 +446,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
       recurring: (financials.recurring ?? []).map((r) => r.id !== recId ? r : {
         ...r, name: editRName.trim(), emoji: editREmoji || "🔄",
         amount: amt, currency: editRCurrency, frequency: editRFreq,
-        bucket: editRBucket, startDate: editRStart,
+        bucket: editRBucket, category: editRCategory || undefined, startDate: editRStart,
         endDate:     editREndType === "date"   ? (editREnd.trim() || null) : null,
         totalAmount: editREndType === "amount" ? (parseFloat(editRTotalAmount.replace(/,/g, "")) || null) : null,
       }),
@@ -452,7 +457,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
   function startEditTx(tx: StoredTransaction) {
     setEditTxId(tx.id); setEditTxAmt(String(tx.amount));
     setEditTxDesc(tx.description); setEditTxDate(tx.date);
-    setEditTxBucket(tx.bucket); setEditTxCurrency(tx.currency ?? "USD");
+    setEditTxBucket(tx.bucket); setEditTxCategory(tx.category ?? ""); setEditTxCurrency(tx.currency ?? "USD");
   }
   function saveEditTx(txId: string) {
     const amt = parseFloat(editTxAmt.replace(/,/g, ""));
@@ -470,7 +475,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
     update({
       transactions: financials.transactions.map((t) => t.id !== txId ? t : {
         ...t, amount: amt, description: editTxDesc.trim(),
-        date: editTxDate, bucket: editTxBucket, currency: editTxCurrency,
+        date: editTxDate, bucket: editTxBucket, category: editTxCategory || undefined, currency: editTxCurrency,
       }),
     });
     setEditTxId(null);
@@ -595,7 +600,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
           </div>
 
           <div>
-            <Label>Category</Label>
+            <Label>Type</Label>
             <div className="grid grid-cols-2 gap-2">
               {TX_BUCKETS.map((b) => (
                 <button
@@ -614,6 +619,22 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                 </button>
               ))}
             </div>
+          </div>
+
+          <div>
+            <Label htmlFor="tx-category">Category</Label>
+            <select
+              id="tx-category"
+              value={txCategory}
+              onChange={(e) => setTxCategory(e.target.value as CategoryKey | "")}
+              className="w-full rounded-xl px-3 py-2.5 text-sm"
+              style={{ background: T.panelSoft, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
+            >
+              <option value="">No category</option>
+              {CATEGORIES.map((c) => (
+                <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
+              ))}
+            </select>
           </div>
 
           {/* Savings context: target hint + EF toggle */}
@@ -918,6 +939,18 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                               </button>
                             ))}
                           </div>
+                          <select
+                            value={editTxCategory}
+                            onChange={(e) => setEditTxCategory(e.target.value as CategoryKey | "")}
+                            aria-label="Category"
+                            className="w-full rounded-lg px-2 py-1.5 text-[10px]"
+                            style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
+                          >
+                            <option value="">No category</option>
+                            {CATEGORIES.map((c) => (
+                              <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
+                            ))}
+                          </select>
                           <CurrencyToggle value={editTxCurrency} onChange={setEditTxCurrency} />
                           <div className="flex gap-2">
                             <button onClick={() => saveEditTx(tx.id)} className="px-3 py-1.5 rounded-xl text-xs font-semibold hover:opacity-90" style={{ background: T.jade, color: T.ink }}>Save</button>
@@ -933,17 +966,21 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                             <span className="text-sm">{b.icon}</span>
                             <div className="min-w-0">
                               <span className="text-xs truncate block" style={{ color: T.text }}>{tx.description}</span>
-                              {tx.paymentMethod && (
+                              {(tx.paymentMethod || tx.category) && (
                                 <span className="text-[9px]" style={{ color: T.mute }}>
-                                  {tx.paymentMethod === "card" && tx.cardLabel
-                                    ? tx.cardLabel
-                                    : tx.paymentMethod === "cash"
-                                    ? "💵 Cash"
-                                    : tx.paymentMethod === "card"
-                                    ? "💳 Card"
-                                    : tx.paymentNote
-                                    ? `🤝 ${tx.paymentNote}`
-                                    : "🤝 Other"}
+                                  {tx.paymentMethod && (
+                                    tx.paymentMethod === "card" && tx.cardLabel
+                                      ? tx.cardLabel
+                                      : tx.paymentMethod === "cash"
+                                      ? "💵 Cash"
+                                      : tx.paymentMethod === "card"
+                                      ? "💳 Card"
+                                      : tx.paymentNote
+                                      ? `🤝 ${tx.paymentNote}`
+                                      : "🤝 Other"
+                                  )}
+                                  {tx.paymentMethod && tx.category && " · "}
+                                  {tx.category && `${CATEGORY_ICON[tx.category]} ${CATEGORY_LABEL[tx.category]}`}
                                 </span>
                               )}
                             </div>
@@ -1042,6 +1079,18 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                                       </button>
                                     ))}
                                   </div>
+                                  <select
+                                    value={editTxCategory}
+                                    onChange={(e) => setEditTxCategory(e.target.value as CategoryKey | "")}
+                                    aria-label="Category"
+                                    className="w-full rounded-lg px-2 py-1.5 text-[10px]"
+                                    style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
+                                  >
+                                    <option value="">No category</option>
+                                    {CATEGORIES.map((c) => (
+                                      <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
+                                    ))}
+                                  </select>
                                   <CurrencyToggle value={editTxCurrency} onChange={setEditTxCurrency} />
                                   <div className="flex gap-2">
                                     <button onClick={() => saveEditTx(tx.id)} className="px-3 py-1.5 rounded-lg text-xs font-semibold hover:opacity-90" style={{ background: T.jade, color: T.ink }}>Save</button>
@@ -1055,7 +1104,9 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                                 >
                                   <div className="min-w-0 flex-1">
                                     <p className="text-xs truncate" style={{ color: T.text }}>{tx.description}</p>
-                                    <p className="text-[9px]" style={{ color: T.mute }}>{fmtDate(tx.date)}</p>
+                                    <p className="text-[9px]" style={{ color: T.mute }}>
+                                      {fmtDate(tx.date)}{tx.category && ` · ${CATEGORY_ICON[tx.category]} ${CATEGORY_LABEL[tx.category]}`}
+                                    </p>
                                   </div>
                                   <div className="flex items-center gap-1.5 flex-shrink-0">
                                     <span className="text-xs tabular-nums font-medium" style={{ color: b.color }}>{fmtCur(tx.amount, tx.currency ?? "USD")}</span>
@@ -1298,7 +1349,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                                 <CurrencyToggle value={editRCurrency} onChange={setEditRCurrency} />
                               </div>
                               <div>
-                                <Label>Category</Label>
+                                <Label>Type</Label>
                                 <div className="grid grid-cols-3 gap-1.5">
                                   {BUCKETS.map((bkt) => (
                                     <button key={bkt.value} onClick={() => setEditRBucket(bkt.value)}
@@ -1310,6 +1361,21 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                                     </button>
                                   ))}
                                 </div>
+                              </div>
+                              <div>
+                                <Label htmlFor="edit-rec-category">Category</Label>
+                                <select
+                                  id="edit-rec-category"
+                                  value={editRCategory}
+                                  onChange={(e) => setEditRCategory(e.target.value as CategoryKey | "")}
+                                  className="w-full rounded-xl px-3 py-2 text-xs"
+                                  style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
+                                >
+                                  <option value="">No category</option>
+                                  {CATEGORIES.map((c) => (
+                                    <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
+                                  ))}
+                                </select>
                               </div>
                               <div>
                                 <Label htmlFor="edit-rec-start">Start date</Label>
@@ -1505,7 +1571,7 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                   </div>
 
                   <div>
-                    <Label>Category</Label>
+                    <Label>Type</Label>
                     <div className="grid grid-cols-3 gap-2">
                       {BUCKETS.map((b) => (
                         <button
@@ -1523,6 +1589,22 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                         </button>
                       ))}
                     </div>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="new-rec-category">Category</Label>
+                    <select
+                      id="new-rec-category"
+                      value={rCategory}
+                      onChange={(e) => setRCategory(e.target.value as CategoryKey | "")}
+                      className="w-full rounded-xl px-3 py-2.5 text-sm"
+                      style={{ background: T.panelSoft, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
+                    >
+                      <option value="">No category</option>
+                      {CATEGORIES.map((c) => (
+                        <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
+                      ))}
+                    </select>
                   </div>
 
                   <div>

@@ -19,6 +19,11 @@ export interface StoredTransaction {
   // set in Setup. StoredRecurring.bucket deliberately stays NEEDS/WANTS/SAVINGS
   // only: recurring income already has its own home (the Setup income field).
   bucket: "NEEDS" | "WANTS" | "SAVINGS" | "INCOME";
+  // Optional, finer-grained than bucket (e.g. "Groceries" vs. the Needs
+  // bucket it rolls up into) -- purely descriptive/for charting, never fed
+  // into budget/EF/rollover/projection math, so it's safe to leave unset on
+  // old entries or skip entirely.
+  category?: CategoryKey;
   description: string;
   date: string; // YYYY-MM-DD
   paymentMethod?: PaymentMethod;
@@ -114,11 +119,41 @@ export interface StoredRecurring {
   currency: Currency;
   frequency: RecurringFrequency;
   bucket: "NEEDS" | "WANTS" | "SAVINGS";
+  // Same optional, display-only role as StoredTransaction.category.
+  category?: CategoryKey;
   startDate: string;      // YYYY-MM-DD
   endDate: string | null; // null = infinite (unless totalAmount is set)
   totalAmount: number | null; // ends once this cumulative amount has been paid
   createdAt: string;      // ISO — when added to ESSA
 }
+
+// Finer-grained than the NEEDS/WANTS/SAVINGS/INCOME bucket -- one flat list
+// (not scoped per bucket) since a category like "Other" or "Gifts" can
+// reasonably apply under more than one bucket, and a single list is far
+// simpler to pick from and to chart than a bucket-conditional one.
+export const CATEGORIES = [
+  { value: "groceries",    label: "Groceries",         icon: "🛒" },
+  { value: "rent",         label: "Rent / Mortgage",   icon: "🏠" },
+  { value: "utilities",    label: "Utilities",         icon: "💡" },
+  { value: "transport",    label: "Transport",         icon: "🚗" },
+  { value: "dining",       label: "Dining out",        icon: "🍽️" },
+  { value: "entertainment",label: "Entertainment",     icon: "🎬" },
+  { value: "shopping",     label: "Shopping",          icon: "🛍️" },
+  { value: "health",       label: "Health",            icon: "💊" },
+  { value: "insurance",    label: "Insurance",         icon: "🛡️" },
+  { value: "subscriptions",label: "Subscriptions",     icon: "🔁" },
+  { value: "travel",       label: "Travel",            icon: "✈️" },
+  { value: "education",    label: "Education",         icon: "📚" },
+  { value: "gifts",        label: "Gifts & donations", icon: "🎁" },
+  { value: "other",        label: "Other",             icon: "📦" },
+] as const;
+export type CategoryKey = (typeof CATEGORIES)[number]["value"];
+export const CATEGORY_LABEL: Record<CategoryKey, string> = Object.fromEntries(
+  CATEGORIES.map((c) => [c.value, c.label]),
+) as Record<CategoryKey, string>;
+export const CATEGORY_ICON: Record<CategoryKey, string> = Object.fromEntries(
+  CATEGORIES.map((c) => [c.value, c.icon]),
+) as Record<CategoryKey, string>;
 
 export type BudgetRuleKey = "40-30-30" | "50-30-20" | "60-20-20" | "70-20-10" | "80-15-5" | "custom";
 
@@ -283,9 +318,23 @@ export function fmtDate(iso: string | undefined | null): string {
   return `${d}/${m}/${y}`;
 }
 
+// Date-only strings ("YYYY-MM-DD") parse as UTC midnight per spec, but every
+// caller of monthlyEquivalent/recurringPaidSoFar constructs `asOf` as LOCAL
+// midnight (`new Date(y, m, 1)` or `new Date(\`${ym}-01T00:00:00\`)`). East of
+// UTC (e.g. Beirut, UTC+3) that mismatch makes a recurring item's own start
+// date compare as *later* than local midnight of that same calendar day, so
+// its first month is silently skipped. Appending a local time-of-day makes
+// the parse match how callers build `asOf`, everywhere both are meant to be
+// compared as plain local dates. (nextOccurrence deliberately keeps the UTC
+// parse -- it extracts UTC day/month/year from `start` for DST-safe
+// month-increment arithmetic, not local comparison, so this fix doesn't apply there.)
+function parseLocalDate(iso: string): Date {
+  return new Date(`${iso}T00:00:00`);
+}
+
 /** Monthly cost of a recurring item as of a given date, 0 if not yet started or already ended. */
 export function monthlyEquivalent(r: StoredRecurring, asOf: Date = new Date()): number {
-  const start = new Date(r.startDate);
+  const start = parseLocalDate(r.startDate);
   if (asOf < start) return 0;
 
   // End by total amount: stop once cumulative payments have hit the limit
@@ -295,7 +344,7 @@ export function monthlyEquivalent(r: StoredRecurring, asOf: Date = new Date()): 
     if (asOf.getTime() > start.getTime() + totalMs) return 0;
   }
 
-  const end = r.endDate ? new Date(r.endDate) : null;
+  const end = r.endDate ? parseLocalDate(r.endDate) : null;
   if (end && asOf > end) return 0;
 
   return r.amount * FREQ_MONTHLY[r.frequency];
@@ -340,7 +389,7 @@ export function nextOccurrence(r: StoredRecurring, asOf: Date = new Date()): Dat
 /** How much has been paid so far on a totalAmount-capped recurring item. */
 export function recurringPaidSoFar(r: StoredRecurring, asOf: Date = new Date()): number {
   if (!r.totalAmount || r.amount <= 0) return 0;
-  const start = new Date(r.startDate);
+  const start = parseLocalDate(r.startDate);
   if (asOf <= start) return 0;
   const monthsElapsed = (asOf.getTime() - start.getTime()) / (30.4375 * 24 * 60 * 60 * 1000);
   const periodsElapsed = Math.floor(monthsElapsed * FREQ_MONTHLY[r.frequency]);

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, StoredRecurring } from "../../lib/localData";
-import { fmtDate, monthlyEquivalent, toUSD as toUSDShared } from "../../lib/localData";
+import { fmtDate, monthlyEquivalent, toUSD as toUSDShared, CATEGORY_LABEL, CATEGORY_ICON } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money } from "./shared";
 import Donut from "../charts/Donut";
@@ -62,14 +62,31 @@ export default function TransactionsScreen({ financials }: { financials: LocalFi
   const T = useTheme();
   const [filter, setFilter] = useState("all");
   const [query,  setQuery]  = useState("");
+  const [donutView, setDonutView] = useState<"type" | "category">("type");
 
   const lbpRate = financials.lbpRate ?? 89500;
   const toUSD   = (n: number, cur?: string) => toUSDShared(n, cur as "USD" | "LBP" | undefined, lbpRate);
 
   const allTx  = [...financials.transactions].sort((a, b) => b.date.localeCompare(a.date));
-  const months = Array.from(new Set(allTx.map((t) => t.date.slice(0, 7)))).sort().reverse();
   const recurring = financials.recurring ?? [];
   const currentYm = new Date().toISOString().slice(0, 7);
+  // Months where at least one recurring item was active, independent of the
+  // search query below -- feeds the month dropdown so a recurring-only
+  // month (rent/tuition auto-debited, nothing else logged) can still be
+  // selected. Bounded to the last 24 months back from now (matches the
+  // history cap used elsewhere) so a years-old recurring start date can't
+  // produce an unbounded list.
+  const recurActiveMonths: string[] = [];
+  {
+    const cursor = new Date(`${currentYm}-01T00:00:00`);
+    for (let i = 0; i < 24; i++) {
+      const mo = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`;
+      const asOf = mo === currentYm ? new Date() : new Date(cursor);
+      if (recurring.some((r) => toUSD(monthlyEquivalent(r, asOf), r.currency) > 0)) recurActiveMonths.push(mo);
+      cursor.setMonth(cursor.getMonth() - 1);
+    }
+  }
+  const months = Array.from(new Set([...allTx.map((t) => t.date.slice(0, 7)), ...recurActiveMonths])).sort().reverse();
 
   const q = query.trim().toLowerCase();
   const matchesQuery = (t: (typeof allTx)[number]) => {
@@ -109,17 +126,24 @@ export default function TransactionsScreen({ financials }: { financials: LocalFi
   // Recurring items already fed the bucket-summary totals and category
   // trends above, but never appeared as rows here -- someone scanning the
   // month's list for "did my tuition payment show up" would never find it,
-  // even though it was already counted in every total on this page. Shown
-  // only for months that already have a real logged-transaction group
-  // (matches this list's existing per-month structure); a month with only
-  // recurring and nothing logged yet doesn't get a group here at all,
-  // same as before this change.
+  // even though it was already counted in every total on this page.
   function recurringRowsForMonth(mo: string) {
     const asOf = mo === currentYm ? new Date() : new Date(`${mo}-01T00:00:00`);
     return recurring
       .map((r) => ({ r, usd: toUSD(monthlyEquivalent(r, asOf), r.currency) }))
       .filter(({ usd }) => usd > 0)
       .filter(({ r }) => !q || r.name.toLowerCase().includes(q) || r.bucket.toLowerCase().includes(q));
+  }
+
+  // A month with only recurring bills (rent, tuition, ...) and nothing
+  // manually logged never got a key in `grouped` above, so it silently
+  // never appeared in this list at all, even though the total at the top of
+  // this page already counted it. Seed an empty group for any such month
+  // (that still matches the current search) so its recurring rows below
+  // actually render.
+  const recurOnlyCandidates = filter !== "all" ? [filter] : recurActiveMonths;
+  for (const mo of recurOnlyCandidates) {
+    if (!grouped[mo] && recurringRowsForMonth(mo).length > 0) grouped[mo] = [];
   }
 
   // Same totals the bucket-summary cards use (logged transactions in the
@@ -131,6 +155,35 @@ export default function TransactionsScreen({ financials }: { financials: LocalFi
     return { bucket: b, value: txSum + recurSum };
   });
   const bucketTotal = bucketBreakdown.reduce((s, b) => s + b.value, 0);
+
+  // Finer-grained than bucket -- same "spend only" scope as bucketBreakdown
+  // above (INCOME excluded, recurring blended in only for a specific month,
+  // never for "all time"), just grouped by the optional category tag
+  // instead. A handful of theme-derived swatches cycle if there are more
+  // distinct categories in use than colors, same tradeoff the app already
+  // makes elsewhere rather than introducing off-brand hues.
+  const categoryBreakdown = (() => {
+    const totals = new Map<string, number>();
+    const bump = (key: string, amt: number) => totals.set(key, (totals.get(key) ?? 0) + amt);
+    for (const t of filtered) {
+      if (t.bucket === "INCOME") continue;
+      bump(t.category ?? "uncategorized", toUSD(t.amount, t.currency));
+    }
+    if (filter !== "all") {
+      const asOf = filter === currentYm ? new Date() : new Date(`${filter}-01T00:00:00`);
+      for (const r of recurring) {
+        const amt = toUSD(monthlyEquivalent(r, asOf), r.currency);
+        if (amt > 0) bump(r.category ?? "uncategorized", amt);
+      }
+    }
+    return Array.from(totals.entries())
+      .map(([key, value]) => ({ key, value }))
+      .sort((a, b) => b.value - a.value);
+  })();
+  const categoryTotal = categoryBreakdown.reduce((s, c) => s + c.value, 0);
+  const categoryLabel = (key: string) => key === "uncategorized" ? "Uncategorized" : (CATEGORY_LABEL as Record<string, string>)[key] ?? key;
+  const categoryIcon  = (key: string) => key === "uncategorized" ? "❔" : (CATEGORY_ICON as Record<string, string>)[key] ?? "•";
+  const categoryColors = [T.jade, T.brass, T.sky, T.coral, T.jade + "80", T.brass + "80", T.sky + "80", T.coral + "80", T.mute];
 
   // Category trends: % of spend in each bucket per period, across ALL
   // history (not the search/month filter above, which is about finding one
@@ -219,28 +272,78 @@ export default function TransactionsScreen({ financials }: { financials: LocalFi
         </div>
 
         {/* Where it went — visual breakdown for the current filter */}
-        {bucketTotal > 0 && (
-          <div className="rounded-2xl p-5 flex items-center gap-6 flex-wrap" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
-            <Donut
-              segments={bucketBreakdown.map((b) => ({ value: b.value, color: BC[b.bucket], label: BL[b.bucket] }))}
-              trackColor={T.line}
-              labelColor={T.text}
-              centerLabel={money(bucketTotal)}
-              centerSublabel={filter === "all" ? "all time" : fmtMo(filter)}
-            />
-            <div className="flex-1 min-w-[160px] space-y-2.5">
-              <p className="text-xs uppercase tracking-widest mb-1" style={{ color: T.mute }}>Where it went{filter !== "all" ? ` · ${fmtMo(filter)}` : ""}</p>
-              {bucketBreakdown.map(({ bucket: b, value }) => (
-                <div key={b} className="flex items-center justify-between text-sm">
-                  <span className="flex items-center gap-2" style={{ color: T.text }}>
-                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: BC[b] }} />
-                    {BL[b]}
-                  </span>
-                  <span style={{ ...NUMS, color: T.mute }}>
-                    {money(value)} <span style={{ color: T.text }}>· {bucketTotal > 0 ? Math.round((value / bucketTotal) * 100) : 0}%</span>
-                  </span>
-                </div>
+        {(bucketTotal > 0 || categoryTotal > 0) && (
+          <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
+            <div className="flex gap-1.5 mb-4">
+              {(["type", "category"] as const).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setDonutView(v)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                  style={{
+                    background: donutView === v ? T.brass + "22" : T.panelSoft,
+                    border: `1px solid ${donutView === v ? T.brass : T.line}`,
+                    color: donutView === v ? T.brass : T.mute,
+                  }}
+                >
+                  {v === "type" ? "By type" : "By category"}
+                </button>
               ))}
+            </div>
+            <div className="flex items-center gap-6 flex-wrap">
+              {donutView === "type" ? (
+                <>
+                  <Donut
+                    segments={bucketBreakdown.map((b) => ({ value: b.value, color: BC[b.bucket], label: BL[b.bucket] }))}
+                    trackColor={T.line}
+                    labelColor={T.text}
+                    centerLabel={money(bucketTotal)}
+                    centerSublabel={filter === "all" ? "all time" : fmtMo(filter)}
+                  />
+                  <div className="flex-1 min-w-[160px] space-y-2.5">
+                    <p className="text-xs uppercase tracking-widest mb-1" style={{ color: T.mute }}>Where it went{filter !== "all" ? ` · ${fmtMo(filter)}` : ""}</p>
+                    {bucketBreakdown.map(({ bucket: b, value }) => (
+                      <div key={b} className="flex items-center justify-between text-sm">
+                        <span className="flex items-center gap-2" style={{ color: T.text }}>
+                          <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: BC[b] }} />
+                          {BL[b]}
+                        </span>
+                        <span style={{ ...NUMS, color: T.mute }}>
+                          {money(value)} <span style={{ color: T.text }}>· {bucketTotal > 0 ? Math.round((value / bucketTotal) * 100) : 0}%</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : categoryTotal === 0 ? (
+                <p className="text-sm" style={{ color: T.mute }}>
+                  Nothing here has a category yet. Add one when logging a transaction or recurring payment to see it broken out here.
+                </p>
+              ) : (
+                <>
+                  <Donut
+                    segments={categoryBreakdown.map((c, i) => ({ value: c.value, color: categoryColors[i % categoryColors.length], label: categoryLabel(c.key) }))}
+                    trackColor={T.line}
+                    labelColor={T.text}
+                    centerLabel={money(categoryTotal)}
+                    centerSublabel={filter === "all" ? "all time" : fmtMo(filter)}
+                  />
+                  <div className="flex-1 min-w-[160px] space-y-2.5">
+                    <p className="text-xs uppercase tracking-widest mb-1" style={{ color: T.mute }}>Where it went{filter !== "all" ? ` · ${fmtMo(filter)}` : ""}</p>
+                    {categoryBreakdown.map((c, i) => (
+                      <div key={c.key} className="flex items-center justify-between text-sm">
+                        <span className="flex items-center gap-2" style={{ color: T.text }}>
+                          <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: categoryColors[i % categoryColors.length] }} />
+                          {categoryIcon(c.key)} {categoryLabel(c.key)}
+                        </span>
+                        <span style={{ ...NUMS, color: T.mute }}>
+                          {money(c.value)} <span style={{ color: T.text }}>· {categoryTotal > 0 ? Math.round((c.value / categoryTotal) * 100) : 0}%</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}
@@ -318,6 +421,7 @@ export default function TransactionsScreen({ financials }: { financials: LocalFi
                       <p className="text-sm truncate" style={{ color: T.text }}>{t.description}</p>
                       <p className="text-[10px]" style={{ color: T.mute }}>
                         {fmtDate(t.date)} · {BL[t.bucket]}
+                        {t.category && ` · ${categoryIcon(t.category)} ${categoryLabel(t.category)}`}
                         {t.cardLabel
                           ? ` · ${t.cardLabel}`
                           : t.paymentMethod === "cash"
@@ -345,7 +449,7 @@ export default function TransactionsScreen({ financials }: { financials: LocalFi
                     <div className="flex-1 min-w-0">
                       <p className="text-sm truncate" style={{ color: T.text }}>{r.emoji ? `${r.emoji} ` : ""}{r.name}</p>
                       <p className="text-[10px]" style={{ color: T.mute }}>
-                        Recurring · {BL[r.bucket]} · {FREQ_LABEL[r.frequency]}
+                        Recurring · {BL[r.bucket]}{r.category && ` · ${categoryIcon(r.category)} ${categoryLabel(r.category)}`} · {FREQ_LABEL[r.frequency]}
                       </p>
                     </div>
                     <div className="text-right flex-shrink-0">
