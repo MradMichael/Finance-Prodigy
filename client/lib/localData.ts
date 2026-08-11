@@ -61,6 +61,14 @@ export interface TrackedBalance {
   currency: Currency;
   actualBalance?: number;   // last balance you told it you actually have
   actualBalanceDate?: string; // ISO — when you last confirmed it
+  // The live, computed "expected" total (USD) at the exact moment
+  // actualBalance was confirmed -- captured directly rather than
+  // reconstructed later from transaction dates, since a transaction only
+  // stores a date (no time of day) and can't be reliably ordered against
+  // an actualBalanceDate timestamp when both land on the same calendar
+  // day. Falls back to the live expected total when absent (data from
+  // before this field existed).
+  expectedAtCheckUSD?: number;
 }
 
 export interface StoredAsset {

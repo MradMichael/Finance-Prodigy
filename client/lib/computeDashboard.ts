@@ -54,7 +54,7 @@ export interface DashboardPayload {
     id: number; name: string; emoji: string | null; type: string;
     targetAmount: number; currentAmount: number; projection: Projection;
   }[];
-  sixMonthTrend: { ymKey: number; income: number; spend: number }[];
+  sixMonthTrend: { ymKey: number; income: number; spend: number; savingsContrib: number }[];
   netWorthTrend: { ym: string; value: number }[];
   upcomingRenewals: {
     id: string; name: string; emoji: string; amount: number; currency: string;
@@ -63,9 +63,13 @@ export interface DashboardPayload {
   balanceChecks: {
     id: string; name: string; currency: string;
     /** expected/actual/discrepancy are normalized to USD, like every other cross-cutting total in this payload — `currency` is the balance's own native currency, kept for display labeling only. */
+    /** Live running total (starting balance minus every transaction since), as of right now. */
     expected: number;
     actual: number | null; actualDate: string | null;
-    discrepancy: number | null; // actual - expected, when actual is known
+    /** actual - expectedAsOfCheck, when actual is known -- judged against what was expected AT THE MOMENT actual was confirmed, not today's live `expected`. Logging a new transaction after a confirmed-accurate check-in moves `expected` but not `actual`, which isn't a real discrepancy -- it just means the check-in predates that transaction. */
+    discrepancy: number | null;
+    /** Net effect (in USD) of transactions logged after actualDate -- 0 when there's been no activity since the last check, or no check has ever been done. */
+    changeSinceCheck: number;
   }[];
   netWorth: {
     assets: number;
@@ -407,11 +411,21 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     const recurAsOf = isCurrent ? now : d;
     const recurSpend = activeRecurring.reduce((s, r) => s + toUSDForMonth(monthlyEquivalent(r, recurAsOf), r.currency, mo), 0);
     const sp = txSpend + recurSpend;
+    // Savings-only slice of the same spend, for a real per-month savings
+    // rate (savingsContrib / income) — kept separate from `spend`
+    // (needs+wants+savings combined, used for the income-vs-spend cash-
+    // flow chart) so Journey's savings-rate arc uses the exact same
+    // formula as Overview/Budget's month.savingsRatePct instead of
+    // approximating it via leftover cash flow, which disagreed once spend
+    // was fully allocated across all three buckets.
+    const txSavings = tx.filter((t) => t.bucket === "SAVINGS").reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, mo), 0);
+    const recurSavings = activeRecurring.filter((r) => r.bucket === "SAVINGS").reduce((s, r) => s + toUSDForMonth(monthlyEquivalent(r, recurAsOf), r.currency, mo), 0);
+    const savingsContrib = txSavings + recurSavings;
     // Raw (unfloored) income for display, same reasoning as the current-
     // month income/incomeSafe split — a genuinely $0 past month should
     // read as $0 on the chart, not a phantom $1 from the div-by-zero guard.
     const moIncome = isCurrent ? income : incomeForMonth(mo);
-    return { ymKey, income: isCurrent ? income : (sp > 0 ? moIncome : 0), spend: sp };
+    return { ymKey, income: isCurrent ? income : (sp > 0 ? moIncome : 0), spend: sp, savingsContrib };
   });
 
   const monthKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -628,22 +642,41 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   // balances, so convert starting/actual to USD too (at the rate in effect
   // for each one's own date) before doing any arithmetic on them.
   const balanceChecks: DashboardPayload["balanceChecks"] = data.trackedBalances.map((tb) => {
-    const spent = data.transactions
-      .filter((t) => t.date >= tb.startingDate && t.paymentMethod === tb.paymentMethod
-        && (tb.paymentMethod !== "card" || t.cardId === tb.cardId))
-      // INCOME transactions received on this same payment method put money
-      // IN, so they subtract from "spent" (raising the expected balance)
-      // instead of adding to it like every other bucket does.
-      .reduce((s, t) => s + (t.bucket === "INCOME" ? -1 : 1) * toUSDForMonth(t.amount, t.currency, t.date.slice(0, 7)), 0);
+    const relevantTx = data.transactions.filter((t) => t.date >= tb.startingDate && t.paymentMethod === tb.paymentMethod
+      && (tb.paymentMethod !== "card" || t.cardId === tb.cardId));
+    // INCOME transactions received on this same payment method put money
+    // IN, so they subtract from "spent" (raising the expected balance)
+    // instead of adding to it like every other bucket does.
+    const spentOf = (txs: typeof relevantTx) => txs.reduce((s, t) => s + (t.bucket === "INCOME" ? -1 : 1) * toUSDForMonth(t.amount, t.currency, t.date.slice(0, 7)), 0);
     const startingUSD = toUSDForMonth(tb.startingBalance, tb.currency, tb.startingDate.slice(0, 7));
-    const expected = Math.round((startingUSD - spent) * 100) / 100;
+    const expected = Math.round((startingUSD - spentOf(relevantTx)) * 100) / 100;
     const actual = tb.actualBalance != null
       ? toUSDForMonth(tb.actualBalance, tb.currency, (tb.actualBalanceDate ?? tb.startingDate).slice(0, 7))
       : null;
+    // A transaction logged AFTER the last actual check-in moves `expected`
+    // forward without touching `actual` (a fixed snapshot from whenever the
+    // user last confirmed it) -- comparing actual against today's live
+    // `expected` would flag that as a "mismatch" purely because time (and
+    // new, correctly-logged activity) has passed, not because anything is
+    // actually wrong. Judge the discrepancy against what was expected AS OF
+    // the check-in instead.
+    //
+    // That "as of" figure comes from tb.expectedAtCheckUSD, captured
+    // directly at the moment of confirming (see updateActualBalance in
+    // InputPanel.tsx and ImportStatement.tsx's commit), NOT reconstructed
+    // here by filtering transactions before/after the check date. An
+    // earlier version tried the date-filter approach and it's unreliable
+    // by construction: actualBalanceDate is a full timestamp but a
+    // transaction only stores a date (no time of day), so a same-day
+    // transaction can't be reliably ordered before/after the exact moment
+    // of the check either way.
+    const expectedAsOfCheck = tb.expectedAtCheckUSD ?? expected;
+    const changeSinceCheck = Math.round((expected - expectedAsOfCheck) * 100) / 100;
     return {
       id: tb.id, name: tb.name, currency: tb.currency, expected,
       actual, actualDate: tb.actualBalanceDate ?? null,
-      discrepancy: actual != null ? Math.round((actual - expected) * 100) / 100 : null,
+      discrepancy: actual != null ? Math.round((actual - expectedAsOfCheck) * 100) / 100 : null,
+      changeSinceCheck,
     };
   });
 
@@ -680,7 +713,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
       pctFunded: Math.round(efPct),
       remaining: Math.max(0, Math.round(efTarget - efBalance)),
     },
-    debt: { totalBalance: totalDebtBalance, count: data.debts.length, plan: debtPlan, comparison: debtComparison },
+    debt: { totalBalance: totalDebtBalance, count: data.debts.filter((d) => d.balance > 0).length, plan: debtPlan, comparison: debtComparison },
     goals,
     sixMonthTrend,
     netWorthTrend,

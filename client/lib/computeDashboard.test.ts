@@ -282,6 +282,55 @@ describe("balance checks", () => {
     expect(result.balanceChecks[0].actual).toBeNull();
     expect(result.balanceChecks[0].discrepancy).toBeNull();
   });
+
+  it("does not flag a mismatch for a transaction logged after an already-accurate check-in", () => {
+    const data = makeData({
+      trackedBalances: [{
+        id: "b1", name: "Wallet", paymentMethod: "cash", startingBalance: 100, startingDate: "2026-07-01", currency: "USD",
+        // Captured at confirm time (see updateActualBalance in
+        // InputPanel.tsx): $80 was exactly what was expected then.
+        actualBalance: 80, actualBalanceDate: "2026-07-05T00:00:00.000Z", expectedAtCheckUSD: 80,
+      }],
+      transactions: [
+        { id: "t1", amount: 20, currency: "USD", bucket: "WANTS", description: "Coffee before check-in", date: "2026-07-03", paymentMethod: "cash" },
+        { id: "t2", amount: 15, currency: "USD", bucket: "WANTS", description: "Lunch after check-in", date: "2026-07-08", paymentMethod: "cash" },
+      ],
+    });
+    const result = computeDashboard(data);
+    const check = result.balanceChecks[0];
+    // discrepancy is judged against the frozen expectedAtCheckUSD snapshot
+    // ($80), not today's live running total ($65, after the July 8 lunch)
+    // -- that lunch happened after the check-in and isn't the check-in's
+    // fault, so it must show up only in changeSinceCheck, not discrepancy.
+    expect(check.discrepancy).toBe(0);
+    expect(check.changeSinceCheck).toBe(-15); // the July 8 lunch, spent after checking in
+    expect(check.expected).toBe(65); // live running total: 100 - 20 - 15
+  });
+
+  it("does not depend on transaction dates at all -- a same-calendar-day transaction can't be misread as 'before' the check", () => {
+    const data = makeData({
+      trackedBalances: [{
+        id: "b1", name: "Wallet", paymentMethod: "cash", startingBalance: 100, startingDate: "2026-07-01", currency: "USD",
+        actualBalance: 80, actualBalanceDate: "2026-07-05T14:23:45.123Z", expectedAtCheckUSD: 80,
+      }],
+      transactions: [
+        { id: "t1", amount: 20, currency: "USD", bucket: "WANTS", description: "Coffee before check-in", date: "2026-07-03", paymentMethod: "cash" },
+        { id: "t2", amount: 15, currency: "USD", bucket: "WANTS", description: "Bought later the same day as the check-in", date: "2026-07-05", paymentMethod: "cash" },
+      ],
+    });
+    const result = computeDashboard(data);
+    const check = result.balanceChecks[0];
+    // t2 shares its calendar day with actualBalanceDate -- an earlier,
+    // date-comparison-based version of this fix couldn't reliably tell
+    // whether a same-day transaction came before or after the moment of
+    // confirming (transactions don't carry a time of day). Judging
+    // discrepancy against the captured expectedAtCheckUSD snapshot instead
+    // sidesteps the question entirely: it's correct regardless of how t2's
+    // date relates to actualBalanceDate.
+    expect(check.discrepancy).toBe(0);
+    expect(check.changeSinceCheck).toBe(-15);
+    expect(check.expected).toBe(65);
+  });
 });
 
 describe("net worth trend", () => {
@@ -631,6 +680,28 @@ describe("INCOME transactions — one-off receipts boost effective income withou
     const currentMonthBar = result.sixMonthTrend[5];
     expect(currentMonthBar.income).toBe(1300);
     expect(currentMonthBar.spend).toBeCloseTo(100, 5); // the reimbursement must not inflate "spend"
+  });
+
+  it("sixMonthTrend.savingsContrib reflects real savings even when spend fully allocates income (net cash flow near zero)", () => {
+    const data = makeData({
+      income: 1000,
+      transactions: [
+        { id: "t1", amount: 500, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-07-01" },
+        { id: "t2", amount: 300, currency: "USD", bucket: "WANTS", description: "Fun", date: "2026-07-02" },
+        { id: "t3", amount: 200, currency: "USD", bucket: "SAVINGS", description: "Brokerage", date: "2026-07-03" },
+      ],
+    });
+    const result = computeDashboard(data);
+    const currentMonthBar = result.sixMonthTrend[5];
+    // Fully allocated: needs+wants+savings = income, so net cash flow (what
+    // Journey's savings-rate arc used to derive a rate from) is ~0 -- but
+    // $200 of real savings happened. savingsContrib must reflect that $200,
+    // not the ~0 leftover, and must agree with month.savingsRatePct for the
+    // same month rather than drifting from it (exactly what disagreed
+    // before this fix).
+    expect(currentMonthBar.savingsContrib).toBe(200);
+    expect(Math.round((currentMonthBar.savingsContrib / currentMonthBar.income) * 100)).toBe(20);
+    expect(Math.round(result.month.savingsRatePct)).toBe(20);
   });
 
   it("increases the expected balance on a tracked cash balance instead of being counted as a deduction", () => {
