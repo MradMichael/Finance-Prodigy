@@ -648,6 +648,42 @@ describe("upcomingRenewals — exact calendar-day due counts, consistent regardl
     const renewal = result.upcomingRenewals.find((r) => r.id === "r1");
     expect(renewal?.dueInDays).toBe(0);
   });
+
+  it("a recurring item already logged this cycle (lastPaidCycle) doesn't also double-count via monthlyEquivalent, and drops off the renewals list", () => {
+    const data = makeData({
+      income: 3000,
+      recurring: [{
+        id: "r1", name: "Rent", emoji: "🏠", amount: 500, currency: "USD",
+        frequency: "monthly", bucket: "NEEDS", startDate: "2026-01-01",
+        endDate: null, totalAmount: null, createdAt: "2026-01-01T00:00:00.000Z",
+        lastPaidCycle: "2026-07", // NOW is pinned to July 15, 2026
+      }],
+      // The real transaction the "Log payment" action would have created.
+      transactions: [{ id: "t1", amount: 500, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-07-15" }],
+    });
+    const result = computeDashboard(data);
+    // $500 from the real transaction, NOT $1000 (which is what it'd be if
+    // monthlyEquivalent's automatic estimate also counted this month).
+    expect(result.month.needsSpend).toBe(500);
+    expect(result.upcomingRenewals.find((r) => r.id === "r1")).toBeUndefined();
+  });
+
+  it("lastPaidCycle only suppresses its own matching month -- the next cycle still accrues and shows as upcoming", () => {
+    vi.setSystemTime(new Date(2026, 7, 1)); // August 1, 2026 -- a new cycle since the July payment
+    const data = makeData({
+      income: 3000,
+      recurring: [{
+        id: "r1", name: "Rent", emoji: "🏠", amount: 500, currency: "USD",
+        frequency: "monthly", bucket: "NEEDS", startDate: "2026-01-01",
+        endDate: null, totalAmount: null, createdAt: "2026-01-01T00:00:00.000Z",
+        lastPaidCycle: "2026-07", // last month's cycle, already paid
+      }],
+    });
+    const result = computeDashboard(data);
+    // August hasn't been paid -- the automatic estimate should still count.
+    expect(result.month.needsSpend).toBe(500);
+    expect(result.upcomingRenewals.find((r) => r.id === "r1")).toBeDefined();
+  });
 });
 
 describe("INCOME transactions — one-off receipts boost effective income without counting as spend", () => {

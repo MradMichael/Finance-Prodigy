@@ -199,10 +199,12 @@ function Panel({ title, children, className = "" }: { title?: string; children: 
 // ---------------------------- screen ----------------------------- //
 
 export default function FinancialDashboard({
-  data: propData, onNavigate,
+  data: propData, onNavigate, onLogRecurringPayment,
 }: {
   data?: DashboardPayload;
   onNavigate?: (screen: Screen) => void;
+  /** Logs a real transaction for a recurring item's current due cycle -- see the "Log payment" button on Renewing soon. */
+  onLogRecurringPayment?: (recurringId: string) => void;
 }) {
   const T = useTheme();
   const { data: fetchedData, demo: fetchedDemo } = useDashboard(propData === undefined);
@@ -294,7 +296,7 @@ export default function FinancialDashboard({
             {upcomingRenewals.map((r) => (
               <span
                 key={r.id}
-                className="text-xs px-3 py-1.5 rounded-full flex items-center gap-1.5"
+                className="text-xs pl-3 pr-1.5 py-1.5 rounded-full flex items-center gap-1.5"
                 style={{ background: T.panelSoft, border: `1px solid ${T.line}`, color: T.text }}
               >
                 <span>{r.emoji}</span>
@@ -303,6 +305,16 @@ export default function FinancialDashboard({
                 <span style={{ color: r.dueInDays <= 2 ? T.coral : T.brass }}>
                   · {r.dueInDays === 0 ? "today" : r.dueInDays === 1 ? "tomorrow" : `in ${r.dueInDays}d`}
                 </span>
+                {onLogRecurringPayment && (
+                  <button
+                    onClick={() => onLogRecurringPayment(r.id)}
+                    className="text-[10px] font-semibold px-2 py-1 rounded-full transition-all hover:opacity-80"
+                    style={{ background: T.jade + "22", color: T.jade }}
+                    title={`Log this ${r.name} payment as a transaction`}
+                  >
+                    Log payment
+                  </button>
+                )}
               </span>
             ))}
           </div>

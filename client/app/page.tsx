@@ -16,8 +16,8 @@ import Sidebar from "../components/shell/Sidebar";
 import BottomNav from "../components/shell/BottomNav";
 import TopBar from "../components/shell/TopBar";
 import type { Screen, SyncStatus } from "../components/screens/shared";
-import { loadData, saveData, isEmptyFinancials } from "../lib/localData";
-import type { LocalFinancials } from "../lib/localData";
+import { loadData, saveData, isEmptyFinancials, uid, todayISO, nextOccurrence } from "../lib/localData";
+import type { LocalFinancials, StoredTransaction } from "../lib/localData";
 import { computeDashboard } from "../lib/computeDashboard";
 import { getSession, hasValidSession, signOut } from "../lib/auth";
 import type { Session } from "../lib/auth";
@@ -97,6 +97,29 @@ export default function Home() {
       const s = sessionRef.current;
       if (s) autoSync(updated, s.email);
     }, SYNC_DEBOUNCE_MS);
+  }
+
+  // Logs a real transaction for a recurring item's current due cycle (the
+  // "Log payment" button on Overview's Renewing soon list), and stamps
+  // lastPaidCycle so monthlyEquivalent stops also accruing its automatic
+  // pro-rated estimate for that same month -- see localData.ts.
+  function handleLogRecurringPayment(recurringId: string) {
+    if (!financials) return;
+    const rec = financials.recurring.find((r) => r.id === recurringId);
+    if (!rec) return;
+    const due = nextOccurrence(rec, new Date());
+    if (!due) return;
+    const cycleYm = due.toISOString().slice(0, 7);
+    const tx: StoredTransaction = {
+      id: uid(), amount: rec.amount, currency: rec.currency, bucket: rec.bucket,
+      ...(rec.category ? { category: rec.category } : {}),
+      description: rec.name, date: todayISO(), paymentMethod: "cash",
+    };
+    handleChange({
+      ...financials,
+      transactions: [tx, ...financials.transactions],
+      recurring: financials.recurring.map((r) => r.id === recurringId ? { ...r, lastPaidCycle: cycleYm } : r),
+    });
   }
 
   function handleSignOut() {
@@ -185,7 +208,7 @@ export default function Home() {
 
         {/* Main content */}
         <div style={{ flex: 1, overflowY: "auto" }}>
-          {screen === "overview"     && <FinancialDashboard data={dashboardData} onNavigate={setScreen} />}
+          {screen === "overview"     && <FinancialDashboard data={dashboardData} onNavigate={setScreen} onLogRecurringPayment={handleLogRecurringPayment} />}
           {screen === "budget"       && <BudgetScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
           {screen === "setup"        && <SetupScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
           {screen === "finances"     && <InputPanel financials={financials} dashData={dashboardData} onChange={handleChange} session={session} />}

@@ -133,6 +133,11 @@ export interface StoredRecurring {
   endDate: string | null; // null = infinite (unless totalAmount is set)
   totalAmount: number | null; // ends once this cumulative amount has been paid
   createdAt: string;      // ISO — when added to ESSA
+  // YYYY-MM of the most recent cycle confirmed paid via a real logged
+  // transaction (the "due" reminder's "Log payment" action) -- lets
+  // monthlyEquivalent stop ALSO accruing its automatic pro-rated estimate
+  // for that same month, so a confirmed payment doesn't count twice.
+  lastPaidCycle?: string;
 }
 
 // Finer-grained than the NEEDS/WANTS/SAVINGS/INCOME bucket -- one flat list
@@ -344,6 +349,17 @@ function parseLocalDate(iso: string): Date {
 export function monthlyEquivalent(r: StoredRecurring, asOf: Date = new Date()): number {
   const start = parseLocalDate(r.startDate);
   if (asOf < start) return 0;
+
+  // A cycle confirmed paid via a real logged transaction (lastPaidCycle)
+  // stops accruing here too -- otherwise it would count twice: once as the
+  // real transaction, once as this function's own automatic pro-rated
+  // estimate for the same calendar month. Centralized here rather than at
+  // each of this function's many call sites, so every one of them gets the
+  // guard automatically.
+  if (r.lastPaidCycle) {
+    const asOfYm = `${asOf.getFullYear()}-${String(asOf.getMonth() + 1).padStart(2, "0")}`;
+    if (asOfYm === r.lastPaidCycle) return 0;
+  }
 
   // End by total amount: stop once cumulative payments have hit the limit
   if (r.totalAmount != null && r.totalAmount > 0 && r.amount > 0) {

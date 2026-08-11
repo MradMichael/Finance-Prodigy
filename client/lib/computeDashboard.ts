@@ -618,6 +618,10 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     .map((r) => {
       const next = nextOccurrence(r, now);
       if (!next) return null;
+      // Already confirmed paid for this exact cycle (the "Log payment"
+      // action on this same list) -- don't keep nagging about a bill
+      // that's already been logged as a real transaction.
+      if (r.lastPaidCycle && r.lastPaidCycle === next.toISOString().slice(0, 7)) return null;
       const dueInDays = Math.round((next.getTime() - todayMidnight.getTime()) / (24 * 3600 * 1000));
       if (dueInDays < 0 || dueInDays > RENEWAL_WINDOW_DAYS) return null;
       return { id: r.id, name: r.name, emoji: r.emoji, amount: r.amount, currency: r.currency, dueDate: next.toISOString().slice(0, 10), dueInDays };
