@@ -6,6 +6,7 @@ import type {
   StoredRecurring, StoredCard, RecurringFrequency, Currency, PaymentMethod, BudgetRuleKey, TrackedBalance, CategoryKey,
 } from "../lib/localData";
 import type { Session } from "../lib/auth";
+import type { computeDashboard } from "../lib/computeDashboard";
 import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, monthlyEquivalent, recurringPaidSoFar, toUSD as toUSDShared, CATEGORIES, CATEGORY_LABEL, CATEGORY_ICON } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
@@ -46,11 +47,12 @@ function looksRecurring(description: string, date: string, transactions: StoredT
 
 interface Props {
   financials: LocalFinancials;
+  dashData: ReturnType<typeof computeDashboard>;
   onChange: (updated: LocalFinancials) => void;
   session?: Session;
 }
 
-export default function InputPanel({ financials, onChange, session }: Props) {
+export default function InputPanel({ financials, dashData, onChange, session }: Props) {
   const T = useTheme();
   const BUCKETS: { value: Bucket; label: string; icon: string; color: string }[] = [
     { value: "NEEDS",   label: "Needs",   icon: "🏠", color: T.sky   },
@@ -299,9 +301,14 @@ export default function InputPanel({ financials, onChange, session }: Props) {
     const raw = actualInputs[id];
     const amt = parseFloat((raw ?? "").replace(/,/g, ""));
     if (isNaN(amt)) return;
+    // Snapshot the live expected total (from dashData, already computed as
+    // of right now) at the exact moment of confirming -- see
+    // computeDashboard.ts's balanceChecks for why this can't be
+    // reconstructed later from transaction dates.
+    const expectedNow = dashData.balanceChecks.find((b) => b.id === id)?.expected;
     update({
       trackedBalances: (financials.trackedBalances ?? []).map((tb) =>
-        tb.id !== id ? tb : { ...tb, actualBalance: amt, actualBalanceDate: new Date().toISOString() }),
+        tb.id !== id ? tb : { ...tb, actualBalance: amt, actualBalanceDate: new Date().toISOString(), expectedAtCheckUSD: expectedNow }),
     });
     setActualInputs((prev) => ({ ...prev, [id]: "" }));
   }
@@ -486,6 +493,10 @@ export default function InputPanel({ financials, onChange, session }: Props) {
   // ── tab state ─────────────────────────────────────────────────── //
   const [activeTab, setActiveTab] = useState<"daily" | "setup">("daily");
 
+  // ── reset-all-data confirmation ──────────────────────────────────── //
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [resetConfirmText, setResetConfirmText] = useState("");
+
   // ── derived ───────────────────────────────────────────────────── //
 
   const prefix   = todayISO().slice(0, 7);
@@ -642,19 +653,20 @@ export default function InputPanel({ financials, onChange, session }: Props) {
           {/* Savings context: target hint + EF toggle */}
           {txBucket === "SAVINGS" && financials.income > 0 && (() => {
             const ruleKey: BudgetRuleKey = financials.budgetRule ?? "50-30-20";
-            const needsPct = ruleKey === "custom" ? (financials.budgetCustomNeeds ?? 50) : BUDGET_RULES[ruleKey].needs;
             const savPct  = ruleKey === "custom"
               ? Math.max(0, 100 - (financials.budgetCustomNeeds ?? 50) - (financials.budgetCustomWants ?? 30))
               : BUDGET_RULES[ruleKey].savings;
-            const targetAmt = Math.round(financials.income * savPct / 100);
-            // Mirrors computeDashboard.ts's efMonthlyBase/efTarget exactly (months
-            // of NEEDS, not months of full income) -- these two used to disagree,
-            // showing a materially different EF target here than on Overview/
-            // Projections for the same account.
-            const efTarget  = Math.round((financials.emergencyFundTargetMonths ?? 6) * financials.income * needsPct / 100);
-            const efBalance = financials.emergencyFundBalance ?? 0;
-            const efRemaining = Math.max(0, efTarget - efBalance);
-            const efFull = efTarget > 0 && efBalance >= efTarget;
+            // Reads computeDashboard.ts's own effectiveBudgetTargets/
+            // emergencyFund instead of recomputing from financials.income
+            // directly -- the raw stored income ignores rollover AND any
+            // one-off INCOME transaction logged this month, both of which
+            // computeDashboard.ts folds in, so recomputing locally used to
+            // disagree with Overview/Budget/Projections for the same account.
+            const targetAmt = Math.round(dashData.effectiveBudgetTargets.savings);
+            const efTarget  = dashData.emergencyFund.targetAmount;
+            const efBalance = dashData.emergencyFund.balance;
+            const efRemaining = dashData.emergencyFund.remaining;
+            const efFull = efTarget > 0 && efRemaining <= 0;
             return (
               <div className="space-y-2">
                 {/* Target hint */}
@@ -1190,10 +1202,10 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm truncate" style={{ color: T.text }}>
-                          {g.emoji} {g.name}
+                        <p className="text-sm flex items-center gap-1.5 min-w-0" style={{ color: T.text }}>
+                          <span className="truncate">{g.emoji} {g.name}</span>
                           {g.achievedAt && (
-                            <span className="ml-1.5 text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full" style={{ background: T.jade + "22", color: T.jade }}>Achieved</span>
+                            <span className="flex-shrink-0 text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full" style={{ background: T.jade + "22", color: T.jade }}>Achieved</span>
                           )}
                         </p>
                         <p className="text-[10px] tabular-nums mt-0.5" style={{ color: T.mute }}>
@@ -1706,10 +1718,10 @@ export default function InputPanel({ financials, onChange, session }: Props) {
                   >
                     <div className="flex items-start justify-between">
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm truncate" style={{ color: T.text }}>
-                          {d.name}
+                        <p className="text-sm flex items-center gap-1.5 min-w-0" style={{ color: T.text }}>
+                          <span className="truncate">{d.name}</span>
                           {d.paidOffAt && (
-                            <span className="ml-1.5 text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full" style={{ background: T.jade + "22", color: T.jade }}>Paid off</span>
+                            <span className="flex-shrink-0 text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full" style={{ background: T.jade + "22", color: T.jade }}>Paid off</span>
                           )}
                         </p>
                         <p className="text-[10px] tabular-nums mt-0.5" style={{ color: T.mute }}>
@@ -1988,20 +2000,54 @@ export default function InputPanel({ financials, onChange, session }: Props) {
 
       {/* ── Footer ──────────────────────────────────────────── */}
       <div
-        className="px-6 py-3 flex items-center justify-between flex-shrink-0"
+        className="px-6 py-3 flex-shrink-0"
         style={{ borderTop: `1px solid ${T.line}` }}
       >
-        <p className="text-[10px]" style={{ color: T.mute }}>Saved in your browser</p>
-        <button
-          className="text-[10px] transition-opacity hover:opacity-80"
-          style={{ color: T.coral }}
-          onClick={() => {
-            if (confirm("Clear all data?"))
-              onChange({ userName: "You", income: 0, lbpRate: 89500, emergencyFundTargetMonths: 6, emergencyFundBalance: 0, transactions: [], goals: [], debts: [], recurring: [], cards: [], assets: [], trackedBalances: [], netWorthHistory: [] });
-          }}
-        >
-          Reset
-        </button>
+        {!showResetConfirm ? (
+          <div className="flex items-center justify-between">
+            <p className="text-[10px]" style={{ color: T.mute }}>Saved in your browser</p>
+            <button
+              onClick={() => setShowResetConfirm(true)}
+              className="text-[10px] px-2.5 py-1.5 rounded-lg transition-opacity hover:opacity-80"
+              style={{ color: T.coral }}
+            >
+              Reset all data
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-[10px]" style={{ color: T.coral }}>
+              This permanently erases every transaction, goal, debt, recurring item, card, asset, and tracked balance. Type <strong>reset</strong> to confirm.
+            </p>
+            <div className="flex items-center gap-2">
+              <input
+                value={resetConfirmText}
+                onChange={(e) => setResetConfirmText(e.target.value)}
+                placeholder="reset"
+                className="flex-1 min-w-0 rounded-lg px-2.5 py-1.5 text-xs"
+                style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
+              />
+              <button
+                onClick={() => {
+                  onChange({ userName: "You", income: 0, lbpRate: 89500, emergencyFundTargetMonths: 6, emergencyFundBalance: 0, transactions: [], goals: [], debts: [], recurring: [], cards: [], assets: [], trackedBalances: [], netWorthHistory: [] });
+                  setShowResetConfirm(false); setResetConfirmText("");
+                }}
+                disabled={resetConfirmText.toLowerCase() !== "reset"}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold flex-shrink-0 transition-all disabled:opacity-40 disabled:pointer-events-none"
+                style={{ background: T.coral, color: T.ink }}
+              >
+                Confirm
+              </button>
+              <button
+                onClick={() => { setShowResetConfirm(false); setResetConfirmText(""); }}
+                className="px-2.5 py-1.5 rounded-lg text-xs flex-shrink-0 hover:opacity-70"
+                style={{ color: T.mute }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </aside>
     {showImport && (

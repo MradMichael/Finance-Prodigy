@@ -187,8 +187,8 @@ export default function Home() {
         <div style={{ flex: 1, overflowY: "auto" }}>
           {screen === "overview"     && <FinancialDashboard data={dashboardData} onNavigate={setScreen} />}
           {screen === "budget"       && <BudgetScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
-          {screen === "setup"        && <SetupScreen financials={financials} onChange={handleChange} />}
-          {screen === "finances"     && <InputPanel financials={financials} onChange={handleChange} session={session} />}
+          {screen === "setup"        && <SetupScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
+          {screen === "finances"     && <InputPanel financials={financials} dashData={dashboardData} onChange={handleChange} session={session} />}
           {screen === "transactions" && <TransactionsScreen financials={financials} />}
           {screen === "goals"        && <GoalsScreen dashData={dashboardData} financials={financials} onChange={handleChange} />}
           {screen === "debts"        && <DebtsScreen financials={financials} dashData={dashboardData} />}

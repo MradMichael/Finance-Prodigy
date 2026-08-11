@@ -2,6 +2,7 @@
 
 import type { LocalFinancials, BudgetRuleKey } from "../../lib/localData";
 import { BUDGET_RULES } from "../../lib/localData";
+import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF } from "./shared";
 
@@ -25,21 +26,23 @@ function RateStaleness({ updatedAt }: { updatedAt?: string }) {
 
 export default function SetupScreen({
   financials,
+  dashData,
   onChange,
 }: {
   financials: LocalFinancials;
+  dashData: ReturnType<typeof computeDashboard>;
   onChange: (f: LocalFinancials) => void;
 }) {
   const T = useTheme();
   const update = (patch: Partial<LocalFinancials>) => onChange({ ...financials, ...patch });
 
-  // Mirrors computeDashboard.ts's efMonthlyBase/efTarget exactly (months of
-  // NEEDS, not months of full income) -- this used to multiply income by
-  // target-months directly, showing a target here roughly 2x the real one
-  // shown everywhere else (Overview, Projections, the transaction form).
-  const ruleKey: BudgetRuleKey = financials.budgetRule ?? "50-30-20";
-  const needsPct = ruleKey === "custom" ? (financials.budgetCustomNeeds ?? 50) : BUDGET_RULES[ruleKey].needs;
-  const efTarget = Math.round(financials.income * needsPct / 100 * financials.emergencyFundTargetMonths);
+  // Reads computeDashboard.ts's own emergencyFund.targetAmount instead of
+  // recomputing locally -- this used to multiply financials.income (the
+  // raw stored salary) by target-months directly, disagreeing with
+  // Overview/Projections in two ways: it ignored the needs% factor (~2x
+  // too high), and it ignored any one-off INCOME transaction logged this
+  // month, which computeDashboard.ts folds into effective income.
+  const efTarget = dashData.emergencyFund.targetAmount;
 
   return (
     <main className="min-h-screen px-4 py-8 md:px-10" style={{ background: T.ink }}>
