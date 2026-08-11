@@ -490,6 +490,32 @@ describe("goal edge cases", () => {
     const result = computeDashboard(data);
     expect(result.goals[0].projection.monthsRemaining).toBe(0);
   });
+
+  it("a paused goal is excluded from the goal-pace score but stays listed (flagged) for history", () => {
+    const met      = { id: "g1", name: "Met",     emoji: "🎯", targetAmount: 1000,   currentAmount: 1000, targetDate: "2026-08-01", createdAt: "2026-01-01T00:00:00.000Z" };
+    const farBehind = { id: "g2", name: "Behind", emoji: "🎯", targetAmount: 100000, currentAmount: 0,    targetDate: "2026-08-01", createdAt: "2026-01-01T00:00:00.000Z" };
+
+    // Both active: a fully-met goal (score 1) averaged with a badly-behind
+    // one with zero savingsContrib to fund it (score 0) -> goalScore 50.
+    const bothActive = computeDashboard(makeData({ goals: [met, farBehind] }));
+    const goalsCompBothActive = bothActive.health.components.find((c) => c.key === "goals")!;
+    expect(goalsCompBothActive.score).toBe(50);
+    expect(goalsCompBothActive.detail).toContain("2 active goal");
+
+    // Pausing the dragging-it-down goal removes it from the average entirely
+    // (not just floors its contribution), so the score should jump to what
+    // the met goal alone would score, and the detail should count 1, not 2.
+    const onePaused = computeDashboard(makeData({ goals: [met, { ...farBehind, pausedAt: "2026-07-01T00:00:00.000Z" }] }));
+    const goalsCompOnePaused = onePaused.health.components.find((c) => c.key === "goals")!;
+    expect(goalsCompOnePaused.score).toBe(100);
+    expect(goalsCompOnePaused.detail).toContain("1 active goal");
+
+    // Still present in the goals list (not deleted), just flagged, so the UI
+    // can keep showing it with a "Paused" badge instead of losing history.
+    expect(onePaused.goals).toHaveLength(2);
+    expect(onePaused.goals.find((g) => g.name === "Behind")?.paused).toBe(true);
+    expect(onePaused.goals.find((g) => g.name === "Met")?.paused).toBe(false);
+  });
 });
 
 describe("sixMonthTrend income display — the incomeForMonth floor must not leak into the chart", () => {

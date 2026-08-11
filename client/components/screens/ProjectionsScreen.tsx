@@ -59,7 +59,7 @@ export default function ProjectionsScreen({
   const liveDebts: DebtInput[] = financials.debts
     .filter((d) => d.balance > 0)
     .map((d) => ({ id: d.id, name: d.name, balance: d.balance, aprPct: d.apr, minimumPayment: d.minPayment }));
-  const openGoals = goals.filter((g) => g.projection.pctComplete < 100);
+  const openGoals = goals.filter((g) => g.projection.pctComplete < 100 && !g.paused);
   const totalGoalsRemaining = openGoals.reduce((s, g) => s + Math.max(0, g.targetAmount - g.currentAmount), 0);
 
   // The one number that drives every projection below — directly set, not a

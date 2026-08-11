@@ -438,6 +438,18 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
     });
     setEditGoalId(null);
   }
+  // Pausing stops the goal counting toward the health score's goal-pace
+  // average and Projections' funding plan (see computeDashboard.ts's
+  // goalScores / ProjectionsScreen's openGoals) while keeping it, and its
+  // saved amount, around for history -- resuming (clearing pausedAt) is
+  // fully reversible, matching how editing a debt's balance clears paidOffAt.
+  function toggleGoalPause(goalId: string) {
+    update({
+      goals: financials.goals.map((g) => g.id !== goalId ? g : {
+        ...g, pausedAt: g.pausedAt ? undefined : new Date().toISOString(),
+      }),
+    });
+  }
 
   function startEditRec(r: StoredRecurring) {
     setEditRecId(r.id); setEditRName(r.name); setEditREmoji(r.emoji);
@@ -1198,7 +1210,7 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
                 ) : (
                   <div
                     className="rounded-xl px-3 py-2.5 group"
-                    style={{ background: T.panelSoft, border: `1px solid ${T.line}` }}
+                    style={{ background: T.panelSoft, border: `1px solid ${T.line}`, opacity: g.pausedAt ? 0.65 : 1 }}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
@@ -1207,15 +1219,19 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
                           {g.achievedAt && (
                             <span className="flex-shrink-0 text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full" style={{ background: T.jade + "22", color: T.jade }}>Achieved</span>
                           )}
+                          {g.pausedAt && (
+                            <span className="flex-shrink-0 text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full" style={{ background: T.mute + "22", color: T.mute }}>Paused</span>
+                          )}
                         </p>
                         <p className="text-[10px] tabular-nums mt-0.5" style={{ color: T.mute }}>
                           ${g.currentAmount.toLocaleString()} of ${g.targetAmount.toLocaleString()}
                           {remaining > 0 && <span style={{ color: T.brass }}> · ${remaining.toLocaleString()} to go</span>}
                         </p>
-                        {(g.createdAt || g.achievedAt) && (
+                        {(g.createdAt || g.achievedAt || g.pausedAt) && (
                           <p className="text-[9px] mt-0.5" style={{ color: T.mute }}>
                             {g.createdAt && <span>Added {fmtDate(g.createdAt)}</span>}
                             {g.achievedAt && <span style={{ color: T.jade }}> · Achieved {fmtDate(g.achievedAt)}</span>}
+                            {g.pausedAt && <span> · Paused {fmtDate(g.pausedAt)}</span>}
                           </p>
                         )}
                       </div>
@@ -1226,6 +1242,13 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
                           className="text-[10px] px-1.5 py-0.5 rounded transition-all hover:opacity-80"
                           style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
                         >✎</button>
+                        <button
+                          onClick={() => toggleGoalPause(g.id)}
+                          aria-label={g.pausedAt ? "Resume goal" : "Pause goal"}
+                          title={g.pausedAt ? "Resume this goal" : "Pause this goal — won't count toward pace/score until resumed"}
+                          className="text-[10px] px-1.5 py-0.5 rounded transition-all hover:opacity-80"
+                          style={{ color: g.pausedAt ? T.jade : T.mute, border: `1px solid ${g.pausedAt ? T.jade : T.mute}40` }}
+                        >{g.pausedAt ? "▶" : "⏸"}</button>
                         <button
                           onClick={() => { setContributeGoalId(isContrib ? null : g.id); setContributeGoalAmt(""); }}
                           aria-label="Add to this goal"

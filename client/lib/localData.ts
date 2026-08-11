@@ -41,6 +41,7 @@ export interface StoredGoal {
   targetDate: string;   // YYYY-MM-DD
   createdAt: string;    // ISO — when added to ESSA
   achievedAt?: string;  // ISO — when goal was completed
+  pausedAt?: string;    // ISO — when goal was paused/archived; stops counting toward pace/score until resumed (cleared)
 }
 
 /**

@@ -74,9 +74,9 @@ const MOCK: DashboardPayload = {
     },
   },
   goals: [
-    { id: 1, name: "30 Before 30 Travel Fund", emoji: "✈️", type: "TRAVEL", targetAmount: 12000, currentAmount: 3720,
+    { id: 1, name: "30 Before 30 Travel Fund", emoji: "✈️", type: "TRAVEL", targetAmount: 12000, currentAmount: 3720, paused: false,
       projection: { pctComplete: 31, monthsRemaining: 28, requiredMonthly: 296, paceRatio: 1.05, onTrack: true, targetDateDisplay: "01-10-2028" } },
-    { id: 2, name: "Bambu Lab Upgrade", emoji: "🛠️", type: "PURCHASE", targetAmount: 1500, currentAmount: 900,
+    { id: 2, name: "Bambu Lab Upgrade", emoji: "🛠️", type: "PURCHASE", targetAmount: 1500, currentAmount: 900, paused: false,
       projection: { pctComplete: 60, monthsRemaining: 4, requiredMonthly: 150, paceRatio: 1.2, onTrack: true, targetDateDisplay: "15-10-2026" } },
   ],
   sixMonthTrend: [

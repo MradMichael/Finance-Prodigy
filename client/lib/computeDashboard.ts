@@ -53,6 +53,7 @@ export interface DashboardPayload {
   goals: {
     id: number; name: string; emoji: string | null; type: string;
     targetAmount: number; currentAmount: number; projection: Projection;
+    paused: boolean;
   }[];
   sixMonthTrend: { ymKey: number; income: number; spend: number; savingsContrib: number }[];
   netWorthTrend: { ym: string; value: number }[];
@@ -203,7 +204,11 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   const debtPressurePct  = totalMinPayments / incomeSafe;
   const debtScore = Math.max(0, 100 - debtPressurePct * 400);
 
-  const goalScores = data.goals.map((g) => {
+  // Paused goals stay in data.goals (and in the `goals` display array above)
+  // for history, but are excluded here the same way paid-off debts are
+  // excluded from totalMinPayments above -- an intentionally-stalled goal
+  // shouldn't drag down the pace score of goals you're actively working.
+  const goalScores = data.goals.filter((g) => !g.pausedAt).map((g) => {
     const rem = g.targetAmount - g.currentAmount;
     if (rem <= 0) return 1;
     // Rounded the same way the `goals` array below computes its own `ms` for
@@ -295,6 +300,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     return {
       id: i + 1, name: g.name, emoji: g.emoji || null, type: "SAVINGS",
       targetAmount: g.targetAmount, currentAmount: g.currentAmount,
+      paused: !!g.pausedAt,
       projection: {
         // targetAmount of exactly 0 (e.g. a goal saved before an amount was
         // entered) would otherwise divide 0/0 into NaN — treat it as met.
@@ -703,7 +709,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
         { key: "needs",   label: "Needs discipline", score: Math.round(needsScore), weight: 20, detail: `Essentials take ${Math.round(needsPct * 100)}% of income (target ≤${budgetTargetPct.needs}%)` },
         { key: "ef",      label: "Safety net", score: Math.round(efScore), weight: 25, detail: `Safety net ${Math.round(efPct)}% funded` },
         { key: "debt",    label: "Debt pressure", score: Math.round(debtScore), weight: 20, detail: `Debt payments are ${Math.round(debtPressurePct * 100)}% of income` },
-        { key: "goals",   label: "Goal momentum", score: Math.round(goalScore), weight: 10, detail: `Average pace across ${data.goals.length} active goal${data.goals.length !== 1 ? "s" : ""}` },
+        { key: "goals",   label: "Goal momentum", score: Math.round(goalScore), weight: 10, detail: `Average pace across ${goalScores.length} active goal${goalScores.length !== 1 ? "s" : ""}` },
       ],
     },
     encouragements: enc,

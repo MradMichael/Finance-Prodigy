@@ -58,6 +58,21 @@ export default function GoalsScreen({
     setTimeout(() => setPaySuccess(null), 3000);
   }
 
+  // Pausing excludes the goal from the health score's goal-pace average and
+  // Projections' funding plan while keeping it (and its saved amount) around
+  // for history -- resuming is fully reversible. See computeDashboard.ts's
+  // goalScores / ProjectionsScreen's openGoals for where paused is read.
+  function togglePause(dashGoalId: number) {
+    const rawGoal = financials.goals[dashGoalId - 1];
+    if (!rawGoal) return;
+    onChange({
+      ...financials,
+      goals: financials.goals.map((g) =>
+        g.id !== rawGoal.id ? g : { ...g, pausedAt: g.pausedAt ? undefined : new Date().toISOString() }
+      ),
+    });
+  }
+
   const healthGoalComponent = dashData.health.components.find((c) => c.key === "goals");
 
   return (
@@ -127,7 +142,8 @@ export default function GoalsScreen({
                   style={{
                     background: T.panel,
                     border: `1px solid ${isSuccess ? T.jade : T.line}`,
-                    transition: "border-color 0.4s",
+                    transition: "border-color 0.4s, opacity 0.4s",
+                    opacity: g.paused ? 0.6 : 1,
                   }}
                 >
                   <div className="p-5">
@@ -137,12 +153,23 @@ export default function GoalsScreen({
                         {g.emoji} {g.name}
                         {pct >= 100 && <span className="ml-2 text-sm">✓</span>}
                       </p>
-                      <span
-                        className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full whitespace-nowrap flex-shrink-0"
-                        style={{ border: `1px solid ${color}`, color }}
-                      >
-                        {pct >= 100 ? "achieved!" : g.projection.onTrack ? "on pace" : "needs push"}
-                      </span>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <button
+                          onClick={() => togglePause(g.id)}
+                          aria-label={g.paused ? "Resume goal" : "Pause goal"}
+                          title={g.paused ? "Resume this goal" : "Pause this goal — won't count toward pace/score until resumed"}
+                          className="text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap transition-all hover:opacity-80"
+                          style={{ border: `1px solid ${T.mute}50`, color: T.mute }}
+                        >
+                          {g.paused ? "▶ resume" : "⏸ pause"}
+                        </button>
+                        <span
+                          className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full whitespace-nowrap"
+                          style={{ border: `1px solid ${g.paused ? T.mute : color}`, color: g.paused ? T.mute : color }}
+                        >
+                          {g.paused ? "paused" : pct >= 100 ? "achieved!" : g.projection.onTrack ? "on pace" : "needs push"}
+                        </span>
+                      </div>
                     </div>
 
                     {/* Ring + numbers */}
