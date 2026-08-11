@@ -56,6 +56,8 @@ export interface ParseResult {
   unmatchedRefunds: UnmatchedRefund[];
   openingBalance: number | null;
   closingBalance: number | null;
+  /** The statement's own closing-balance row date (YYYY-MM-DD) -- the date the balance was actually true as of, distinct from whenever the user happens to import the file. */
+  closingBalanceDate: string | null;
   /** Money-column cells that weren't blank/dash but didn't match the expected number format — likely a genuine purchase row that got dropped, surfaced so it isn't silently lost. */
   unparsedAmountCount: number;
   /** True when the file parsed (a real table with a header was found) but zero rows existed at all — as opposed to rows existing with zero of them being purchases. Lets the caller tell "wrong file" apart from "valid statement, nothing to import." */
@@ -236,6 +238,7 @@ export function parseNeoStatement(items: PositionedTextItem[]): ParseResult {
 
   let openingBalance: number | null = null;
   let closingBalance: number | null = null;
+  let closingBalanceDate: string | null = null;
   let skippedTransferCount = 0;
   const purchases: (ParsedTransaction & { normDesc: string })[] = [];
   const refunds: { date: string; description: string; amount: number; normDesc: string }[] = [];
@@ -246,7 +249,7 @@ export function parseNeoStatement(items: PositionedTextItem[]): ParseResult {
 
     if (isOpeningOrClosing(desc)) {
       if (/^opening/i.test(desc)) openingBalance = row.balance;
-      else closingBalance = row.balance;
+      else { closingBalance = row.balance; closingBalanceDate = row.date; }
       continue;
     }
 
@@ -279,5 +282,5 @@ export function parseNeoStatement(items: PositionedTextItem[]): ParseResult {
     .filter((p) => !p.nettedRefund)
     .map(({ normDesc, ...t }) => t);
 
-  return { transactions, skippedTransferCount, unmatchedRefunds, openingBalance, closingBalance, unparsedAmountCount, noRowsFound };
+  return { transactions, skippedTransferCount, unmatchedRefunds, openingBalance, closingBalance, closingBalanceDate, unparsedAmountCount, noRowsFound };
 }

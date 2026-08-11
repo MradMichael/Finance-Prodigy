@@ -41,6 +41,7 @@ export default function ImportStatement({
   const [step, setStep] = useState<Step>("pick");
   const [error, setError] = useState<string | null>(null);
   const [closingBalance, setClosingBalance] = useState<number | null>(null);
+  const [closingBalanceDate, setClosingBalanceDate] = useState<string | null>(null);
   const [unmatchedRefundCount, setUnmatchedRefundCount] = useState(0);
   const [skippedTransferCount, setSkippedTransferCount] = useState(0);
   const [unparsedAmountCount, setUnparsedAmountCount] = useState(0);
@@ -92,6 +93,7 @@ export default function ImportStatement({
       if (guessedLast4) setNewCardLast4(guessedLast4);
 
       setClosingBalance(result.closingBalance);
+      setClosingBalanceDate(result.closingBalanceDate);
       setUnmatchedRefundCount(result.unmatchedRefunds.length);
       setSkippedTransferCount(result.skippedTransferCount);
       setUnparsedAmountCount(result.unparsedAmountCount);
@@ -172,13 +174,24 @@ export default function ImportStatement({
     };
 
     if (addBalanceCheck && closingBalance !== null) {
+      // The statement's own closing-balance date -- that's when this figure
+      // was actually true, not whenever the user happens to get around to
+      // importing the file (which could be days or weeks later, and would
+      // otherwise make computeDashboard.ts's balance check treat every
+      // transaction logged in between as "already reflected," producing a
+      // false mismatch or masking a real one).
+      const balanceDate = closingBalanceDate ?? todayISO();
+      // The closing balance IS the expected total as of that date, by
+      // definition -- it's the bank's own tally after every transaction on
+      // this same statement, so there's nothing to reconstruct here the
+      // way a manual confirmation needs to (see updateActualBalance).
       const existingTB = financials.trackedBalances.find((tb) => tb.cardId === card.id);
       const tbPatch: TrackedBalance = existingTB
-        ? { ...existingTB, actualBalance: closingBalance, actualBalanceDate: new Date().toISOString() }
+        ? { ...existingTB, actualBalance: closingBalance, actualBalanceDate: balanceDate, expectedAtCheckUSD: closingBalance }
         : {
             id: uid(), name: card.label, paymentMethod: "card", cardId: card.id,
-            startingBalance: closingBalance, startingDate: todayISO(), currency: "USD",
-            actualBalance: closingBalance, actualBalanceDate: new Date().toISOString(),
+            startingBalance: closingBalance, startingDate: balanceDate, currency: "USD",
+            actualBalance: closingBalance, actualBalanceDate: balanceDate, expectedAtCheckUSD: closingBalance,
           };
       patch.trackedBalances = existingTB
         ? financials.trackedBalances.map((tb) => (tb.id === existingTB.id ? tbPatch : tb))
@@ -319,11 +332,9 @@ export default function ImportStatement({
                       {r.include && !isRowValid(r) && (
                         <p className="text-[10px] font-semibold" style={{ color: T.coral }}>Enter a valid amount. This row won&apos;t be imported as-is.</p>
                       )}
-                      <div className="grid grid-cols-[1fr_auto] gap-2 items-center">
+                      <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-center">
                         <FocusInput value={r.description} onChange={(e) => updateRow(r.key, { description: e.target.value })} />
-                        <div style={{ width: 110 }}>
-                          <DateFieldDMY value={r.date} onChange={(iso) => updateRow(r.key, { date: iso })} />
-                        </div>
+                        <DateFieldDMY value={r.date} onChange={(iso) => updateRow(r.key, { date: iso })} />
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         <MoneyInput value={r.amount} onChange={(v) => updateRow(r.key, { amount: v })} placeholder="0.00" />
