@@ -3,11 +3,11 @@
 import { useState } from "react";
 import type {
   LocalFinancials, StoredTransaction, StoredGoal, StoredDebt,
-  StoredRecurring, StoredCard, RecurringFrequency, Currency, PaymentMethod, BudgetRuleKey, TrackedBalance, CategoryKey,
+  StoredRecurring, StoredCard, RecurringFrequency, Currency, PaymentMethod, BudgetRuleKey, TrackedBalance,
 } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, monthlyEquivalent, recurringPaidSoFar, toUSD as toUSDShared, CATEGORIES, CATEGORY_LABEL, CATEGORY_ICON } from "../lib/localData";
+import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, monthlyEquivalent, recurringPaidSoFar, toUSD as toUSDShared, allCategories, categoryLabel, categoryIcon } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY } from "./form/Primitives";
@@ -71,7 +71,7 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
   // Transaction form
   const [txAmt,    setTxAmt]    = useState("");
   const [txBucket, setTxBucket] = useState<TxBucket>("NEEDS");
-  const [txCategory, setTxCategory] = useState<CategoryKey | "">("");
+  const [txCategory, setTxCategory] = useState<string>("");
   const [txDesc,   setTxDesc]   = useState("");
   const [txDate,   setTxDate]   = useState(todayISO());
   const [txCurrency,  setTxCurrency]  = useState<Currency>("USD");
@@ -127,7 +127,7 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
   const [rCurrency,    setRCurrency]    = useState<Currency>("USD");
   const [rFreq,        setRFreq]        = useState<RecurringFrequency>("monthly");
   const [rBucket,      setRBucket]      = useState<"NEEDS" | "WANTS" | "SAVINGS">("NEEDS");
-  const [rCategory,    setRCategory]    = useState<CategoryKey | "">("");
+  const [rCategory,    setRCategory]    = useState<string>("");
   const [rStart,       setRStart]       = useState(todayISO());
   const [rEndType,     setREndType]     = useState<"infinite" | "date" | "amount">("infinite");
   const [rEnd,         setREnd]         = useState("");
@@ -163,7 +163,7 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
   const [editRCurrency,    setEditRCurrency]    = useState<Currency>("USD");
   const [editRFreq,        setEditRFreq]        = useState<RecurringFrequency>("monthly");
   const [editRBucket,      setEditRBucket]      = useState<Bucket>("NEEDS");
-  const [editRCategory,    setEditRCategory]    = useState<CategoryKey | "">("");
+  const [editRCategory,    setEditRCategory]    = useState<string>("");
   const [editRStart,       setEditRStart]       = useState("");
   const [editREndType,     setEditREndType]     = useState<"infinite" | "date" | "amount">("infinite");
   const [editREnd,         setEditREnd]         = useState("");
@@ -174,7 +174,7 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
   const [editTxDesc,       setEditTxDesc]       = useState("");
   const [editTxDate,       setEditTxDate]       = useState("");
   const [editTxBucket,     setEditTxBucket]     = useState<TxBucket>("NEEDS");
-  const [editTxCategory,   setEditTxCategory]   = useState<CategoryKey | "">("");
+  const [editTxCategory,   setEditTxCategory]   = useState<string>("");
   const [editTxCurrency,   setEditTxCurrency]   = useState<Currency>("USD");
 
   // ── helpers ────────────────────────────────────────────────────── //
@@ -345,7 +345,7 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
   }
 
   /** Quick-add a Recurring item from a transaction that looksRecurring flagged — starts today, monthly, editable further in the Recurring screen. Past transactions are left untouched; this only affects future months. */
-  function convertToRecurring(name: string, amount: string, currency: Currency, bucket: Bucket, category: CategoryKey | "") {
+  function convertToRecurring(name: string, amount: string, currency: Currency, bucket: Bucket, category: string) {
     const amt = parseFloat(amount.replace(/,/g, ""));
     if (!name.trim() || !amt) return;
     const rec: StoredRecurring = {
@@ -651,12 +651,12 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
             <select
               id="tx-category"
               value={txCategory}
-              onChange={(e) => setTxCategory(e.target.value as CategoryKey | "")}
+              onChange={(e) => setTxCategory(e.target.value)}
               className="w-full rounded-xl px-3 py-2.5 text-sm"
               style={{ background: T.panelSoft, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
             >
               <option value="">No category</option>
-              {CATEGORIES.map((c) => (
+              {allCategories(financials.customCategories).map((c) => (
                 <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
               ))}
             </select>
@@ -967,13 +967,13 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
                           </div>
                           <select
                             value={editTxCategory}
-                            onChange={(e) => setEditTxCategory(e.target.value as CategoryKey | "")}
+                            onChange={(e) => setEditTxCategory(e.target.value)}
                             aria-label="Category"
                             className="w-full rounded-lg px-2 py-1.5 text-[10px]"
                             style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
                           >
                             <option value="">No category</option>
-                            {CATEGORIES.map((c) => (
+                            {allCategories(financials.customCategories).map((c) => (
                               <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
                             ))}
                           </select>
@@ -1006,7 +1006,7 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
                                       : "🤝 Other"
                                   )}
                                   {tx.paymentMethod && tx.category && " · "}
-                                  {tx.category && `${CATEGORY_ICON[tx.category]} ${CATEGORY_LABEL[tx.category]}`}
+                                  {tx.category && `${categoryIcon(tx.category, financials.customCategories)} ${categoryLabel(tx.category, financials.customCategories)}`}
                                 </span>
                               )}
                             </div>
@@ -1107,13 +1107,13 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
                                   </div>
                                   <select
                                     value={editTxCategory}
-                                    onChange={(e) => setEditTxCategory(e.target.value as CategoryKey | "")}
+                                    onChange={(e) => setEditTxCategory(e.target.value)}
                                     aria-label="Category"
                                     className="w-full rounded-lg px-2 py-1.5 text-[10px]"
                                     style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
                                   >
                                     <option value="">No category</option>
-                                    {CATEGORIES.map((c) => (
+                                    {allCategories(financials.customCategories).map((c) => (
                                       <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
                                     ))}
                                   </select>
@@ -1131,7 +1131,7 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
                                   <div className="min-w-0 flex-1">
                                     <p className="text-xs truncate" style={{ color: T.text }}>{tx.description}</p>
                                     <p className="text-[9px]" style={{ color: T.mute }}>
-                                      {fmtDate(tx.date)}{tx.category && ` · ${CATEGORY_ICON[tx.category]} ${CATEGORY_LABEL[tx.category]}`}
+                                      {fmtDate(tx.date)}{tx.category && ` · ${categoryIcon(tx.category, financials.customCategories)} ${categoryLabel(tx.category, financials.customCategories)}`}
                                     </p>
                                   </div>
                                   <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -1404,12 +1404,12 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
                                 <select
                                   id="edit-rec-category"
                                   value={editRCategory}
-                                  onChange={(e) => setEditRCategory(e.target.value as CategoryKey | "")}
+                                  onChange={(e) => setEditRCategory(e.target.value)}
                                   className="w-full rounded-xl px-3 py-2 text-xs"
                                   style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
                                 >
                                   <option value="">No category</option>
-                                  {CATEGORIES.map((c) => (
+                                  {allCategories(financials.customCategories).map((c) => (
                                     <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
                                   ))}
                                 </select>
@@ -1633,12 +1633,12 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
                     <select
                       id="new-rec-category"
                       value={rCategory}
-                      onChange={(e) => setRCategory(e.target.value as CategoryKey | "")}
+                      onChange={(e) => setRCategory(e.target.value)}
                       className="w-full rounded-xl px-3 py-2.5 text-sm"
                       style={{ background: T.panelSoft, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
                     >
                       <option value="">No category</option>
-                      {CATEGORIES.map((c) => (
+                      {allCategories(financials.customCategories).map((c) => (
                         <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
                       ))}
                     </select>

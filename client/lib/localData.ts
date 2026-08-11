@@ -22,8 +22,10 @@ export interface StoredTransaction {
   // Optional, finer-grained than bucket (e.g. "Groceries" vs. the Needs
   // bucket it rolls up into) -- purely descriptive/for charting, never fed
   // into budget/EF/rollover/projection math, so it's safe to leave unset on
-  // old entries or skip entirely.
-  category?: CategoryKey;
+  // old entries or skip entirely. A built-in CategoryKey or a user-created
+  // customCategories value -- plain string (not CategoryKey) because the
+  // latter is only known at runtime, per account.
+  category?: string;
   description: string;
   date: string; // YYYY-MM-DD
   paymentMethod?: PaymentMethod;
@@ -128,8 +130,9 @@ export interface StoredRecurring {
   currency: Currency;
   frequency: RecurringFrequency;
   bucket: "NEEDS" | "WANTS" | "SAVINGS";
-  // Same optional, display-only role as StoredTransaction.category.
-  category?: CategoryKey;
+  // Same optional, display-only role as StoredTransaction.category (plain
+  // string, not CategoryKey -- see that field's comment).
+  category?: string;
   startDate: string;      // YYYY-MM-DD
   endDate: string | null; // null = infinite (unless totalAmount is set)
   totalAmount: number | null; // ends once this cumulative amount has been paid
@@ -169,6 +172,31 @@ export const CATEGORY_ICON: Record<CategoryKey, string> = Object.fromEntries(
   CATEGORIES.map((c) => [c.value, c.icon]),
 ) as Record<CategoryKey, string>;
 
+export interface CustomCategory { value: string; label: string; icon: string }
+
+/** Built-in categories plus this account's user-created ones, in one combined
+ * list -- feeds every category picker so a custom category shows up right
+ * alongside the built-ins instead of a separate, easy-to-miss section. */
+export function allCategories(customCategories?: CustomCategory[]): readonly { value: string; label: string; icon: string }[] {
+  return customCategories && customCategories.length ? [...CATEGORIES, ...customCategories] : CATEGORIES;
+}
+
+/**
+ * Label/icon for any category key -- built-in, custom, or an orphaned key
+ * left on an old transaction/recurring item after its custom category was
+ * deleted (falls back to the raw key/a generic icon rather than crashing).
+ * "uncategorized" is the synthetic grouping key TransactionsScreen/
+ * CategoriesScreen use for spend with no category set, not a real value.
+ */
+export function categoryLabel(key: string | undefined, customCategories?: CustomCategory[]): string {
+  if (!key || key === "uncategorized") return "Uncategorized";
+  return (CATEGORY_LABEL as Record<string, string>)[key] ?? customCategories?.find((c) => c.value === key)?.label ?? key;
+}
+export function categoryIcon(key: string | undefined, customCategories?: CustomCategory[]): string {
+  if (!key || key === "uncategorized") return "❔";
+  return (CATEGORY_ICON as Record<string, string>)[key] ?? customCategories?.find((c) => c.value === key)?.icon ?? "•";
+}
+
 export type BudgetRuleKey = "40-30-30" | "50-30-20" | "60-20-20" | "70-20-10" | "80-15-5" | "custom";
 
 export const BUDGET_RULES: Record<BudgetRuleKey, { label: string; desc: string; needs: number; wants: number; savings: number }> = {
@@ -206,6 +234,8 @@ export interface LocalFinancials {
   budgetRule?: BudgetRuleKey;
   budgetCustomNeeds?: number;
   budgetCustomWants?: number;
+  /** User-created categories, alongside the built-in CATEGORIES -- see allCategories/categoryLabel/categoryIcon. */
+  customCategories?: CustomCategory[];
 }
 
 export const DEFAULT_DATA: LocalFinancials = {
@@ -221,6 +251,7 @@ export const DEFAULT_DATA: LocalFinancials = {
   cards: [],
   assets: [],
   trackedBalances: [],
+  customCategories: [],
   netWorthHistory: [],
   incomeHistory: [],
   lbpRateHistory: [],

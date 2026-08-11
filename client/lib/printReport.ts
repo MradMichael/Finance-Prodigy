@@ -1,5 +1,5 @@
 import type { LocalFinancials } from "./localData";
-import { BUDGET_RULES, monthlyEquivalent, toUSD as toUSDShared, CATEGORY_LABEL } from "./localData";
+import { BUDGET_RULES, monthlyEquivalent, toUSD as toUSDShared, categoryLabel } from "./localData";
 import type { computeDashboard } from "./computeDashboard";
 
 type DashboardPayload = ReturnType<typeof computeDashboard>;
@@ -41,7 +41,7 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
       <td>${t.date.split("-").reverse().join("/")}</td>
       <td>${escapeHtml(t.description)}</td>
       <td>${BL[t.bucket]}</td>
-      <td>${t.category ? escapeHtml(CATEGORY_LABEL[t.category]) : "—"}</td>
+      <td>${t.category ? escapeHtml(categoryLabel(t.category, data.customCategories)) : "—"}</td>
       <td class="num">${money(toUSD(t.amount, t.currency))}</td>
     </tr>`).join("");
   const rangeLabel = options.dateFrom || options.dateTo
@@ -72,7 +72,7 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
     <tr>
       <td>${escapeHtml(r.emoji ?? "")} ${escapeHtml(r.name)}</td>
       <td>${BL[r.bucket]}</td>
-      <td>${r.category ? escapeHtml(CATEGORY_LABEL[r.category]) : "—"}</td>
+      <td>${r.category ? escapeHtml(categoryLabel(r.category, data.customCategories)) : "—"}</td>
       <td>${FREQ_LABEL[r.frequency]}</td>
       <td class="num">${money(toUSD(r.amount, r.currency))}</td>
     </tr>`).join("");

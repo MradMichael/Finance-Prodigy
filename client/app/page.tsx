@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import FinancialDashboard from "../components/FinancialDashboard";
 import InputPanel from "../components/InputPanel";
 import TransactionsScreen from "../components/screens/TransactionsScreen";
+import CategoriesScreen from "../components/screens/CategoriesScreen";
 import GoalsScreen from "../components/screens/GoalsScreen";
 import DebtsScreen from "../components/screens/DebtsScreen";
 import BudgetScreen from "../components/screens/BudgetScreen";
@@ -213,6 +214,7 @@ export default function Home() {
           {screen === "setup"        && <SetupScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
           {screen === "finances"     && <InputPanel financials={financials} dashData={dashboardData} onChange={handleChange} session={session} />}
           {screen === "transactions" && <TransactionsScreen financials={financials} />}
+          {screen === "categories"   && <CategoriesScreen financials={financials} onChange={handleChange} />}
           {screen === "goals"        && <GoalsScreen dashData={dashboardData} financials={financials} onChange={handleChange} />}
           {screen === "debts"        && <DebtsScreen financials={financials} dashData={dashboardData} />}
           {screen === "recurring"    && <RecurringScreen financials={financials} />}

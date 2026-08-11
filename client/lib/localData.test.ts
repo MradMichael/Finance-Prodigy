@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   monthlyEquivalent, nextOccurrence, recurringPaidSoFar, fmtDate, valueForMonth,
   loadData, saveData, DEFAULT_DATA, type StoredRecurring,
+  allCategories, categoryLabel, categoryIcon, CATEGORIES,
 } from "./localData";
 
 function makeRecurring(overrides: Partial<StoredRecurring> = {}): StoredRecurring {
@@ -137,6 +138,41 @@ describe("valueForMonth", () => {
   it("is unaffected by history entries out of chronological order", () => {
     const history = [{ ym: "2026-05", value: 2000 }, { ym: "2026-01", value: 1000 }];
     expect(valueForMonth(history, "2026-07", 999)).toBe(2000);
+  });
+});
+
+describe("category helpers", () => {
+  const custom = [{ value: "pet-care", label: "Pet care", icon: "🐾" }];
+
+  it("allCategories appends custom categories to the built-ins without mutating CATEGORIES", () => {
+    expect(allCategories(undefined)).toEqual(CATEGORIES);
+    expect(allCategories([])).toEqual(CATEGORIES);
+    const combined = allCategories(custom);
+    expect(combined).toHaveLength(CATEGORIES.length + 1);
+    expect(combined.at(-1)).toEqual(custom[0]);
+    expect(CATEGORIES).toHaveLength(14); // unchanged by the call above
+  });
+
+  it("categoryLabel/categoryIcon resolve built-in keys the same as the static Records", () => {
+    expect(categoryLabel("groceries")).toBe("Groceries");
+    expect(categoryIcon("groceries")).toBe("🛒");
+  });
+
+  it("categoryLabel/categoryIcon resolve a custom key when given the account's customCategories", () => {
+    expect(categoryLabel("pet-care", custom)).toBe("Pet care");
+    expect(categoryIcon("pet-care", custom)).toBe("🐾");
+  });
+
+  it("falls back to the raw key/a generic icon for an orphaned key (custom category deleted) instead of crashing", () => {
+    expect(categoryLabel("pet-care", [])).toBe("pet-care");
+    expect(categoryIcon("pet-care", [])).toBe("•");
+  });
+
+  it("treats undefined and the synthetic 'uncategorized' grouping key as Uncategorized", () => {
+    expect(categoryLabel(undefined)).toBe("Uncategorized");
+    expect(categoryLabel("uncategorized")).toBe("Uncategorized");
+    expect(categoryIcon(undefined)).toBe("❔");
+    expect(categoryIcon("uncategorized")).toBe("❔");
   });
 });
 

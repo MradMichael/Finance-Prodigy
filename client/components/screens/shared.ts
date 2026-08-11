@@ -2,7 +2,7 @@ import type { CSSProperties } from "react";
 
 export type SyncStatus = "idle" | "syncing" | "synced" | "offline";
 
-export type Screen = "overview" | "budget" | "setup" | "finances" | "transactions" | "goals" | "debts" | "recurring" | "projections" | "journey";
+export type Screen = "overview" | "budget" | "setup" | "finances" | "transactions" | "categories" | "goals" | "debts" | "recurring" | "projections" | "journey";
 
 export const NAV: { key: Screen; label: string; icon: string }[] = [
   { key: "overview",     label: "Overview",     icon: "◉" },
@@ -10,6 +10,7 @@ export const NAV: { key: Screen; label: string; icon: string }[] = [
   { key: "setup",        label: "Setup",        icon: "⚙" },
   { key: "finances",     label: "My Finances",  icon: "✎" },
   { key: "transactions", label: "Transactions", icon: "≡" },
+  { key: "categories",   label: "Categories",   icon: "▦" },
   { key: "goals",        label: "Goals",        icon: "◎" },
   { key: "debts",        label: "Debts",        icon: "⌁" },
   { key: "recurring",    label: "Recurring",    icon: "↻" },

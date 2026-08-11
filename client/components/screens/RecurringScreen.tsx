@@ -1,7 +1,7 @@
 "use client";
 
 import type { LocalFinancials } from "../../lib/localData";
-import { monthlyEquivalent, FREQ_LABELS, toUSD as toUSDShared, CATEGORY_LABEL, CATEGORY_ICON } from "../../lib/localData";
+import { monthlyEquivalent, FREQ_LABELS, toUSD as toUSDShared, categoryLabel, categoryIcon } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money } from "./shared";
 
@@ -63,7 +63,7 @@ export default function RecurringScreen({ financials }: { financials: LocalFinan
                           <p className="text-sm" style={{ color: T.text }}>{r.name}</p>
                           <p className="text-[10px]" style={{ color: T.mute }}>
                             {r.currency === "LBP" ? `LBP ${r.amount.toLocaleString()}` : money(r.amount, 2)} · {FREQ_LABELS[r.frequency]}
-                            {r.category && ` · ${CATEGORY_ICON[r.category]} ${CATEGORY_LABEL[r.category]}`}
+                            {r.category && ` · ${categoryIcon(r.category, financials.customCategories)} ${categoryLabel(r.category, financials.customCategories)}`}
                           </p>
                         </div>
                         <p className="text-sm font-medium tabular-nums" style={{ color: BC[bucket] }}>

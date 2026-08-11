@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, StoredRecurring } from "../../lib/localData";
-import { fmtDate, monthlyEquivalent, toUSD as toUSDShared, CATEGORY_LABEL, CATEGORY_ICON } from "../../lib/localData";
+import { fmtDate, monthlyEquivalent, toUSD as toUSDShared, categoryLabel as categoryLabelShared, categoryIcon as categoryIconShared } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money } from "./shared";
 import Donut from "../charts/Donut";
@@ -181,8 +181,8 @@ export default function TransactionsScreen({ financials }: { financials: LocalFi
       .sort((a, b) => b.value - a.value);
   })();
   const categoryTotal = categoryBreakdown.reduce((s, c) => s + c.value, 0);
-  const categoryLabel = (key: string) => key === "uncategorized" ? "Uncategorized" : (CATEGORY_LABEL as Record<string, string>)[key] ?? key;
-  const categoryIcon  = (key: string) => key === "uncategorized" ? "❔" : (CATEGORY_ICON as Record<string, string>)[key] ?? "•";
+  const categoryLabel = (key: string) => categoryLabelShared(key, financials.customCategories);
+  const categoryIcon  = (key: string) => categoryIconShared(key, financials.customCategories);
   const categoryColors = [T.jade, T.brass, T.sky, T.coral, T.jade + "80", T.brass + "80", T.sky + "80", T.coral + "80", T.mute];
 
   // Category trends: % of spend in each bucket per period, across ALL
