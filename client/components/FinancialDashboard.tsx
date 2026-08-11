@@ -23,6 +23,7 @@ import {
   LineChart, Line,
 } from "recharts";
 import { useTheme } from "../contexts/ThemeContext";
+import { fmtDate } from "../lib/localData";
 import type { DashboardPayload } from "../lib/computeDashboard";
 import OnboardingChecklist from "./OnboardingChecklist";
 import type { Screen } from "./screens/shared";
@@ -79,9 +80,9 @@ const MOCK: DashboardPayload = {
       projection: { pctComplete: 60, monthsRemaining: 4, requiredMonthly: 150, paceRatio: 1.2, onTrack: true, targetDateDisplay: "15-10-2026" } },
   ],
   sixMonthTrend: [
-    { ymKey: 202601, income: 3400, spend: 3050 }, { ymKey: 202602, income: 3400, spend: 2890 },
-    { ymKey: 202603, income: 3500, spend: 2960 }, { ymKey: 202604, income: 3500, spend: 2740 },
-    { ymKey: 202605, income: 3500, spend: 2810 }, { ymKey: 202606, income: 3500, spend: 2830 },
+    { ymKey: 202601, income: 3400, spend: 3050, savingsContrib: 400 }, { ymKey: 202602, income: 3400, spend: 2890, savingsContrib: 460 },
+    { ymKey: 202603, income: 3500, spend: 2960, savingsContrib: 480 }, { ymKey: 202604, income: 3500, spend: 2740, savingsContrib: 560 },
+    { ymKey: 202605, income: 3500, spend: 2810, savingsContrib: 540 }, { ymKey: 202606, income: 3500, spend: 2830, savingsContrib: 520 },
   ],
   budgetRule: "50-30-20",
   budgetTargetPct: { needs: 50, wants: 30, savings: 20 },
@@ -101,7 +102,7 @@ const MOCK: DashboardPayload = {
     { id: "1", name: "Netflix", emoji: "🎬", amount: 15.49, currency: "USD", dueDate: "2026-06-20", dueInDays: 3 },
   ],
   balanceChecks: [
-    { id: "1", name: "Cash", currency: "USD", expected: 240, actual: 190, actualDate: "2026-06-18", discrepancy: -50 },
+    { id: "1", name: "Cash", currency: "USD", expected: 240, actual: 190, actualDate: "2026-06-18", discrepancy: -50, changeSinceCheck: 0 },
   ],
   netWorth: {
     assets: 6620, liabilities: 13260, total: -6640,
@@ -179,7 +180,7 @@ function BucketRow({ label, actual, target, color }: { label: string; actual: nu
       </div>
       <Bar pct={pct} color={pct > 100 ? T.coral : color} />
       <p className="text-xs mt-1" style={{ color: headroom >= 0 ? T.mute : T.coral }}>
-        {headroom >= 0 ? `${money(headroom)} of room left` : `${money(-headroom)} over. Next month resets the line`}
+        {headroom >= 0 ? `${money(headroom)} of room left` : `${money(-headroom)} over — carries into next month's target`}
       </p>
     </div>
   );
@@ -216,7 +217,7 @@ export default function FinancialDashboard({
     );
   }
 
-  const { health, month, emergencyFund: ef, debt, goals, sixMonthTrend, encouragements, user, period, netWorth, streaks, budgetPace, netWorthTrend, upcomingRenewals, balanceChecks } = data;
+  const { health, month, emergencyFund: ef, debt, goals, sixMonthTrend, encouragements, user, period, netWorth, streaks, budgetPace, netWorthTrend, upcomingRenewals, balanceChecks, budgetTargetPct } = data;
   const monthName = ["", "January","February","March","April","May","June","July","August","September","October","November","December"][period.month];
   const targets     = data.budgetTargets;
   const budgetLabel = data.budgetRule === "custom" ? "Custom split" : data.budgetRule.replace(/-/g, " / ");
@@ -237,8 +238,8 @@ export default function FinancialDashboard({
             <h1 className="text-3xl md:text-4xl mt-1" style={SERIF}>
               {month.income === 0
                 ? <>Set your income to see the full picture, {user.name.split(" ")[0]}.</>
-                : month.netCashFlow >= month.income * 0.2
-                ? <>{user.name.split(" ")[0]}, you kept <span style={{ color: T.jade }}>{money(month.netCashFlow)}</span>, above your 20% target.</>
+                : budgetTargetPct.savings > 0 && month.savingsRatePct >= budgetTargetPct.savings
+                ? <>{user.name.split(" ")[0]}, you saved <span style={{ color: T.jade }}>{money(month.savingsContrib)}</span>, at or above your {budgetTargetPct.savings}% target.</>
                 : month.netCashFlow > 0
                 ? <>You kept <span style={{ color: T.brass }}>{money(month.netCashFlow)}</span> this month, {user.name.split(" ")[0]}. Every dollar counts.</>
                 : <>Spending exceeded income by <span style={{ color: T.coral }}>{money(-month.netCashFlow)}</span> this month, {user.name.split(" ")[0]}. The plan below shows the path.</>}
@@ -319,6 +320,13 @@ export default function FinancialDashboard({
                 const gap = b.discrepancy ?? 0;
                 const mismatch = Math.abs(gap) >= 1;
                 const accent = mismatch ? T.coral : T.jade;
+                // Discrepancy is judged against what was expected AS OF the
+                // check-in (b.expected minus whatever's happened since), not
+                // today's live running total -- so this box shows that same
+                // as-of figure, matching what "Mismatch"/"Matches" is
+                // actually verdict-ing on.
+                const expectedAsOfCheck = Math.round((b.expected - b.changeSinceCheck) * 100) / 100;
+                const hasActivitySince = Math.abs(b.changeSinceCheck) >= 0.01;
                 return (
                   <div
                     key={b.id}
@@ -336,8 +344,10 @@ export default function FinancialDashboard({
                     </div>
                     <div className="flex items-end justify-between gap-4">
                       <div>
-                        <p className="text-[10px] uppercase tracking-widest" style={{ color: T.mute }}>Expected</p>
-                        <p className="text-lg tabular-nums" style={{ ...SERIF, color: T.text }}>{money(b.expected)}</p>
+                        <p className="text-[10px] uppercase tracking-widest" style={{ color: T.mute }}>
+                          Expected{b.actualDate ? ` · as of ${fmtDate(b.actualDate)}` : ""}
+                        </p>
+                        <p className="text-lg tabular-nums" style={{ ...SERIF, color: T.text }}>{money(expectedAsOfCheck)}</p>
                       </div>
                       <span style={{ color: T.mute }}>vs</span>
                       <div className="text-right">
@@ -348,8 +358,13 @@ export default function FinancialDashboard({
                     {mismatch && (
                       <p className="text-xs mt-3 pt-3" style={{ color: T.coral, borderTop: `1px solid ${T.coral}30` }}>
                         {gap < 0
-                          ? `${money(Math.abs(gap))} unaccounted for — check for a missed entry.`
-                          : `${money(gap)} more than expected — got extra cash, or a transaction logged twice?`}
+                          ? `${money(Math.abs(gap))} unaccounted for as of that check-in — check for a missed entry.`
+                          : `${money(gap)} more than expected as of that check-in — got extra cash, or a transaction logged twice?`}
+                      </p>
+                    )}
+                    {hasActivitySince && (
+                      <p className="text-xs mt-3 pt-3" style={{ color: T.mute, borderTop: `1px solid ${T.line}` }}>
+                        {b.changeSinceCheck < 0 ? money(Math.abs(b.changeSinceCheck)) + " spent" : money(b.changeSinceCheck) + " added"} since that check-in — current running balance: <span style={{ color: T.text }}>{money(b.expected)}</span>.
                       </p>
                     )}
                   </div>
