@@ -98,6 +98,7 @@ describe("signIn", () => {
       ok: true,
       syncedAt: "2026-01-01T00:00:00.000Z",
       data: { ...(await import("./localData")).DEFAULT_DATA, userName: "Remote Name", income: 5000 },
+      hasRecoveryCode: false,
     });
     const result = await signIn("newdevice@test.com", "password12345");
     expect(result.ok).toBe(true);
@@ -107,6 +108,36 @@ describe("signIn", () => {
       // A local account now exists for next time, provisioned from the pull.
       const users = listUsers();
       expect(users.some((u) => u.email === "newdevice@test.com")).toBe(true);
+    }
+  });
+
+  it("surfaces a recovery code on a new-device sign-in only when the account has none registered server-side yet", async () => {
+    vi.mocked(pullFromServer).mockResolvedValue({
+      ok: true,
+      syncedAt: "2026-01-01T00:00:00.000Z",
+      data: (await import("./localData")).DEFAULT_DATA,
+      hasRecoveryCode: false,
+    });
+    const result = await signIn("firstdevice@test.com", "password12345");
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.recoveryCode).toMatch(/^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/);
+  });
+
+  it("does NOT surface a recovery code on a new-device sign-in when the account already has one registered server-side (the reported bug: a fresh code shown on every new device)", async () => {
+    vi.mocked(pullFromServer).mockResolvedValue({
+      ok: true,
+      syncedAt: "2026-01-01T00:00:00.000Z",
+      data: (await import("./localData")).DEFAULT_DATA,
+      hasRecoveryCode: true,
+    });
+    const result = await signIn("seconddevice@test.com", "password12345");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.recoveryCode).toBeUndefined();
+      // Still provisions a real local account (and its own local wrapped-DEK
+      // envelope under the hood) -- only the modal-triggering code is suppressed.
+      const users = listUsers();
+      expect(users.some((u) => u.email === "seconddevice@test.com")).toBe(true);
     }
   });
 
@@ -242,6 +273,7 @@ describe("recoverAccount", () => {
       ok: true,
       syncedAt: "2026-01-01T00:00:00.000Z",
       data: { ...(await import("./localData")).DEFAULT_DATA, userName: "Remote Name", income: 5000 },
+      hasRecoveryCode: true,
     });
     const result = await recoverAccount("newdevice@test.com", "SOME-REAL-CODE-0000", "brandnewpassword1");
     expect(result.ok).toBe(true);

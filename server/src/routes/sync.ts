@@ -134,13 +134,20 @@ router.post("/push", async (req, res, next) => {
           throw new SyncAuthError();
         }
         const now = new Date();
-        // Preserve the existing recoveryTokenHash when this push doesn't carry
-        // one (an older client, or one that predates having a recovery code
-        // at all) rather than clobbering a previously-registered value with null.
+        // Preserve an already-registered recoveryTokenHash on every regular
+        // push, same trust-on-first-use rule authTokenHash already gets
+        // above (mismatch => reject, not silently overwrite). Without the
+        // `!existing?.recoveryTokenHash` guard, a second/third device's very
+        // first push -- which always carries a freshly-generated recovery
+        // token, since signing in from a device with no local account mints
+        // its own local DEK envelope + code (see auth.ts signInFromSync) --
+        // would silently replace the original device's registered token,
+        // quietly invalidating whichever recovery code the user was told to
+        // save first for the one server-side flow (/relink) that checks it.
         await tx.userSync.upsert({
           where:  { email: normalizedEmail },
           create: { email: normalizedEmail, dataJson, authTokenHash: tokenHash, recoveryTokenHash },
-          update: { dataJson, syncedAt: now, authTokenHash: tokenHash, ...(recoveryTokenHash ? { recoveryTokenHash } : {}) },
+          update: { dataJson, syncedAt: now, authTokenHash: tokenHash, ...(recoveryTokenHash && !existing?.recoveryTokenHash ? { recoveryTokenHash } : {}) },
         });
         return now;
       }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
@@ -194,7 +201,11 @@ router.get("/pull", async (req, res, next) => {
       return res.status(401).json({ error: "Invalid sync credentials for this account." });
     }
 
-    res.json({ ok: true, data: JSON.parse(record.dataJson), syncedAt: record.syncedAt });
+    // Lets a new-device sign-in (signInFromSync) know this account already
+    // has a recovery code registered elsewhere, so it can skip surfacing
+    // the fresh one it must still generate locally -- otherwise every new
+    // device shows a "save your recovery code" modal forever, not just once.
+    res.json({ ok: true, data: JSON.parse(record.dataJson), syncedAt: record.syncedAt, hasRecoveryCode: !!record.recoveryTokenHash });
   } catch (err) {
     next(err);
   }

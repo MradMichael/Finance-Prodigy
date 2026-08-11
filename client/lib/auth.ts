@@ -206,7 +206,12 @@ async function signInFromSync(
   const { saveData } = await import("./localData");
   await saveData({ ...pulled.data, userName: name }, id);
 
-  return { ok: true, session, recoveryCode };
+  // This device still needs its own local wrapped-DEK envelope (created
+  // above) to unlock its own encrypted storage later, but only surface the
+  // fresh recovery code -- and so only show the "save this" modal -- when
+  // the account doesn't already have one registered server-side. Otherwise
+  // every subsequent device shows a brand-new code forever, not once.
+  return { ok: true, session, recoveryCode: pulled.hasRecoveryCode ? undefined : recoveryCode };
 }
 
 export async function signIn(

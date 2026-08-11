@@ -85,7 +85,7 @@ export async function relinkSync(
   }
 }
 
-export async function pullFromServer(email: string): Promise<{ ok: true; data: LocalFinancials; syncedAt: string } | { ok: false; error: string }> {
+export async function pullFromServer(email: string): Promise<{ ok: true; data: LocalFinancials; syncedAt: string; hasRecoveryCode: boolean } | { ok: false; error: string }> {
   const token = getSyncToken();
   if (!token) return { ok: false, error: "Not signed in. Sign in again to sync." };
   try {
@@ -104,7 +104,7 @@ export async function pullFromServer(email: string): Promise<{ ok: true; data: L
       return { ok: false, error: "Server responded, but the response was malformed. Try again." };
     }
     localStorage.setItem(LAST_SYNC_KEY, json.syncedAt);
-    return { ok: true, data: json.data as LocalFinancials, syncedAt: json.syncedAt };
+    return { ok: true, data: json.data as LocalFinancials, syncedAt: json.syncedAt, hasRecoveryCode: json.hasRecoveryCode === true };
   } catch {
     return { ok: false, error: "Could not reach server. Is it running?" };
   }
