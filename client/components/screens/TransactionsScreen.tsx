@@ -209,9 +209,19 @@ export default function TransactionsScreen({ financials }: { financials: LocalFi
     // manually logged yet would silently vanish from the trend entirely.
     const currentKey = periodKey(new Date().toISOString().slice(0, 10), trendPeriod);
     const periodKeys = Array.from(new Set([...Object.keys(byPeriod), currentKey])).sort().reverse().slice(0, trendCap).reverse();
+    // allTx is sorted newest-first, so the last entry is the earliest
+    // logged transaction. Recurring still accrues for every month it's
+    // been active (matching budgetRollover/sixMonthTrend elsewhere), but
+    // only from that earliest real month onward -- otherwise a recurring
+    // item with an old startDate retroactively balloons a period like
+    // Yearly with months of accrual the account never actually experienced,
+    // producing a Needs/Wants/Savings mix that disagrees sharply with
+    // Monthly for no reason a user logged.
+    const earliestTxYm = allTx.length > 0 ? allTx[allTx.length - 1].date.slice(0, 7) : null;
     for (const k of periodKeys) {
       const b = byPeriod[k] ?? (byPeriod[k] = { needs: 0, wants: 0, savings: 0 });
       for (const ym of monthsInPeriod(k, trendPeriod)) {
+        if (earliestTxYm && ym < earliestTxYm) continue;
         const r = recurringForMonth(recurring, ym, currentYm, toUSD);
         b.needs += r.needs; b.wants += r.wants; b.savings += r.savings;
       }

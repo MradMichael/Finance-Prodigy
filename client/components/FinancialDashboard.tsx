@@ -351,7 +351,7 @@ export default function FinancialDashboard({
                       </div>
                       <span style={{ color: T.mute }}>vs</span>
                       <div className="text-right">
-                        <p className="text-[10px] uppercase tracking-widest" style={{ color: T.mute }}>You said</p>
+                        <p className="text-[10px] uppercase tracking-widest" style={{ color: T.mute }}>Last tracked</p>
                         <p className="text-lg tabular-nums" style={{ ...SERIF, color: T.text }}>{money(b.actual as number)}</p>
                       </div>
                     </div>
@@ -465,7 +465,7 @@ export default function FinancialDashboard({
                 <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3">
                   {balanceChecks.map((b) => (
                     <span key={b.id} className="text-xs" style={{ color: T.mute }}>
-                      {b.name}: <span style={{ ...NUMS, color: T.text }}>{money(b.expected)}</span>
+                      {b.name} (expected): <span style={{ ...NUMS, color: T.text }}>{money(b.expected)}</span>
                     </span>
                   ))}
                 </div>
@@ -510,7 +510,14 @@ export default function FinancialDashboard({
             <p className="text-xs mt-3" style={{ color: T.mute }}>
               {money(ef.balance)} banked ·{" "}
               {ef.targetAmount <= 0
-                ? "set your income to calculate a real target"
+                ? (month.income <= 0
+                    ? "set your income to calculate a real target"
+                    // A 0% Needs allocation (Budget → Custom split) also
+                    // collapses the target to $0 -- distinct from income
+                    // being unset, and telling someone with real income to
+                    // "set your income" when the actual cause is elsewhere
+                    // sends them to fix the wrong screen.
+                    : "set a Needs percentage above 0% in Budget to calculate a real target")
                 : ef.remaining > 0 ? `${money(ef.remaining)} to a fully funded net` : "fully funded, exhale"}
             </p>
           </Panel>

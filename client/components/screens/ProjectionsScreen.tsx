@@ -190,7 +190,12 @@ export default function ProjectionsScreen({
             <input
               type="range" min={0} max={sliderMax} step={10}
               value={Math.min(testAmount, sliderMax)}
-              onChange={(e) => setTestAmount(Number(e.target.value))}
+              // Drag interactions on some browsers/touch devices can report
+              // a fractional intermediate value before snapping to `step`
+              // -- round the same way the paired number input already does
+              // so a drag can't leave testAmount at something like
+              // $6.8909608.
+              onChange={(e) => setTestAmount(Math.max(0, Math.round(Number(e.target.value) / 10) * 10))}
               className="w-full"
               style={{ accentColor: T.brass }}
             />

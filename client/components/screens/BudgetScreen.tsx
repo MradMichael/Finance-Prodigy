@@ -1,10 +1,19 @@
 "use client";
 
+import { useEffect } from "react";
 import type { LocalFinancials, BudgetRuleKey } from "../../lib/localData";
 import { BUDGET_RULES } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money } from "./shared";
+
+// Below this, a bucket reads as "not really part of the budget" rather than
+// "a small share of it" -- and at exactly 0%, every downstream calculation
+// that divides by or targets a percentage of this bucket breaks (an
+// impossible "target ≤0%", a 100%-over Budget card, an inflated Savings
+// target absorbing the difference). Applied to both custom sliders so
+// neither can squeeze the other down that far.
+const MIN_SPLIT_PCT = 5;
 
 export default function BudgetScreen({
   financials,
@@ -22,6 +31,19 @@ export default function BudgetScreen({
   const ruleKey: BudgetRuleKey = financials.budgetRule ?? "50-30-20";
   const customNeeds = financials.budgetCustomNeeds ?? 50;
   const customWants = financials.budgetCustomWants ?? 30;
+
+  // One-time heal for a split saved before MIN_SPLIT_PCT existed (e.g.
+  // Needs at 0%) -- corrects it on load instead of leaving broken data in
+  // place until the user happens to touch a slider themselves.
+  useEffect(() => {
+    if (ruleKey !== "custom") return;
+    const healedNeeds = Math.max(MIN_SPLIT_PCT, Math.min(customNeeds, 100 - MIN_SPLIT_PCT));
+    const healedWants = Math.max(MIN_SPLIT_PCT, Math.min(customWants, 100 - MIN_SPLIT_PCT - healedNeeds));
+    if (healedNeeds !== customNeeds || healedWants !== customWants) {
+      onChange({ ...financials, budgetCustomNeeds: healedNeeds, budgetCustomWants: healedWants });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ruleKey, customNeeds, customWants]);
 
   const targetPct = ruleKey === "custom"
     ? { needs: customNeeds, wants: customWants, savings: Math.max(0, 100 - customNeeds - customWants) }
@@ -147,7 +169,7 @@ export default function BudgetScreen({
                 const field  = label === "Needs" ? "budgetCustomNeeds" as const : "budgetCustomWants" as const;
                 const val    = label === "Needs" ? customNeeds : customWants;
                 const other  = label === "Needs" ? customWants : customNeeds;
-                const maxVal = Math.max(0, 100 - other);
+                const maxVal = Math.max(MIN_SPLIT_PCT, 100 - other);
                 return (
                   <div key={label}>
                     <div className="flex justify-between text-xs mb-1.5">
@@ -155,10 +177,16 @@ export default function BudgetScreen({
                       <span style={{ color: T.jade }}>{val}%</span>
                     </div>
                     <input
-                      type="range" min={0} max={maxVal} step={5} value={Math.min(val, maxVal)}
+                      type="range" min={MIN_SPLIT_PCT} max={maxVal} step={5}
+                      value={Math.min(Math.max(val, MIN_SPLIT_PCT), maxVal)}
                       onChange={(e) => onChange({ ...financials, [field]: parseInt(e.target.value) })}
                       className="w-full" style={{ accentColor: T.jade }}
                     />
+                    {val < 10 && (
+                      <p className="text-[10px] mt-1" style={{ color: T.brass }}>
+                        {label} this low means almost none of your spending counts as {label.toLowerCase()}. Intentional?
+                      </p>
+                    )}
                   </div>
                 );
               })}

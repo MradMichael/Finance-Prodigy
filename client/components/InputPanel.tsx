@@ -1908,7 +1908,14 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
                           {tb.actualBalanceDate && ` on ${fmtDate(tb.actualBalanceDate)}`}
                         </p>
                       )}
-                      <p className="text-[10px]" style={{ color: T.mute }}>See the actual-vs-expected comparison on the Overview screen.</p>
+                      {(() => {
+                        const check = dashData.balanceChecks.find((b) => b.id === tb.id);
+                        return check ? (
+                          <p className="text-[10px]" style={{ color: T.mute }}>
+                            Expected now: <span style={{ color: T.text }}>{fmtCur(check.expected, "USD")}</span>
+                          </p>
+                        ) : null;
+                      })()}
                       <div className="flex gap-2">
                         <div className="flex-1">
                           <MoneyInput
