@@ -37,13 +37,24 @@ describe("budget rules", () => {
     expect(result.budgetTargets.savings).toBeCloseTo(100, 5);
   });
 
-  it("custom rule with needs+wants > 100 produces a negative savings target (documents current behavior, not necessarily desired)", () => {
+  it("custom rule with needs+wants > 100 is clamped by floorCustomSplit so savings can no longer go negative", () => {
+    // Needs (70) stays put; Wants (50) gets squeezed down to whatever leaves
+    // Savings at least MIN_SPLIT_PCT=5 -- 100-70-25=5 -- instead of the old
+    // unfloored "100-70-50=-20%" that used to produce a negative target.
     const data = makeData({ income: 1000, budgetRule: "custom", budgetCustomNeeds: 70, budgetCustomWants: 50 });
     const result = computeDashboard(data);
-    // 100 - 70 - 50 = -20% of income
-    expect(result.budgetTargets.savings).toBeCloseTo(-200, 5);
-    // effectiveBudgetTargets floors at 0 regardless of the raw (possibly negative) target
+    expect(result.budgetTargetPct).toEqual({ needs: 70, wants: 25, savings: 5 });
+    expect(result.budgetTargets.needs).toBeCloseTo(700, 5);
+    expect(result.budgetTargets.wants).toBeCloseTo(250, 5);
+    expect(result.budgetTargets.savings).toBeCloseTo(50, 5);
     expect(result.effectiveBudgetTargets.savings).toBeGreaterThanOrEqual(0);
+  });
+
+  it("a custom rule's Needs/Wants can never reach 0% even from raw stored data below the floor (e.g. saved before the floor existed, or on a device that hasn't opened Budget since)", () => {
+    const data = makeData({ income: 1000, budgetRule: "custom", budgetCustomNeeds: 0, budgetCustomWants: 100 });
+    const result = computeDashboard(data);
+    expect(result.budgetTargetPct.needs).toBe(5);
+    expect(result.budgetTargetPct.needs).toBeGreaterThan(0);
   });
 });
 
@@ -798,10 +809,19 @@ describe("INCOME transactions — one-off receipts boost effective income withou
 });
 
 describe("Safety net target of 0 — must never be indistinguishable from 'fully funded' at the data level", () => {
-  it("targetAmount is 0 (not a phantom positive number) when needs% is 0 under a custom budget rule, even with real income and a real balance", () => {
+  it("a 0%-Needs custom budget rule can no longer collapse the EF target to 0 (Needs is floored at MIN_SPLIT_PCT) -- real income + real months always produces a real target", () => {
     const data = makeData({
       income: 3000, emergencyFundBalance: 1200, emergencyFundTargetMonths: 6,
       budgetRule: "custom", budgetCustomNeeds: 0, budgetCustomWants: 30,
+    });
+    const result = computeDashboard(data);
+    expect(result.emergencyFund.targetAmount).toBeGreaterThan(0);
+  });
+
+  it("targetAmount is 0 (not a phantom positive number) when the months-of-coverage target is 0, even with real income and a real balance", () => {
+    const data = makeData({
+      income: 3000, emergencyFundBalance: 1200, emergencyFundTargetMonths: 0,
+      budgetRule: "50-30-20",
     });
     const result = computeDashboard(data);
     expect(result.emergencyFund.targetAmount).toBe(0);

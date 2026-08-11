@@ -1,5 +1,5 @@
 import type { LocalFinancials, BudgetRuleKey } from "./localData";
-import { monthlyEquivalent, nextOccurrence, BUDGET_RULES, valueForMonth, budgetPctForMonth, toUSD as toUSDShared } from "./localData";
+import { monthlyEquivalent, nextOccurrence, BUDGET_RULES, valueForMonth, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit } from "./localData";
 import { simulateDebtPayoff, type DebtInput } from "./debtEngine";
 
 interface Projection {
@@ -106,12 +106,13 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   // ── Budget rule targets ──────────────────────────────────────────
   const ruleKey: BudgetRuleKey = data.budgetRule ?? "50-30-20";
   const baseRule = BUDGET_RULES[ruleKey];
+  // Floored so a pre-MIN_SPLIT_PCT stored value (e.g. needs=0, saved before
+  // BudgetScreen's slider floor/heal existed, or on a device that hasn't
+  // opened Budget since) can't leak a broken split into Overview/Financial
+  // Health/Safety Net -- those never mount BudgetScreen's own heal effect,
+  // so this is the one place all of them are guaranteed to read a sane value.
   const budgetTargetPct = ruleKey === "custom"
-    ? {
-        needs:   data.budgetCustomNeeds   ?? 50,
-        wants:   data.budgetCustomWants   ?? 30,
-        savings: 100 - (data.budgetCustomNeeds ?? 50) - (data.budgetCustomWants ?? 30),
-      }
+    ? floorCustomSplit(data.budgetCustomNeeds ?? 50, data.budgetCustomWants ?? 30)
     : { needs: baseRule.needs, wants: baseRule.wants, savings: baseRule.savings };
   const month = now.getMonth() + 1;
   const prefix = `${year}-${String(month).padStart(2, "0")}`;

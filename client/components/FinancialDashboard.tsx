@@ -524,12 +524,11 @@ export default function FinancialDashboard({
               {ef.targetAmount <= 0
                 ? (month.income <= 0
                     ? "set your income to calculate a real target"
-                    // A 0% Needs allocation (Budget → Custom split) also
-                    // collapses the target to $0 -- distinct from income
-                    // being unset, and telling someone with real income to
-                    // "set your income" when the actual cause is elsewhere
-                    // sends them to fix the wrong screen.
-                    : "set a Needs percentage above 0% in Budget to calculate a real target")
+                    // Needs% itself can no longer collapse this to $0 (custom
+                    // splits are floored at MIN_SPLIT_PCT in localData.ts), so
+                    // with real income the only other way targetAmount hits 0
+                    // is an unset months-of-coverage target.
+                    : "set a target number of months in Setup to calculate a real target")
                 : ef.remaining > 0 ? `${money(ef.remaining)} to a fully funded net` : "fully funded, exhale"}
             </p>
           </Panel>

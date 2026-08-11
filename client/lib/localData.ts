@@ -208,6 +208,27 @@ export const BUDGET_RULES: Record<BudgetRuleKey, { label: string; desc: string; 
   "custom":   { label: "Custom",       desc: "Set your own percentages",                   needs: 50, wants: 30, savings: 20 },
 };
 
+// Below this, a bucket reads as "not really part of the budget" rather than
+// "a small share of it" -- and at exactly 0%, every downstream calculation
+// that divides by or targets a percentage of this bucket breaks (an
+// impossible "target <=0%", a 100%-over Budget card, an inflated Savings
+// target absorbing the difference). No preset BUDGET_RULES value goes below
+// this (the lowest is 5, in "80-15-5"'s savings), so flooring here never
+// perturbs a non-custom rule -- only ever the user-editable custom split.
+export const MIN_SPLIT_PCT = 5;
+
+/** Clamps a custom Needs/Wants split so neither can squeeze the other below
+ * MIN_SPLIT_PCT (Needs floored first, Wants floored against the now-floored
+ * Needs) -- the single source of truth for this invariant, applied both to
+ * live input (BudgetScreen's slider heal) and to every computed/historized
+ * read of the split (computeDashboard.ts), so a bad stored value can't leak
+ * into any screen the user happens to open first. */
+export function floorCustomSplit(needs: number, wants: number): { needs: number; wants: number; savings: number } {
+  const flooredNeeds = Math.max(MIN_SPLIT_PCT, Math.min(needs, 100 - MIN_SPLIT_PCT));
+  const flooredWants = Math.max(MIN_SPLIT_PCT, Math.min(wants, 100 - MIN_SPLIT_PCT - flooredNeeds));
+  return { needs: flooredNeeds, wants: flooredWants, savings: 100 - flooredNeeds - flooredWants };
+}
+
 export interface LocalFinancials {
   userName: string;
   income: number;
@@ -304,7 +325,11 @@ export function budgetPctForMonth(
   for (const h of history) {
     if (h.ym <= ym && (best === null || h.ym > best.ym)) best = h;
   }
-  return best ? { needs: best.needs, wants: best.wants, savings: best.savings } : fallback;
+  // Floored even on a history hit -- a month snapshotted while the
+  // pre-MIN_SPLIT_PCT bug was live could have recorded e.g. needs=0, and
+  // that would otherwise keep leaking into rollover/streak math for that
+  // month forever, regardless of the live split being fixed today.
+  return best ? floorCustomSplit(best.needs, best.wants) : fallback;
 }
 
 function storageKey(userId: string) { return `essa_data_${userId}`; }

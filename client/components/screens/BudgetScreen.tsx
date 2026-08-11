@@ -2,18 +2,10 @@
 
 import { useEffect } from "react";
 import type { LocalFinancials, BudgetRuleKey } from "../../lib/localData";
-import { BUDGET_RULES } from "../../lib/localData";
+import { BUDGET_RULES, MIN_SPLIT_PCT, floorCustomSplit } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money } from "./shared";
-
-// Below this, a bucket reads as "not really part of the budget" rather than
-// "a small share of it" -- and at exactly 0%, every downstream calculation
-// that divides by or targets a percentage of this bucket breaks (an
-// impossible "target ≤0%", a 100%-over Budget card, an inflated Savings
-// target absorbing the difference). Applied to both custom sliders so
-// neither can squeeze the other down that far.
-const MIN_SPLIT_PCT = 5;
 
 export default function BudgetScreen({
   financials,
@@ -37,16 +29,15 @@ export default function BudgetScreen({
   // place until the user happens to touch a slider themselves.
   useEffect(() => {
     if (ruleKey !== "custom") return;
-    const healedNeeds = Math.max(MIN_SPLIT_PCT, Math.min(customNeeds, 100 - MIN_SPLIT_PCT));
-    const healedWants = Math.max(MIN_SPLIT_PCT, Math.min(customWants, 100 - MIN_SPLIT_PCT - healedNeeds));
-    if (healedNeeds !== customNeeds || healedWants !== customWants) {
-      onChange({ ...financials, budgetCustomNeeds: healedNeeds, budgetCustomWants: healedWants });
+    const healed = floorCustomSplit(customNeeds, customWants);
+    if (healed.needs !== customNeeds || healed.wants !== customWants) {
+      onChange({ ...financials, budgetCustomNeeds: healed.needs, budgetCustomWants: healed.wants });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ruleKey, customNeeds, customWants]);
 
   const targetPct = ruleKey === "custom"
-    ? { needs: customNeeds, wants: customWants, savings: Math.max(0, 100 - customNeeds - customWants) }
+    ? floorCustomSplit(customNeeds, customWants)
     : { needs: BUDGET_RULES[ruleKey].needs, wants: BUDGET_RULES[ruleKey].wants, savings: BUDGET_RULES[ruleKey].savings };
 
   // dashData.effectiveBudgetTargets, not a local recompute -- this is the
