@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
-import { allCategories, categoryLabel, categoryIcon, monthlyEquivalent, toUSD as toUSDShared } from "../../lib/localData";
+import { CATEGORIES, allCategories, categoryLabel, categoryIcon, monthlyEquivalent, toUSD as toUSDShared } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money } from "./shared";
 import { Label, FocusInput, PrimaryBtn } from "../form/Primitives";
@@ -23,6 +23,9 @@ export default function CategoriesScreen({
   const [newIcon, setNewIcon] = useState("🏷️");
   const [newName, setNewName] = useState("");
   const [scope, setScope] = useState<"month" | "all">("all");
+  const [editingValue, setEditingValue] = useState<string | null>(null);
+  const [editIcon, setEditIcon] = useState("");
+  const [editName, setEditName] = useState("");
 
   const customCategories = financials.customCategories ?? [];
   const lbpRate = financials.lbpRate ?? 89500;
@@ -45,6 +48,27 @@ export default function CategoriesScreen({
   function deleteCategory(value: string) {
     if (!confirm("Delete this category? Transactions and recurring items already using it will keep showing its name, but you won't be able to pick it for new ones.")) return;
     onChange({ ...financials, customCategories: customCategories.filter((c) => c.value !== value) });
+  }
+
+  function startEdit(c: { value: string; label: string; icon: string }) {
+    setEditingValue(c.value);
+    setEditIcon(c.icon);
+    setEditName(c.label);
+  }
+
+  // Renaming only ever touches label/icon, never `value` -- value is the key
+  // every existing transaction/recurring item's `category` field points at,
+  // so changing it would orphan every past reference instead of relabeling them.
+  function saveEdit() {
+    const name = editName.trim();
+    if (!name || !editingValue) return;
+    onChange({
+      ...financials,
+      customCategories: customCategories.map((c) =>
+        c.value !== editingValue ? c : { ...c, label: name, icon: editIcon.trim() || "🏷️" }
+      ),
+    });
+    setEditingValue(null);
   }
 
   // Same categoryBreakdown aggregation TransactionsScreen's "By category"
@@ -106,23 +130,72 @@ export default function CategoriesScreen({
             <p className="text-sm" style={{ color: T.mute }}>No custom categories yet — add one above to track spending your own way, alongside the built-in ones.</p>
           ) : (
             <div className="space-y-2">
-              {customCategories.map((c) => (
-                <div
-                  key={c.value}
-                  className="flex items-center justify-between gap-2 rounded-xl px-3 py-2"
-                  style={{ background: T.panelSoft, border: `1px solid ${T.line}` }}
-                >
-                  <span className="text-sm" style={{ color: T.text }}>{c.icon} {c.label}</span>
-                  <button
-                    onClick={() => deleteCategory(c.value)}
-                    aria-label={`Delete ${c.label} category`}
-                    className="text-xs transition-all hover:opacity-70"
-                    style={{ color: T.coral }}
-                  >✕</button>
-                </div>
-              ))}
+              {customCategories.map((c) =>
+                editingValue === c.value ? (
+                  <div key={c.value} className="rounded-xl p-3 space-y-2.5" style={{ background: T.panelSoft, border: `1px solid ${T.jade}50` }}>
+                    <div className="flex gap-2">
+                      <div style={{ width: 68 }}>
+                        <Label htmlFor="edit-cat-icon">Emoji</Label>
+                        <FocusInput id="edit-cat-icon" value={editIcon} onChange={(e) => setEditIcon(e.target.value)} />
+                      </div>
+                      <div className="flex-1">
+                        <Label htmlFor="edit-cat-name">Name</Label>
+                        <FocusInput
+                          id="edit-cat-name" value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                          onKeyDown={(e) => e.key === "Enter" && saveEdit()}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={saveEdit} disabled={!editName.trim()} className="px-3 py-1.5 rounded-xl text-xs font-semibold hover:opacity-90 disabled:opacity-40" style={{ background: T.jade, color: T.ink }}>Save</button>
+                      <button onClick={() => setEditingValue(null)} className="px-3 py-1.5 rounded-xl text-xs hover:opacity-70" style={{ color: T.mute }}>Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    key={c.value}
+                    className="flex items-center justify-between gap-2 rounded-xl px-3 py-2 group"
+                    style={{ background: T.panelSoft, border: `1px solid ${T.line}` }}
+                  >
+                    <span className="text-sm" style={{ color: T.text }}>{c.icon} {c.label}</span>
+                    <div className="flex gap-1.5 opacity-70 md:opacity-0 md:group-hover:opacity-100 transition-opacity flex-shrink-0">
+                      <button
+                        onClick={() => startEdit(c)}
+                        aria-label={`Edit ${c.label} category`}
+                        className="text-[10px] px-1.5 py-0.5 rounded transition-all hover:opacity-80"
+                        style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
+                      >✎</button>
+                      <button
+                        onClick={() => deleteCategory(c.value)}
+                        aria-label={`Delete ${c.label} category`}
+                        className="text-xs px-1"
+                        style={{ color: T.coral }}
+                      >✕</button>
+                    </div>
+                  </div>
+                )
+              )}
             </div>
           )}
+        </div>
+
+        {/* Built-in categories -- always available, can't be edited/removed;
+            shown so it's obvious what already exists before adding a custom
+            one that might just duplicate it. */}
+        <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
+          <p className="text-[10px] uppercase tracking-widest font-semibold mb-3" style={{ color: T.mute }}>Built-in categories</p>
+          <div className="flex flex-wrap gap-2">
+            {CATEGORIES.map((c) => (
+              <span
+                key={c.value}
+                className="text-sm px-3 py-1.5 rounded-xl"
+                style={{ background: T.panelSoft, color: T.mute, border: `1px solid ${T.line}` }}
+              >
+                {c.icon} {c.label}
+              </span>
+            ))}
+          </div>
         </div>
 
         {/* Spend-by-category monitoring */}
