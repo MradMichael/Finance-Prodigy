@@ -42,8 +42,13 @@ export default function JourneyScreen({
   const nwChange = nwFirst !== null ? nwLatest - nwFirst : 0;
 
   // ── Savings-rate arc (reuses the same 6-month trend the Overview chart shows) ──
+  // rateOf uses savingsContrib specifically (money actually put into the
+  // Savings bucket), the exact same formula as month.savingsRatePct --
+  // NOT income-minus-total-spend, which is unallocated leftover cash and
+  // reads as ~0 for anyone who fully allocates their spend across Needs/
+  // Wants/Savings, understating a real, on-target saver.
   const activeMonths = dashData.sixMonthTrend.filter((m) => m.income > 0);
-  const rateOf = (m: { income: number; spend: number }) => Math.round(((m.income - m.spend) / m.income) * 100);
+  const rateOf = (m: { income: number; savingsContrib: number }) => Math.round((m.savingsContrib / m.income) * 100);
   const hasRateArc = activeMonths.length >= 2;
   const rateFirst = hasRateArc ? rateOf(activeMonths[0]) : null;
   const rateLatest = hasRateArc ? rateOf(activeMonths[activeMonths.length - 1]) : dashData.month.savingsRatePct > 0 ? Math.round(dashData.month.savingsRatePct) : null;
