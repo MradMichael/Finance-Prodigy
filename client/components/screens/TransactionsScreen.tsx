@@ -347,9 +347,9 @@ export default function TransactionsScreen({ financials }: { financials: LocalFi
         {/* Category trends */}
         {allTx.length > 0 && (
           <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
-            <div className="flex items-center justify-between gap-3 mb-4">
+            <div className="flex items-center flex-wrap justify-between gap-3 mb-4">
               <p className="text-xs uppercase tracking-widest" style={{ color: T.mute }}>Category trends</p>
-              <div className="flex gap-1.5">
+              <div className="flex gap-1.5 flex-wrap">
                 {(["monthly", "quarterly", "yearly"] as const).map((p) => (
                   <button
                     key={p}
