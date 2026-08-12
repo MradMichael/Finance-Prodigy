@@ -205,15 +205,28 @@ export function DateFieldDMY({
   }, [value]);
 
   function commit(d: string, m: string, y: string) {
-    if (d.length === 2 && m.length === 2 && y.length === 4) {
-      const dd = parseInt(d, 10), mm = parseInt(m, 10), yy = parseInt(y, 10);
-      // Day/month range alone lets through calendar-impossible dates like
-      // Feb 31 or Apr 31 — new Date(yy, mm, 0) gives the target month's
-      // actual last day (accounting for leap years), so this only commits
-      // dates that really exist.
-      const daysInMonth = mm >= 1 && mm <= 12 ? new Date(yy, mm, 0).getDate() : 0;
-      if (dd >= 1 && dd <= daysInMonth) onChange(`${y}-${m}-${d}`);
+    if (d.length !== 2 || m.length !== 2 || y.length !== 4) return;
+    const dd = parseInt(d, 10), mm = parseInt(m, 10), yy = parseInt(y, 10);
+    // Day/month range alone lets through calendar-impossible dates like
+    // Feb 31 or Apr 31 — new Date(yy, mm, 0) gives the target month's
+    // actual last day (accounting for leap years).
+    const daysInMonth = mm >= 1 && mm <= 12 ? new Date(yy, mm, 0).getDate() : 31;
+    if (dd > daysInMonth) {
+      // Same "clamp instead of silently reject" rule the day/month range
+      // clamping above already follows — used to just skip onChange here,
+      // leaving the day box showing e.g. "31" on an April date forever with
+      // no feedback that nothing had actually been saved.
+      const clamped = String(daysInMonth).padStart(2, "0");
+      setDay(clamped);
+      onChange(`${y}-${m}-${clamped}`);
+      return;
     }
+    if (dd < 1) {
+      setDay("01");
+      onChange(`${y}-${m}-01`);
+      return;
+    }
+    onChange(`${y}-${m}-${d}`);
   }
 
   // Auto-advance once a segment is full, or as soon as no valid second

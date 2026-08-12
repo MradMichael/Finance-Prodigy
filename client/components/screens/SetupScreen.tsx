@@ -1,7 +1,7 @@
 "use client";
 
 import type { LocalFinancials, BudgetRuleKey } from "../../lib/localData";
-import { BUDGET_RULES } from "../../lib/localData";
+import { BUDGET_RULES, MIN_SPLIT_PCT, floorCustomSplit } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF } from "./shared";
@@ -66,8 +66,9 @@ export default function SetupScreen({
           <p className="text-xs uppercase tracking-widest font-semibold" style={{ color: T.mute }}>Profile</p>
 
           <div>
-            <label className="block text-xs mb-1.5" style={{ color: T.mute }}>Your name</label>
+            <label htmlFor="setup-name" className="block text-xs mb-1.5" style={{ color: T.mute }}>Your name</label>
             <input
+              id="setup-name"
               className="w-full rounded-xl px-4 py-2.5 text-sm"
               style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
               value={financials.userName}
@@ -77,8 +78,9 @@ export default function SetupScreen({
           </div>
 
           <div>
-            <label className="block text-xs mb-1.5" style={{ color: T.mute }}>Monthly income (USD)</label>
+            <label htmlFor="setup-income" className="block text-xs mb-1.5" style={{ color: T.mute }}>Monthly income (USD)</label>
             <input
+              id="setup-income"
               className="w-full rounded-xl px-4 py-2.5 text-sm tabular-nums"
               style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
               type="number" min="0" step="100"
@@ -93,8 +95,9 @@ export default function SetupScreen({
         <div className="rounded-2xl p-6 space-y-4" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
           <p className="text-xs uppercase tracking-widest font-semibold" style={{ color: T.mute }}>Currency</p>
           <div>
-            <label className="block text-xs mb-1.5" style={{ color: T.mute }}>LBP / USD exchange rate</label>
+            <label htmlFor="setup-lbp-rate" className="block text-xs mb-1.5" style={{ color: T.mute }}>LBP / USD exchange rate</label>
             <input
+              id="setup-lbp-rate"
               className="w-full rounded-xl px-4 py-2.5 text-sm tabular-nums"
               style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
               type="number" min="0" step="500"
@@ -129,18 +132,32 @@ export default function SetupScreen({
           <p className="text-xs uppercase tracking-widest font-semibold" style={{ color: T.mute }}>Safety net</p>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs mb-1.5" style={{ color: T.mute }}>Target (months of income)</label>
+              <label htmlFor="ef-target-months" className="block text-xs mb-1.5" style={{ color: T.mute }}>Target (months of income)</label>
               <input
+                id="ef-target-months"
                 className="w-full rounded-xl px-4 py-2.5 text-sm tabular-nums"
                 style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
                 type="number" min="1" max="24"
                 value={financials.emergencyFundTargetMonths}
-                onChange={(e) => update({ emergencyFundTargetMonths: Math.min(24, Math.max(1, parseInt(e.target.value) || 6)) })}
+                onChange={(e) => {
+                  // Same rule as the LBP-rate field above: only commit a
+                  // real, in-range number. The old `parseInt(...) || 6`
+                  // snapped back to 6 on every keystroke of clearing the
+                  // field to retype, and typing digits before an existing
+                  // value (instead of clearing it first) could silently
+                  // clamp to 24 instead of the intended number, with no way
+                  // to tell the commit didn't match what was typed.
+                  const parsed = parseInt(e.target.value, 10);
+                  if (!isNaN(parsed) && parsed >= 1 && parsed <= 24) {
+                    update({ emergencyFundTargetMonths: parsed });
+                  }
+                }}
               />
             </div>
             <div>
-              <label className="block text-xs mb-1.5" style={{ color: T.mute }}>Current balance ($)</label>
+              <label htmlFor="ef-balance" className="block text-xs mb-1.5" style={{ color: T.mute }}>Current balance ($)</label>
               <input
+                id="ef-balance"
                 className="w-full rounded-xl px-4 py-2.5 text-sm tabular-nums"
                 style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
                 type="number" min="0" step="100"
@@ -207,10 +224,18 @@ export default function SetupScreen({
             <div className="rounded-xl p-4 space-y-4" style={{ background: T.ink, border: `1px solid ${T.line}` }}>
               <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.jade }}>Custom percentages</p>
               {(["Needs", "Wants"] as const).map((label) => {
+                // A second, independent copy of BudgetScreen.tsx's custom
+                // sliders -- must floor the same way (MIN_SPLIT_PCT) or a
+                // user editing the split from Setup instead of Budget can
+                // still squeeze Needs/Wants to 0%, the exact bug fixed
+                // elsewhere this session but missed here since this is a
+                // separate implementation, not a shared component.
                 const key   = label === "Needs" ? "budgetCustomNeeds" : "budgetCustomWants";
                 const val   = label === "Needs" ? (financials.budgetCustomNeeds ?? 50) : (financials.budgetCustomWants ?? 30);
                 const other = label === "Needs" ? (financials.budgetCustomWants ?? 30) : (financials.budgetCustomNeeds ?? 50);
-                const maxVal = Math.max(0, 100 - other);
+                // Reserves MIN_SPLIT_PCT for Savings too -- see the matching
+                // comment in BudgetScreen.tsx's own copy of this slider.
+                const maxVal = Math.max(MIN_SPLIT_PCT, 100 - MIN_SPLIT_PCT - other);
                 return (
                   <div key={label}>
                     <div className="flex justify-between text-xs mb-2">
@@ -218,9 +243,10 @@ export default function SetupScreen({
                       <span className="font-semibold" style={{ color: T.jade }}>{val}%</span>
                     </div>
                     <input
-                      type="range" min={0} max={maxVal} step={5} value={Math.min(val, maxVal)}
+                      type="range" min={MIN_SPLIT_PCT} max={maxVal} step={5} value={Math.min(Math.max(val, MIN_SPLIT_PCT), maxVal)}
                       onChange={(e) => update({ [key]: parseInt(e.target.value) })}
                       className="w-full" style={{ accentColor: T.jade }}
+                      aria-label={`Custom ${label} percentage`}
                     />
                   </div>
                 );
@@ -228,7 +254,7 @@ export default function SetupScreen({
               <div className="flex justify-between items-center pt-1" style={{ borderTop: `1px solid ${T.line}` }}>
                 <span className="text-xs" style={{ color: T.mute }}>Savings (auto-calculated)</span>
                 <span className="text-sm font-semibold tabular-nums" style={{ color: T.jade }}>
-                  {Math.max(0, 100 - (financials.budgetCustomNeeds ?? 50) - (financials.budgetCustomWants ?? 30))}%
+                  {floorCustomSplit(financials.budgetCustomNeeds ?? 50, financials.budgetCustomWants ?? 30).savings}%
                 </span>
               </div>
             </div>

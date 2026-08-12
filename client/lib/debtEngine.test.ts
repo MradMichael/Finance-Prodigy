@@ -16,6 +16,15 @@ describe("simulateDebtPayoff", () => {
     expect(result.months).toBe(-1);
     expect(result.debtFreeDate).toBeNull();
     expect(result.warning).toBeTruthy();
+    expect(result.warning).toMatch(/grow/i);
+  });
+
+  it("a 0%-APR debt with $0 committed is infeasible but its warning doesn't claim balances would grow (there's no interest to outpace)", () => {
+    const debts: DebtInput[] = [{ id: "d1", name: "Interest-free loan", balance: 500, aprPct: 0, minimumPayment: 0 }];
+    const result = simulateDebtPayoff(debts, 0, "AVALANCHE");
+    expect(result.feasible).toBe(false);
+    expect(result.warning).toBeTruthy();
+    expect(result.warning).not.toMatch(/would grow/i);
   });
 
   it("monthly commitment is the sum of minimums plus extra, regardless of strategy", () => {

@@ -1,7 +1,7 @@
 "use client";
 
 import type { LocalFinancials } from "../../lib/localData";
-import { monthlyEquivalent, FREQ_LABELS, toUSD as toUSDShared, categoryLabel, categoryIcon } from "../../lib/localData";
+import { nominalMonthlyEquivalent, isPaidThisCycle, FREQ_LABELS, toUSD as toUSDShared, categoryLabel, categoryIcon } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money } from "./shared";
 
@@ -13,13 +13,19 @@ export default function RecurringScreen({ financials }: { financials: LocalFinan
   const BC   = { NEEDS: T.sky, WANTS: T.brass, SAVINGS: T.jade } as const;
   const BL   = { NEEDS: "Needs", WANTS: "Wants", SAVINGS: "Savings" } as const;
 
-  const totalMonthly = financials.recurring.reduce((s, r) => s + toUSD(monthlyEquivalent(r, now), r.currency), 0);
+  // "Committed monthly" is a stable, informational figure -- what you're on
+  // the hook for -- so it deliberately uses the nominal (payment-status-
+  // independent) cost, not the paid-this-cycle-suppressed one budget/spend
+  // math elsewhere uses. Otherwise this number (and every row's price below)
+  // dips to $0 the moment a bill gets logged as paid, making an active
+  // subscription look cancelled until next cycle.
+  const totalMonthly = financials.recurring.reduce((s, r) => s + toUSD(nominalMonthlyEquivalent(r, now), r.currency), 0);
 
   const buckets = (["NEEDS","WANTS","SAVINGS"] as const).map((b) => ({
     bucket: b,
     items: financials.recurring.filter((r) => r.bucket === b),
     total: financials.recurring.filter((r) => r.bucket === b)
-      .reduce((s, r) => s + toUSD(monthlyEquivalent(r, now), r.currency), 0),
+      .reduce((s, r) => s + toUSD(nominalMonthlyEquivalent(r, now), r.currency), 0),
   }));
 
   return (
@@ -51,7 +57,8 @@ export default function RecurringScreen({ financials }: { financials: LocalFinan
                 </div>
                 <div className="rounded-2xl overflow-hidden" style={{ border: `1px solid ${T.line}` }}>
                   {items.map((r, i) => {
-                    const monthly = toUSD(monthlyEquivalent(r, now), r.currency);
+                    const monthly = toUSD(nominalMonthlyEquivalent(r, now), r.currency);
+                    const paidThisCycle = isPaidThisCycle(r, now);
                     return (
                       <div
                         key={r.id}
@@ -60,7 +67,12 @@ export default function RecurringScreen({ financials }: { financials: LocalFinan
                       >
                         <span className="text-xl">{r.emoji}</span>
                         <div className="flex-1">
-                          <p className="text-sm" style={{ color: T.text }}>{r.name}</p>
+                          <p className="text-sm flex items-center gap-1.5" style={{ color: T.text }}>
+                            {r.name}
+                            {paidThisCycle && (
+                              <span className="text-[9px] uppercase tracking-wider" style={{ color: T.jade }}>✓ paid</span>
+                            )}
+                          </p>
                           <p className="text-[10px]" style={{ color: T.mute }}>
                             {r.currency === "LBP" ? `LBP ${r.amount.toLocaleString()}` : money(r.amount, 2)} · {FREQ_LABELS[r.frequency]}
                             {r.category && ` · ${categoryIcon(r.category, financials.customCategories)} ${categoryLabel(r.category, financials.customCategories)}`}

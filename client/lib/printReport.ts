@@ -1,5 +1,5 @@
 import type { LocalFinancials } from "./localData";
-import { BUDGET_RULES, monthlyEquivalent, toUSD as toUSDShared, categoryLabel } from "./localData";
+import { BUDGET_RULES, nominalMonthlyEquivalent, isPaidThisCycle, toUSD as toUSDShared, categoryLabel } from "./localData";
 import type { computeDashboard } from "./computeDashboard";
 
 type DashboardPayload = ReturnType<typeof computeDashboard>;
@@ -50,7 +50,7 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
 
   const goalRows = dash.goals.map((g) => `
     <tr>
-      <td>${escapeHtml(g.emoji ?? "")} ${escapeHtml(g.name)}</td>
+      <td>${escapeHtml(g.emoji ?? "")} ${escapeHtml(g.name)}${g.paused ? ' <span class="tag">paused</span>' : ""}</td>
       <td class="num">${money(g.currentAmount)}</td>
       <td class="num">${money(g.targetAmount)}</td>
       <td class="num">${g.projection.pctComplete}%</td>
@@ -59,18 +59,22 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
 
   const debtRows = data.debts.map((d) => `
     <tr>
-      <td>${escapeHtml(d.name)}</td>
+      <td>${escapeHtml(d.name)}${d.paidOffAt ? ' <span class="tag">paid off</span>' : ""}</td>
       <td class="num">${money(d.balance)}</td>
       <td class="num">${d.apr}%</td>
       <td class="num">${money(d.minPayment)}/mo</td>
     </tr>`).join("");
 
   const FREQ_LABEL = { weekly: "Weekly", biweekly: "Every 2 weeks", monthly: "Monthly", every2months: "Every 2 months", quarterly: "Quarterly", biannually: "Every 6 months", yearly: "Yearly" } as const;
-  const activeRecurring = (data.recurring ?? []).filter((r) => toUSD(monthlyEquivalent(r), r.currency) > 0);
-  const recurringMonthlyTotal = activeRecurring.reduce((s, r) => s + toUSD(monthlyEquivalent(r), r.currency), 0);
+  // Nominal (payment-status-independent) cost -- a just-paid bill is still a
+  // real recurring obligation and belongs in this durable record; suppressing
+  // it here (matching monthlyEquivalent's actual-spend-only semantics) used
+  // to make it vanish from the report entirely the moment it got logged paid.
+  const activeRecurring = (data.recurring ?? []).filter((r) => toUSD(nominalMonthlyEquivalent(r), r.currency) > 0);
+  const recurringMonthlyTotal = activeRecurring.reduce((s, r) => s + toUSD(nominalMonthlyEquivalent(r), r.currency), 0);
   const recurringRows = activeRecurring.map((r) => `
     <tr>
-      <td>${escapeHtml(r.emoji ?? "")} ${escapeHtml(r.name)}</td>
+      <td>${escapeHtml(r.emoji ?? "")} ${escapeHtml(r.name)}${isPaidThisCycle(r) ? ' <span class="tag">paid</span>' : ""}</td>
       <td>${BL[r.bucket]}</td>
       <td>${r.category ? escapeHtml(categoryLabel(r.category, data.customCategories)) : "—"}</td>
       <td>${FREQ_LABEL[r.frequency]}</td>
@@ -97,6 +101,7 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
   th { color: #5a6b64; font-weight: normal; text-transform: uppercase; font-size: 10px; letter-spacing: 0.05em; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   .footer { margin-top: 32px; font-size: 10px; color: #8a958f; }
+  .tag { font-size: 9px; text-transform: uppercase; letter-spacing: 0.05em; color: #8a958f; border: 1px solid #d8ddda; border-radius: 3px; padding: 1px 4px; margin-left: 4px; }
   @media print { body { padding: 0; } }
 </style>
 </head>

@@ -77,9 +77,15 @@ function runSimulation(
 
   const firstInterest = live.reduce((s, d) => s + (d.balance * d.aprPct) / 1200, 0);
   if (monthlyCommitment <= firstInterest) {
+    // firstInterest is only ever 0 here when every remaining debt is 0% APR
+    // -- there's no interest to outpace, so "balances would grow" is simply
+    // false; a $0 commitment just means the balance never moves either way.
+    const warning = firstInterest > 0
+      ? "Current payments don't cover monthly interest. Balances would grow."
+      : "Current payments are $0, so balances won't go down on their own (though at 0% interest, they won't grow either).";
     return {
       ...base, feasible: false, months: -1, debtFreeDate: null,
-      warning: "Current payments don't cover monthly interest. Balances would grow.",
+      warning,
     };
   }
 

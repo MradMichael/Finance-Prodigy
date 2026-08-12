@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
-  monthlyEquivalent, nextOccurrence, recurringPaidSoFar, fmtDate, valueForMonth,
+  monthlyEquivalent, nominalMonthlyEquivalent, isRecurringActive, isPaidThisCycle,
+  nextOccurrence, recurringPaidSoFar, fmtDate, valueForMonth,
   loadData, saveData, DEFAULT_DATA, type StoredRecurring,
   allCategories, categoryLabel, categoryIcon, CATEGORIES,
 } from "./localData";
@@ -45,6 +46,41 @@ describe("monthlyEquivalent", () => {
     const r = makeRecurring({ amount: 100, totalAmount: 300, startDate: "2026-01-01" });
     expect(monthlyEquivalent(r, new Date(2026, 1, 15))).toBe(100); // Feb, still active
     expect(monthlyEquivalent(r, new Date(2027, 0, 1))).toBe(0); // a year later, exhausted
+  });
+
+  it("is 0 for the cycle marked lastPaidCycle, distinct from being ended", () => {
+    // Regression guard: monthlyEquivalent returning 0 for BOTH "ended" and
+    // "paid this cycle" used to make InputPanel/RecurringScreen/printReport
+    // each independently mistake a just-paid, still-active item for a
+    // cancelled one. isRecurringActive/isPaidThisCycle exist precisely so
+    // callers can tell the two apart; monthlyEquivalent's own 0-return
+    // behavior here must stay exactly as before (no regression risk to its
+    // ~23 real call sites).
+    const r = makeRecurring({ amount: 50, startDate: "2026-01-01", lastPaidCycle: "2026-07" });
+    const asOf = new Date(2026, 6, 15); // July 15 -- matches lastPaidCycle
+    expect(monthlyEquivalent(r, asOf)).toBe(0);
+    expect(isRecurringActive(r, asOf)).toBe(true); // still very much active
+    expect(isPaidThisCycle(r, asOf)).toBe(true);
+    // A different month is unaffected -- both the suppression and the "is it active" question.
+    const nextMonth = new Date(2026, 7, 15);
+    expect(monthlyEquivalent(r, nextMonth)).toBe(50);
+    expect(isPaidThisCycle(r, nextMonth)).toBe(false);
+  });
+});
+
+describe("nominalMonthlyEquivalent", () => {
+  it("ignores lastPaidCycle suppression -- stays the item's stable 'what this costs' figure even for a just-paid cycle", () => {
+    const r = makeRecurring({ amount: 50, startDate: "2026-01-01", lastPaidCycle: "2026-07" });
+    const asOf = new Date(2026, 6, 15);
+    expect(monthlyEquivalent(r, asOf)).toBe(0); // suppressed, for spend/budget math
+    expect(nominalMonthlyEquivalent(r, asOf)).toBe(50); // NOT suppressed, for display
+  });
+
+  it("is still 0 for a genuinely ended/not-yet-started item -- suppression is the only thing it ignores", () => {
+    const r = makeRecurring({ startDate: "2026-06-01" });
+    expect(nominalMonthlyEquivalent(r, new Date(2026, 4, 15))).toBe(0); // before start
+    const ended = makeRecurring({ endDate: "2026-06-30" });
+    expect(nominalMonthlyEquivalent(ended, new Date(2026, 6, 1))).toBe(0); // after end
   });
 });
 

@@ -184,6 +184,7 @@ export default function ProjectionsScreen({
                   onChange={(e) => setTestAmount(Math.max(0, Math.round(Number(e.target.value) || 0)))}
                   className="w-24 rounded-lg px-2 py-1 text-sm font-semibold tabular-nums text-right"
                   style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.brass }}
+                  aria-label="Monthly amount to plan with"
                 />
               </div>
             </div>
@@ -198,6 +199,7 @@ export default function ProjectionsScreen({
               onChange={(e) => setTestAmount(Math.max(0, Math.round(Number(e.target.value) / 10) * 10))}
               className="w-full"
               style={{ accentColor: T.brass }}
+              aria-label="Monthly amount to plan with (slider)"
             />
             <div className="flex flex-wrap gap-2 mt-2">
               {[
@@ -326,7 +328,21 @@ export default function ProjectionsScreen({
           ) : (
             <>
               <div className="grid grid-cols-2 gap-4 pb-4" style={{ borderBottom: `1px solid ${T.line}` }}>
-                <PaceRow label="At required pace (combined)" months={Math.max(0, ...openGoals.map((g) => g.projection.monthsRemaining))} dateDisplay={null} color={T.text} T={T} />
+                <PaceRow
+                  label="At required pace (combined)"
+                  months={Math.max(0, ...openGoals.map((g) => g.projection.monthsRemaining))}
+                  // The combined timeline is bounded by whichever open goal's
+                  // own deadline is furthest out -- that goal's own
+                  // targetDateDisplay IS the real calendar date this row's
+                  // month count refers to. Was hardcoded null, so this row
+                  // rendered an empty headline for every user with any open
+                  // goal (i.e. almost always).
+                  dateDisplay={openGoals.reduce<typeof openGoals[number] | null>(
+                    (furthest, g) => !furthest || g.projection.monthsRemaining > furthest.projection.monthsRemaining ? g : furthest,
+                    null,
+                  )?.projection.targetDateDisplay ?? null}
+                  color={T.text} T={T}
+                />
                 <PaceRow label="In your plan (combined)" months={stages.goals.months} dateDisplay={stages.goals.dateDisplay} color={T.jade} T={T} />
               </div>
               <div className="space-y-2 mt-3">

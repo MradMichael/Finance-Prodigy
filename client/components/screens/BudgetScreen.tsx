@@ -160,7 +160,14 @@ export default function BudgetScreen({
                 const field  = label === "Needs" ? "budgetCustomNeeds" as const : "budgetCustomWants" as const;
                 const val    = label === "Needs" ? customNeeds : customWants;
                 const other  = label === "Needs" ? customWants : customNeeds;
-                const maxVal = Math.max(MIN_SPLIT_PCT, 100 - other);
+                // Reserves MIN_SPLIT_PCT for Savings too, not just this
+                // slider's own floor -- otherwise Needs+Wants can sum to
+                // 100 here (Savings visually at 0%) while floorCustomSplit
+                // (what computeDashboard.ts actually uses) squeezes Wants
+                // back down to leave Savings its own 5% floor, so the
+                // slider would show a different Wants% than the rest of the
+                // app is actually budgeting against.
+                const maxVal = Math.max(MIN_SPLIT_PCT, 100 - MIN_SPLIT_PCT - other);
                 return (
                   <div key={label}>
                     <div className="flex justify-between text-xs mb-1.5">

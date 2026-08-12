@@ -7,7 +7,7 @@ import type {
 } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, monthlyEquivalent, recurringPaidSoFar, toUSD as toUSDShared, allCategories, categoryLabel, categoryIcon } from "../lib/localData";
+import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, monthlyEquivalent, nominalMonthlyEquivalent, isRecurringActive, isPaidThisCycle, recurringPaidSoFar, toUSD as toUSDShared, allCategories, categoryLabel, categoryIcon } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY } from "./form/Primitives";
@@ -1335,17 +1335,23 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
           {(() => {
             const recs = financials.recurring ?? [];
             const now  = new Date();
-            const totalMonthly = recs.reduce((s, r) => s + monthlyEquivalent(r, now), 0);
+            // Nominal (payment-status-independent) figures -- this section is
+            // "what am I committed to," which shouldn't dip to $0 for a bill
+            // that's simply already been paid this cycle. Actual spend/budget
+            // totals elsewhere keep using monthlyEquivalent, which correctly
+            // suppresses a paid cycle to avoid double-counting real spend.
+            const totalMonthly = recs.reduce((s, r) => s + nominalMonthlyEquivalent(r, now), 0);
             return (
               <>
                 {recs.length > 0 && (
                   <div className="space-y-2 mb-1">
                     {recs.map((r) => {
-                      const mo     = monthlyEquivalent(r, now);
+                      const mo     = nominalMonthlyEquivalent(r, now);
                       const b      = BUCKETS.find((b) => b.value === r.bucket)!;
                       const cur    = r.currency ?? "USD";
                       const sym    = cur === "LBP" ? "L£" : "$";
-                      const ended  = mo === 0 && new Date(r.startDate) < now;
+                      const ended  = !isRecurringActive(r, now);
+                      const paidThisCycle = isPaidThisCycle(r, now);
                       const paid   = r.totalAmount ? recurringPaidSoFar(r, now) : null;
                       const pct    = paid != null && r.totalAmount ? Math.min(100, (paid / r.totalAmount) * 100) : null;
                       const isAddingExtra = extraRecId === r.id;
@@ -1451,6 +1457,7 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
                                 <p className="text-sm" style={{ color: T.text }}>
                                   {r.emoji} {r.name}
                                   {ended && <span className="ml-1.5 text-[9px] uppercase tracking-wider" style={{ color: T.mute }}>ended</span>}
+                                  {!ended && paidThisCycle && <span className="ml-1.5 text-[9px] uppercase tracking-wider" style={{ color: T.jade }}>✓ paid</span>}
                                   <span className="ml-1.5 text-[9px] uppercase tracking-wider px-1 rounded" style={{ background: cur === "LBP" ? T.brass + "22" : T.jade + "15", color: cur === "LBP" ? T.brass : T.jade }}>{cur}</span>
                                 </p>
                                 <p className="text-[10px] mt-0.5 tabular-nums" style={{ color: T.mute }}>

@@ -402,33 +402,51 @@ function parseLocalDate(iso: string): Date {
   return new Date(`${iso}T00:00:00`);
 }
 
-/** Monthly cost of a recurring item as of a given date, 0 if not yet started or already ended. */
-export function monthlyEquivalent(r: StoredRecurring, asOf: Date = new Date()): number {
+/**
+ * Whether this recurring item is currently active (started, not past its end
+ * date, not exhausted by a totalAmount cap) as of the given date --
+ * independent of whether THIS cycle's automatic accrual happens to be
+ * suppressed because it was already logged as a real transaction (see
+ * isPaidThisCycle). Conflating the two used to make a just-paid, still-very-
+ * much-active subscription read as "ended" everywhere monthlyEquivalent hit
+ * 0 for either reason (InputPanel's badge, RecurringScreen's totals,
+ * printReport's PDF row) -- callers that care about "is this item over"
+ * should use this, not `monthlyEquivalent(...) === 0`.
+ */
+export function isRecurringActive(r: StoredRecurring, asOf: Date = new Date()): boolean {
   const start = parseLocalDate(r.startDate);
-  if (asOf < start) return 0;
+  if (asOf < start) return false;
 
-  // A cycle confirmed paid via a real logged transaction (lastPaidCycle)
-  // stops accruing here too -- otherwise it would count twice: once as the
-  // real transaction, once as this function's own automatic pro-rated
-  // estimate for the same calendar month. Centralized here rather than at
-  // each of this function's many call sites, so every one of them gets the
-  // guard automatically.
-  if (r.lastPaidCycle) {
-    const asOfYm = `${asOf.getFullYear()}-${String(asOf.getMonth() + 1).padStart(2, "0")}`;
-    if (asOfYm === r.lastPaidCycle) return 0;
-  }
-
-  // End by total amount: stop once cumulative payments have hit the limit
+  // Exhausted by total amount: cumulative payments have hit the cap
   if (r.totalAmount != null && r.totalAmount > 0 && r.amount > 0) {
     const totalPeriods = r.totalAmount / r.amount;
     const totalMs = (totalPeriods / FREQ_MONTHLY[r.frequency]) * 30.4375 * 24 * 60 * 60 * 1000;
-    if (asOf.getTime() > start.getTime() + totalMs) return 0;
+    if (asOf.getTime() > start.getTime() + totalMs) return false;
   }
 
   const end = r.endDate ? parseLocalDate(r.endDate) : null;
-  if (end && asOf > end) return 0;
+  if (end && asOf > end) return false;
 
+  return true;
+}
+
+/** Whether this cycle's automatic pro-rated accrual is suppressed because a real transaction already covered it (lastPaidCycle) -- see monthlyEquivalent/isRecurringActive. */
+export function isPaidThisCycle(r: StoredRecurring, asOf: Date = new Date()): boolean {
+  if (!r.lastPaidCycle) return false;
+  const asOfYm = `${asOf.getFullYear()}-${String(asOf.getMonth() + 1).padStart(2, "0")}`;
+  return asOfYm === r.lastPaidCycle;
+}
+
+/** Monthly cost of a recurring item as of a given date, 0 if not currently active (isRecurringActive) OR if this cycle's accrual is already covered by a logged transaction (isPaidThisCycle) -- used for actual spend/budget math, where double-counting a paid cycle would be wrong. Displays that want a stable "what this costs" figure regardless of this cycle's payment status should use nominalMonthlyEquivalent instead. */
+export function monthlyEquivalent(r: StoredRecurring, asOf: Date = new Date()): number {
+  if (!isRecurringActive(r, asOf)) return 0;
+  if (isPaidThisCycle(r, asOf)) return 0;
   return r.amount * FREQ_MONTHLY[r.frequency];
+}
+
+/** Same as monthlyEquivalent but ignores this-cycle payment suppression -- a recurring item's stable "what this costs" figure for display (RecurringScreen's totals, InputPanel's list, printReport's PDF), independent of whether this specific cycle has already been logged as a real transaction. Never use this for spend/budget totals -- see monthlyEquivalent. */
+export function nominalMonthlyEquivalent(r: StoredRecurring, asOf: Date = new Date()): number {
+  return isRecurringActive(r, asOf) ? r.amount * FREQ_MONTHLY[r.frequency] : 0;
 }
 
 const DAY_FREQ_LENGTH: Partial<Record<RecurringFrequency, number>> = { weekly: 7, biweekly: 14 };
