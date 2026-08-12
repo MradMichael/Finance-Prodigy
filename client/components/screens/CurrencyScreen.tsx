@@ -53,7 +53,7 @@ export default function CurrencyScreen({ financials }: { financials: LocalFinanc
 
         {/* Spend by currency */}
         <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
-          <p className="text-xs uppercase tracking-widest mb-4" style={{ color: T.mute }}>This month's spending, by currency</p>
+          <p className="text-xs uppercase tracking-widest mb-4" style={{ color: T.mute }}>This month&apos;s spending, by currency</p>
           {spendTotalUSD === 0 ? (
             <p className="text-sm" style={{ color: T.mute }}>No spending logged yet this month.</p>
           ) : (
@@ -88,7 +88,7 @@ export default function CurrencyScreen({ financials }: { financials: LocalFinanc
         <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
           <p className="text-xs uppercase tracking-widest mb-1" style={{ color: T.mute }}>Cash & assets, by currency</p>
           <p className="text-[11px] mb-4" style={{ color: T.mute }}>
-            Tracked balances and assets only — goals, your safety net, and debts are always USD in ESSA, so they're not currency-exposed and aren't counted here.
+            Tracked balances and assets only — goals, your safety net, and debts are always USD in ESSA, so they&apos;re not currency-exposed and aren&apos;t counted here.
           </p>
           {holdingsTotalUSD === 0 ? (
             <p className="text-sm" style={{ color: T.mute }}>No LBP or USD assets/balances tracked yet.</p>
@@ -139,8 +139,8 @@ export default function CurrencyScreen({ financials }: { financials: LocalFinanc
               aria-label="Hypothetical LBP exchange rate"
             />
             <div className="flex justify-between text-[10px] mt-1 mb-4" style={{ color: T.mute }}>
-              <span>today's rate</span>
-              <span>3× today's rate</span>
+              <span>today&apos;s rate</span>
+              <span>3× today&apos;s rate</span>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-xl px-4 py-3" style={{ background: T.ink }}>
