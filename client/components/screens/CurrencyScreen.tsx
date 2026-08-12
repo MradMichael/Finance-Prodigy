@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
-import { monthlyEquivalent, toUSD as toUSDShared } from "../../lib/localData";
+import { monthlyEquivalent, toUSD as toUSDShared, todayISO } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money } from "./shared";
 import Donut from "../charts/Donut";
@@ -16,7 +16,7 @@ export default function CurrencyScreen({ financials }: { financials: LocalFinanc
   // ── Spend by currency: this month's transactions + active recurring,
   // native currency (not converted) so this actually measures which
   // currency money is changing hands in, not just USD-equivalent totals. ──
-  const currentYm = new Date().toISOString().slice(0, 7);
+  const currentYm = todayISO().slice(0, 7);
   const monthTx = financials.transactions.filter((t) => t.date.startsWith(currentYm) && t.bucket !== "INCOME");
   const spendUSD = monthTx.filter((t) => (t.currency ?? "USD") === "USD").reduce((s, t) => s + t.amount, 0)
     + (financials.recurring ?? []).filter((r) => (r.currency ?? "USD") === "USD").reduce((s, r) => s + monthlyEquivalent(r), 0);

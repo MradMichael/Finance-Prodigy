@@ -157,7 +157,6 @@ export default function BudgetScreen({
             <div className="rounded-xl p-4 space-y-3" style={{ background: T.ink, border: `1px solid ${T.line}` }}>
               <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.jade }}>Custom percentages</p>
               {(["Needs", "Wants"] as const).map((label) => {
-                const field  = label === "Needs" ? "budgetCustomNeeds" as const : "budgetCustomWants" as const;
                 const val    = label === "Needs" ? customNeeds : customWants;
                 const other  = label === "Needs" ? customWants : customNeeds;
                 // Reserves MIN_SPLIT_PCT for Savings too, not just this
@@ -177,8 +176,20 @@ export default function BudgetScreen({
                     <input
                       type="range" min={MIN_SPLIT_PCT} max={maxVal} step={5}
                       value={Math.min(Math.max(val, MIN_SPLIT_PCT), maxVal)}
-                      onChange={(e) => onChange({ ...financials, [field]: parseInt(e.target.value) })}
+                      onChange={(e) => {
+                        // Persist the floored PAIR, not just this field --
+                        // otherwise the other slider's stored value can go
+                        // stale (its handle clamps for display via maxVal,
+                        // but its {val}% label keeps showing the old,
+                        // now-out-of-range number until it's dragged too).
+                        const raw = parseInt(e.target.value);
+                        const floored = label === "Needs"
+                          ? floorCustomSplit(raw, customWants)
+                          : floorCustomSplit(customNeeds, raw);
+                        onChange({ ...financials, budgetCustomNeeds: floored.needs, budgetCustomWants: floored.wants });
+                      }}
                       className="w-full" style={{ accentColor: T.jade }}
+                      aria-label={`Custom ${label} percentage`}
                     />
                     {val < 10 && (
                       <p className="text-[10px] mt-1" style={{ color: T.brass }}>
@@ -191,7 +202,7 @@ export default function BudgetScreen({
               <div className="flex justify-between text-xs pt-1" style={{ borderTop: `1px solid ${T.line}` }}>
                 <span style={{ color: T.mute }}>Savings (auto)</span>
                 <span style={{ color: T.jade }}>
-                  {Math.max(0, 100 - customNeeds - customWants)}%
+                  {targetPct.savings}%
                 </span>
               </div>
             </div>

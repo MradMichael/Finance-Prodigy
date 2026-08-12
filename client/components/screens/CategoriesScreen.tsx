@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, CategoryRule } from "../../lib/localData";
-import { CATEGORIES, allCategories, categoryLabel, categoryIcon, matchCategoryRule, monthlyEquivalent, toUSD as toUSDShared, uid } from "../../lib/localData";
+import { CATEGORIES, allCategories, categoryLabel, categoryIcon, matchCategoryRule, monthlyEquivalent, toUSD as toUSDShared, uid, todayISO } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money } from "./shared";
 import { Label, FocusInput, PrimaryBtn } from "../form/Primitives";
@@ -115,7 +115,7 @@ export default function CategoriesScreen({
   // donut uses: INCOME excluded, recurring blended in only for "this month"
   // (summing a recurring item across all of history is a different, fuzzier
   // question than "what did this month cost").
-  const currentYm = new Date().toISOString().slice(0, 7);
+  const currentYm = todayISO().slice(0, 7);
   const txInScope = scope === "month" ? financials.transactions.filter((t) => t.date.startsWith(currentYm)) : financials.transactions;
   const totals = new Map<string, number>();
   const bump = (key: string, amt: number) => totals.set(key, (totals.get(key) ?? 0) + amt);

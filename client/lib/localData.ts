@@ -406,8 +406,18 @@ export function uid(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
+// Local calendar date, not UTC -- a bare new Date().toISOString() reads the
+// UTC date, which disagrees with the user's own calendar for several hours
+// out of every day (the exact window depends on their UTC offset). That
+// mismatch is invisible most of the month but flips which calendar month
+// "today" resolves to right around a month boundary -- e.g. a recurring
+// item due August 1st reading as still active/due in July, or a
+// just-logged transaction filed under the wrong month's "this month" list.
+// computeDashboard.ts's own monthKey already uses local date parts; this
+// matches it so every screen agrees on what "today" and "this month" mean.
 export function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 /** Converts an amount to USD given its own currency and the current LBP rate — was independently redefined as the same one-liner in computeDashboard.ts, InputPanel.tsx, RecurringScreen.tsx, and TransactionsScreen.tsx. */

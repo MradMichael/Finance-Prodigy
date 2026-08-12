@@ -176,6 +176,9 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
   const [editTxBucket,     setEditTxBucket]     = useState<TxBucket>("NEEDS");
   const [editTxCategory,   setEditTxCategory]   = useState<string>("");
   const [editTxCurrency,   setEditTxCurrency]   = useState<Currency>("USD");
+  const [editTxPayMethod,  setEditTxPayMethod]  = useState<PaymentMethod>("cash");
+  const [editTxPayNote,    setEditTxPayNote]    = useState("");
+  const [editTxCardId,     setEditTxCardId]     = useState<string | null>(null);
 
   // ── helpers ────────────────────────────────────────────────────── //
 
@@ -483,6 +486,7 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
     setEditTxId(tx.id); setEditTxAmt(String(tx.amount));
     setEditTxDesc(tx.description); setEditTxDate(tx.date);
     setEditTxBucket(tx.bucket); setEditTxCategory(tx.category ?? ""); setEditTxCurrency(tx.currency ?? "USD");
+    setEditTxPayMethod(tx.paymentMethod ?? "cash"); setEditTxPayNote(tx.paymentNote ?? ""); setEditTxCardId(tx.cardId ?? null);
   }
   function saveEditTx(txId: string) {
     const amt = parseFloat(editTxAmt.replace(/,/g, ""));
@@ -497,10 +501,19 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
   function commitEditTx(txId: string) {
     const amt = parseFloat(editTxAmt.replace(/,/g, ""));
     if (!editTxDesc.trim() || isNaN(amt) || !editTxDate) return;
+    let cardId: string | undefined;
+    let cardLabel: string | undefined;
+    if (editTxPayMethod === "card" && editTxCardId) {
+      const card = cards.find((c) => c.id === editTxCardId);
+      if (card) { cardId = card.id; cardLabel = card.label; }
+    }
     update({
       transactions: financials.transactions.map((t) => t.id !== txId ? t : {
         ...t, amount: amt, description: editTxDesc.trim(),
         date: editTxDate, bucket: editTxBucket, category: editTxCategory || undefined, currency: editTxCurrency,
+        paymentMethod: editTxPayMethod,
+        paymentNote: editTxPayMethod === "other" && editTxPayNote.trim() ? editTxPayNote.trim() : undefined,
+        cardId, cardLabel,
       }),
     });
     setEditTxId(null);
@@ -982,6 +995,31 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
                             ))}
                           </select>
                           <CurrencyToggle value={editTxCurrency} onChange={setEditTxCurrency} />
+                          <div>
+                            <div className="grid grid-cols-3 gap-1.5 mb-1.5">
+                              {PM_OPTIONS.map((p) => (
+                                <button key={p.value} type="button"
+                                  onClick={() => { setEditTxPayMethod(p.value); setEditTxCardId(null); }}
+                                  className="py-1.5 rounded-lg text-[10px] font-medium transition-all"
+                                  style={{ background: editTxPayMethod === p.value ? T.jade + "22" : T.ink, border: `1px solid ${editTxPayMethod === p.value ? T.jade : T.line}`, color: editTxPayMethod === p.value ? T.jade : T.mute }}
+                                >{p.icon} {p.label}</button>
+                              ))}
+                            </div>
+                            {editTxPayMethod === "card" && cards.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5">
+                                {cards.map((c) => (
+                                  <button key={c.id} type="button"
+                                    onClick={() => setEditTxCardId(c.id)}
+                                    className="px-2 py-1 rounded-lg text-[10px] font-medium transition-all"
+                                    style={{ background: editTxCardId === c.id ? T.jade + "22" : T.panelSoft, border: `1px solid ${editTxCardId === c.id ? T.jade : T.line}`, color: editTxCardId === c.id ? T.jade : T.mute }}
+                                  >{c.label}</button>
+                                ))}
+                              </div>
+                            )}
+                            {editTxPayMethod === "other" && (
+                              <FocusInput value={editTxPayNote} onChange={(e) => setEditTxPayNote(e.target.value)} placeholder="Who paid or how?" />
+                            )}
+                          </div>
                           <div className="flex gap-2">
                             <button onClick={() => saveEditTx(tx.id)} className="px-3 py-1.5 rounded-xl text-xs font-semibold hover:opacity-90" style={{ background: T.jade, color: T.ink }}>Save</button>
                             <button onClick={() => setEditTxId(null)} className="px-3 py-1.5 rounded-xl text-xs hover:opacity-70" style={{ color: T.mute }}>Cancel</button>
@@ -1122,6 +1160,31 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
                                     ))}
                                   </select>
                                   <CurrencyToggle value={editTxCurrency} onChange={setEditTxCurrency} />
+                                  <div>
+                                    <div className="grid grid-cols-3 gap-1.5 mb-1.5">
+                                      {PM_OPTIONS.map((p) => (
+                                        <button key={p.value} type="button"
+                                          onClick={() => { setEditTxPayMethod(p.value); setEditTxCardId(null); }}
+                                          className="py-1.5 rounded-lg text-[10px] font-medium transition-all"
+                                          style={{ background: editTxPayMethod === p.value ? T.jade + "22" : T.ink, border: `1px solid ${editTxPayMethod === p.value ? T.jade : T.line}`, color: editTxPayMethod === p.value ? T.jade : T.mute }}
+                                        >{p.icon} {p.label}</button>
+                                      ))}
+                                    </div>
+                                    {editTxPayMethod === "card" && cards.length > 0 && (
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {cards.map((c) => (
+                                          <button key={c.id} type="button"
+                                            onClick={() => setEditTxCardId(c.id)}
+                                            className="px-2 py-1 rounded-lg text-[10px] font-medium transition-all"
+                                            style={{ background: editTxCardId === c.id ? T.jade + "22" : T.panelSoft, border: `1px solid ${editTxCardId === c.id ? T.jade : T.line}`, color: editTxCardId === c.id ? T.jade : T.mute }}
+                                          >{c.label}</button>
+                                        ))}
+                                      </div>
+                                    )}
+                                    {editTxPayMethod === "other" && (
+                                      <FocusInput value={editTxPayNote} onChange={(e) => setEditTxPayNote(e.target.value)} placeholder="Who paid or how?" />
+                                    )}
+                                  </div>
                                   <div className="flex gap-2">
                                     <button onClick={() => saveEditTx(tx.id)} className="px-3 py-1.5 rounded-lg text-xs font-semibold hover:opacity-90" style={{ background: T.jade, color: T.ink }}>Save</button>
                                     <button onClick={() => setEditTxId(null)} className="px-3 py-1.5 rounded-lg text-xs hover:opacity-70" style={{ color: T.mute }}>Cancel</button>

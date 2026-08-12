@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, StoredRecurring } from "../../lib/localData";
-import { fmtDate, monthlyEquivalent, toUSD as toUSDShared, categoryLabel as categoryLabelShared, categoryIcon as categoryIconShared } from "../../lib/localData";
+import { fmtDate, monthlyEquivalent, toUSD as toUSDShared, categoryLabel as categoryLabelShared, categoryIcon as categoryIconShared, todayISO } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money } from "./shared";
 import Donut from "../charts/Donut";
@@ -69,7 +69,7 @@ export default function TransactionsScreen({ financials }: { financials: LocalFi
 
   const allTx  = [...financials.transactions].sort((a, b) => b.date.localeCompare(a.date));
   const recurring = financials.recurring ?? [];
-  const currentYm = new Date().toISOString().slice(0, 7);
+  const currentYm = todayISO().slice(0, 7);
   // Months where at least one recurring item was active, independent of the
   // search query below -- feeds the month dropdown so a recurring-only
   // month (rent/tuition auto-debited, nothing else logged) can still be

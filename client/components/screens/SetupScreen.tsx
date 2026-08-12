@@ -258,7 +258,6 @@ export default function SetupScreen({
                 // still squeeze Needs/Wants to 0%, the exact bug fixed
                 // elsewhere this session but missed here since this is a
                 // separate implementation, not a shared component.
-                const key   = label === "Needs" ? "budgetCustomNeeds" : "budgetCustomWants";
                 const val   = label === "Needs" ? (financials.budgetCustomNeeds ?? 50) : (financials.budgetCustomWants ?? 30);
                 const other = label === "Needs" ? (financials.budgetCustomWants ?? 30) : (financials.budgetCustomNeeds ?? 50);
                 // Reserves MIN_SPLIT_PCT for Savings too -- see the matching
@@ -272,7 +271,17 @@ export default function SetupScreen({
                     </div>
                     <input
                       type="range" min={MIN_SPLIT_PCT} max={maxVal} step={5} value={Math.min(Math.max(val, MIN_SPLIT_PCT), maxVal)}
-                      onChange={(e) => update({ [key]: parseInt(e.target.value) })}
+                      onChange={(e) => {
+                        // Persist the floored PAIR, not just this field --
+                        // see the matching comment in BudgetScreen.tsx's own
+                        // copy of this slider for why (stale label vs.
+                        // clamped handle position otherwise).
+                        const raw = parseInt(e.target.value);
+                        const floored = label === "Needs"
+                          ? floorCustomSplit(raw, financials.budgetCustomWants ?? 30)
+                          : floorCustomSplit(financials.budgetCustomNeeds ?? 50, raw);
+                        update({ budgetCustomNeeds: floored.needs, budgetCustomWants: floored.wants });
+                      }}
                       className="w-full" style={{ accentColor: T.jade }}
                       aria-label={`Custom ${label} percentage`}
                     />

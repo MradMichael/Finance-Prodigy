@@ -70,6 +70,11 @@ export default function ProjectionsScreen({
   const [testAmount, setTestAmount] = useState(() => Math.max(0, Math.round(effectiveBudgetTargets.savings)));
   const surplus = Math.max(0, Math.round(month.netCashFlow));
   const sliderMax = Math.max(200, testAmount * 2, surplus * 2);
+  // The number input had no upper bound at all, so a mis-typed or
+  // exploratory entry (e.g. an extra digit or two) could land on something
+  // like $789,200,024/mo with nothing to catch it -- a monthly test amount
+  // has no legitimate reason to ever need more than 7 figures.
+  const MAX_TEST_AMOUNT = 1_000_000;
 
   // What order the plan tackles things in — user-controlled, not hardcoded.
   // A dollar can only be spent once: this is what makes the plan below a
@@ -179,9 +184,9 @@ export default function ProjectionsScreen({
               <div className="flex items-center gap-1.5">
                 <span style={{ color: T.brass }}>$</span>
                 <input
-                  type="number" min={0} step={10}
+                  type="number" min={0} max={MAX_TEST_AMOUNT} step={10}
                   value={testAmount}
-                  onChange={(e) => setTestAmount(Math.max(0, Math.round(Number(e.target.value) || 0)))}
+                  onChange={(e) => setTestAmount(Math.min(MAX_TEST_AMOUNT, Math.max(0, Math.round(Number(e.target.value) || 0))))}
                   className="w-24 rounded-lg px-2 py-1 text-sm font-semibold tabular-nums text-right"
                   style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.brass }}
                   aria-label="Monthly amount to plan with"

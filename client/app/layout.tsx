@@ -7,7 +7,12 @@ export const metadata: Metadata = {
   title: "ESSA: Earn Spend Save Achieve",
   description: "Earn Spend Save Achieve: your financial command center",
   manifest: "/manifest.webmanifest",
-  icons: { apple: "/apple-touch-icon.png" },
+  // Explicitly listing `icon` here, not just `apple` -- an explicit `icons`
+  // object in metadata suppresses Next.js's own app/icon.svg file-convention
+  // auto-detection rather than merging with it, so with only `apple` set,
+  // no <link rel="icon"> tag was ever rendered at all and every browser
+  // fell back to its generic default tab icon.
+  icons: { icon: "/icon.svg", apple: "/apple-touch-icon.png" },
 };
 
 export const viewport: Viewport = {

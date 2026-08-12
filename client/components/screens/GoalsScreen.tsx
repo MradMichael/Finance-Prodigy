@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
+import { todayISO } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money } from "./shared";
@@ -22,7 +23,7 @@ export default function GoalsScreen({
   const [payAmt,     setPayAmt]     = useState("");
   const [paySuccess, setPaySuccess] = useState<number | null>(null);
 
-  const prefix = new Date().toISOString().slice(0, 7);
+  const prefix = todayISO().slice(0, 7);
   const goalTxThisMonth = (financials.transactions ?? []).filter(
     (t) => t.bucket === "SAVINGS" && t.date.startsWith(prefix) && t.description.startsWith("Goal:")
   );

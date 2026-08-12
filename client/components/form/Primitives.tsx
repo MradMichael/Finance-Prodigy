@@ -105,6 +105,18 @@ export function Section({
 }) {
   const T = useTheme();
   const [open, setOpen] = useState(defaultOpen);
+  // defaultOpen is only a true "default" for a few sections (static false/true);
+  // for "This month" it's monthTx.length > 0, meant to track live content, not
+  // just the mount-time snapshot. useState's initializer only reads it once, so
+  // adding your first entry of the session (mounted at length 0, thus closed)
+  // never auto-expanded the section that would show it -- the add looked like
+  // it silently did nothing. Only react to false→true so a section the user
+  // manually collapsed after content already existed doesn't get forced back
+  // open on every unrelated re-render.
+  useEffect(() => {
+    if (defaultOpen) setOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultOpen]);
   return (
     <div>
       <div style={{ height: 1, background: T.line }} />

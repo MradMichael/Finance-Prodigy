@@ -75,12 +75,20 @@ export default function ProfilePage() {
     if (!session) return;
     setSyncing(true); setSyncMsg("");
     const result = await pullFromServer(session.email);
-    setSyncing(false);
     if (result.ok) {
       await saveData(result.data, session.userId);
       setLastSync(result.syncedAt);
-      setSyncMsg("✓ Data restored from database.");
+      setSyncMsg("✓ Data restored from database. Reloading…");
+      // The dashboard (app/page.tsx) only reads localStorage once, into React
+      // state, on its own mount -- it has no way to know data changed here on
+      // a different route. Without a hard reload, the dashboard keeps showing
+      // (and editing on top of) its stale pre-pull state, and the very next
+      // edit there would silently overwrite the just-restored data with a
+      // merge based on that stale state. A full navigation forces it to
+      // remount and re-read the localStorage this just wrote.
+      setTimeout(() => { window.location.href = "/"; }, 700);
     } else {
+      setSyncing(false);
       setSyncMsg("✗ " + result.error);
     }
   }
