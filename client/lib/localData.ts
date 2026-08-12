@@ -46,6 +46,18 @@ export interface StoredGoal {
   pausedAt?: string;    // ISO — when goal was paused/archived; stops counting toward pace/score until resumed (cleared)
 }
 
+export interface WishlistItem {
+  id: string;
+  name: string;
+  emoji: string;
+  price: number;
+  currency: Currency;
+  priority: "low" | "medium" | "high";
+  notes?: string;
+  createdAt: string;  // ISO — when added
+  boughtAt?: string;  // ISO — when checked off as bought
+}
+
 /**
  * Reconciliation between what the app thinks you have (starting balance
  * minus every logged transaction on this payment method) and what you
@@ -276,6 +288,7 @@ export interface LocalFinancials {
   customCategories?: CustomCategory[];
   /** Keyword -> category auto-assignment rules -- see matchCategoryRule. Only ever applied when a transaction/imported row has no category yet ("if null only"), never overriding a manual choice. */
   categoryRules?: CategoryRule[];
+  wishlist?: WishlistItem[];
 }
 
 export const DEFAULT_DATA: LocalFinancials = {
@@ -293,6 +306,7 @@ export const DEFAULT_DATA: LocalFinancials = {
   trackedBalances: [],
   customCategories: [],
   categoryRules: [],
+  wishlist: [],
   netWorthHistory: [],
   incomeHistory: [],
   lbpRateHistory: [],
