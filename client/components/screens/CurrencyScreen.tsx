@@ -40,6 +40,11 @@ export default function CurrencyScreen({ financials }: { financials: LocalFinanc
   const stressLossUSD = lbpAtCurrent - lbpAtStress;
 
   const colors = { usd: T.jade, lbp: T.brass };
+  // Every figure on this page is shown in its own native currency AND its
+  // equivalent in the other one -- the whole point of a currency-exposure
+  // page is comparing the two, not just converting everything to USD and
+  // hiding which currency the money is actually held/spent in.
+  const toLBP = (usd: number) => Math.round(usd * lbpRate);
 
   return (
     <main className="min-h-screen px-4 py-8 md:px-10" style={{ background: T.ink }}>
@@ -66,18 +71,28 @@ export default function CurrencyScreen({ financials }: { financials: LocalFinanc
                 trackColor={T.line} labelColor={T.text}
                 centerLabel={money(spendTotalUSD)} centerSublabel="this month"
               />
-              <div className="flex-1 min-w-[160px] space-y-2.5">
+              <div className="flex-1 min-w-[180px] space-y-3">
                 <div className="flex items-center justify-between text-sm">
                   <span className="flex items-center gap-2" style={{ color: T.text }}>
                     <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: colors.usd }} /> USD
                   </span>
-                  <span style={{ color: T.mute }}>{money(toUSD(spendUSD, "USD"))} <span style={{ color: T.text }}>· {Math.round((toUSD(spendUSD, "USD") / spendTotalUSD) * 100)}%</span></span>
+                  <span className="text-right">
+                    <span style={{ color: T.text }}>{money(spendUSD)}</span>
+                    <span style={{ color: T.mute }}> · {Math.round((toUSD(spendUSD, "USD") / spendTotalUSD) * 100)}%</span>
+                    <br />
+                    <span className="text-[10px]" style={{ color: T.mute }}>≈ L£{toLBP(spendUSD).toLocaleString()}</span>
+                  </span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className="flex items-center gap-2" style={{ color: T.text }}>
                     <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: colors.lbp }} /> LBP
                   </span>
-                  <span style={{ color: T.mute }}>{money(toUSD(spendLBP, "LBP"))} <span style={{ color: T.text }}>· {Math.round((toUSD(spendLBP, "LBP") / spendTotalUSD) * 100)}%</span></span>
+                  <span className="text-right">
+                    <span style={{ color: T.text }}>L£{spendLBP.toLocaleString()}</span>
+                    <span style={{ color: T.mute }}> · {Math.round((toUSD(spendLBP, "LBP") / spendTotalUSD) * 100)}%</span>
+                    <br />
+                    <span className="text-[10px]" style={{ color: T.mute }}>≈ {money(toUSD(spendLBP, "LBP"))}</span>
+                  </span>
                 </div>
               </div>
             </div>
@@ -102,18 +117,28 @@ export default function CurrencyScreen({ financials }: { financials: LocalFinanc
                 trackColor={T.line} labelColor={T.text}
                 centerLabel={money(holdingsTotalUSD)} centerSublabel="tracked"
               />
-              <div className="flex-1 min-w-[160px] space-y-2.5">
+              <div className="flex-1 min-w-[180px] space-y-3">
                 <div className="flex items-center justify-between text-sm">
                   <span className="flex items-center gap-2" style={{ color: T.text }}>
                     <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: colors.usd }} /> USD
                   </span>
-                  <span style={{ color: T.mute }}>{money(toUSD(usdAssets, "USD"))} <span style={{ color: T.text }}>· {Math.round((toUSD(usdAssets, "USD") / holdingsTotalUSD) * 100)}%</span></span>
+                  <span className="text-right">
+                    <span style={{ color: T.text }}>{money(usdAssets)}</span>
+                    <span style={{ color: T.mute }}> · {Math.round((toUSD(usdAssets, "USD") / holdingsTotalUSD) * 100)}%</span>
+                    <br />
+                    <span className="text-[10px]" style={{ color: T.mute }}>≈ L£{toLBP(usdAssets).toLocaleString()}</span>
+                  </span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className="flex items-center gap-2" style={{ color: T.text }}>
                     <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: colors.lbp }} /> LBP
                   </span>
-                  <span style={{ color: T.mute }}>{money(toUSD(lbpAssets, "LBP"))} <span style={{ color: T.text }}>· {Math.round((toUSD(lbpAssets, "LBP") / holdingsTotalUSD) * 100)}%</span></span>
+                  <span className="text-right">
+                    <span style={{ color: T.text }}>L£{lbpAssets.toLocaleString()}</span>
+                    <span style={{ color: T.mute }}> · {Math.round((toUSD(lbpAssets, "LBP") / holdingsTotalUSD) * 100)}%</span>
+                    <br />
+                    <span className="text-[10px]" style={{ color: T.mute }}>≈ {money(toUSD(lbpAssets, "LBP"))}</span>
+                  </span>
                 </div>
               </div>
             </div>
