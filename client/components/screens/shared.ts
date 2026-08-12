@@ -2,7 +2,7 @@ import type { CSSProperties } from "react";
 
 export type SyncStatus = "idle" | "syncing" | "synced" | "offline";
 
-export type Screen = "overview" | "budget" | "setup" | "finances" | "transactions" | "categories" | "goals" | "debts" | "recurring" | "projections" | "journey";
+export type Screen = "overview" | "budget" | "setup" | "finances" | "transactions" | "categories" | "goals" | "debts" | "recurring" | "projections" | "journey" | "currency";
 
 export const NAV: { key: Screen; label: string; icon: string }[] = [
   { key: "overview",     label: "Overview",     icon: "◉" },
@@ -16,6 +16,7 @@ export const NAV: { key: Screen; label: string; icon: string }[] = [
   { key: "recurring",    label: "Recurring",    icon: "↻" },
   { key: "projections",  label: "Projections",  icon: "↗" },
   { key: "journey",      label: "Journey",      icon: "✦" },
+  { key: "currency",     label: "Currency",     icon: "⇄" },
 ];
 
 export const SERIF: CSSProperties = { fontFamily: "Spectral, Georgia, serif" };

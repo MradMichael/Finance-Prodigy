@@ -831,3 +831,78 @@ describe("Safety net target of 0 — must never be indistinguishable from 'fully
     expect(result.emergencyFund.remaining).toBe(0);
   });
 });
+
+describe("alerts", () => {
+  it("is empty when nothing needs attention", () => {
+    const data = makeData({ income: 3000, emergencyFundBalance: 100000, emergencyFundTargetMonths: 1 });
+    const result = computeDashboard(data);
+    expect(result.alerts).toEqual([]);
+  });
+
+  it("flags an underfunded safety net, with severity escalating below 25%", () => {
+    const data = makeData({ income: 3000, emergencyFundTargetMonths: 6, emergencyFundBalance: 500 });
+    const result = computeDashboard(data);
+    const efAlert = result.alerts.find((a) => a.id === "ef-underfunded");
+    expect(efAlert).toBeTruthy();
+    expect(efAlert!.severity).toBe("critical"); // $500 against a real multi-thousand-dollar target is well under 25%
+    expect(efAlert!.screen).toBe("setup");
+  });
+
+  it("flags an infeasible debt plan using debtEngine's own warning text", () => {
+    // income left at 0 (default) so netCashFlow/extra are both 0 and, with
+    // minPayment also 0, monthlyPayment is exactly 0 -- deterministically
+    // hits computeDashboard's "monthly income is fully consumed" branch
+    // rather than depending on exactly how much of a positive cash flow
+    // gets auto-allocated toward debt.
+    const data = makeData({
+      debts: [{ id: "d1", name: "Card", balance: 5000, apr: 29, minPayment: 0, createdAt: "2026-01-01T00:00:00.000Z" }],
+    });
+    const result = computeDashboard(data);
+    const debtAlert = result.alerts.find((a) => a.id === "debt-infeasible");
+    expect(debtAlert).toBeTruthy();
+    expect(debtAlert!.severity).toBe("critical");
+    expect(debtAlert!.screen).toBe("debts");
+  });
+
+  it("flags a recurring item due within 3 days as a warning, and due today as critical", () => {
+    // NOW is July 15, 2026. A monthly item anchored on the 17th is due in 2
+    // days; one anchored on the 15th is due today.
+    const data = makeData({
+      recurring: [
+        { id: "r1", name: "Netflix", emoji: "🎬", amount: 15, currency: "USD", frequency: "monthly", bucket: "WANTS", startDate: "2026-06-17", endDate: null, totalAmount: null, createdAt: "2026-06-17T00:00:00.000Z" },
+        { id: "r2", name: "Rent", emoji: "🏠", amount: 800, currency: "USD", frequency: "monthly", bucket: "NEEDS", startDate: "2026-06-15", endDate: null, totalAmount: null, createdAt: "2026-06-15T00:00:00.000Z" },
+      ],
+    });
+    const result = computeDashboard(data);
+    const netflixAlert = result.alerts.find((a) => a.id === "renewal-r1");
+    const rentAlert = result.alerts.find((a) => a.id === "renewal-r2");
+    expect(netflixAlert).toEqual({ id: "renewal-r1", severity: "warning", message: "Netflix is due in 2 days", screen: "overview" });
+    expect(rentAlert).toEqual({ id: "renewal-r2", severity: "critical", message: "Rent is due today", screen: "overview" });
+  });
+
+  it("flags a tracked balance that doesn't match what was logged, but not a small/rounding-level difference", () => {
+    const bigMismatch = makeData({
+      trackedBalances: [{ id: "b1", name: "Wallet", paymentMethod: "cash", startingBalance: 100, startingDate: "2026-07-01", currency: "USD", actualBalance: 50, actualBalanceDate: "2026-07-15" }],
+    });
+    expect(computeDashboard(bigMismatch).alerts.find((a) => a.id === "balance-b1")).toBeTruthy();
+
+    const smallMismatch = makeData({
+      trackedBalances: [{ id: "b1", name: "Wallet", paymentMethod: "cash", startingBalance: 100, startingDate: "2026-07-01", currency: "USD", actualBalance: 98, actualBalanceDate: "2026-07-15" }],
+    });
+    expect(computeDashboard(smallMismatch).alerts.find((a) => a.id === "balance-b1")).toBeUndefined();
+  });
+
+  it("sorts critical alerts before warnings", () => {
+    const data = makeData({
+      income: 3000, emergencyFundTargetMonths: 6, emergencyFundBalance: 500, // critical (EF)
+      recurring: [{ id: "r1", name: "Gym", emoji: "💪", amount: 30, currency: "USD", frequency: "monthly", bucket: "WANTS", startDate: "2026-06-17", endDate: null, totalAmount: null, createdAt: "2026-06-17T00:00:00.000Z" }], // warning (due in 2 days)
+    });
+    const result = computeDashboard(data);
+    const severities = result.alerts.map((a) => a.severity);
+    const firstWarningIdx = severities.indexOf("warning");
+    const lastCriticalIdx = severities.lastIndexOf("critical");
+    if (firstWarningIdx !== -1 && lastCriticalIdx !== -1) {
+      expect(lastCriticalIdx).toBeLessThan(firstWarningIdx);
+    }
+  });
+});

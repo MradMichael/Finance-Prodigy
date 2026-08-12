@@ -80,6 +80,15 @@ export interface DashboardPayload {
     tierColor: "jade" | "brass" | "coral" | "mute";
     suggestions: string[];
   };
+  /**
+   * A prioritized, actionable subset of signals already computed above for
+   * their own cards (budgetPace, emergencyFund, debt.plan, upcomingRenewals,
+   * balanceChecks) -- surfaced together so the user doesn't have to go
+   * check every screen individually to notice something needs attention.
+   * `screen` is a plain string (not the UI's Screen type, to keep this a
+   * pure data layer) -- callers cast it when navigating.
+   */
+  alerts: { id: string; severity: "critical" | "warning"; message: string; screen: string }[];
 }
 
 export function dateFmt(d: Date) {
@@ -652,9 +661,22 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   // figure produced a nonsensical expected/discrepancy for LBP-tracked
   // balances, so convert starting/actual to USD too (at the rate in effect
   // for each one's own date) before doing any arithmetic on them.
+  // Grouped by (paymentMethod, cardId) ONCE, not re-filtered from the full
+  // transaction array once per tracked balance -- that was O(trackedBalances
+  // x all-time-transactions), the one truly unbounded scan in this file
+  // (grows forever with account age, unlike the fixed-iteration-count loops
+  // elsewhere). Each balance's own lookup below only ever touches
+  // transactions that could possibly apply to it.
+  type Tx = (typeof data.transactions)[number];
+  const txByPaymentKey = new Map<string, Tx[]>();
+  for (const t of data.transactions) {
+    const key = `${t.paymentMethod ?? ""}|${t.paymentMethod === "card" ? (t.cardId ?? "") : ""}`;
+    const bucket = txByPaymentKey.get(key);
+    if (bucket) bucket.push(t); else txByPaymentKey.set(key, [t]);
+  }
   const balanceChecks: DashboardPayload["balanceChecks"] = data.trackedBalances.map((tb) => {
-    const relevantTx = data.transactions.filter((t) => t.date >= tb.startingDate && t.paymentMethod === tb.paymentMethod
-      && (tb.paymentMethod !== "card" || t.cardId === tb.cardId));
+    const key = `${tb.paymentMethod}|${tb.paymentMethod === "card" ? (tb.cardId ?? "") : ""}`;
+    const relevantTx = (txByPaymentKey.get(key) ?? []).filter((t) => t.date >= tb.startingDate);
     // INCOME transactions received on this same payment method put money
     // IN, so they subtract from "spent" (raising the expected balance)
     // instead of adding to it like every other bucket does.
@@ -699,6 +721,53 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     .sort((a, b) => a.ym.localeCompare(b.ym))
     .slice(-12);
 
+  // ── Alerts ──────────────────────────────────────────────────────
+  // Every signal here was already computed above for its own card
+  // (budgetPace, emergencyFund, debt plan, upcomingRenewals, balanceChecks)
+  // -- this just prioritizes the ones worth surfacing together, instead of
+  // leaving them scattered across screens the user has to go check one by one.
+  const alerts: DashboardPayload["alerts"] = [];
+  for (const bp of budgetPace) {
+    // SAVINGS never reaches "over" (it's a floor, not a ceiling -- see its
+    // own branch above) and is "watch" for most of the month by design,
+    // simply meaning "target not fully met yet" -- alerting on that would
+    // fire constantly for nearly every user, nearly every day, for a
+    // status that isn't actually urgent the way overspending NEEDS/WANTS is.
+    if (bp.bucket === "SAVINGS") continue;
+    if (bp.status === "over") {
+      alerts.push({ id: `budget-${bp.bucket}`, severity: "critical", message: `${bp.label} is over budget this month`, screen: "budget" });
+    } else if (bp.status === "watch") {
+      alerts.push({ id: `budget-${bp.bucket}`, severity: "warning", message: `${bp.label} is on pace to go over budget`, screen: "budget" });
+    }
+  }
+  if (efTarget > 0 && efPct < 50) {
+    alerts.push({ id: "ef-underfunded", severity: efPct < 25 ? "critical" : "warning", message: `Safety net is only ${Math.round(efPct)}% funded`, screen: "setup" });
+  }
+  if (debtPlan?.warning) {
+    alerts.push({ id: "debt-infeasible", severity: "critical", message: debtPlan.warning, screen: "debts" });
+  }
+  for (const r of upcomingRenewals) {
+    // upcomingRenewals already excludes dueInDays < 0 (see its own filter
+    // above) -- 0 is the earliest this ever is, never overdue.
+    if (r.dueInDays === 0) {
+      alerts.push({ id: `renewal-${r.id}`, severity: "critical", message: `${r.name} is due today`, screen: "overview" });
+    } else if (r.dueInDays <= 3) {
+      alerts.push({ id: `renewal-${r.id}`, severity: "warning", message: `${r.name} is due in ${r.dueInDays} day${r.dueInDays === 1 ? "" : "s"}`, screen: "overview" });
+    }
+  }
+  for (const bc of balanceChecks) {
+    // Matches the same "meaningful" threshold as a rounding/timing blip vs
+    // a real mismatch worth flagging -- $5 is small enough to catch a real
+    // missed transaction, large enough to ignore currency-conversion noise.
+    if (bc.discrepancy != null && Math.abs(bc.discrepancy) >= 5) {
+      alerts.push({ id: `balance-${bc.id}`, severity: "warning", message: `${bc.name} doesn't match what you logged`, screen: "finances" });
+    }
+  }
+  // Critical first, otherwise keep each category's own natural order
+  // (budget -> EF -> debt -> renewals -> balance checks) rather than
+  // re-sorting warnings arbitrarily.
+  alerts.sort((a, b) => (a.severity === b.severity ? 0 : a.severity === "critical" ? -1 : 1));
+
   return {
     user: { name: data.userName || "You", currency: "USD", payoffStrategy: "AVALANCHE" },
     period: { year, month },
@@ -730,6 +799,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     netWorthTrend,
     upcomingRenewals,
     balanceChecks,
+    alerts,
     budgetPace,
     budgetRollover,
     effectiveBudgetTargets: { needs: bucketTargetAmt.NEEDS, wants: bucketTargetAmt.WANTS, savings: bucketTargetAmt.SAVINGS },

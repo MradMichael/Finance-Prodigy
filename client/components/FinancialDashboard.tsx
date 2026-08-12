@@ -113,6 +113,9 @@ const MOCK: DashboardPayload = {
       "Once you clear the debt, redirect that minimum payment into savings automatically.",
     ],
   },
+  alerts: [
+    { id: "budget-WANTS", severity: "warning", message: "Wants is on pace to go over budget", screen: "budget" },
+  ],
 };
 
 // --------------------------- data hook --------------------------- //
@@ -219,7 +222,7 @@ export default function FinancialDashboard({
     );
   }
 
-  const { health, month, emergencyFund: ef, debt, goals, sixMonthTrend, encouragements, user, period, netWorth, streaks, budgetPace, netWorthTrend, upcomingRenewals, balanceChecks, budgetTargetPct } = data;
+  const { health, month, emergencyFund: ef, debt, goals, sixMonthTrend, encouragements, user, period, netWorth, streaks, budgetPace, netWorthTrend, upcomingRenewals, balanceChecks, budgetTargetPct, alerts } = data;
   const monthName = ["", "January","February","March","April","May","June","July","August","September","October","November","December"][period.month];
   const targets     = data.budgetTargets;
   const budgetLabel = data.budgetRule === "custom" ? "Custom split" : data.budgetRule.replace(/-/g, " / ");
@@ -260,6 +263,38 @@ export default function FinancialDashboard({
             vanished the instant step 1 was done, even if step 2 wasn't. */}
         {onNavigate && !(month.income > 0 && data.hasLoggedTransactions) && (
           <OnboardingChecklist hasIncome={month.income > 0} hasTransactions={data.hasLoggedTransactions} onNavigate={onNavigate} />
+        )}
+
+        {/* Needs attention — the 2-3 most urgent things, aggregated from
+            signals that already exist elsewhere on this dashboard (budget
+            pace, safety net, debt plan, upcoming renewals, balance checks)
+            so noticing them doesn't require checking every card yourself. */}
+        {alerts.length > 0 && (
+          <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
+            <h2 className="text-xs uppercase tracking-widest mb-3" style={{ color: T.mute }}>Needs attention</h2>
+            <div className="space-y-2">
+              {alerts.slice(0, 3).map((a) => {
+                const color = a.severity === "critical" ? T.coral : T.brass;
+                const body = (
+                  <div
+                    className="flex items-center gap-2.5 rounded-xl px-3.5 py-2.5"
+                    style={{ background: color + "12", border: `1px solid ${color}30` }}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: color }} />
+                    <span className="text-sm flex-1" style={{ color: T.text }}>{a.message}</span>
+                    {onNavigate && <span className="text-xs flex-shrink-0" style={{ color }}>→</span>}
+                  </div>
+                );
+                return onNavigate ? (
+                  <button key={a.id} onClick={() => onNavigate(a.screen as Screen)} className="w-full text-left transition-opacity hover:opacity-80">
+                    {body}
+                  </button>
+                ) : (
+                  <div key={a.id}>{body}</div>
+                );
+              })}
+            </div>
+          </div>
         )}
 
         {/* Month at a glance */}
