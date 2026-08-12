@@ -537,6 +537,14 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
     ? `L£${amt.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
     : `$${amt.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const recs     = financials.recurring ?? [];
+  // Recurring bills already fed the Needs/Wants/Savings totals just below
+  // (and the Transactions screen's own list), but never appeared as rows in
+  // "This month" here -- the one screen people actually check day to day.
+  // Someone scanning for "did my rent go through" would never find it, even
+  // though it was already counted in every total on this page.
+  const recurRowsThisMonth = recs
+    .map((r) => ({ r, usd: toUSD(monthlyEquivalent(r, now), r.currency) }))
+    .filter(({ usd }) => usd > 0);
   const needsOut = monthTx.filter((t) => t.bucket === "NEEDS").reduce((s, t)   => s + toUSD(t.amount, t.currency), 0)
                  + recs.filter((r) => r.bucket === "NEEDS").reduce((s, r)   => s + toUSD(monthlyEquivalent(r, now), r.currency), 0);
   const wantsOut = monthTx.filter((t) => t.bucket === "WANTS").reduce((s, t)   => s + toUSD(t.amount, t.currency), 0)
@@ -926,8 +934,12 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
         </button>
 
         {/* This month */}
-        <Section title="This month" icon="📋" badge={monthTx.length} defaultOpen={monthTx.length > 0}>
-          {monthTx.length === 0 ? (
+        <Section
+          title="This month" icon="📋"
+          badge={monthTx.length + recurRowsThisMonth.length}
+          defaultOpen={monthTx.length + recurRowsThisMonth.length > 0}
+        >
+          {monthTx.length === 0 && recurRowsThisMonth.length === 0 ? (
             <div
               className="rounded-xl px-4 py-6 text-center"
               style={{ background: T.panelSoft, border: `1px dashed ${T.line}` }}
@@ -1075,12 +1087,36 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
                     </div>
                   );
                 })}
+                {recurRowsThisMonth.map(({ r, usd }) => {
+                  const b = TX_BUCKETS.find((bb) => bb.value === r.bucket)!;
+                  return (
+                    <div
+                      key={`recur-${r.id}`}
+                      className="flex items-center justify-between rounded-xl px-3 py-2.5"
+                      style={{ background: T.panelSoft, borderLeft: `3px solid ${b.color}`, opacity: 0.85 }}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-sm flex-shrink-0">↻</span>
+                        <div className="min-w-0">
+                          <span className="text-xs truncate block" style={{ color: T.text }}>{r.emoji ? `${r.emoji} ` : ""}{r.name}</span>
+                          <span className="text-[9px]" style={{ color: T.mute }}>Recurring · {FREQ_LABELS[r.frequency]}</span>
+                        </div>
+                      </div>
+                      <span className="text-xs font-semibold tabular-nums flex-shrink-0" style={{ color: b.color }}>
+                        {fmtCur(usd, "USD")}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
               <div
                 className="flex justify-between text-xs px-3 py-2 rounded-xl"
                 style={{ background: T.ink, color: T.mute }}
               >
-                <span>{monthTx.length} entries</span>
+                <span>
+                  {monthTx.length} {monthTx.length === 1 ? "entry" : "entries"}
+                  {recurRowsThisMonth.length > 0 && ` + ${recurRowsThisMonth.length} recurring`}
+                </span>
                 <span className="font-semibold tabular-nums" style={{ color: T.text }}>{fmt(totalOut)} logged</span>
               </div>
             </>
