@@ -7,7 +7,7 @@ import type {
 } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, monthlyEquivalent, nominalMonthlyEquivalent, isRecurringActive, isPaidThisCycle, recurringPaidSoFar, toUSD as toUSDShared, allCategories, categoryLabel, categoryIcon } from "../lib/localData";
+import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, monthlyEquivalent, nominalMonthlyEquivalent, isRecurringActive, isPaidThisCycle, recurringPaidSoFar, toUSD as toUSDShared, allCategories, categoryLabel, categoryIcon, matchCategoryRule } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY } from "./form/Primitives";
@@ -219,12 +219,16 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
       }
     }
     const amtUSD = txCurrency === "LBP" ? amt / (financials.lbpRate ?? 89500) : amt;
+    const description = txDesc.trim() || txBucket.charAt(0) + txBucket.slice(1).toLowerCase();
+    // "If null only": a category rule only ever fills in a category the
+    // user hasn't already picked -- never overrides an explicit choice.
+    const autoCategory = txCategory || matchCategoryRule(description, financials.categoryRules);
     const tx: StoredTransaction = {
       id: uid(), amount: amt, currency: txCurrency, bucket: txBucket,
-      description: txDesc.trim() || txBucket.charAt(0) + txBucket.slice(1).toLowerCase(),
+      description,
       date: txDate,
       paymentMethod: txPayMethod,
-      ...(txCategory ? { category: txCategory } : {}),
+      ...(autoCategory ? { category: autoCategory } : {}),
       ...(txPayMethod === "other" && txPayNote.trim() ? { paymentNote: txPayNote.trim() } : {}),
       ...(cardId ? { cardId, cardLabel } : {}),
     };
@@ -754,7 +758,7 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
               id="tx-desc"
               value={txDesc}
               onChange={(e) => setTxDesc(e.target.value)}
-              placeholder="Rent, groceries, gym…"
+              placeholder={txBucket === "INCOME" ? "Bonus, freelance gig, gift…" : "Rent, groceries, gym…"}
               onKeyDown={(e) => e.key === "Enter" && addTransaction()}
             />
             {txBucket !== "INCOME" && looksRecurring(txDesc, txDate, financials.transactions, financials.recurring ?? []) && (

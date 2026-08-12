@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import type { LocalFinancials } from "../../lib/localData";
-import { CATEGORIES, allCategories, categoryLabel, categoryIcon, monthlyEquivalent, toUSD as toUSDShared } from "../../lib/localData";
+import type { LocalFinancials, CategoryRule } from "../../lib/localData";
+import { CATEGORIES, allCategories, categoryLabel, categoryIcon, matchCategoryRule, monthlyEquivalent, toUSD as toUSDShared, uid } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money } from "./shared";
 import { Label, FocusInput, PrimaryBtn } from "../form/Primitives";
@@ -26,8 +26,11 @@ export default function CategoriesScreen({
   const [editingValue, setEditingValue] = useState<string | null>(null);
   const [editIcon, setEditIcon] = useState("");
   const [editName, setEditName] = useState("");
+  const [ruleKeyword, setRuleKeyword] = useState("");
+  const [ruleCategory, setRuleCategory] = useState("");
 
   const customCategories = financials.customCategories ?? [];
+  const categoryRules = financials.categoryRules ?? [];
   const lbpRate = financials.lbpRate ?? 89500;
   const toUSD = (n: number, cur?: string) => toUSDShared(n, cur as "USD" | "LBP" | undefined, lbpRate);
 
@@ -69,6 +72,43 @@ export default function CategoriesScreen({
       ),
     });
     setEditingValue(null);
+  }
+
+  function addRule() {
+    const keyword = ruleKeyword.trim();
+    if (!keyword || !ruleCategory) return;
+    onChange({ ...financials, categoryRules: [...categoryRules, { id: uid(), keyword, category: ruleCategory }] });
+    setRuleKeyword("");
+    setRuleCategory("");
+  }
+
+  function deleteRule(id: string) {
+    onChange({ ...financials, categoryRules: categoryRules.filter((r) => r.id !== id) });
+  }
+
+  // Retroactively applies one rule to already-logged transactions/recurring
+  // items -- "if null only" still holds (matchCategoryRule is never even
+  // called for an entry that already has a category), so this only ever
+  // fills gaps, never overwrites a manual choice.
+  function applyRuleToExisting(rule: CategoryRule) {
+    let count = 0;
+    const updatedTx = financials.transactions.map((t) => {
+      if (t.category) return t;
+      const match = matchCategoryRule(t.description, [rule]);
+      if (!match) return t;
+      count++;
+      return { ...t, category: match };
+    });
+    const updatedRecurring = (financials.recurring ?? []).map((r) => {
+      if (r.category) return r;
+      const match = matchCategoryRule(r.name, [rule]);
+      if (!match) return r;
+      count++;
+      return { ...r, category: match };
+    });
+    if (count === 0) { alert(`No uncategorized entries matched "${rule.keyword}".`); return; }
+    onChange({ ...financials, transactions: updatedTx, recurring: updatedRecurring });
+    alert(`Categorized ${count} existing entr${count === 1 ? "y" : "ies"}.`);
   }
 
   // Same categoryBreakdown aggregation TransactionsScreen's "By category"
@@ -196,6 +236,69 @@ export default function CategoriesScreen({
               </span>
             ))}
           </div>
+        </div>
+
+        {/* Auto-categorize by keyword */}
+        <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
+          <p className="text-[10px] uppercase tracking-widest font-semibold mb-1" style={{ color: T.mute }}>Auto-categorize by keyword</p>
+          <p className="text-[11px] mb-3" style={{ color: T.mute }}>
+            When a transaction&apos;s description contains a keyword below, its category fills in automatically — only if you haven&apos;t already picked one yourself.
+          </p>
+          <div className="flex gap-2 mb-3">
+            <div className="flex-1">
+              <Label htmlFor="rule-keyword">Keyword</Label>
+              <FocusInput
+                id="rule-keyword" value={ruleKeyword} placeholder="Spinneys, Netflix, Uber…"
+                onChange={(e) => setRuleKeyword(e.target.value)}
+              />
+            </div>
+            <div className="flex-1">
+              <Label htmlFor="rule-category">Category</Label>
+              <select
+                id="rule-category"
+                value={ruleCategory}
+                onChange={(e) => setRuleCategory(e.target.value)}
+                className="w-full rounded-xl px-3 py-2.5 text-sm"
+                style={{ background: T.panelSoft, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
+              >
+                <option value="">Choose…</option>
+                {allCategories(customCategories).map((c) => (
+                  <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <PrimaryBtn onClick={addRule} color={T.brass} disabled={!ruleKeyword.trim() || !ruleCategory}>+ Add rule</PrimaryBtn>
+
+          {categoryRules.length > 0 && (
+            <div className="space-y-2 mt-4">
+              {categoryRules.map((r) => (
+                <div
+                  key={r.id}
+                  className="flex items-center justify-between gap-2 rounded-xl px-3 py-2"
+                  style={{ background: T.panelSoft, border: `1px solid ${T.line}` }}
+                >
+                  <span className="text-sm min-w-0 truncate" style={{ color: T.text }}>
+                    <span style={{ color: T.mute }}>&quot;{r.keyword}&quot;</span> → {categoryIcon(r.category, customCategories)} {categoryLabel(r.category, customCategories)}
+                  </span>
+                  <div className="flex gap-1.5 flex-shrink-0">
+                    <button
+                      onClick={() => applyRuleToExisting(r)}
+                      title="Apply to existing uncategorized transactions and recurring items"
+                      className="text-[10px] px-1.5 py-0.5 rounded transition-all hover:opacity-80"
+                      style={{ color: T.jade, border: `1px solid ${T.jade}40` }}
+                    >Apply to past</button>
+                    <button
+                      onClick={() => deleteRule(r.id)}
+                      aria-label={`Delete rule for ${r.keyword}`}
+                      className="text-xs px-1"
+                      style={{ color: T.coral }}
+                    >✕</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Spend-by-category monitoring */}

@@ -197,6 +197,23 @@ export function categoryIcon(key: string | undefined, customCategories?: CustomC
   return (CATEGORY_ICON as Record<string, string>)[key] ?? customCategories?.find((c) => c.value === key)?.icon ?? "•";
 }
 
+export interface CategoryRule { id: string; keyword: string; category: string }
+
+/**
+ * Finds the first rule whose keyword appears in the description
+ * (case-insensitive substring match, first-match-in-order wins), or
+ * undefined if none match. Never decides on its own whether to override an
+ * existing category -- "if null only" is enforced by callers (InputPanel's
+ * commitTransaction, ImportStatement's row builder), which only call this
+ * when the transaction/row doesn't already have a category, matching the
+ * same principle as the "if null only" phrasing.
+ */
+export function matchCategoryRule(description: string, rules: CategoryRule[] | undefined): string | undefined {
+  if (!rules || !description) return undefined;
+  const lower = description.toLowerCase();
+  return rules.find((r) => r.keyword.trim() && lower.includes(r.keyword.trim().toLowerCase()))?.category;
+}
+
 export type BudgetRuleKey = "40-30-30" | "50-30-20" | "60-20-20" | "70-20-10" | "80-15-5" | "custom";
 
 export const BUDGET_RULES: Record<BudgetRuleKey, { label: string; desc: string; needs: number; wants: number; savings: number }> = {
@@ -257,6 +274,8 @@ export interface LocalFinancials {
   budgetCustomWants?: number;
   /** User-created categories, alongside the built-in CATEGORIES -- see allCategories/categoryLabel/categoryIcon. */
   customCategories?: CustomCategory[];
+  /** Keyword -> category auto-assignment rules -- see matchCategoryRule. Only ever applied when a transaction/imported row has no category yet ("if null only"), never overriding a manual choice. */
+  categoryRules?: CategoryRule[];
 }
 
 export const DEFAULT_DATA: LocalFinancials = {
@@ -273,6 +292,7 @@ export const DEFAULT_DATA: LocalFinancials = {
   assets: [],
   trackedBalances: [],
   customCategories: [],
+  categoryRules: [],
   netWorthHistory: [],
   incomeHistory: [],
   lbpRateHistory: [],

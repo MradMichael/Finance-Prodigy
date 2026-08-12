@@ -4,6 +4,7 @@ import {
   nextOccurrence, recurringPaidSoFar, fmtDate, valueForMonth,
   loadData, saveData, DEFAULT_DATA, type StoredRecurring,
   allCategories, categoryLabel, categoryIcon, CATEGORIES,
+  matchCategoryRule, type CategoryRule,
 } from "./localData";
 
 function makeRecurring(overrides: Partial<StoredRecurring> = {}): StoredRecurring {
@@ -209,6 +210,37 @@ describe("category helpers", () => {
     expect(categoryLabel("uncategorized")).toBe("Uncategorized");
     expect(categoryIcon(undefined)).toBe("❔");
     expect(categoryIcon("uncategorized")).toBe("❔");
+  });
+});
+
+describe("matchCategoryRule", () => {
+  const rules: CategoryRule[] = [
+    { id: "r1", keyword: "Spinneys", category: "groceries" },
+    { id: "r2", keyword: "netflix", category: "entertainment" },
+  ];
+
+  it("matches case-insensitively, as a substring anywhere in the description", () => {
+    expect(matchCategoryRule("SPINNEYS SUPERMARKET BEIRUT", rules)).toBe("groceries");
+    expect(matchCategoryRule("Monthly Netflix Subscription", rules)).toBe("entertainment");
+  });
+
+  it("returns undefined when nothing matches, no rules exist, or the description is empty", () => {
+    expect(matchCategoryRule("Uber ride", rules)).toBeUndefined();
+    expect(matchCategoryRule("Spinneys run", undefined)).toBeUndefined();
+    expect(matchCategoryRule("", rules)).toBeUndefined();
+  });
+
+  it("first-match-in-order wins when a description matches more than one rule", () => {
+    const overlapping: CategoryRule[] = [
+      { id: "r1", keyword: "Uber", category: "transport" },
+      { id: "r2", keyword: "Uber Eats", category: "dining" },
+    ];
+    expect(matchCategoryRule("Uber Eats order", overlapping)).toBe("transport");
+  });
+
+  it("ignores a rule with a blank/whitespace-only keyword instead of matching everything", () => {
+    const blank: CategoryRule[] = [{ id: "r1", keyword: "   ", category: "other" }];
+    expect(matchCategoryRule("Anything at all", blank)).toBeUndefined();
   });
 });
 

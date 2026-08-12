@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import type { LocalFinancials, StoredCard, StoredTransaction, TrackedBalance } from "../lib/localData";
-import { uid, todayISO } from "../lib/localData";
+import { uid, todayISO, allCategories, matchCategoryRule } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, DateFieldDMY } from "./form/Primitives";
 import { extractPositionedText, TooManyPagesError, CancelledError, LoadTimeoutError } from "../lib/statementImport/pdfText";
@@ -21,6 +21,7 @@ interface ReviewRow {
   description: string;
   amount: string;
   bucket: Bucket;
+  category: string;
   isDuplicate: boolean;
 }
 
@@ -124,6 +125,10 @@ export default function ImportStatement({
         description: t.description,
         amount: String(t.amount),
         bucket: guessBucket(t.description),
+        // "If null only" doesn't really apply here -- an imported row has no
+        // prior category to protect, so a rule match always fills it in as
+        // the starting point (still editable per row before committing).
+        category: matchCategoryRule(t.description, financials.categoryRules) ?? "",
         isDuplicate,
       };
     });
@@ -164,6 +169,7 @@ export default function ImportStatement({
         paymentMethod: "card" as const,
         cardId: card.id,
         cardLabel: card.label,
+        ...(r.category ? { category: r.category } : {}),
       }));
 
     if (newTransactions.length === 0) return;
@@ -336,7 +342,7 @@ export default function ImportStatement({
                         <FocusInput value={r.description} onChange={(e) => updateRow(r.key, { description: e.target.value })} />
                         <DateFieldDMY value={r.date} onChange={(iso) => updateRow(r.key, { date: iso })} />
                       </div>
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="grid grid-cols-3 gap-2">
                         <MoneyInput value={r.amount} onChange={(v) => updateRow(r.key, { amount: v })} placeholder="0.00" />
                         <select
                           value={r.bucket} onChange={(e) => updateRow(r.key, { bucket: e.target.value as Bucket })}
@@ -344,6 +350,17 @@ export default function ImportStatement({
                           style={{ background: T.panel, border: `1px solid ${T.line}`, color: T.text }}
                         >
                           {BUCKET_OPTIONS.map((b) => <option key={b.value} value={b.value}>{b.label}</option>)}
+                        </select>
+                        <select
+                          value={r.category} onChange={(e) => updateRow(r.key, { category: e.target.value })}
+                          aria-label="Category"
+                          className="w-full rounded-xl px-3 py-2 text-sm"
+                          style={{ background: T.panel, border: `1px solid ${T.line}`, color: T.text }}
+                        >
+                          <option value="">No category</option>
+                          {allCategories(financials.customCategories).map((c) => (
+                            <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
+                          ))}
                         </select>
                       </div>
                     </div>
