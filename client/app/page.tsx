@@ -185,11 +185,56 @@ export default function Home() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [financials, dashboardData]);
 
-  if (!session || !financials || !dashboardData) {
+  // If the initial session/data load hangs (a stuck decrypt, a slow or
+  // failed auto-pull, anything), the loading branch below used to spin
+  // forever with no indication anything was wrong. This flips 8s after
+  // loading starts, and back off the moment loading actually finishes, so
+  // a normal fast load never shows it.
+  const loaded = !!(session && financials && dashboardData);
+  const [loadingTooLong, setLoadingTooLong] = useState(false);
+  useEffect(() => {
+    if (loaded) { setLoadingTooLong(false); return; }
+    const t = setTimeout(() => setLoadingTooLong(true), 8000);
+    return () => clearTimeout(t);
+  }, [loaded]);
+
+  if (!loaded) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-3" style={{ background: T.ink }}>
-        <Signet size={40} />
-        <p className="text-sm" style={{ color: T.mute }}>Loading…</p>
+      <div className="min-h-screen flex flex-col" style={{ background: T.ink }}>
+        <div className="flex flex-1 overflow-hidden">
+          <div className="hidden md:block flex-shrink-0 animate-pulse" style={{ width: 220, background: T.panel, borderRight: `1px solid ${T.line}` }} />
+          <div className="flex-1 overflow-y-auto px-4 py-8 md:px-10">
+            <div className="max-w-3xl mx-auto space-y-6">
+              <div className="flex items-center gap-3">
+                <Signet size={40} />
+                <div className="animate-pulse rounded-lg" style={{ width: 120, height: 16, background: T.panel }} />
+              </div>
+              <div className="animate-pulse rounded-2xl" style={{ height: 120, background: T.panel, border: `1px solid ${T.line}` }} />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="animate-pulse rounded-2xl" style={{ height: 88, background: T.panel, border: `1px solid ${T.line}` }} />
+                ))}
+              </div>
+              <div className="animate-pulse rounded-2xl" style={{ height: 200, background: T.panel, border: `1px solid ${T.line}` }} />
+            </div>
+          </div>
+        </div>
+        {loadingTooLong && (
+          <div
+            className="fixed bottom-4 left-1/2 -translate-x-1/2 max-w-sm w-[calc(100%-2rem)] rounded-2xl px-5 py-4 text-center shadow-2xl"
+            style={{ background: T.panel, border: `1px solid ${T.line}` }}
+          >
+            <p className="text-sm" style={{ color: T.text }}>This is taking longer than expected.</p>
+            <p className="text-xs mt-1" style={{ color: T.mute }}>Your data hasn&apos;t been touched — it&apos;s still safe in your browser. A slow connection or a stuck tab can cause this.</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="mt-3 px-4 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90"
+              style={{ background: T.jade, color: T.ink }}
+            >
+              Reload the page
+            </button>
+          </div>
+        )}
       </div>
     );
   }

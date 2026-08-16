@@ -36,6 +36,22 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: SW_INIT }} />
       </head>
       <body>
+        {/* Every screen in this app is a Client Component -- with JS disabled,
+            nothing below this ever renders. Without this, a JS-disabled visitor
+            saw a permanently blank page with no explanation at all. */}
+        <noscript>
+          <div style={{
+            minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
+            padding: "1rem", background: "#0B1F1E", color: "#EAF2EF", fontFamily: "system-ui, sans-serif",
+          }}>
+            <div style={{ maxWidth: 380, textAlign: "center" }}>
+              <h1 style={{ fontSize: 20, marginBottom: 8 }}>JavaScript is required</h1>
+              <p style={{ fontSize: 14, opacity: 0.8 }}>
+                ESSA runs entirely in your browser — including decrypting your own financial data — so it needs JavaScript enabled to work at all. Please enable it and reload this page.
+              </p>
+            </div>
+          </div>
+        </noscript>
         <ThemeProvider>
           {children}
         </ThemeProvider>
