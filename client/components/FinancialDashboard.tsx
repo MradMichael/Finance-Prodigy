@@ -20,6 +20,7 @@
  */
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   ResponsiveContainer,
   AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -27,6 +28,7 @@ import {
 } from "recharts";
 import { useTheme } from "../contexts/ThemeContext";
 import { fmtDate } from "../lib/localData";
+import { getLastSyncTime } from "../lib/syncService";
 import type { DashboardPayload } from "../lib/computeDashboard";
 import OnboardingChecklist from "./OnboardingChecklist";
 import type { Screen } from "./screens/shared";
@@ -213,9 +215,22 @@ export default function FinancialDashboard({
   onLogRecurringPayment?: (recurringId: string) => void;
 }) {
   const T = useTheme();
+  const router = useRouter();
   const { data: fetchedData, demo: fetchedDemo } = useDashboard(propData === undefined);
   const data = propData ?? fetchedData;
   const demo = propData === undefined && fetchedDemo;
+
+  // Recovery (the recovery-code flow on a lost/wiped device) only has
+  // anything to recover if this account has pushed at least once -- with
+  // no server copy, a valid recovery code still finds nothing. This is a
+  // real gap for anyone using ESSA on exactly one device and never opening
+  // Profile -- surfaced here rather than silently discovered the day it's
+  // too late to matter. sessionStorage/localStorage read, so it's done in
+  // an effect rather than during render.
+  const [neverSynced, setNeverSynced] = useState(false);
+  useEffect(() => {
+    setNeverSynced(getLastSyncTime() === null);
+  }, []);
 
   if (!data) {
     return (
@@ -266,6 +281,28 @@ export default function FinancialDashboard({
             vanished the instant step 1 was done, even if step 2 wasn't. */}
         {onNavigate && !(month.income > 0 && data.hasLoggedTransactions) && (
           <OnboardingChecklist hasIncome={month.income > 0} hasTransactions={data.hasLoggedTransactions} onNavigate={onNavigate} />
+        )}
+
+        {/* Not part of `alerts` (computeDashboard is a pure function of
+            LocalFinancials and has no way to know sync state) -- this reads
+            localStorage directly instead. Sync is deliberately opt-in
+            (see Privacy Policy), so this only ever warns, never auto-pushes. */}
+        {neverSynced && (month.income > 0 || data.hasLoggedTransactions) && (
+          <button
+            onClick={() => router.push("/profile")}
+            className="w-full text-left transition-opacity hover:opacity-80"
+          >
+            <div
+              className="flex items-center gap-2.5 rounded-2xl px-4 py-3"
+              style={{ background: T.brass + "12", border: `1px solid ${T.brass}30` }}
+            >
+              <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: T.brass }} />
+              <span className="text-sm flex-1" style={{ color: T.text }}>
+                This data has never been backed up. If this device is lost, it can&apos;t be recovered — go to Profile and push a backup.
+              </span>
+              <span className="text-xs flex-shrink-0" style={{ color: T.brass }}>→</span>
+            </div>
+          </button>
         )}
 
         {/* Needs attention — the 2-3 most urgent things, aggregated from
