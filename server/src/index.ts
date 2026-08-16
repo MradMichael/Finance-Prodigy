@@ -1,5 +1,5 @@
 /**
- * MOMENTUM — API server
+ * ESSA — API server
  * npm run dev → http://localhost:4000
  */
 import express from "express";
@@ -52,7 +52,7 @@ app.use(cors({ origin: process.env.CLIENT_ORIGIN ?? "http://localhost:3000" }));
 // the zod validation (and its clear error message) already expects it.
 app.use(express.json({ limit: "3mb" }));
 
-app.get("/api/health", (_req, res) => res.json({ ok: true, service: "momentum-api" }));
+app.get("/api/health", (_req, res) => res.json({ ok: true, service: "essa-api" }));
 
 // Generous enough for normal auto-sync usage (debounced client-side, so a
 // real user isn't hammering this), tight enough to bound brute-forcing a

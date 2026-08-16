@@ -1,5 +1,5 @@
 /**
- * MOMENTUM — Interactive Financial Planner
+ * ESSA — Interactive Financial Planner
  * -----------------------------------------
  * Adjust the levers — watch the dates move.
  *
@@ -216,7 +216,7 @@ function Runway({ horizon, marks }) {
 }
 
 // ------------------------------ screen ------------------------------ //
-export default function MomentumPlanner() {
+export default function EssaPlanner() {
   const [income, setIncome] = useState(3500);
   const [needs, setNeeds] = useState(1650);
   const [wants, setWants] = useState(700);
@@ -258,7 +258,7 @@ export default function MomentumPlanner() {
 
         {/* header */}
         <header>
-          <p className="text-xs uppercase tracking-widest" style={{ color: T.mute }}>Momentum · Planner</p>
+          <p className="text-xs uppercase tracking-widest" style={{ color: T.mute }}>ESSA · Planner</p>
           <h1 className="text-3xl md:text-4xl mt-1" style={SERIF}>
             Adjust the levers — <span style={{ color: T.brass }}>watch the dates move.</span>
           </h1>

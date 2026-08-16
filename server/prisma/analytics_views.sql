@@ -1,5 +1,5 @@
 -- =====================================================================
--- MOMENTUM — Analytics layer (run once after `prisma migrate dev`):
+-- ESSA — Analytics layer (run once after `prisma migrate dev`):
 --   npx prisma db execute --file ./prisma/analytics_views.sql --schema ./prisma/schema.prisma
 --
 -- Architecture rule: heavy aggregation lives HERE, not in the API.

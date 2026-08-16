@@ -1,14 +1,17 @@
 "use client";
 
 /**
- * MOMENTUM — Financial Dashboard (the Motivation Engine)
- * ------------------------------------------------------
+ * ESSA — Financial Dashboard
+ * --------------------------
  * Drop into a Next.js App Router project, e.g.:
  *   app/page.tsx →  import FinancialDashboard from "@/components/FinancialDashboard";
  *
- * Reads GET /api/dashboard (proxied to the Express server via
- * next.config.js rewrites — see README). Ships with a realistic mock
- * payload so the screen renders before the backend is wired up.
+ * In the actual app (app/page.tsx), always receives its data via the
+ * `data` prop -- computeDashboard.ts runs entirely client-side, there is
+ * no GET /api/dashboard endpoint. The fetch-and-demo-data fallback below
+ * (useDashboard) only kicks in when no `data` prop is passed at all, for
+ * dropping this component into a project standalone before real data
+ * exists.
  *
  * Design language: "ledger ink & brass" — deep green-ink surfaces,
  * brass for milestones, jade for progress, coral reserved for the few

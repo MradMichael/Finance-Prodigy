@@ -1,5 +1,5 @@
 /**
- * MOMENTUM — Database seed
+ * ESSA — Database seed
  * Run: npx prisma db seed
  *
  * Seeds:
@@ -85,10 +85,10 @@ async function main() {
 
   // 3) Demo user + accounts (replace with real auth provisioning later)
   const user = await prisma.user.upsert({
-    where: { email: "demo@momentum.app" },
+    where: { email: "demo@essa.app" },
     update: {},
     create: {
-      email: "demo@momentum.app",
+      email: "demo@essa.app",
       name: "Demo User",
       currency: "USD",
       efTargetMonths: 6,

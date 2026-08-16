@@ -268,7 +268,7 @@ function AdminPageContent() {
                 <li className="flex gap-2"><span style={{ color: T.coral }}>3.</span> Start the server:
                   <code className="ml-1 px-2 py-0.5 rounded text-[11px]" style={{ background: T.ink, color: T.jade }}>npm run dev</code>
                 </li>
-                <li className="flex gap-2"><span style={{ color: T.coral }}>4.</span> Wait for: <code className="px-1.5 py-0.5 rounded text-[11px]" style={{ background: T.ink, color: T.jade }}>momentum-api listening on :4000</code></li>
+                <li className="flex gap-2"><span style={{ color: T.coral }}>4.</span> Wait for a log line containing: <code className="px-1.5 py-0.5 rounded text-[11px]" style={{ background: T.ink, color: T.jade }}>&quot;event&quot;:&quot;server_started&quot;</code></li>
                 <li className="flex gap-2"><span style={{ color: T.coral }}>5.</span> Click <strong style={{ color: T.text }}>↻ Ping server</strong> above to verify.</li>
               </ol>
               <p className="text-[10px]" style={{ color: T.mute }}>
