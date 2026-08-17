@@ -5,6 +5,7 @@ import {
   loadData, saveData, DEFAULT_DATA, type StoredRecurring,
   allCategories, categoryLabel, categoryIcon, CATEGORIES,
   matchCategoryRule, type CategoryRule,
+  roundMoney, moneyEquals, isEmptyFinancials, type LocalFinancials,
 } from "./localData";
 
 function makeRecurring(overrides: Partial<StoredRecurring> = {}): StoredRecurring {
@@ -283,5 +284,88 @@ describe("loadData / saveData round trip", () => {
     localStorage.setItem(`essa_data_${userId}`, "{not valid json at all");
     const loaded = await loadData(userId);
     expect(loaded).toEqual(DEFAULT_DATA);
+  });
+});
+
+describe("roundMoney", () => {
+  it("rounds to the nearest cent", () => {
+    expect(roundMoney(1.004)).toBe(1);
+    expect(roundMoney(1.006)).toBe(1.01);
+    expect(roundMoney(10)).toBe(10);
+    expect(roundMoney(0.1 + 0.2)).toBe(0.3); // the textbook 0.30000000000000004 case
+  });
+
+  it("known, accepted limitation: an exact .005 can round down, because 1.005 itself isn't exactly representable in a float", () => {
+    // 1.005 is actually stored as ~1.00499999999999989 -- Math.round(100.4999...)
+    // is 100, not 101. This is the same behavior the codebase's pre-existing
+    // debtEngine round2 and computeDashboard's inline (n*100)/100 spots
+    // already had; consolidating them here doesn't change it, and a more
+    // "correct" epsilon-nudged version would trade this documented,
+    // consistent behavior for a different, less-obvious one at some other
+    // boundary. Documented, not silently relied on.
+    expect(roundMoney(1.005)).toBe(1);
+  });
+
+  it("handles negative amounts the same way", () => {
+    expect(roundMoney(-1.005)).toBe(-1); // Math.round rounds -0.5 toward 0, not away -- documenting the actual behavior, not asserting a "should"
+    expect(roundMoney(-1.006)).toBe(-1.01);
+  });
+
+  it("is idempotent -- rounding an already-rounded value is a no-op", () => {
+    const once = roundMoney(19.999999999999996);
+    expect(roundMoney(once)).toBe(once);
+  });
+});
+
+describe("moneyEquals", () => {
+  it("treats float dust from a chain of arithmetic as equal", () => {
+    expect(moneyEquals(0.1 + 0.2, 0.3)).toBe(true); // raw === would fail this
+    expect(0.1 + 0.2 === 0.3).toBe(false); // the bug this exists to route around, made explicit
+  });
+
+  it("still distinguishes genuinely different amounts", () => {
+    expect(moneyEquals(10, 10.01)).toBe(false);
+    expect(moneyEquals(0, 0.01)).toBe(false);
+  });
+
+  it("two independently-computed values that round to the same cent always compare equal", () => {
+    // Both land on 19.99 -- two different arithmetic paths reaching the
+    // "same" money value, exactly the case this function exists for.
+    expect(roundMoney(19.994)).toBe(19.99);
+    expect(roundMoney(19.9905)).toBe(19.99);
+    expect(moneyEquals(roundMoney(19.994), roundMoney(19.9905))).toBe(true);
+  });
+
+  it("adjacent cents are NOT treated as equal -- this isn't a loose fuzzy-match", () => {
+    expect(moneyEquals(19.99, 20)).toBe(false);
+  });
+
+  it("respects a custom epsilon when the default half-cent isn't the right tolerance", () => {
+    expect(moneyEquals(10, 10.02, 0.001)).toBe(false);
+    expect(moneyEquals(10, 10.0005, 0.001)).toBe(true);
+  });
+});
+
+describe("isEmptyFinancials — emergencyFundBalance drift", () => {
+  const empty: LocalFinancials = {
+    ...DEFAULT_DATA,
+    income: 0, emergencyFundBalance: 0,
+    transactions: [], goals: [], debts: [], recurring: [], cards: [], assets: [], trackedBalances: [],
+  };
+
+  it("a clean zero balance is empty", () => {
+    expect(isEmptyFinancials(empty)).toBe(true);
+  });
+
+  it("a real nonzero balance is not empty", () => {
+    expect(isEmptyFinancials({ ...empty, emergencyFundBalance: 50 })).toBe(false);
+  });
+
+  it("float-drifted near-zero (the result of many +/- edits landing just off exact 0) still reads as empty, not as having real data", () => {
+    // Simulates what InputPanel's repeated (balance ?? 0) + amtUSD / - amtUSD
+    // can produce over many transactions -- not exactly 0, but not a real balance either.
+    const drifted = 0.1 + 0.2 - 0.3; // 5.551115123125783e-17 in IEEE754, not exactly 0
+    expect(drifted).not.toBe(0); // confirms the drift is real, not a trivial test
+    expect(isEmptyFinancials({ ...empty, emergencyFundBalance: drifted })).toBe(true);
   });
 });

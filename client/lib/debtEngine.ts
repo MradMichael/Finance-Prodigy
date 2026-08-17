@@ -6,12 +6,26 @@
  * small in-memory result cache, since it's called from computeDashboard()
  * on every keystroke in the UI (any field edit re-derives the whole
  * dashboard) and this is by far the most expensive computation in that
- * path — up to 600 month-iterations, twice (AVALANCHE + SNOWBALL), for a
- * field edit (e.g. the account name) that didn't change anything the
- * simulation actually depends on. Originally ported from a server-side
- * financial engine that has since been removed (it was unreachable — the
- * client never called it); this is now the only implementation.
+ * path — up to MAX_PAYOFF_MONTHS month-iterations, twice (AVALANCHE +
+ * SNOWBALL), for a field edit (e.g. the account name) that didn't change
+ * anything the simulation actually depends on. Originally ported from a
+ * server-side financial engine that has since been removed (it was
+ * unreachable — the client never called it); this is now the only
+ * implementation.
  */
+
+import { roundMoney } from "./localData";
+
+// This file already had the right instinct -- round settled outputs
+// (monthlyCommitment, totalInterest, the cache fingerprint), never the raw
+// balance mid-loop -- before "Option B" gave it a name. Now uses the one
+// shared implementation instead of its own local copy (see localData.ts).
+
+// Hard ceiling on the month-by-month simulation loop below -- 50 years.
+// Load-bearing, not just a defensive backstop: see the comment at the
+// loop's exit check for why a payment that's merely slow (not
+// non-amortizing) can legitimately run this all the way out.
+const MAX_PAYOFF_MONTHS = 600;
 
 export interface DebtInput {
   id: string;
@@ -30,8 +44,6 @@ export interface PayoffPlan {
   monthlyCommitment: number;
   warning?: string;
 }
-
-const round2 = (n: number) => Math.round(n * 100) / 100;
 
 // Clamp to the target month's actual last day instead of letting
 // Date.setMonth overflow into the following month — the same bug already
@@ -66,7 +78,7 @@ function runSimulation(
   // Sum only debts still owed — a caller can pass already-paid-off debts
   // (balance 0, kept for history) whose minimumPayment wasn't cleared, and
   // those shouldn't count toward a monthly commitment that no longer exists.
-  const monthlyCommitment = round2(live.reduce((s, d) => s + d.minimumPayment, 0) + extraMonthly);
+  const monthlyCommitment = roundMoney(live.reduce((s, d) => s + d.minimumPayment, 0) + extraMonthly);
 
   const base: PayoffPlan = {
     strategy, feasible: true, months: 0,
@@ -104,7 +116,7 @@ function runSimulation(
   let month = 0;
   let totalInterest = 0;
 
-  while (live.some((d) => d.balance > 0.005) && month < 600) {
+  while (live.some((d) => d.balance > 0.005) && month < MAX_PAYOFF_MONTHS) {
     month++;
     let budget = monthlyCommitment;
 
@@ -140,11 +152,26 @@ function runSimulation(
     }
   }
 
-  // The loop above can also exit because the 600-month cap was hit, not
+  // The loop above can also exit because MAX_PAYOFF_MONTHS was hit, not
   // because every debt actually reached zero — a commitment that's only
   // marginally above interest amortizes so slowly it never finishes within
   // 50 years. Reporting feasible:true with a concrete "debt-free" date in
   // that case would be presenting a wrong payoff date as a real one.
+  //
+  // This is a real, regularly-exercised exit path, not just a defensive
+  // backstop for a pathological input: for ANY debt where the payment
+  // covers at least the interest, the balance is strictly decreasing each
+  // month (a standard geometric amortization curve), so it always crosses
+  // the payoff threshold in *some* finite number of months — the loop
+  // hitting the cap means that number is genuinely > 600 (>50 years), a
+  // real "too slow to be useful," not a numerical artifact. The one input
+  // that would make balance NOT decrease (payment below interest) is
+  // caught separately above, before this loop ever runs. Floating-point
+  // precision specifically is not a realistic way to get stuck here either
+  // — the 0.005 exit threshold is many orders of magnitude larger than
+  // where float representation error actually lives (~1e-16 relative), so
+  // a balance is always comfortably past this check, one way or the other,
+  // long before precision could matter.
   if (live.some((d) => d.balance > 0)) {
     return {
       ...base, feasible: false, months: -1, debtFreeDate: null,
@@ -156,7 +183,7 @@ function runSimulation(
     ...base,
     months: month,
     debtFreeDate: addMonths(start, month).toISOString(),
-    totalInterest: round2(totalInterest),
+    totalInterest: roundMoney(totalInterest),
   };
 }
 
@@ -172,9 +199,9 @@ function fingerprint(debts: DebtInput[], extraMonthly: number, strategy: string,
   // ISO/time) is deliberate: the only consumer of debtFreeDate is dateFmt(),
   // which formats DD-MM-YYYY and drops time-of-day, so two calls within the
   // same calendar day always produce an identical displayed result anyway.
-  const debtsKey = debts.map((d) => `${d.id}:${round2(d.balance)}:${d.aprPct}:${d.minimumPayment}`).join("|");
+  const debtsKey = debts.map((d) => `${d.id}:${roundMoney(d.balance)}:${d.aprPct}:${d.minimumPayment}`).join("|");
   const dayKey = start.toISOString().slice(0, 10);
-  return `${strategy}|${dayKey}|${round2(extraMonthly)}|${debtsKey}`;
+  return `${strategy}|${dayKey}|${roundMoney(extraMonthly)}|${debtsKey}`;
 }
 
 export function simulateDebtPayoff(

@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import type { LocalFinancials, BudgetRuleKey } from "../../lib/localData";
-import { BUDGET_RULES, MIN_SPLIT_PCT, floorCustomSplit } from "../../lib/localData";
+import { BUDGET_RULES, MIN_SPLIT_PCT, floorCustomSplit, moneyEquals } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money } from "./shared";
@@ -210,7 +210,7 @@ export default function BudgetScreen({
         </div>
 
         {/* This month vs target */}
-        {income === 0 ? (
+        {moneyEquals(income, 0) ? (
           <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
             <p className="text-sm" style={{ color: T.mute }}>
               Set your monthly income in <strong style={{ color: T.text }}>My Finances → Setup</strong> to see how your spending compares to this budget.

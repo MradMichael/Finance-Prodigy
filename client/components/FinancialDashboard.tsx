@@ -27,7 +27,7 @@ import {
   LineChart, Line,
 } from "recharts";
 import { useTheme } from "../contexts/ThemeContext";
-import { fmtDate } from "../lib/localData";
+import { fmtDate, moneyEquals } from "../lib/localData";
 import { getLastSyncTime } from "../lib/syncService";
 import type { DashboardPayload } from "../lib/computeDashboard";
 import OnboardingChecklist from "./OnboardingChecklist";
@@ -259,7 +259,7 @@ export default function FinancialDashboard({
           <div>
             <p className="text-xs uppercase tracking-widest" style={{ color: T.mute }}>ESSA · {monthName} {period.year}</p>
             <h1 className="text-3xl md:text-4xl mt-1" style={SERIF}>
-              {month.income === 0
+              {moneyEquals(month.income, 0)
                 ? <>Set your income to see the full picture, {user.name.split(" ")[0]}.</>
                 : budgetTargetPct.savings > 0 && month.savingsRatePct >= budgetTargetPct.savings
                 ? <>{user.name.split(" ")[0]}, you saved <span style={{ color: T.jade }}>{money(month.savingsContrib)}</span>, at or above your {budgetTargetPct.savings}% target.</>
@@ -576,7 +576,7 @@ export default function FinancialDashboard({
                   <span>lifetime interest <span style={{ ...NUMS, color: T.text }}>{money(debt.plan.totalInterest)}</span></span>
                 </div>
               </>
-            ) : debt.totalBalance === 0 ? (
+            ) : moneyEquals(debt.totalBalance, 0) ? (
               // totalBalance, not count — paid-off debts are kept in the
               // array for history (see computeDashboard.ts), so count alone
               // stays nonzero even once every debt is actually cleared.

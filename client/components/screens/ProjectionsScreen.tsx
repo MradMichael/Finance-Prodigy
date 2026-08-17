@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
-import { BUDGET_RULES } from "../../lib/localData";
+import { BUDGET_RULES, moneyEquals } from "../../lib/localData";
 import { dateFmt, type computeDashboard } from "../../lib/computeDashboard";
 import { simulateDebtPayoff, addMonths, type DebtInput } from "../../lib/debtEngine";
 import { projectCompletion } from "../../lib/projections";
@@ -210,20 +210,28 @@ export default function ProjectionsScreen({
               {[
                 { label: "Recommended savings", v: Math.round(effectiveBudgetTargets.savings) },
                 { label: `My full surplus (${money(surplus)})`, v: surplus },
-              ].map((p) => (
-                <button
-                  key={p.label}
-                  onClick={() => setTestAmount(p.v)}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80"
-                  style={{
-                    background: testAmount === p.v ? T.brass + "22" : T.panelSoft,
-                    border: `1px solid ${testAmount === p.v ? T.brass : T.line}`,
-                    color: testAmount === p.v ? T.brass : T.mute,
-                  }}
-                >
-                  {p.label}
-                </button>
-              ))}
+              ].map((p) => {
+                // moneyEquals, not === -- p.v for the surplus preset is
+                // itself computed (income minus commitments), so a re-render
+                // after any unrelated financials edit can recompute it to a
+                // float a hair off from what testAmount was actually set to
+                // at click-time, silently dropping the "active" highlight.
+                const active = moneyEquals(testAmount, p.v);
+                return (
+                  <button
+                    key={p.label}
+                    onClick={() => setTestAmount(p.v)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80"
+                    style={{
+                      background: active ? T.brass + "22" : T.panelSoft,
+                      border: `1px solid ${active ? T.brass : T.line}`,
+                      color: active ? T.brass : T.mute,
+                    }}
+                  >
+                    {p.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
 

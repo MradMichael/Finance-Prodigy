@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, CategoryRule } from "../../lib/localData";
-import { CATEGORIES, allCategories, categoryLabel, categoryIcon, matchCategoryRule, monthlyEquivalent, toUSD as toUSDShared, uid, todayISO } from "../../lib/localData";
+import { CATEGORIES, allCategories, categoryLabel, categoryIcon, matchCategoryRule, monthlyEquivalent, toUSD as toUSDShared, uid, todayISO, moneyEquals } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money } from "./shared";
 import { Label, FocusInput, PrimaryBtn } from "../form/Primitives";
@@ -322,7 +322,7 @@ export default function CategoriesScreen({
               ))}
             </div>
           </div>
-          {breakdownTotal === 0 ? (
+          {moneyEquals(breakdownTotal, 0) ? (
             <p className="text-sm" style={{ color: T.mute }}>No categorized spending yet.</p>
           ) : (
             <div className="flex items-center gap-6 flex-wrap">

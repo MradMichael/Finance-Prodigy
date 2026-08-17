@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
-import { monthlyEquivalent, toUSD as toUSDShared, todayISO } from "../../lib/localData";
+import { monthlyEquivalent, toUSD as toUSDShared, todayISO, moneyEquals } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money } from "./shared";
 import Donut from "../charts/Donut";
@@ -59,7 +59,7 @@ export default function CurrencyScreen({ financials }: { financials: LocalFinanc
         {/* Spend by currency */}
         <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
           <p className="text-xs uppercase tracking-widest mb-4" style={{ color: T.mute }}>This month&apos;s spending, by currency</p>
-          {spendTotalUSD === 0 ? (
+          {moneyEquals(spendTotalUSD, 0) ? (
             <p className="text-sm" style={{ color: T.mute }}>No spending logged yet this month.</p>
           ) : (
             <div className="flex items-center gap-6 flex-wrap">
@@ -105,7 +105,7 @@ export default function CurrencyScreen({ financials }: { financials: LocalFinanc
           <p className="text-[11px] mb-4" style={{ color: T.mute }}>
             Tracked balances and assets only — goals, your safety net, and debts are always USD in ESSA, so they&apos;re not currency-exposed and aren&apos;t counted here.
           </p>
-          {holdingsTotalUSD === 0 ? (
+          {moneyEquals(holdingsTotalUSD, 0) ? (
             <p className="text-sm" style={{ color: T.mute }}>No LBP or USD assets/balances tracked yet.</p>
           ) : (
             <div className="flex items-center gap-6 flex-wrap">

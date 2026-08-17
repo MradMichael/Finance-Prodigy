@@ -7,7 +7,7 @@ import type {
 } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, monthlyEquivalent, nominalMonthlyEquivalent, isRecurringActive, isPaidThisCycle, recurringPaidSoFar, toUSD as toUSDShared, allCategories, categoryLabel, categoryIcon, matchCategoryRule } from "../lib/localData";
+import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, monthlyEquivalent, nominalMonthlyEquivalent, isRecurringActive, isPaidThisCycle, recurringPaidSoFar, toUSD as toUSDShared, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY } from "./form/Primitives";
@@ -237,11 +237,16 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
     };
     update({
       transactions: [tx, ...financials.transactions],
+      // roundMoney at every settled write to this field specifically because
+      // it's an accumulator, not a replaced-wholesale value like income --
+      // left unrounded, small float dust from each +/- compounds silently
+      // across however many transactions ever touch it over the life of
+      // the account.
       ...(txBucket === "SAVINGS" && txAddToEF
-        ? { emergencyFundBalance: (financials.emergencyFundBalance ?? 0) + amtUSD }
+        ? { emergencyFundBalance: roundMoney((financials.emergencyFundBalance ?? 0) + amtUSD) }
         : {}),
       ...(txBucket !== "SAVINGS" && txBucket !== "INCOME" && txFromEF
-        ? { emergencyFundBalance: Math.max(0, (financials.emergencyFundBalance ?? 0) - amtUSD) }
+        ? { emergencyFundBalance: roundMoney(Math.max(0, (financials.emergencyFundBalance ?? 0) - amtUSD)) }
         : {}),
     });
     setTxAmt(""); setTxDesc(""); setTxPayNote(""); setTxAddToEF(false); setTxFromEF(false); setTxCategory("");
@@ -330,8 +335,13 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
     if (!amt || amt <= 0) return;
     const updated = financials.debts.map((d) => {
       if (d.id !== debtId) return d;
-      const newBal = Math.max(0, d.balance - amt);
-      return { ...d, balance: newBal, paidOffAt: newBal === 0 ? (d.paidOffAt ?? new Date().toISOString()) : d.paidOffAt };
+      // roundMoney at this settled write, not before -- this is where the
+      // computed balance actually gets persisted. moneyEquals for the
+      // paid-off check regardless, since even a rounded balance and 0 can
+      // still disagree by a fraction of a cent depending on how amt itself
+      // was entered.
+      const newBal = roundMoney(Math.max(0, d.balance - amt));
+      return { ...d, balance: newBal, paidOffAt: moneyEquals(newBal, 0) ? (d.paidOffAt ?? new Date().toISOString()) : d.paidOffAt };
     });
     update({ debts: updated });
     setPayingDebtId(null); setDebtPayAmt("");

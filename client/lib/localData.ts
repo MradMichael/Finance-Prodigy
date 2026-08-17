@@ -316,8 +316,13 @@ export const DEFAULT_DATA: LocalFinancials = {
 
 /** True when an account has literally nothing entered yet (fresh sign-up defaults) — used to gate the one-time auto-pull-on-first-load in app/page.tsx so it only ever fires for a genuinely blank local account, never silently overwriting real local data. */
 export function isEmptyFinancials(data: LocalFinancials): boolean {
+  // emergencyFundBalance, unlike income, is never replaced wholesale -- it's
+  // nudged up and down by individual transactions (see InputPanel.tsx's
+  // txAddToEF/txFromEF), so unlike a plain field it genuinely can accumulate
+  // float drift over many edits and land on something like 1e-13 instead of
+  // a clean 0. moneyEquals, not ===.
   return data.income === 0
-    && data.emergencyFundBalance === 0
+    && moneyEquals(data.emergencyFundBalance, 0)
     && data.transactions.length === 0
     && data.goals.length === 0
     && data.debts.length === 0
@@ -423,6 +428,54 @@ export function todayISO(): string {
 /** Converts an amount to USD given its own currency and the current LBP rate — was independently redefined as the same one-liner in computeDashboard.ts, InputPanel.tsx, RecurringScreen.tsx, and TransactionsScreen.tsx. */
 export function toUSD(amount: number, currency: Currency | undefined, lbpRate: number): number {
   return currency === "LBP" ? amount / lbpRate : amount;
+}
+
+// ── Money precision (2026-08-17 audit follow-up, "Option B") ──────────────
+// All money in this app is a native JS number (float dollars), not integer
+// cents — see docs/AUDIT_2026-08.md, 2.4.16. That's a deliberate choice
+// (no stored-data migration for a live app), not an oversight, but it means
+// two things have to be true everywhere money is handled: round at the
+// edges only, and never use exact equality on a value that came out of
+// arithmetic. These two functions are the single, shared way to do both —
+// duplicating either one locally anywhere is exactly the mistake this
+// exists to prevent (see toUSD's own doc comment above for how that's
+// already gone wrong once with a much simpler one-liner).
+
+/**
+ * Rounds to the nearest cent. Apply this at a *boundary* — formatting for
+ * display, or the moment a computed value is written into stored/settled
+ * data (an account's new balance, a total that gets persisted) — and
+ * nowhere else. Rounding a value mid-calculation (e.g. every iteration of
+ * a month-by-month simulation) doesn't fix float imprecision, it just
+ * re-introduces a smaller, compounding version of it on every step instead
+ * of once at the end; debtEngine.ts's own simulation loop is the concrete
+ * example this matters for.
+ */
+export function roundMoney(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/**
+ * Tolerance-based equality for a money value that came out of arithmetic
+ * (a sum, a subtraction, a currency conversion) — floats accumulate
+ * representation error (the textbook case: 0.1 + 0.2 !== 0.3), so a direct
+ * === on a computed amount is a latent bug even when the two values are
+ * "the same" in every sense that matters for currency. Not needed for a
+ * raw, directly-stored field that's simply replaced wholesale on every
+ * edit (e.g. the income figure the user types into Setup) — nothing has
+ * ever done arithmetic on it, so it can't have drifted. It IS needed for
+ * anything built from a sum, difference, or conversion, and especially
+ * for anything that accumulates over many edits over time (an emergency
+ * fund balance nudged up and down by many transactions, a debt balance
+ * paid down over many months).
+ *
+ * Default epsilon is half a cent — tighter than roundMoney's own
+ * cent-level rounding, so two values that are already both rounded and
+ * genuinely equal always compare equal, while still absorbing ordinary
+ * float dust from a chain of additions/subtractions.
+ */
+export function moneyEquals(a: number, b: number, epsilon = 0.005): boolean {
+  return Math.abs(a - b) < epsilon;
 }
 
 /** Format an ISO date string (YYYY-MM-DD or full ISO) as DD/MM/YYYY for display. */
