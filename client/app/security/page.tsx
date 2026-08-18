@@ -85,10 +85,12 @@ export default function SecurityPage() {
 
         <Section title="The admin panel isn't a backdoor into your account">
           <p>
-            An internal admin panel exists for diagnostics, but it&apos;s gated out of the production build
-            entirely. It doesn&apos;t ship to the live app strangers use. It also couldn&apos;t show your
-            financial data even in development: it only ever sees account metadata (email, sign-up date) from
-            the browser it&apos;s opened in, never the encrypted contents of your local storage.
+            An internal diagnostics panel exists at <code className="px-1 py-0.5 rounded text-xs" style={{ background: T.panelSoft }}>/admin</code>, reachable by any signed-in
+            user &mdash; it isn&apos;t excluded from the production build, so restricting it to one account would
+            only ever have been a check in this same public source, not a real barrier. It couldn&apos;t show your
+            financial data even so: it only ever sees account metadata (email, sign-up date) from the browser
+            it&apos;s opened in, never the encrypted contents of your local storage, and nothing it shows is
+            specific to another user.
           </p>
         </Section>
 
