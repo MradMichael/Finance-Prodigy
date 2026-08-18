@@ -513,16 +513,6 @@ export function isAdmin(userId: string): boolean {
   return getUsers().find((u) => u.id === userId)?.isAdmin === true;
 }
 
-// Distinct from isAdmin() above -- that's a per-browser "first account
-// signed up here" convenience flag with no real access-control meaning
-// (anyone who signs up first in a fresh browser gets it). This is the
-// actual gate for the /admin operational panel (DB/rate-limit/user-list
-// details), restricted to one real account regardless of browser.
-const APP_ADMIN_EMAIL = "mmrad1998@gmail.com";
-export function isAppAdmin(email: string): boolean {
-  return email.trim().toLowerCase() === APP_ADMIN_EMAIL;
-}
-
 export function listUsers(): Pick<StoredUser, "id" | "email" | "name" | "createdAt" | "isAdmin">[] {
   return getUsers().map(({ id, email, name, createdAt, isAdmin }) => ({ id, email, name, createdAt, isAdmin }));
 }

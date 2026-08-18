@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { getSession, isAppAdmin, ensureFirstUserIsAdmin, listUsers } from "../../lib/auth";
+import { getSession, ensureFirstUserIsAdmin, listUsers } from "../../lib/auth";
 import { getLastSyncTime } from "../../lib/syncService";
 import { useTheme } from "../../contexts/ThemeContext";
 import { Signet } from "../../components/EssaBrand";
@@ -120,21 +120,22 @@ function Row({ label, value, mono = false, sensitive = false, copyable = false }
   );
 }
 
-// Gated by one specific account's email (isAppAdmin, in auth.ts), not by
-// environment -- this panel is meant to be reachable on the live production
-// site for that one real account, not just during local dev. Unlike the
-// previous NODE_ENV-based version of this gate, that means AdminPageContent's
-// full source (the DB/rate-limit/architecture details below) does ship in
-// the public JS bundle to every visitor: a runtime session check can't be
-// proven false at build time, so it can't be dead-code-eliminated the way
-// the old dev-only check could. That's still safe to ship, because nothing
-// below is an actual credential -- this page never reads a real connection
-// string (see the removed NEXT_PUBLIC_DB_URL pattern, 2.3.11b in the audit:
-// masking it for display was cosmetic only, since ANY NEXT_PUBLIC_ var gets
-// inlined as a literal into this same public bundle at build time regardless
-// of on-screen masking) -- and everything else (rate limits, PBKDF2
-// iteration count, theme names) is operational trivia, not a secret. The
-// real access gate is the session check in AdminPageContent's effect below.
+// Reachable by any signed-in user -- not gated to one specific account.
+// Nothing below is cross-user data or a real credential: "Registered
+// users" only lists accounts signed up on THIS browser (local
+// getUsers(), never a server-side user table); this page never reads a
+// real DB connection string either (see the removed NEXT_PUBLIC_DB_URL
+// pattern, 2.3.11b in the audit -- masking it for display was cosmetic
+// only, since any NEXT_PUBLIC_ var is inlined as a literal into this
+// same public bundle at build time regardless); and everything else
+// (health check, rate limits, PBKDF2 iteration count, theme names) is
+// operational trivia. A per-account email gate here protected against
+// nothing a signed-in user couldn't already see for their own browser
+// via devtools, while adding a client-side-only check that ships to the
+// public bundle regardless (a runtime check can't be proven false at
+// build time, so it can't be dead-code-eliminated) and a real deploy
+// dependency (a misconfigured admin-email env var). Removed 2026-08-18
+// -- see docs/AUDIT_2026-08.md, "admin gating" in Amendment 3.
 export default function AdminPage() {
   return <AdminPageContent />;
 }
@@ -150,10 +151,9 @@ function AdminPageContent() {
 
   useEffect(() => {
     const s = getSession();
-    if (!s || !isAppAdmin(s.email)) { router.replace("/"); return; }
-    // Unrelated to the gate above (isAppAdmin checks the session's email,
-    // not this per-browser flag) -- kept only to back the per-row "Admin"
-    // badge in the Registered users list below.
+    if (!s) { router.replace("/"); return; }
+    // Unrelated to the signed-in check above -- kept only to back the
+    // per-row "Admin" badge in the Registered users list below.
     ensureFirstUserIsAdmin();
 
     // Build user rows. essa_last_sync is a single browser-wide key, not
