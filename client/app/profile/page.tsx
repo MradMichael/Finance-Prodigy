@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getSession, hasValidSession, updateProfile, deleteAccount, signOut, isAppAdmin, ensureFirstUserIsAdmin, regenerateRecoveryCode } from "../../lib/auth";
+import { getSession, hasValidSession, updateProfile, deleteAccount, signOut, ensureFirstUserIsAdmin, regenerateRecoveryCode } from "../../lib/auth";
 import RecoveryCodeModal from "../../components/RecoveryCodeModal";
 import type { Session } from "../../lib/auth";
 import { loadData, saveData } from "../../lib/localData";
@@ -30,7 +30,6 @@ export default function ProfilePage() {
   const { theme: activeTheme, setTheme } = useThemeControl();
 
   const [session,       setSession]       = useState<Session | null>(null);
-  const [admin,         setAdmin]         = useState(false);
   const [name,          setName]          = useState("");
   const [saveMsg,       setSaveMsg]       = useState("");
   const [showDelete,    setShowDelete]    = useState(false);
@@ -61,7 +60,6 @@ export default function ProfilePage() {
     setSession(s);
     setName(s.name);
     setLastSync(getLastSyncTime());
-    setAdmin(isAppAdmin(s.email));
     setAnalyticsOn(isAnalyticsOptedIn());
   }, [router]);
 
@@ -423,18 +421,16 @@ export default function ProfilePage() {
             <span>Trust &amp; Security</span>
             <span style={{ color: T.mute }}>→</span>
           </Link>
-          {admin && (
-            <Link
-              href="/admin"
-              className="flex items-center justify-between w-full px-4 py-3 rounded-xl text-sm transition-all hover:opacity-80"
-              style={{ background: T.brass + "12", color: T.brass, border: `1px solid ${T.brass}28` }}
-            >
-              <span className="flex items-center gap-2">
-                <span>⚙</span> Admin panel
-              </span>
-              <span>→</span>
-            </Link>
-          )}
+          <Link
+            href="/admin"
+            className="flex items-center justify-between w-full px-4 py-3 rounded-xl text-sm transition-all hover:opacity-80"
+            style={{ background: T.brass + "12", color: T.brass, border: `1px solid ${T.brass}28` }}
+          >
+            <span className="flex items-center gap-2">
+              <span>⚙</span> Admin panel
+            </span>
+            <span>→</span>
+          </Link>
         </div>
 
         {/* Your data */}
