@@ -380,7 +380,7 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
     if (!amt || amt <= 0) return;
     const goal = financials.goals.find((g) => g.id === goalId);
     const goals = financials.goals.map((g) =>
-      g.id === goalId ? { ...g, currentAmount: g.currentAmount + amt } : g
+      g.id === goalId ? { ...g, currentAmount: roundMoney(g.currentAmount + amt) } : g
     );
     const tx: StoredTransaction = {
       id: uid(), amount: amt, currency: "USD" as Currency,

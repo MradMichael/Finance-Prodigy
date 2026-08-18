@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
-import { todayISO } from "../../lib/localData";
+import { todayISO, roundMoney } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money } from "./shared";
@@ -36,15 +36,17 @@ export default function GoalsScreen({
     const rawGoal = financials.goals[dashGoalId - 1];
     if (!rawGoal) return;
 
-    const updated = financials.goals.map((g) =>
-      g.id !== rawGoal.id ? g : {
+    const updated = financials.goals.map((g) => {
+      if (g.id !== rawGoal.id) return g;
+      const newAmount = roundMoney(g.currentAmount + amt);
+      return {
         ...g,
-        currentAmount: g.currentAmount + amt,
-        achievedAt: g.currentAmount + amt >= g.targetAmount
+        currentAmount: newAmount,
+        achievedAt: newAmount >= g.targetAmount
           ? (g.achievedAt ?? new Date().toISOString().slice(0, 10))
           : g.achievedAt,
-      }
-    );
+      };
+    });
     const tx = {
       id: Math.random().toString(36).slice(2, 10),
       amount: amt, currency: "USD" as const, bucket: "SAVINGS" as const,

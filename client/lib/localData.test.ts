@@ -315,6 +315,16 @@ describe("roundMoney", () => {
     const once = roundMoney(19.999999999999996);
     expect(roundMoney(once)).toBe(once);
   });
+
+  it("repeated goal contributions don't drift, rounding at every step the way InputPanel.tsx's contributeToGoal and GoalsScreen.tsx's pay() both do", () => {
+    // The actual risk this closes: goal.currentAmount is a running total
+    // updated via currentAmount + amt on every contribution (two separate
+    // call sites, same pattern) -- with no rounding at all, that's exactly
+    // the kind of repeated float arithmetic that drifts over many additions.
+    let currentAmount = 0;
+    for (let i = 0; i < 20; i++) currentAmount = roundMoney(currentAmount + 10.1);
+    expect(currentAmount).toBe(202); // not 201.99999999999997 or similar
+  });
 });
 
 describe("moneyEquals", () => {
