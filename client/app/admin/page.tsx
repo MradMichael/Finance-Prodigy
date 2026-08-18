@@ -128,12 +128,13 @@ function Row({ label, value, mono = false, sensitive = false, copyable = false }
 // the public JS bundle to every visitor: a runtime session check can't be
 // proven false at build time, so it can't be dead-code-eliminated the way
 // the old dev-only check could. That's still safe to ship, because nothing
-// below is an actual credential -- NEXT_PUBLIC_DB_URL is never set in
-// production (verified against the live deploy), so the connection string
-// shown always falls back to the placeholder, and everything else (rate
-// limits, PBKDF2 iteration count, theme names) is operational trivia, not a
-// secret. The real access gate is the session check in AdminPageContent's
-// effect below.
+// below is an actual credential -- this page never reads a real connection
+// string (see the removed NEXT_PUBLIC_DB_URL pattern, 2.3.11b in the audit:
+// masking it for display was cosmetic only, since ANY NEXT_PUBLIC_ var gets
+// inlined as a literal into this same public bundle at build time regardless
+// of on-screen masking) -- and everything else (rate limits, PBKDF2
+// iteration count, theme names) is operational trivia, not a secret. The
+// real access gate is the session check in AdminPageContent's effect below.
 export default function AdminPage() {
   return <AdminPageContent />;
 }
@@ -189,9 +190,7 @@ function AdminPageContent() {
 
   if (!ready) return null;
 
-  const dbUrl = process.env.NEXT_PUBLIC_DB_URL ?? "postgresql://<user>:<password>@<project>-pooler.<region>.aws.neon.tech/<database>?sslmode=require";
-  const maskedUrl = dbUrl.replace(/:\/\/[^:]+:[^@]+@/, "://<user>:<password>@");
-  const lastSync  = getLastSyncTime();
+  const lastSync = getLastSyncTime();
 
   return (
     <div className="min-h-screen" style={{ background: T.ink }}>
@@ -284,7 +283,6 @@ function AdminPageContent() {
             <Row label="Provider" value="Neon (Postgres 16)" />
             <Row label="Database" value="neondb" mono />
             <Row label="Auth" value="Password (in connection string)" />
-            <Row label="Pooled connection string" value={maskedUrl} mono sensitive copyable />
             <Row label="Migrations" value="Run against DIRECT_URL. Neon's pooler doesn't support the prepared statements Prisma Migrate needs" />
             <Row label="Push/relink retries" value="Up to 3 attempts on a transaction connection blip, ~250-750ms apart" />
           </div>
