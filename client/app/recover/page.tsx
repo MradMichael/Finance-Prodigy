@@ -96,9 +96,16 @@ export default function RecoverPage() {
       <p className="text-[10px] mt-8 text-center max-w-xs" style={{ color: T.mute }}>
         No recovery code saved? There&apos;s no other way back into an account&apos;s data. That&apos;s the tradeoff for it being encrypted only you can unlock.
       </p>
+      <p className="text-[10px] mt-2 text-center max-w-xs" style={{ color: T.mute }}>
+        Resetting your password does not sign you out on other devices — sign out there separately.
+      </p>
 
       {newRecoveryCode && (
-        <RecoveryCodeModal code={newRecoveryCode} onContinue={() => router.push("/")} />
+        <RecoveryCodeModal
+          code={newRecoveryCode}
+          onContinue={() => router.push("/")}
+          note="Resetting your password did not sign you out on other devices — sign out there separately if that matters to you."
+        />
       )}
     </div>
   );
