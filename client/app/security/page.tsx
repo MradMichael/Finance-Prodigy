@@ -43,17 +43,29 @@ export default function SecurityPage() {
 
         <Section title="Local storage: encrypted, and here's how">
           <p>
-            A random 256-bit encryption key (the DEK) is generated once per account. It&apos;s never derived
-            directly from your password. Instead it&apos;s locked two separate ways: once under a key derived
-            from your password, once under a key derived from a one-time recovery code shown at sign-up (both via
-            PBKDF2, 120,000 iterations). Either secret unlocks the same underlying key. Your financial data itself
-            is encrypted with that key using AES-256-GCM before it&apos;s written to your browser&apos;s local storage.
+            A random 256-bit encryption key (the DEK) protects your data on each device. It&apos;s never derived
+            directly from your password. On the device where an account is created, one DEK is generated and
+            locked two separate ways: once under a key derived from your password, once under a key derived
+            from a one-time recovery code shown at sign-up (both via PBKDF2, 120,000 iterations) &mdash; either
+            secret unlocks that device&apos;s key. A second device that joins by pulling your data generates its
+            own independent key the same way, rather than reusing the first device&apos;s. Your financial data
+            itself is encrypted with the active device&apos;s key using AES-256-GCM before it&apos;s written to
+            your browser&apos;s local storage.
           </p>
+          {/*
+            Removed 2026-08-18, not softened: this paragraph used to promise
+            "forgetting your password doesn't mean losing your data, as long
+            as you saved the code" -- currently false whenever the device
+            attempting recovery isn't the one the code was generated on (see
+            2.2.12 in docs/AUDIT_2026-08.md). Restore that sentence once
+            2.2.11/2.2.12 ship and cross-device recovery is actually fixed,
+            not before.
+          */}
           <p>
-            This is why the recovery code exists: forgetting your password doesn&apos;t mean losing your data, as
-            long as you saved the code. But it also means there&apos;s no back door: <strong style={{ color: T.text }}>
-            if you lose both, nobody, including us, can recover that account&apos;s data.</strong> That&apos;s the
-            tradeoff real encryption requires, not a support policy we chose.
+            There&apos;s no back door: <strong style={{ color: T.text }}>
+            if you lose access to both your password and your recovery code, nobody, including us, can recover
+            that account&apos;s data.</strong> That&apos;s the tradeoff real encryption requires, not a support
+            policy we chose.
           </p>
         </Section>
 
