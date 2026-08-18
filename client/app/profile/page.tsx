@@ -421,16 +421,6 @@ export default function ProfilePage() {
             <span>Trust &amp; Security</span>
             <span style={{ color: T.mute }}>→</span>
           </Link>
-          <Link
-            href="/admin"
-            className="flex items-center justify-between w-full px-4 py-3 rounded-xl text-sm transition-all hover:opacity-80"
-            style={{ background: T.brass + "12", color: T.brass, border: `1px solid ${T.brass}28` }}
-          >
-            <span className="flex items-center gap-2">
-              <span>⚙</span> Admin panel
-            </span>
-            <span>→</span>
-          </Link>
         </div>
 
         {/* Your data */}
