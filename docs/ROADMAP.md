@@ -79,6 +79,7 @@ Stored data is encrypted client-side. A schema change is not a server-side opera
 
 - Add a **schema version marker** to the stored blob before any transform. Without it, a partially-migrated record is indistinguishable from an unmigrated one.
 - The migration runs **on load, lazily, per device** — the same pattern as the recovery fix. No batch server-side transform.
+- **Starting in 1.2, a load that migrates must also write the migrated result back to storage immediately, not defer to the next natural save.** 1.1's harness deliberately does not do this — with an empty migration table there's nothing yet for it to protect — but once 1.2 adds a real transform, load-migrate-without-persisting means what's on disk and what's on screen have silently diverged the instant migration runs: a crash, a closed tab, or a pull from another device before the next edit would read the stale, unmigrated bytes again, or push them to the server. This is a required part of 1.2's acceptance, not an optional follow-up.
 - The migration must be **idempotent**. A device that syncs, migrates, and syncs again must not double-convert.
 - **Untouched records default to USD.** Every existing amount is USD today; the transform is additive, not interpretive.
 - Write a test that runs the migration twice over the same fixture and asserts identical output.
@@ -89,7 +90,7 @@ Stored data is encrypted client-side. A schema change is not a server-side opera
 | # | Sub-phase | Stop-safe after? |
 |---|---|---|
 | 1.1 | Schema version marker + lazy migration harness, no currency logic yet | Yes — no behaviour change |
-| 1.2 | Data model: currency code and rate on every monetary record, defaulting to USD | Yes — app behaves identically, model is richer |
+| 1.2 | Data model: currency code and rate on every monetary record, defaulting to USD. **Must also add write-back-on-migration to the 1.1 harness — required, see Migration requirements above.** | Yes — app behaves identically, model is richer |
 | 1.3 | Reference rate as configurable stored data, with history | Yes |
 | 1.4 | Entry in either currency | Yes |
 | 1.5 | Display and reporting in either currency, every total labelled | Yes — feature complete |
