@@ -335,9 +335,15 @@ export async function regenerateRecoveryCode(userId: string): Promise<{ ok: true
  * password-based sign-in to disagree with the server. Once relinked, pulls
  * the account's data the same way signInFromSync does and provisions a
  * local account for this device around it.
+ *
+ * `existingId`, when given, means the caller already has a LOCAL record
+ * for this email whose own envelope just failed to unwrap with the typed
+ * code (see recoverAccount below — a signInFromSync-joined or otherwise
+ * mismatched device, 2.2.12). In that case this replaces that record in
+ * place instead of appending a second one for the same email.
  */
 async function recoverFromSync(
-  email: string, recoveryCode: string, newPassword: string,
+  email: string, recoveryCode: string, newPassword: string, existingId?: string,
 ): Promise<{ ok: true; session: Session; newRecoveryCode: string } | { ok: false; error: string }> {
   if (newPassword.length < 10) return { ok: false, error: "Password must be at least 10 characters." };
   const normalizedEmail = email.toLowerCase().trim();
@@ -346,8 +352,8 @@ async function recoverFromSync(
 
   const oldRecoveryToken = await deriveRecoveryToken(recoveryCode, normalizedEmail);
 
-  if (!crypto.randomUUID) return { ok: false, error: "This browser doesn't support the security features ESSA needs. Please use an up-to-date browser over HTTPS." };
-  const id = crypto.randomUUID();
+  if (!existingId && !crypto.randomUUID) return { ok: false, error: "This browser doesn't support the security features ESSA needs. Please use an up-to-date browser over HTTPS." };
+  const id = existingId ?? crypto.randomUUID();
   const [{ wrappedPassword, wrappedRecovery, recoveryCode: newRecoveryCode, dek }, pwHash, newToken] = await Promise.all([
     createEnvelopes(newPassword, id),
     hashPassword(newPassword),
@@ -370,17 +376,22 @@ async function recoverFromSync(
 
   const name = pulled.data.userName || normalizedEmail.split("@")[0];
   const users = getUsers();
-  putUsers([...users, {
+  const existing = existingId ? users.find((u) => u.id === existingId) : undefined;
+  const record: StoredUser = {
     id,
     email:     normalizedEmail,
     name,
     pwHash,
-    createdAt: new Date().toISOString(),
-    isAdmin:   users.length === 0,
+    // Preserve this device's own history when replacing an existing
+    // record rather than resetting it — only a genuinely new entry gets a
+    // fresh createdAt/isAdmin-by-arrival-order.
+    createdAt: existing?.createdAt ?? new Date().toISOString(),
+    isAdmin:   existing?.isAdmin ?? users.length === 0,
     wrappedDekPassword: wrappedPassword,
     wrappedDekRecovery: wrappedRecovery,
     recoveryTokenForSync: newRecoveryToken,
-  }]);
+  };
+  putUsers(existing ? users.map((u) => (u.id === existingId ? record : u)) : [...users, record]);
 
   const session: Session = { userId: id, email: normalizedEmail, name };
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
@@ -397,13 +408,27 @@ async function recoverFromSync(
  * already-encrypted data (the DEK itself never changes, only how it's
  * wrapped). Issues a new recovery code — the old one stops working.
  *
- * A password reset changes the sync token the server checks pushes/pulls
- * against. If this account had synced before AND had registered a recovery
- * token (see recoveryTokenForSync above), a best-effort relink call proves
- * ownership via the *old* recovery token and re-registers the new one —
- * see syncService.ts's relinkSync. If that registration never happened
- * (e.g. this account has never pushed), there's nothing to relink and the
- * next push will simply register fresh, same as a brand-new account.
+ * The relink proof (oldRecoveryToken) is derived FRESH from the recovery
+ * code just typed in, not read from a locally-cached copy
+ * (recoveryTokenForSync) — identical result whenever the cache would have
+ * been right (both are the same deterministic derivation), but no longer
+ * DEPENDS on that cache existing at all. Two real device shapes never set
+ * it: a device that joined via signInFromSync (mints its own local-only
+ * recovery code — see recoverFromSync's doc comment and 2.2.12), and a
+ * legacy account migrating on sign-in (migrateLegacyEnvelope). Previously
+ * recovery on those devices either silently skipped the server-side
+ * rotation (2.2.11) or failed outright even with the correct code
+ * (2.2.12) — see docs/AUDIT_2026-08.md, Amendment 3, for the live-tested
+ * detail behind both.
+ *
+ * relinkSync is required and awaited, not fire-and-forget: a reset that
+ * silently leaves the server trusting the OLD token indefinitely was
+ * exactly the bug this replaces. If this device's own envelope doesn't
+ * unwrap with the typed code, that doesn't mean the code is wrong — the
+ * server, not this device's local state, is the real authority — so this
+ * falls through to the same server-verified path recoverFromSync already
+ * uses for a brand-new device, just replacing this device's mismatched
+ * local record instead of appending a duplicate one.
  */
 export async function recoverAccount(
   email: string, recoveryCode: string, newPassword: string,
@@ -417,7 +442,17 @@ export async function recoverAccount(
 
   const { unwrapWithRecoveryCode, rewrapEnvelopes, activateSessionKey, initSyncToken, deriveRecoveryToken } = await import("./crypto");
   const dek = await unwrapWithRecoveryCode(recoveryCode, user.id, user.wrappedDekRecovery);
-  if (!dek) return { ok: false, error: "Invalid recovery code." };
+
+  if (!dek) {
+    const fallback = await recoverFromSync(email, recoveryCode, newPassword, user.id);
+    if (!fallback.ok && fallback.error.includes("recovery code doesn't match")) {
+      // Reword for this branch specifically: unlike recoverFromSync's usual
+      // caller (a genuinely unknown email), there IS a local account here —
+      // the code itself was simply wrong, which is what the user needs to hear.
+      return { ok: false, error: "Invalid recovery code." };
+    }
+    return fallback;
+  }
 
   // All independent (only need dek/newPassword/email) — run concurrently.
   const [{ wrappedPassword, wrappedRecovery, recoveryCode: newRecoveryCode }, newPwHash, newToken] = await Promise.all([
@@ -425,16 +460,16 @@ export async function recoverAccount(
     hashPassword(newPassword),
     initSyncToken(newPassword, user.email),
   ]);
+  const oldRecoveryToken = await deriveRecoveryToken(recoveryCode, user.email);
   const newRecoveryTokenForSync = await deriveRecoveryToken(newRecoveryCode, user.email);
 
-  if (user.recoveryTokenForSync) {
-    // Fire-and-forget — a real network call, best-effort. If it fails
-    // (offline, server down), the known limitation persists exactly as
-    // before this feature existed: the next push gets rejected until the
-    // server row is cleared by hand. Not a regression, just not fixed this time.
-    import("./syncService").then(({ relinkSync }) =>
-      relinkSync(user.email, newToken, newRecoveryTokenForSync, user.recoveryTokenForSync)
-    ).catch(() => {});
+  const { relinkSync } = await import("./syncService");
+  const relinked = await relinkSync(user.email, newToken, newRecoveryTokenForSync, oldRecoveryToken);
+  if (!relinked.ok) {
+    if (relinked.error?.includes("verify ownership")) {
+      return { ok: false, error: "Invalid recovery code." };
+    }
+    return { ok: false, error: `Your password wasn't reset — couldn't verify it with the server (${relinked.error}). Check your connection and try again.` };
   }
 
   putUsers(getUsers().map((u) => (u.id === user.id
