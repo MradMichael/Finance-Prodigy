@@ -12,9 +12,15 @@ import { useTheme } from "../contexts/ThemeContext";
 export default function RecoveryCodeModal({
   code,
   onContinue,
+  note,
 }: {
   code: string;
   onContinue: () => void;
+  /** Optional extra line under the main description -- e.g. the
+   *  other-devices caveat after a password reset. Absent for sign-up/
+   *  first-migration-sign-in, where there's no "other device" yet to
+   *  say anything about. */
+  note?: string;
 }) {
   const T = useTheme();
   const [confirmed, setConfirmed] = useState(false);
@@ -46,6 +52,12 @@ export default function RecoveryCodeModal({
           If you ever forget your password, this code is the only way back into your data. There&apos;s no email reset.
           Write it down or save it in a password manager now.
         </p>
+
+        {note && (
+          <p className="text-xs mb-5" style={{ color: T.brass }}>
+            {note}
+          </p>
+        )}
 
         <div
           className="rounded-xl px-4 py-4 mb-4 text-center font-mono text-lg tracking-wider select-all"
