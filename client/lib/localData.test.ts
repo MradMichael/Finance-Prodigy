@@ -6,6 +6,7 @@ import {
   allCategories, categoryLabel, categoryIcon, CATEGORIES,
   matchCategoryRule, type CategoryRule,
   roundMoney, moneyEquals, isEmptyFinancials, type LocalFinancials,
+  migrateFinancials, CURRENT_SCHEMA_VERSION,
 } from "./localData";
 
 function makeRecurring(overrides: Partial<StoredRecurring> = {}): StoredRecurring {
@@ -285,6 +286,20 @@ describe("loadData / saveData round trip", () => {
     const loaded = await loadData(userId);
     expect(loaded).toEqual(DEFAULT_DATA);
   });
+
+  it("saveData always persists CURRENT_SCHEMA_VERSION even when handed data missing the field -- covers every pull-derived call site (signInFromSync, recoverFromSync, the two manual/auto pull handlers) without testing each one individually", async () => {
+    const { createEnvelopes, activateSessionKey } = await import("./crypto");
+    const userId = "test-user-legacy-shape";
+    const { dek } = await createEnvelopes("pw", userId);
+    activateSessionKey(dek);
+
+    const legacyShaped = { ...DEFAULT_DATA } as Partial<LocalFinancials>;
+    delete legacyShaped.schemaVersion;
+
+    await saveData(legacyShaped as LocalFinancials, userId);
+    const loaded = await loadData(userId);
+    expect(loaded.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+  });
 });
 
 describe("roundMoney", () => {
@@ -377,5 +392,91 @@ describe("isEmptyFinancials — emergencyFundBalance drift", () => {
     const drifted = 0.1 + 0.2 - 0.3; // 5.551115123125783e-17 in IEEE754, not exactly 0
     expect(drifted).not.toBe(0); // confirms the drift is real, not a trivial test
     expect(isEmptyFinancials({ ...empty, emergencyFundBalance: drifted })).toBe(true);
+  });
+});
+
+// docs/ROADMAP.md Phase 1.1 -- schema version marker + lazy migration
+// harness. No currency logic yet; this only proves the mechanism itself
+// changes nothing for an account that doesn't need migrating, and
+// correctly stamps one that does.
+describe("migrateFinancials", () => {
+  // Same structural shape as a real, multi-year account (mixed USD/LBP,
+  // cards, a paused goal, a recurring item with a totalAmount cap, custom
+  // categories, all four history arrays) -- deliberately not real data,
+  // see the commit message for why. Exercises the same field combinations
+  // without any of it being anyone's actual financial information.
+  function legacyFixture(): Record<string, unknown> {
+    return {
+      // No schemaVersion key at all -- every real account in production today.
+      userName: "Test User",
+      income: 2000,
+      lbpRate: 89500,
+      emergencyFundTargetMonths: 6,
+      emergencyFundBalance: 500,
+      transactions: [
+        { id: "t1", amount: 25.5, currency: "USD", bucket: "WANTS", description: "Dining", date: "2026-08-01", paymentMethod: "cash", category: "dining" },
+        { id: "t2", amount: 150000, currency: "LBP", bucket: "NEEDS", description: "Groceries", date: "2026-08-02", paymentMethod: "card", cardId: "c1", cardLabel: "Visa •••• 1234", category: "groceries" },
+        { id: "t3", amount: 0, currency: "USD", bucket: "NEEDS", description: "Split bill", date: "2026-08-03", paymentMethod: "other", paymentNote: "Paid by roommate", category: "utilities" },
+      ],
+      goals: [
+        { id: "g1", name: "Trip", emoji: "🎯", targetAmount: 3000, currentAmount: 500, targetDate: "2027-01-01", createdAt: "2026-01-01T00:00:00.000Z" },
+        { id: "g2", name: "Paused Goal", emoji: "🎯", targetAmount: 1000, currentAmount: 0, targetDate: "2027-06-01", createdAt: "2026-02-01T00:00:00.000Z", pausedAt: "2026-07-01T00:00:00.000Z" },
+      ],
+      debts: [
+        { id: "d1", name: "Loan", balance: 1500, apr: 0, minPayment: 0, createdAt: "2026-01-01T00:00:00.000Z", openedDate: "2026-01-01" },
+      ],
+      recurring: [
+        { id: "r1", name: "Tuition", emoji: "🔄", amount: 500, currency: "USD", frequency: "monthly", bucket: "NEEDS", startDate: "2026-01-01", endDate: null, totalAmount: 4500, createdAt: "2026-01-01T00:00:00.000Z" },
+        { id: "r2", name: "Streaming", emoji: "🔄", amount: 8, currency: "USD", frequency: "monthly", bucket: "WANTS", startDate: "2026-01-01", endDate: null, totalAmount: null, createdAt: "2026-01-01T00:00:00.000Z" },
+      ],
+      cards: [{ id: "c1", type: "Visa", last4: "1234", label: "Visa •••• 1234" }],
+      assets: [],
+      trackedBalances: [
+        { id: "tb1", name: "Cash", paymentMethod: "cash", startingBalance: 100, startingDate: "2026-08-01", currency: "USD", actualBalance: 80, actualBalanceDate: "2026-08-15T00:00:00.000Z", expectedAtCheckUSD: 82.5 },
+      ],
+      customCategories: [{ value: "gym", label: "Gym", icon: "💪" }],
+      categoryRules: [],
+      wishlist: [],
+      netWorthHistory: [{ ym: "2026-08", value: 500 }],
+      incomeHistory: [{ ym: "2026-08", value: 2000 }],
+      lbpRateHistory: [{ ym: "2026-08", value: 89500 }],
+      budgetRuleHistory: [{ ym: "2026-08", needs: 60, wants: 25, savings: 15 }],
+      budgetRule: "custom",
+      budgetCustomNeeds: 60,
+      budgetCustomWants: 25,
+    };
+  }
+
+  it("a fresh DEFAULT_DATA is already stamped at CURRENT_SCHEMA_VERSION", () => {
+    expect(DEFAULT_DATA.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+  });
+
+  it("migrates a record with no schemaVersion at all (every real account today), stamping the version without changing any other value", () => {
+    const legacy = legacyFixture();
+    const migrated = migrateFinancials(legacy);
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    // Byte-identical in value on every field except the stamp itself --
+    // the actual proof of "no behavior change" for this sub-phase, not
+    // just an assertion that migration runs without throwing.
+    const { schemaVersion: _omit, ...migratedRest } = migrated;
+    expect(migratedRest).toEqual(legacy);
+  });
+
+  it("running the migration twice over the same fixture produces identical output (idempotent, per the roadmap's explicit requirement)", () => {
+    const legacy = legacyFixture();
+    const once = migrateFinancials(legacy);
+    const twice = migrateFinancials(once);
+    expect(twice).toEqual(once);
+  });
+
+  it("a record already at CURRENT_SCHEMA_VERSION passes through unchanged", () => {
+    const current: LocalFinancials = { ...DEFAULT_DATA, income: 999 };
+    expect(migrateFinancials(current)).toEqual(current);
+  });
+
+  it("treats garbage/non-object input the same way the pre-existing corrupted-storage fallback did -- defaults, not a throw", () => {
+    expect(migrateFinancials(null).schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrateFinancials("not an object").schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrateFinancials(undefined)).toEqual(DEFAULT_DATA);
   });
 });

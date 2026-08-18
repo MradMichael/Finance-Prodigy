@@ -7,7 +7,7 @@ import type {
 } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, monthlyEquivalent, nominalMonthlyEquivalent, isRecurringActive, isPaidThisCycle, recurringPaidSoFar, toUSD as toUSDShared, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney } from "../lib/localData";
+import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, monthlyEquivalent, nominalMonthlyEquivalent, isRecurringActive, isPaidThisCycle, recurringPaidSoFar, toUSD as toUSDShared, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney, DEFAULT_DATA } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY } from "./form/Primitives";
@@ -2179,7 +2179,12 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
               />
               <button
                 onClick={() => {
-                  onChange({ userName: "You", income: 0, lbpRate: 89500, emergencyFundTargetMonths: 6, emergencyFundBalance: 0, transactions: [], goals: [], debts: [], recurring: [], cards: [], assets: [], trackedBalances: [], netWorthHistory: [] });
+                  // DEFAULT_DATA directly, not a hand-maintained copy of its
+                  // shape -- this literal had already drifted from it (missing
+                  // customCategories/categoryRules/wishlist/budgetRule and the
+                  // history arrays, all silently allowed since those fields are
+                  // optional) before schemaVersion made the gap a type error.
+                  onChange({ ...DEFAULT_DATA });
                   setShowResetConfirm(false); setResetConfirmText("");
                 }}
                 disabled={resetConfirmText.toLowerCase() !== "reset"}

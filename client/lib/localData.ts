@@ -259,6 +259,12 @@ export function floorCustomSplit(needs: number, wants: number): { needs: number;
 }
 
 export interface LocalFinancials {
+  // Required, not optional -- the migration harness (migrateFinancials,
+  // below) guarantees this is always present on anything that's passed
+  // through loadData/saveData, so a call site that somehow bypasses both
+  // and hands back raw, unmigrated data fails a real type check instead
+  // of silently compiling. See docs/ROADMAP.md Phase 1.1.
+  schemaVersion: number;
   userName: string;
   income: number;
   lbpRate: number;
@@ -291,7 +297,13 @@ export interface LocalFinancials {
   wishlist?: WishlistItem[];
 }
 
+// Bumped whenever a stored-shape migration step is added to MIGRATIONS
+// below. Every account in production today predates this field entirely
+// (implicitly version 0) -- see docs/ROADMAP.md Phase 1.1.
+export const CURRENT_SCHEMA_VERSION = 1;
+
 export const DEFAULT_DATA: LocalFinancials = {
+  schemaVersion: CURRENT_SCHEMA_VERSION,
   userName: "You",
   income: 0,
   lbpRate: 89500,
@@ -313,6 +325,43 @@ export const DEFAULT_DATA: LocalFinancials = {
   budgetRuleHistory: [],
   budgetRule: "50-30-20",
 };
+
+/**
+ * Ordered migration steps, each moving data from exactly `fromVersion` to
+ * `fromVersion + 1`. Empty today -- this sub-phase only proves the harness
+ * itself is safe (a version stamp, nothing else) before Phase 1.2 adds the
+ * first real transform (currency + rate on every monetary record). Add
+ * new entries here, in order; migrateFinancials applies whichever ones
+ * apply, in sequence, so a record several versions behind gets every step
+ * between its version and CURRENT_SCHEMA_VERSION, not just the latest.
+ */
+const MIGRATIONS: { fromVersion: number; migrate: (d: LocalFinancials) => LocalFinancials }[] = [];
+
+/**
+ * Turns whatever was actually in localStorage (or just pulled from the
+ * server) into a complete, current-schema LocalFinancials. Called from
+ * exactly two places -- loadData and saveData -- rather than from each
+ * individual call site that reads or writes financial data, so a future
+ * new call site inherits correct migration for free instead of needing
+ * to remember to invoke this itself.
+ *
+ * Reads the version off the RAW input before any defaulting: merging
+ * DEFAULT_DATA in first (which now itself carries CURRENT_SCHEMA_VERSION)
+ * would make an old, unmigrated record indistinguishable from a genuinely
+ * current one the instant the merge ran, defeating the whole point of the
+ * marker. A missing/non-number version is treated as 0 -- every real
+ * account in production today.
+ */
+export function migrateFinancials(raw: unknown): LocalFinancials {
+  const input = (raw && typeof raw === "object" ? raw : {}) as Partial<LocalFinancials>;
+  const rawVersion = typeof input.schemaVersion === "number" ? input.schemaVersion : 0;
+
+  let data: LocalFinancials = { ...DEFAULT_DATA, ...input, schemaVersion: rawVersion };
+  for (const step of MIGRATIONS) {
+    if (data.schemaVersion === step.fromVersion) data = step.migrate(data);
+  }
+  return { ...data, schemaVersion: CURRENT_SCHEMA_VERSION };
+}
 
 /** True when an account has literally nothing entered yet (fresh sign-up defaults) — used to gate the one-time auto-pull-on-first-load in app/page.tsx so it only ever fires for a genuinely blank local account, never silently overwriting real local data. */
 export function isEmptyFinancials(data: LocalFinancials): boolean {
@@ -394,7 +443,7 @@ export async function loadData(userId: string): Promise<LocalFinancials> {
   }
 
   try {
-    return { ...DEFAULT_DATA, ...JSON.parse(plain) };
+    return migrateFinancials(JSON.parse(plain));
   } catch {
     return DEFAULT_DATA;
   }
@@ -403,7 +452,12 @@ export async function loadData(userId: string): Promise<LocalFinancials> {
 export async function saveData(data: LocalFinancials, userId: string): Promise<void> {
   if (typeof window === "undefined") return;
   const { encryptJSON } = await import("./crypto");
-  const stored = await encryptJSON(JSON.stringify(data));
+  // Migrated here too, not just in loadData -- this is what makes the four
+  // call sites that consume a server pull directly (auth.ts signInFromSync/
+  // recoverFromSync, page.tsx's auto-pull, profile.tsx's manual pull) safe
+  // without touching any of them: whatever they hand in gets normalized to
+  // the current schema on the way to disk, regardless of caller.
+  const stored = await encryptJSON(JSON.stringify(migrateFinancials(data)));
   localStorage.setItem(storageKey(userId), stored);
 }
 
