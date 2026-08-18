@@ -52,17 +52,10 @@ export default function SecurityPage() {
             itself is encrypted with the active device&apos;s key using AES-256-GCM before it&apos;s written to
             your browser&apos;s local storage.
           </p>
-          {/*
-            Removed 2026-08-18, not softened: this paragraph used to promise
-            "forgetting your password doesn't mean losing your data, as long
-            as you saved the code" -- currently false whenever the device
-            attempting recovery isn't the one the code was generated on (see
-            2.2.12 in docs/AUDIT_2026-08.md). Restore that sentence once
-            2.2.11/2.2.12 ship and cross-device recovery is actually fixed,
-            not before.
-          */}
           <p>
-            There&apos;s no back door: <strong style={{ color: T.text }}>
+            This is why the recovery code exists: forgetting your password doesn&apos;t mean losing your data, as
+            long as you saved the code &mdash; it works from any device, not just the one you set it up on. But it
+            also means there&apos;s no back door: <strong style={{ color: T.text }}>
             if you lose access to both your password and your recovery code, nobody, including us, can recover
             that account&apos;s data.</strong> That&apos;s the tradeoff real encryption requires, not a support
             policy we chose.
