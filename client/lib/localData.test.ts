@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   monthlyEquivalent, nominalMonthlyEquivalent, isRecurringActive, isPaidThisCycle,
-  nextOccurrence, recurringPaidSoFar, fmtDate, valueForMonth,
+  nextOccurrence, recurringPaidSoFar, buildRecurringPaymentLog, fmtDate, valueForMonth,
   loadData, saveData, DEFAULT_DATA, type StoredRecurring,
   allCategories, categoryLabel, categoryIcon, CATEGORIES,
   matchCategoryRule, type CategoryRule,
@@ -153,6 +153,113 @@ describe("nextOccurrence", () => {
     // Feb 28 (clamped) -> next occurrence should be March 31 (March has 31 days again), not stuck at 28.
     const next = nextOccurrence(r, new Date("2026-03-01"));
     expect(next?.toISOString().slice(0, 10)).toBe("2026-03-31");
+  });
+});
+
+describe("buildRecurringPaymentLog", () => {
+  it("returns null when there's no next occurrence (ended item)", () => {
+    const r = makeRecurring({ endDate: "2026-06-30" });
+    expect(buildRecurringPaymentLog(r, new Date(2026, 6, 1))).toBeNull(); // July 1, after end
+  });
+
+  it("the transaction date and the lastPaidCycle stamp always agree on which month they refer to", () => {
+    // The invariant the fix exists to guarantee, checked directly rather
+    // than inferred from a specific scenario: no matter what `now` is
+    // relative to the due date, tx.date's month must equal cycleYm exactly,
+    // because both are sliced from the same `due` value.
+    const r = makeRecurring({ frequency: "monthly", startDate: "2026-01-01" });
+    for (const now of [new Date(2026, 7, 19), new Date(2026, 7, 25), new Date(2026, 7, 31), new Date(2026, 8, 1)]) {
+      const result = buildRecurringPaymentLog(r, now)!;
+      expect(result.tx.date.slice(0, 7)).toBe(result.cycleYm);
+    }
+  });
+
+  it("THE BUG: clicking a few days before a due date that falls in the next month no longer double-counts the current month or phantom-suppresses the next one", () => {
+    // Reproduces the exact scenario from the audit: a monthly item due on
+    // the 1st, "Log payment" clicked Aug 27 while the upcoming due date
+    // (Sep 1) is within the 7-day Renewing-soon window. Before the fix,
+    // this dated the transaction Aug 27 (today) while stamping
+    // lastPaidCycle "2026-09" (due's month) -- August's live estimate
+    // stayed unsuppressed and stacked with the new Aug-dated transaction
+    // (double count), while September's estimate, row, and renewal
+    // reminder all silently zeroed despite no transaction ever landing
+    // in it (phantom suppression).
+    const r = makeRecurring({ amount: 750, frequency: "monthly", startDate: "2026-08-01" });
+    const clickNow = new Date(2026, 7, 27); // Aug 27, 2026
+    const result = buildRecurringPaymentLog(r, clickNow)!;
+
+    expect(result.cycleYm).toBe("2026-09");
+    expect(result.tx.date).toBe("2026-09-01"); // NOT "2026-08-27" -- dated what it's paying, not when clicked
+    expect(result.tx.amount).toBe(750);
+
+    const stamped: StoredRecurring = { ...r, lastPaidCycle: result.cycleYm };
+
+    // August: no transaction was dated here (tx.date is September), so the
+    // live estimate must NOT be suppressed -- August still, correctly,
+    // shows exactly one representation of this bill (the estimate), not two.
+    const laterInAugust = new Date(2026, 7, 30);
+    expect(isPaidThisCycle(stamped, laterInAugust)).toBe(false);
+    expect(monthlyEquivalent(stamped, laterInAugust)).toBe(750);
+
+    // September: suppressed, and this time correctly backed by a real
+    // transaction actually dated in September (result.tx) -- not a phantom.
+    const inSeptember = new Date(2026, 8, 5);
+    expect(isPaidThisCycle(stamped, inSeptember)).toBe(true);
+    expect(monthlyEquivalent(stamped, inSeptember)).toBe(0);
+    expect(result.tx.date.startsWith("2026-09")).toBe(true);
+  });
+
+  it("the 1st-of-month due date: every day in the button's entire 7-day visibility window hits the cross-month case, not just some of them", () => {
+    // The owner's re-rating rationale, checked directly: RENEWAL_WINDOW_DAYS
+    // is 7, so for an item due on the 1st, "today" can be anywhere from the
+    // 25th to the 31st of the prior month while the button is clickable.
+    // Every single one of those days must resolve to next month, not just
+    // the early ones -- this is the "modal case, not an edge case" claim.
+    const r = makeRecurring({ frequency: "monthly", startDate: "2026-01-01" });
+    const daysInAugust = [25, 26, 27, 28, 29, 30, 31];
+    for (const day of daysInAugust) {
+      const result = buildRecurringPaymentLog(r, new Date(2026, 7, day))!;
+      expect(result.cycleYm).toBe("2026-09");
+      expect(result.tx.date).toBe("2026-09-01");
+    }
+  });
+
+  it("contrast: a due date in the SAME month as the click was never affected, and still isn't", () => {
+    // Due the 25th, clicked the 19th (6 days early, same month) -- both
+    // before and after the fix this suppresses correctly. The one visible
+    // change: the transaction is now dated the 25th (what it's for)
+    // instead of the 19th (when it was clicked) -- an intentional,
+    // accepted part of the fix, not a regression.
+    const r = makeRecurring({ frequency: "monthly", startDate: "2026-01-25" });
+    const result = buildRecurringPaymentLog(r, new Date(2026, 7, 19))!;
+    expect(result.cycleYm).toBe("2026-08");
+    expect(result.tx.date).toBe("2026-08-25");
+
+    const stamped: StoredRecurring = { ...r, lastPaidCycle: result.cycleYm };
+    expect(monthlyEquivalent(stamped, new Date(2026, 7, 30))).toBe(0); // suppressed, no double count
+  });
+
+  it("carries amount/currency/bucket/description/paymentMethod from the recurring item, category only when set", () => {
+    const withCategory = makeRecurring({ category: "rent", currency: "LBP", bucket: "WANTS", name: "Netflix" });
+    const r1 = buildRecurringPaymentLog(withCategory, new Date(2026, 5, 1))!;
+    expect(r1.tx).toMatchObject({ amount: 100, currency: "LBP", bucket: "WANTS", category: "rent", description: "Netflix", paymentMethod: "cash" });
+
+    const withoutCategory = makeRecurring({ name: "Gym" });
+    const r2 = buildRecurringPaymentLog(withoutCategory, new Date(2026, 5, 1))!;
+    expect(r2.tx.description).toBe("Gym");
+    expect("category" in r2.tx).toBe(false);
+  });
+
+  it("generates a fresh id on every call -- two calls for the same item produce two distinct transactions", () => {
+    // Not a guard itself (that lives in page.tsx's click handler, which
+    // this project has no component-test harness for), but confirms this
+    // function does nothing to prevent duplicate calls from producing
+    // duplicate transactions -- which is exactly why the call site needs
+    // its own re-entrancy guard, not something this layer can substitute for.
+    const r = makeRecurring();
+    const a = buildRecurringPaymentLog(r, new Date(2026, 5, 1))!;
+    const b = buildRecurringPaymentLog(r, new Date(2026, 5, 1))!;
+    expect(a.tx.id).not.toBe(b.tx.id);
   });
 });
 

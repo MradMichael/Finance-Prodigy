@@ -660,3 +660,40 @@ export function recurringPaidSoFar(r: StoredRecurring, asOf: Date = new Date()):
   const periodsElapsed = Math.floor(monthsElapsed * FREQ_MONTHLY[r.frequency]);
   return Math.min(r.totalAmount, periodsElapsed * r.amount);
 }
+
+/**
+ * Builds the real transaction and lastPaidCycle stamp for the "Log payment"
+ * action (Overview's Renewing-soon list) -- both derived from the SAME
+ * `due` value, so they can never disagree about which month they refer to.
+ *
+ * Previously the transaction was dated `now` (today, when clicked) while
+ * the suppression stamp targeted `due`'s month (the cycle being paid). Those
+ * agree only when `due` happens to fall in the same calendar month as the
+ * click. The button is only ever shown within RENEWAL_WINDOW_DAYS (7 days)
+ * of `due`, so for any item due on the 1st, the entire window in which the
+ * button is clickable sits in the PRIOR month -- every legitimate use hit
+ * the disagreement, not an edge case. The result was a same-month double
+ * count (live estimate never suppressed, stacked with the new real
+ * transaction) and a phantom next-month suppression (estimate, row, and
+ * renewal reminder all silently zeroed with no transaction ever dated in
+ * it). Dating the transaction to `due` instead of `now` closes both by
+ * construction: whichever month `cycleYm` suppresses is exactly the month
+ * the new transaction is dated in.
+ *
+ * `due` is already anchored at UTC midnight of a specific calendar day by
+ * nextOccurrence's own construction, so slicing its ISO string is exact --
+ * no local/UTC ambiguity to introduce here (unlike deriving a date from a
+ * live "now" instant).
+ */
+export function buildRecurringPaymentLog(r: StoredRecurring, now: Date = new Date()): { tx: StoredTransaction; cycleYm: string } | null {
+  const due = nextOccurrence(r, now);
+  if (!due) return null;
+  const dueISO = due.toISOString().slice(0, 10);
+  const cycleYm = dueISO.slice(0, 7);
+  const tx: StoredTransaction = {
+    id: uid(), amount: r.amount, currency: r.currency, bucket: r.bucket,
+    ...(r.category ? { category: r.category } : {}),
+    description: r.name, date: dueISO, paymentMethod: "cash",
+  };
+  return { tx, cycleYm };
+}

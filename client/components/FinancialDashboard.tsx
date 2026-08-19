@@ -207,12 +207,14 @@ function Panel({ title, children, className = "" }: { title?: string; children: 
 // ---------------------------- screen ----------------------------- //
 
 export default function FinancialDashboard({
-  data: propData, onNavigate, onLogRecurringPayment,
+  data: propData, onNavigate, onLogRecurringPayment, loggingRecurringIds,
 }: {
   data?: DashboardPayload;
   onNavigate?: (screen: Screen) => void;
   /** Logs a real transaction for a recurring item's current due cycle -- see the "Log payment" button on Renewing soon. */
   onLogRecurringPayment?: (recurringId: string) => void;
+  /** Recurring item ids whose "Log payment" write is currently in flight -- disables that item's button so a second click can't create a duplicate transaction while the first is still saving. */
+  loggingRecurringIds?: Set<string>;
 }) {
   const T = useTheme();
   const router = useRouter();
@@ -383,11 +385,12 @@ export default function FinancialDashboard({
                 {onLogRecurringPayment && (
                   <button
                     onClick={() => onLogRecurringPayment(r.id)}
-                    className="text-[10px] font-semibold px-2 py-1 rounded-full transition-all hover:opacity-80"
+                    disabled={loggingRecurringIds?.has(r.id)}
+                    className="text-[10px] font-semibold px-2 py-1 rounded-full transition-all hover:opacity-80 disabled:opacity-40 disabled:hover:opacity-40"
                     style={{ background: T.jade + "22", color: T.jade }}
                     title={`Log this ${r.name} payment as a transaction`}
                   >
-                    Log payment
+                    {loggingRecurringIds?.has(r.id) ? "Logging…" : "Log payment"}
                   </button>
                 )}
               </span>
