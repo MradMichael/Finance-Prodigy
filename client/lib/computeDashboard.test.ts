@@ -102,7 +102,7 @@ describe("net worth tiers", () => {
     const data = makeData({
       income: 3000,
       emergencyFundBalance: assets,
-      debts: debtBalance > 0 ? [{ id: "d1", name: "Loan", balance: debtBalance, apr: 10, minPayment: 100, createdAt: NOW.toISOString() }] : [],
+      debts: debtBalance > 0 ? [{ id: "d1", name: "Loan", balance: debtBalance, apr: 10, minPayment: 100, currency: "USD", createdAt: NOW.toISOString() }] : [],
     });
     const result = computeDashboard(data);
     expect(result.netWorth.tier).toBe(expectedTier);
@@ -120,7 +120,7 @@ describe("debt plan", () => {
   it("is infeasible when the monthly commitment doesn't cover interest", () => {
     const data = makeData({
       income: 100, // tiny income -> tiny/no extra payment
-      debts: [{ id: "d1", name: "Huge APR loan", balance: 10000, apr: 99, minPayment: 1, createdAt: NOW.toISOString() }],
+      debts: [{ id: "d1", name: "Huge APR loan", balance: 10000, apr: 99, minPayment: 1, currency: "USD", createdAt: NOW.toISOString() }],
     });
     const result = computeDashboard(data);
     expect(result.debt.plan?.feasible).toBe(false);
@@ -131,8 +131,8 @@ describe("debt plan", () => {
     const data = makeData({
       income: 5000,
       debts: [
-        { id: "d1", name: "Card A", balance: 2000, apr: 24, minPayment: 50, createdAt: NOW.toISOString() },
-        { id: "d2", name: "Card B", balance: 500, apr: 8, minPayment: 20, createdAt: NOW.toISOString() },
+        { id: "d1", name: "Card A", balance: 2000, apr: 24, minPayment: 50, currency: "USD", createdAt: NOW.toISOString() },
+        { id: "d2", name: "Card B", balance: 500, apr: 8, minPayment: 20, currency: "USD", createdAt: NOW.toISOString() },
       ],
     });
     const result = computeDashboard(data);
@@ -472,8 +472,8 @@ describe("paid-off debts don't inflate ongoing debt pressure", () => {
     const withPaidOffDebt = makeData({
       income: 1000,
       debts: [
-        { id: "d1", name: "Active loan", balance: 500, apr: 10, minPayment: 100, createdAt: "2026-01-01T00:00:00.000Z" },
-        { id: "d2", name: "Paid off card", balance: 0, apr: 20, minPayment: 200, createdAt: "2026-01-01T00:00:00.000Z", paidOffAt: "2026-06-01T00:00:00.000Z" },
+        { id: "d1", name: "Active loan", balance: 500, apr: 10, minPayment: 100, currency: "USD", createdAt: "2026-01-01T00:00:00.000Z" },
+        { id: "d2", name: "Paid off card", balance: 0, apr: 20, minPayment: 200, currency: "USD", createdAt: "2026-01-01T00:00:00.000Z", paidOffAt: "2026-06-01T00:00:00.000Z" },
       ],
     });
     const result = computeDashboard(withPaidOffDebt);
@@ -487,7 +487,7 @@ describe("paid-off debts don't inflate ongoing debt pressure", () => {
 describe("goal edge cases", () => {
   it("a goal with a $0 target shows 100% complete instead of NaN", () => {
     const data = makeData({
-      goals: [{ id: "g1", name: "Untitled goal", emoji: "🎯", targetAmount: 0, currentAmount: 0, targetDate: "2026-12-01", createdAt: "2026-07-01T00:00:00.000Z" }],
+      goals: [{ id: "g1", name: "Untitled goal", emoji: "🎯", targetAmount: 0, currentAmount: 0, currency: "USD", targetDate: "2026-12-01", createdAt: "2026-07-01T00:00:00.000Z" }],
     });
     const result = computeDashboard(data);
     expect(result.goals[0].projection.pctComplete).toBe(100);
@@ -496,15 +496,15 @@ describe("goal edge cases", () => {
 
   it("an overdue goal shows 0 months remaining, not a phantom 1 (the div-by-zero floor leaking into display)", () => {
     const data = makeData({
-      goals: [{ id: "g1", name: "Late goal", emoji: "🎯", targetAmount: 1000, currentAmount: 200, targetDate: "2026-01-01", createdAt: "2025-06-01T00:00:00.000Z" }],
+      goals: [{ id: "g1", name: "Late goal", emoji: "🎯", targetAmount: 1000, currentAmount: 200, currency: "USD", targetDate: "2026-01-01", createdAt: "2025-06-01T00:00:00.000Z" }],
     });
     const result = computeDashboard(data);
     expect(result.goals[0].projection.monthsRemaining).toBe(0);
   });
 
   it("a paused goal is excluded from the goal-pace score but stays listed (flagged) for history", () => {
-    const met      = { id: "g1", name: "Met",     emoji: "🎯", targetAmount: 1000,   currentAmount: 1000, targetDate: "2026-08-01", createdAt: "2026-01-01T00:00:00.000Z" };
-    const farBehind = { id: "g2", name: "Behind", emoji: "🎯", targetAmount: 100000, currentAmount: 0,    targetDate: "2026-08-01", createdAt: "2026-01-01T00:00:00.000Z" };
+    const met      = { id: "g1", name: "Met",     emoji: "🎯", targetAmount: 1000,   currentAmount: 1000, currency: "USD" as const, targetDate: "2026-08-01", createdAt: "2026-01-01T00:00:00.000Z" };
+    const farBehind = { id: "g2", name: "Behind", emoji: "🎯", targetAmount: 100000, currentAmount: 0,    currency: "USD" as const, targetDate: "2026-08-01", createdAt: "2026-01-01T00:00:00.000Z" };
 
     // Both active: a fully-met goal (score 1) averaged with a badly-behind
     // one with zero savingsContrib to fund it (score 0) -> goalScore 50.
@@ -855,7 +855,7 @@ describe("alerts", () => {
     // rather than depending on exactly how much of a positive cash flow
     // gets auto-allocated toward debt.
     const data = makeData({
-      debts: [{ id: "d1", name: "Card", balance: 5000, apr: 29, minPayment: 0, createdAt: "2026-01-01T00:00:00.000Z" }],
+      debts: [{ id: "d1", name: "Card", balance: 5000, apr: 29, minPayment: 0, currency: "USD", createdAt: "2026-01-01T00:00:00.000Z" }],
     });
     const result = computeDashboard(data);
     const debtAlert = result.alerts.find((a) => a.id === "debt-infeasible");

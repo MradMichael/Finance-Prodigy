@@ -1,12 +1,12 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   monthlyEquivalent, nominalMonthlyEquivalent, isRecurringActive, isPaidThisCycle,
   nextOccurrence, recurringPaidSoFar, buildRecurringPaymentLog, fmtDate, valueForMonth,
-  loadData, saveData, DEFAULT_DATA, type StoredRecurring,
+  loadData, saveData, DEFAULT_DATA, type StoredRecurring, type StoredGoal, type StoredTransaction,
   allCategories, categoryLabel, categoryIcon, CATEGORIES,
   matchCategoryRule, type CategoryRule,
   roundMoney, moneyEquals, isEmptyFinancials, type LocalFinancials,
-  migrateFinancials, CURRENT_SCHEMA_VERSION,
+  migrateFinancials, schemaVersionOf, withRate, CURRENT_SCHEMA_VERSION,
 } from "./localData";
 
 function makeRecurring(overrides: Partial<StoredRecurring> = {}): StoredRecurring {
@@ -157,9 +157,11 @@ describe("nextOccurrence", () => {
 });
 
 describe("buildRecurringPaymentLog", () => {
+  const RATE = 89500;
+
   it("returns null when there's no next occurrence (ended item)", () => {
     const r = makeRecurring({ endDate: "2026-06-30" });
-    expect(buildRecurringPaymentLog(r, new Date(2026, 6, 1))).toBeNull(); // July 1, after end
+    expect(buildRecurringPaymentLog(r, RATE, new Date(2026, 6, 1))).toBeNull(); // July 1, after end
   });
 
   it("the transaction date and the lastPaidCycle stamp always agree on which month they refer to", () => {
@@ -169,7 +171,7 @@ describe("buildRecurringPaymentLog", () => {
     // because both are sliced from the same `due` value.
     const r = makeRecurring({ frequency: "monthly", startDate: "2026-01-01" });
     for (const now of [new Date(2026, 7, 19), new Date(2026, 7, 25), new Date(2026, 7, 31), new Date(2026, 8, 1)]) {
-      const result = buildRecurringPaymentLog(r, now)!;
+      const result = buildRecurringPaymentLog(r, RATE, now)!;
       expect(result.tx.date.slice(0, 7)).toBe(result.cycleYm);
     }
   });
@@ -186,7 +188,7 @@ describe("buildRecurringPaymentLog", () => {
     // in it (phantom suppression).
     const r = makeRecurring({ amount: 750, frequency: "monthly", startDate: "2026-08-01" });
     const clickNow = new Date(2026, 7, 27); // Aug 27, 2026
-    const result = buildRecurringPaymentLog(r, clickNow)!;
+    const result = buildRecurringPaymentLog(r, RATE, clickNow)!;
 
     expect(result.cycleYm).toBe("2026-09");
     expect(result.tx.date).toBe("2026-09-01"); // NOT "2026-08-27" -- dated what it's paying, not when clicked
@@ -218,7 +220,7 @@ describe("buildRecurringPaymentLog", () => {
     const r = makeRecurring({ frequency: "monthly", startDate: "2026-01-01" });
     const daysInAugust = [25, 26, 27, 28, 29, 30, 31];
     for (const day of daysInAugust) {
-      const result = buildRecurringPaymentLog(r, new Date(2026, 7, day))!;
+      const result = buildRecurringPaymentLog(r, RATE, new Date(2026, 7, day))!;
       expect(result.cycleYm).toBe("2026-09");
       expect(result.tx.date).toBe("2026-09-01");
     }
@@ -231,7 +233,7 @@ describe("buildRecurringPaymentLog", () => {
     // instead of the 19th (when it was clicked) -- an intentional,
     // accepted part of the fix, not a regression.
     const r = makeRecurring({ frequency: "monthly", startDate: "2026-01-25" });
-    const result = buildRecurringPaymentLog(r, new Date(2026, 7, 19))!;
+    const result = buildRecurringPaymentLog(r, RATE, new Date(2026, 7, 19))!;
     expect(result.cycleYm).toBe("2026-08");
     expect(result.tx.date).toBe("2026-08-25");
 
@@ -241,11 +243,11 @@ describe("buildRecurringPaymentLog", () => {
 
   it("carries amount/currency/bucket/description/paymentMethod from the recurring item, category only when set", () => {
     const withCategory = makeRecurring({ category: "rent", currency: "LBP", bucket: "WANTS", name: "Netflix" });
-    const r1 = buildRecurringPaymentLog(withCategory, new Date(2026, 5, 1))!;
+    const r1 = buildRecurringPaymentLog(withCategory, RATE, new Date(2026, 5, 1))!;
     expect(r1.tx).toMatchObject({ amount: 100, currency: "LBP", bucket: "WANTS", category: "rent", description: "Netflix", paymentMethod: "cash" });
 
     const withoutCategory = makeRecurring({ name: "Gym" });
-    const r2 = buildRecurringPaymentLog(withoutCategory, new Date(2026, 5, 1))!;
+    const r2 = buildRecurringPaymentLog(withoutCategory, RATE, new Date(2026, 5, 1))!;
     expect(r2.tx.description).toBe("Gym");
     expect("category" in r2.tx).toBe(false);
   });
@@ -257,9 +259,24 @@ describe("buildRecurringPaymentLog", () => {
     // duplicate transactions -- which is exactly why the call site needs
     // its own re-entrancy guard, not something this layer can substitute for.
     const r = makeRecurring();
-    const a = buildRecurringPaymentLog(r, new Date(2026, 5, 1))!;
-    const b = buildRecurringPaymentLog(r, new Date(2026, 5, 1))!;
+    const a = buildRecurringPaymentLog(r, RATE, new Date(2026, 5, 1))!;
+    const b = buildRecurringPaymentLog(r, RATE, new Date(2026, 5, 1))!;
     expect(a.tx.id).not.toBe(b.tx.id);
+  });
+
+  it("captures lbpRateAtEntry on the created transaction for an LBP item, using the CURRENT rate passed in -- not a historical lookup for due's month", () => {
+    // due can be a few days in the future (paid early); there's no
+    // historical rate for a month that hasn't happened yet, so "the rate
+    // at which this was entered" has to mean the rate at click-time.
+    const r = makeRecurring({ currency: "LBP", amount: 500000 });
+    const result = buildRecurringPaymentLog(r, 91000, new Date(2026, 5, 1))!;
+    expect(result.tx.lbpRateAtEntry).toBe(91000);
+  });
+
+  it("does NOT set lbpRateAtEntry for a USD item -- nothing to capture", () => {
+    const r = makeRecurring({ currency: "USD" });
+    const result = buildRecurringPaymentLog(r, RATE, new Date(2026, 5, 1))!;
+    expect(result.tx.lbpRateAtEntry).toBeUndefined();
   });
 });
 
@@ -406,6 +423,64 @@ describe("loadData / saveData round trip", () => {
     await saveData(legacyShaped as LocalFinancials, userId);
     const loaded = await loadData(userId);
     expect(loaded.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+  });
+
+  it("Phase 1.2: a v0 record loaded from storage is migrated AND the migrated result is written back immediately -- not deferred to the next save", async () => {
+    // This is the case the migration-chain-gap fix and this test both
+    // exist for: a real account that predates schemaVersion entirely,
+    // taken through BOTH hops (0->1->2) via loadData's own write-back path
+    // -- not migrateFinancials in isolation -- checking the actual bytes
+    // that end up on disk, not just the in-memory return value.
+    const { createEnvelopes, activateSessionKey, encryptJSON, decryptJSON } = await import("./crypto");
+    const userId = "test-user-v0-writeback";
+    const { dek } = await createEnvelopes("pw", userId);
+    activateSessionKey(dek);
+
+    const v0Raw: Partial<LocalFinancials> = {
+      ...DEFAULT_DATA,
+      goals: [{ id: "g1", name: "Old goal", emoji: "🎯", targetAmount: 100, currentAmount: 0, targetDate: "2027-01-01", createdAt: "2026-01-01T00:00:00.000Z" } as StoredGoal],
+    };
+    delete v0Raw.schemaVersion; // no schemaVersion key at all -- every real account before 1.1
+    const encrypted = await encryptJSON(JSON.stringify(v0Raw));
+    localStorage.setItem(`essa_data_${userId}`, encrypted);
+
+    const loaded = await loadData(userId);
+    expect(loaded.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect((loaded.goals[0] as StoredGoal).currency).toBe("USD");
+
+    // Decrypt what's actually in storage now, independent of loaded's own
+    // return value -- proves the write-back really happened.
+    const stillStored = localStorage.getItem(`essa_data_${userId}`)!;
+    const decrypted = JSON.parse(await decryptJSON(stillStored));
+    expect(decrypted.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(decrypted.goals[0].currency).toBe("USD");
+  });
+
+  it("a write-back failure during load does not discard the successfully-migrated in-memory data", async () => {
+    // The inner try/catch around loadData's write-back call must be doing
+    // its job: a saveData hiccup (quota, encryption) should never fall
+    // into the OUTER catch, which would silently hand back DEFAULT_DATA in
+    // place of a real, correctly-migrated account.
+    const { createEnvelopes, activateSessionKey, encryptJSON } = await import("./crypto");
+    const userId = "test-user-writeback-fails";
+    const { dek } = await createEnvelopes("pw", userId);
+    activateSessionKey(dek);
+
+    const v0Raw: Partial<LocalFinancials> = { ...DEFAULT_DATA, userName: "Should Survive A Failed Write-Back" };
+    delete v0Raw.schemaVersion;
+    const encrypted = await encryptJSON(JSON.stringify(v0Raw));
+    localStorage.setItem(`essa_data_${userId}`, encrypted);
+
+    const setItemSpy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("simulated quota/storage failure");
+    });
+    try {
+      const loaded = await loadData(userId);
+      expect(loaded.userName).toBe("Should Survive A Failed Write-Back");
+      expect(loaded.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    } finally {
+      setItemSpy.mockRestore();
+    }
   });
 });
 
@@ -558,15 +633,84 @@ describe("migrateFinancials", () => {
     expect(DEFAULT_DATA.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
   });
 
-  it("migrates a record with no schemaVersion at all (every real account today), stamping the version without changing any other value", () => {
+  it("migrates a record with no schemaVersion at all (every real account today): every pre-existing value is unchanged, and the new v2 fields are correctly backfilled", () => {
+    // Rewritten for Phase 1.2 -- the previous version of this test asserted
+    // whole-object equality against the raw fixture, which was the actual
+    // proof of "no behavior change" back when v1 had no real transform.
+    // Now that v2 adds currency to goals/debts and backfills lbpRateAtEntry
+    // on LBP records, that assertion is EXPECTED to fail -- planned work,
+    // not a regression (see docs/ROADMAP.md Phase 1.2 planning notes).
+    // Checking field-by-field instead: everything pre-existing is
+    // byte-identical, and only the new fields are populated, with exactly
+    // the values the app's own existing conversion logic already produces.
     const legacy = legacyFixture();
     const migrated = migrateFinancials(legacy);
     expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
-    // Byte-identical in value on every field except the stamp itself --
-    // the actual proof of "no behavior change" for this sub-phase, not
-    // just an assertion that migration runs without throwing.
-    const { schemaVersion: _omit, ...migratedRest } = migrated;
-    expect(migratedRest).toEqual(legacy);
+
+    // Goals/debts: currency backfilled to USD, nothing else touched.
+    expect(migrated.goals).toEqual([
+      { id: "g1", name: "Trip", emoji: "🎯", targetAmount: 3000, currentAmount: 500, targetDate: "2027-01-01", createdAt: "2026-01-01T00:00:00.000Z", currency: "USD" },
+      { id: "g2", name: "Paused Goal", emoji: "🎯", targetAmount: 1000, currentAmount: 0, targetDate: "2027-06-01", createdAt: "2026-02-01T00:00:00.000Z", pausedAt: "2026-07-01T00:00:00.000Z", currency: "USD" },
+    ]);
+    expect(migrated.debts).toEqual([
+      { id: "d1", name: "Loan", balance: 1500, apr: 0, minPayment: 0, createdAt: "2026-01-01T00:00:00.000Z", openedDate: "2026-01-01", currency: "USD" },
+    ]);
+
+    // Transactions: the LBP one (t2) gets lbpRateAtEntry backfilled from
+    // valueForMonth(lbpRateHistory, "2026-08", lbpRate) -- the fixture's
+    // history has an exact "2026-08" entry (89500), so that's the value.
+    // Both USD transactions are byte-identical, untouched.
+    expect(migrated.transactions).toEqual([
+      { id: "t1", amount: 25.5, currency: "USD", bucket: "WANTS", description: "Dining", date: "2026-08-01", paymentMethod: "cash", category: "dining" },
+      { id: "t2", amount: 150000, currency: "LBP", bucket: "NEEDS", description: "Groceries", date: "2026-08-02", paymentMethod: "card", cardId: "c1", cardLabel: "Visa •••• 1234", category: "groceries", lbpRateAtEntry: 89500 },
+      { id: "t3", amount: 0, currency: "USD", bucket: "NEEDS", description: "Split bill", date: "2026-08-03", paymentMethod: "other", paymentNote: "Paid by roommate", category: "utilities" },
+    ]);
+
+    // Recurring: deliberately never gets a rate -- byte-identical, both being USD anyway.
+    expect(migrated.recurring).toEqual([
+      { id: "r1", name: "Tuition", emoji: "🔄", amount: 500, currency: "USD", frequency: "monthly", bucket: "NEEDS", startDate: "2026-01-01", endDate: null, totalAmount: 4500, createdAt: "2026-01-01T00:00:00.000Z" },
+      { id: "r2", name: "Streaming", emoji: "🔄", amount: 8, currency: "USD", frequency: "monthly", bucket: "WANTS", startDate: "2026-01-01", endDate: null, totalAmount: null, createdAt: "2026-01-01T00:00:00.000Z" },
+    ]);
+
+    // Tracked balance: USD, untouched.
+    expect(migrated.trackedBalances).toEqual([
+      { id: "tb1", name: "Cash", paymentMethod: "cash", startingBalance: 100, startingDate: "2026-08-01", currency: "USD", actualBalance: 80, actualBalanceDate: "2026-08-15T00:00:00.000Z", expectedAtCheckUSD: 82.5 },
+    ]);
+
+    // Spot-check representative top-level fields the transform never touches.
+    expect(migrated.userName).toBe("Test User");
+    expect(migrated.income).toBe(2000);
+    expect(migrated.lbpRate).toBe(89500);
+    expect(migrated.customCategories).toEqual(legacy.customCategories);
+  });
+
+  it("v1 -> v2 in isolation (single-hop, not the v0 double-hop): a record already at v1 gets the same currency/rate backfill", () => {
+    const v1 = { ...legacyFixture(), schemaVersion: 1 };
+    const migrated = migrateFinancials(v1);
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated.goals.every((g) => g.currency === "USD")).toBe(true);
+    expect(migrated.debts.every((d) => d.currency === "USD")).toBe(true);
+    expect((migrated.transactions.find((t) => t.id === "t2") as StoredTransaction).lbpRateAtEntry).toBe(89500);
+  });
+
+  it("does not overwrite a goal/debt that already has a currency, or an LBP record that already has lbpRateAtEntry -- idempotent, and safe once 1.4 adds real non-USD goals", () => {
+    const withExisting: Record<string, unknown> = {
+      ...legacyFixture(),
+      goals: [{ id: "g3", name: "Already LBP", emoji: "🎯", targetAmount: 100, currentAmount: 0, targetDate: "2027-01-01", createdAt: "2026-01-01T00:00:00.000Z", currency: "LBP" }],
+      transactions: [{ id: "t9", amount: 1000, currency: "LBP", bucket: "WANTS", description: "Already rated", date: "2026-08-01", paymentMethod: "cash", lbpRateAtEntry: 12345 }],
+    };
+    const migrated = migrateFinancials(withExisting);
+    expect(migrated.goals[0].currency).toBe("LBP"); // not clobbered to USD
+    expect((migrated.transactions[0] as StoredTransaction).lbpRateAtEntry).toBe(12345); // not re-backfilled to today's rate
+  });
+
+  it("never populates lbpRateAtEntry on a recurring item, even one denominated in LBP (regression guard -- see StoredRecurring's own type comment for why)", () => {
+    const withLbpRecurring: Record<string, unknown> = {
+      ...legacyFixture(),
+      recurring: [{ id: "r9", name: "LBP rent", emoji: "🔄", amount: 500000, currency: "LBP", frequency: "monthly", bucket: "NEEDS", startDate: "2026-01-01", endDate: null, totalAmount: null, createdAt: "2026-01-01T00:00:00.000Z" }],
+    };
+    const migrated = migrateFinancials(withLbpRecurring);
+    expect(migrated.recurring[0].lbpRateAtEntry).toBeUndefined();
   });
 
   it("running the migration twice over the same fixture produces identical output (idempotent, per the roadmap's explicit requirement)", () => {
@@ -596,7 +740,7 @@ describe("migrateFinancials", () => {
   // chain-walking mechanism itself correctly carries a v0 record through
   // multiple hops -- not just that the final version number looks right,
   // which is exactly the value this failure mode gets wrong for free.
-  describe("multi-step chain walking (synthetic second step -- Phase 1.2 will add the real one)", () => {
+  describe("multi-step chain walking (synthetic steps -- exercises the general chain-walking mechanism directly, independent of whatever the real MIGRATIONS table currently contains)", () => {
     const bridgeStep = { fromVersion: 0, migrate: (d: LocalFinancials) => ({ ...d, schemaVersion: 1 }) };
     const realTransformStep = {
       fromVersion: 1,

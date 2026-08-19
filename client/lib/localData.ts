@@ -14,6 +14,15 @@ export interface StoredTransaction {
   id: string;
   amount: number;
   currency: Currency;
+  // The USD/LBP rate in effect when this record was entered -- only ever
+  // meaningful (set) when currency is "LBP"; USD needs no conversion, so
+  // this stays undefined for a USD record. Captured once, never
+  // recomputed: this is what makes "historical records retain the rate at
+  // which they were entered" (docs/ROADMAP.md Phase 1) true even after the
+  // global reference rate changes later. See buildRecurringPaymentLog and
+  // withRate below for where this gets populated on new records, and
+  // migrateFinancials for how it's backfilled on existing ones.
+  lbpRateAtEntry?: number;
   // INCOME is a one-off/incidental receipt (a gift, a reimbursement) logged as
   // a dated transaction like any other -- distinct from the recurring salary
   // set in Setup. StoredRecurring.bucket deliberately stays NEEDS/WANTS/SAVINGS
@@ -40,6 +49,13 @@ export interface StoredGoal {
   emoji: string;
   targetAmount: number;
   currentAmount: number;
+  // Added in schema v2 (docs/ROADMAP.md Phase 1.2) -- every goal before
+  // this defaulted to USD implicitly (the only currency goals ever
+  // supported), so migrateFinancials backfills "USD" rather than leaving
+  // this optional. See localData.ts's StoredTransaction.currency comment
+  // for why lbpRateAtEntry is optional even though currency isn't.
+  currency: Currency;
+  lbpRateAtEntry?: number;
   targetDate: string;   // YYYY-MM-DD
   createdAt: string;    // ISO — when added to ESSA
   achievedAt?: string;  // ISO — when goal was completed
@@ -52,6 +68,7 @@ export interface WishlistItem {
   emoji: string;
   price: number;
   currency: Currency;
+  lbpRateAtEntry?: number;
   priority: "low" | "medium" | "high";
   notes?: string;
   createdAt: string;  // ISO — when added
@@ -74,6 +91,14 @@ export interface TrackedBalance {
   startingBalance: number;
   startingDate: string;     // YYYY-MM-DD
   currency: Currency;
+  // Rate at startingDate only. A TrackedBalance actually has TWO
+  // independent points in time that could each want their own rate --
+  // this one, and whatever rate was in effect when actualBalance was
+  // later confirmed -- but there's only one field. Known, deliberate
+  // limitation for schema v2: nothing reads this yet (stop-safe), so it's
+  // not a live correctness gap, just a modeling decision to revisit if a
+  // later phase needs actualBalance's own rate specifically.
+  lbpRateAtEntry?: number;
   actualBalance?: number;   // last balance you told it you actually have
   actualBalanceDate?: string; // ISO — when you last confirmed it
   // The live, computed "expected" total (USD) at the exact moment
@@ -91,6 +116,7 @@ export interface StoredAsset {
   name: string;      // e.g. "Car", "Brokerage account"
   value: number;
   currency: Currency;
+  lbpRateAtEntry?: number;
   createdAt: string; // ISO
 }
 
@@ -100,6 +126,9 @@ export interface StoredDebt {
   balance: number;
   apr: number;
   minPayment: number;
+  // Added in schema v2 -- see StoredGoal.currency's comment, same reasoning.
+  currency: Currency;
+  lbpRateAtEntry?: number;
   createdAt: string;     // ISO — when added to ESSA
   openedDate?: string;   // YYYY-MM-DD — when the debt was originally opened
   paidOffAt?: string;    // ISO — when balance reached 0
@@ -140,6 +169,17 @@ export interface StoredRecurring {
   emoji: string;
   amount: number;
   currency: Currency;
+  // Deliberately NEVER populated, unlike every other currency-bearing type
+  // -- kept only for structural consistency across the monetary-record
+  // types. A recurring item is an open-ended template, not a settled
+  // event: every accrual is already, correctly, resolved at its OWN
+  // accrual month via valueForMonth (computeDashboard.ts), and freezing a
+  // rate at the template's startDate would be wrong the moment anything
+  // read it as governing a later month. "The rate at which this was
+  // entered" means something for the real, dated transactions this item
+  // eventually produces (buildRecurringPaymentLog, InputPanel's "+extra"),
+  // not for the template itself -- those get their own rate instead.
+  lbpRateAtEntry?: number;
   frequency: RecurringFrequency;
   bucket: "NEEDS" | "WANTS" | "SAVINGS";
   // Same optional, display-only role as StoredTransaction.category (plain
@@ -298,9 +338,9 @@ export interface LocalFinancials {
 }
 
 // Bumped whenever a stored-shape migration step is added to MIGRATIONS
-// below. Every account in production today predates this field entirely
-// (implicitly version 0) -- see docs/ROADMAP.md Phase 1.1.
-export const CURRENT_SCHEMA_VERSION = 1;
+// below. v2 (docs/ROADMAP.md Phase 1.2) adds currency to Goal/Debt and a
+// captured lbpRateAtEntry to every LBP-currency record.
+export const CURRENT_SCHEMA_VERSION = 2;
 
 export const DEFAULT_DATA: LocalFinancials = {
   schemaVersion: CURRENT_SCHEMA_VERSION,
@@ -350,9 +390,66 @@ export const DEFAULT_DATA: LocalFinancials = {
  * deployed code -- not something to leave latent until the next version
  * bump trips over it.
  */
+/**
+ * v1 -> v2 (Phase 1.2): currency + rate on every monetary record.
+ * "App behaves identically, model is richer" (docs/ROADMAP.md) -- this
+ * only adds and backfills fields; nothing anywhere reads them yet, so
+ * this transform cannot change a single displayed number.
+ *
+ * Goals/debts had no currency at all before v2 -- every one that predates
+ * this defaults to "USD" (every goal/debt this app has ever supported was
+ * implicitly USD; the migration is additive, not interpretive, per the
+ * roadmap's explicit instruction). Records that already have a value
+ * (idempotency, or -- once 1.4 ships -- a genuinely non-USD goal/debt)
+ * pass through via `??`, never overwritten.
+ *
+ * LBP-currency transactions/wishlist items/tracked balances/assets get
+ * lbpRateAtEntry backfilled from the exact rate the app already,
+ * effectively, uses for that record today -- valueForMonth over
+ * lbpRateHistory, anchored on the record's own date, falling back to the
+ * live lbpRate exactly like every existing call site does. This is
+ * provably value-neutral: it captures what toUSDForMonth would already
+ * compute, not a new number. Untouched if already present (idempotent),
+ * and skipped entirely for USD records (rate-free by definition).
+ *
+ * Recurring items are deliberately excluded -- see StoredRecurring's own
+ * lbpRateAtEntry comment for why a template shouldn't get one at all.
+ */
+function addCurrencyAndRate(d: LocalFinancials): LocalFinancials {
+  const rateForDate = (dateOrIso: string) => valueForMonth(d.lbpRateHistory, dateOrIso.slice(0, 7), d.lbpRate);
+  return {
+    ...d,
+    schemaVersion: 2,
+    goals: d.goals.map((g) => ({ ...g, currency: (g as Partial<StoredGoal>).currency ?? "USD" })),
+    debts: d.debts.map((deb) => ({ ...deb, currency: (deb as Partial<StoredDebt>).currency ?? "USD" })),
+    transactions: d.transactions.map((t) =>
+      t.currency === "LBP" && t.lbpRateAtEntry == null ? { ...t, lbpRateAtEntry: rateForDate(t.date) } : t,
+    ),
+    wishlist: (d.wishlist ?? []).map((w) =>
+      w.currency === "LBP" && w.lbpRateAtEntry == null ? { ...w, lbpRateAtEntry: rateForDate(w.createdAt) } : w,
+    ),
+    trackedBalances: d.trackedBalances.map((tb) =>
+      tb.currency === "LBP" && tb.lbpRateAtEntry == null ? { ...tb, lbpRateAtEntry: rateForDate(tb.startingDate) } : tb,
+    ),
+    assets: d.assets.map((a) =>
+      a.currency === "LBP" && a.lbpRateAtEntry == null ? { ...a, lbpRateAtEntry: rateForDate(a.createdAt) } : a,
+    ),
+  };
+}
+
 const MIGRATIONS: { fromVersion: number; migrate: (d: LocalFinancials) => LocalFinancials }[] = [
   { fromVersion: 0, migrate: (d) => ({ ...d, schemaVersion: 1 }) },
+  { fromVersion: 1, migrate: addCurrencyAndRate },
 ];
+
+/** Reads the schema version off a raw, not-yet-migrated value -- treats a
+ * missing/non-number version as 0, matching every real account in
+ * production before schemaVersion existed. Shared by migrateFinancials
+ * and loadData's write-back check (see below) so the two can't drift. */
+export function schemaVersionOf(raw: unknown): number {
+  const input = (raw && typeof raw === "object" ? raw : {}) as Partial<LocalFinancials>;
+  return typeof input.schemaVersion === "number" ? input.schemaVersion : 0;
+}
 
 /**
  * Turns whatever was actually in localStorage (or just pulled from the
@@ -366,20 +463,18 @@ const MIGRATIONS: { fromVersion: number; migrate: (d: LocalFinancials) => LocalF
  * DEFAULT_DATA in first (which now itself carries CURRENT_SCHEMA_VERSION)
  * would make an old, unmigrated record indistinguishable from a genuinely
  * current one the instant the merge ran, defeating the whole point of the
- * marker. A missing/non-number version is treated as 0 -- every real
- * account in production today.
+ * marker.
  *
  * `migrations` defaults to the real MIGRATIONS table above; every
  * production call site relies on that default and never passes its own.
  * The parameter exists so a test can supply a synthetic multi-step chain
  * to verify the chain-walking mechanism itself (does a record several
  * versions behind actually receive every intermediate transform, not just
- * end up with the right-looking version number) without needing a second
- * real schema version to exist yet -- see localData.test.ts.
+ * end up with the right-looking version number) -- see localData.test.ts.
  */
 export function migrateFinancials(raw: unknown, migrations: typeof MIGRATIONS = MIGRATIONS): LocalFinancials {
   const input = (raw && typeof raw === "object" ? raw : {}) as Partial<LocalFinancials>;
-  const rawVersion = typeof input.schemaVersion === "number" ? input.schemaVersion : 0;
+  const rawVersion = schemaVersionOf(raw);
 
   let data: LocalFinancials = { ...DEFAULT_DATA, ...input, schemaVersion: rawVersion };
   for (const step of migrations) {
@@ -468,7 +563,29 @@ export async function loadData(userId: string): Promise<LocalFinancials> {
   }
 
   try {
-    return migrateFinancials(JSON.parse(plain));
+    const parsed = JSON.parse(plain);
+    const migrated = migrateFinancials(parsed);
+    // Starting at schema v2 (Phase 1.2's real transform), a load that
+    // migrates must also persist the result immediately, not defer to the
+    // next natural save (docs/ROADMAP.md's explicit Phase 1.2 requirement).
+    // Without this, what's on disk and what's about to render have
+    // silently diverged the instant migration ran -- a crash, a closed
+    // tab, or a pull from another device before the next edit would read
+    // (or push) the stale, unmigrated bytes again.
+    if (schemaVersionOf(parsed) !== CURRENT_SCHEMA_VERSION) {
+      try {
+        await saveData(migrated, userId);
+      } catch {
+        // Write-back failed (storage quota, an encryption hiccup) -- the
+        // in-memory migrated data is still correct and safe to return.
+        // Deliberately NOT the outer catch below: a persistence failure
+        // here must never be treated as if the load itself failed, which
+        // would discard a real, correctly-migrated account in favor of an
+        // empty one. The next natural save (any edit) carries it to disk,
+        // the same fallback Phase 1.1 always relied on.
+      }
+    }
+    return migrated;
   } catch {
     return DEFAULT_DATA;
   }
@@ -507,6 +624,24 @@ export function todayISO(): string {
 /** Converts an amount to USD given its own currency and the current LBP rate — was independently redefined as the same one-liner in computeDashboard.ts, InputPanel.tsx, RecurringScreen.tsx, and TransactionsScreen.tsx. */
 export function toUSD(amount: number, currency: Currency | undefined, lbpRate: number): number {
   return currency === "LBP" ? amount / lbpRate : amount;
+}
+
+/**
+ * lbpRateAtEntry for a NEW record being created right now, given its
+ * currency and the current lbpRate -- USD needs no rate, so this returns
+ * an empty object for it (spread into a new record's literal, exactly
+ * like the existing `...(rec.category ? {category: rec.category} : {})`
+ * pattern already used at several creation sites in InputPanel.tsx).
+ * Every currency-picker creation site should use this rather than
+ * inlining the currency === "LBP" check itself -- see docs/ROADMAP.md
+ * Phase 1.2: a manual audit of every construction site missed three real
+ * ones on the first pass, in a codebase with a documented habit of
+ * parallel screen-level logic (GoalsScreen re-implementing InputPanel's
+ * goal contribution, for one) -- a shared helper means a future
+ * currency-aware site inherits correct rate capture for free.
+ */
+export function withRate(currency: Currency, lbpRate: number): { lbpRateAtEntry?: number } {
+  return currency === "LBP" ? { lbpRateAtEntry: lbpRate } : {};
 }
 
 // ── Money precision (2026-08-17 audit follow-up, "Option B") ──────────────
@@ -709,8 +844,17 @@ export function recurringPaidSoFar(r: StoredRecurring, asOf: Date = new Date()):
  * nextOccurrence's own construction, so slicing its ISO string is exact --
  * no local/UTC ambiguity to introduce here (unlike deriving a date from a
  * live "now" instant).
+ *
+ * `lbpRate` (Phase 1.2) is captured onto the created transaction via
+ * withRate as its lbpRateAtEntry, if r.currency is LBP -- the CURRENT live
+ * rate, not a historical lookup for due's month, since due can be a few
+ * days in the future (paid early) and there's no historical rate for a
+ * month that hasn't happened yet. "The rate at which this was entered"
+ * means the rate at the moment of this real, settled action -- unlike the
+ * recurring template itself, which never gets a rate at all (see
+ * StoredRecurring's own comment).
  */
-export function buildRecurringPaymentLog(r: StoredRecurring, now: Date = new Date()): { tx: StoredTransaction; cycleYm: string } | null {
+export function buildRecurringPaymentLog(r: StoredRecurring, lbpRate: number, now: Date = new Date()): { tx: StoredTransaction; cycleYm: string } | null {
   const due = nextOccurrence(r, now);
   if (!due) return null;
   const dueISO = due.toISOString().slice(0, 10);
@@ -718,6 +862,7 @@ export function buildRecurringPaymentLog(r: StoredRecurring, now: Date = new Dat
   const tx: StoredTransaction = {
     id: uid(), amount: r.amount, currency: r.currency, bucket: r.bucket,
     ...(r.category ? { category: r.category } : {}),
+    ...withRate(r.currency, lbpRate),
     description: r.name, date: dueISO, paymentMethod: "cash",
   };
   return { tx, cycleYm };

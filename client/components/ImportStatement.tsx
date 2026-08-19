@@ -157,6 +157,8 @@ export default function ImportStatement({
       card = existing;
     }
 
+    // Hardcoded USD, no rate needed -- statement import doesn't support an
+    // LBP source today, so there's no currency to capture a rate against.
     const newTransactions: StoredTransaction[] = rows
       .filter((r) => r.include && isRowValid(r))
       .map((r) => ({
@@ -192,6 +194,7 @@ export default function ImportStatement({
       // this same statement, so there's nothing to reconstruct here the
       // way a manual confirmation needs to (see updateActualBalance).
       const existingTB = financials.trackedBalances.find((tb) => tb.cardId === card.id);
+      // Same as the transactions above -- hardcoded USD, no rate needed.
       const tbPatch: TrackedBalance = existingTB
         ? { ...existingTB, actualBalance: closingBalance, actualBalanceDate: balanceDate, expectedAtCheckUSD: closingBalance }
         : {
