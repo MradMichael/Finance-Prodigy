@@ -7,7 +7,7 @@ import type {
 } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, monthlyEquivalent, nominalMonthlyEquivalent, isRecurringActive, isPaidThisCycle, recurringPaidSoFar, toUSD as toUSDShared, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney, DEFAULT_DATA } from "../lib/localData";
+import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, monthlyEquivalent, nominalMonthlyEquivalent, isRecurringActive, isPaidThisCycle, recurringPaidSoFar, toUSD as toUSDShared, withRate, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney, DEFAULT_DATA } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY } from "./form/Primitives";
@@ -231,6 +231,7 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
       description,
       date: txDate,
       paymentMethod: txPayMethod,
+      ...withRate(txCurrency, financials.lbpRate ?? 89500),
       ...(autoCategory ? { category: autoCategory } : {}),
       ...(txPayMethod === "other" && txPayNote.trim() ? { paymentNote: txPayNote.trim() } : {}),
       ...(cardId ? { cardId, cardLabel } : {}),
@@ -258,6 +259,11 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
       id: uid(), name: gName.trim(), emoji: gEmoji || "🎯",
       targetAmount: parseFloat(gTarget.replace(/,/g, "")),
       currentAmount: parseFloat(gCurrent.replace(/,/g, "")) || 0,
+      // Goals don't have a currency picker yet -- that's Phase 1.4 ("Entry
+      // in either currency"), not this phase. Every goal this app has ever
+      // supported has been USD; hardcoding it here keeps behavior
+      // identical to before schema v2 added the field.
+      currency: "USD",
       targetDate: gDate,
       createdAt: new Date().toISOString(),
     };
@@ -272,6 +278,8 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
       balance: parseFloat(dBalance.replace(/,/g, "")),
       apr: Math.max(0, parseFloat(dApr) || 0),
       minPayment: parseFloat(dMin.replace(/,/g, "")) || 0,
+      // Same reasoning as addGoal's currency field -- see its comment.
+      currency: "USD",
       createdAt: new Date().toISOString(),
       ...(dOpenedDate ? { openedDate: dOpenedDate } : {}),
     };
@@ -285,6 +293,7 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
       id: uid(), name: aName.trim(),
       value: parseFloat(aValue.replace(/,/g, "")),
       currency: aCurrency,
+      ...withRate(aCurrency, financials.lbpRate ?? 89500),
       createdAt: new Date().toISOString(),
     };
     update({ assets: [...(financials.assets ?? []), asset] });
@@ -304,6 +313,7 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
       ...(tbMethod === "card" ? { cardId: tbCardId } : {}),
       startingBalance: parseFloat(tbStartBal.replace(/,/g, "")),
       startingDate: tbStartDate, currency: tbCurrency,
+      ...withRate(tbCurrency, financials.lbpRate ?? 89500),
     };
     update({ trackedBalances: [...(financials.trackedBalances ?? []), tb] });
     setTbName(""); setTbMethod("cash"); setTbCardId(""); setTbStartBal(""); setTbStartDate(todayISO()); setTbCurrency("USD");
@@ -382,6 +392,8 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
     const goals = financials.goals.map((g) =>
       g.id === goalId ? { ...g, currentAmount: roundMoney(g.currentAmount + amt) } : g
     );
+    // Hardcoded USD, no rate needed -- goal contributions are always USD
+    // today (goals themselves have no currency picker yet, see addGoal).
     const tx: StoredTransaction = {
       id: uid(), amount: amt, currency: "USD" as Currency,
       bucket: "SAVINGS", description: `Goal: ${goal?.name ?? "savings"}`,
@@ -398,6 +410,7 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
       id: uid(), amount: amt, currency: rec.currency,
       bucket: rec.bucket,
       ...(rec.category ? { category: rec.category } : {}),
+      ...withRate(rec.currency, financials.lbpRate ?? 89500),
       description: `Extra: ${rec.name}`,
       date: todayISO(),
       paymentMethod: "cash",

@@ -47,6 +47,8 @@ export default function GoalsScreen({
           : g.achievedAt,
       };
     });
+    // Hardcoded USD, no rate needed -- same reasoning as InputPanel's
+    // contributeToGoal (goals have no currency picker yet, Phase 1.4).
     const tx = {
       id: Math.random().toString(36).slice(2, 10),
       amount: amt, currency: "USD" as const, bucket: "SAVINGS" as const,

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, WishlistItem, Currency, StoredGoal } from "../../lib/localData";
-import { uid, toUSD as toUSDShared } from "../../lib/localData";
+import { uid, toUSD as toUSDShared, withRate } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money } from "./shared";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, CurrencyToggle } from "../form/Primitives";
@@ -46,6 +46,7 @@ export default function WishlistScreen({
     if (!trimmed || isNaN(parsedPrice) || parsedPrice <= 0) return;
     const item: WishlistItem = {
       id: uid(), name: trimmed, emoji: emoji || "✨", price: parsedPrice, currency, priority,
+      ...withRate(currency, lbpRate),
       createdAt: new Date().toISOString(),
     };
     onChange({ ...financials, wishlist: [...wishlist, item] });
@@ -76,6 +77,10 @@ export default function WishlistScreen({
       id: uid(), name: item.name, emoji: item.emoji,
       targetAmount: Math.round(toUSD(item.price, item.currency) * 100) / 100,
       currentAmount: 0,
+      // Already converted to USD above (goals have no currency field of
+      // their own yet -- see localData.ts), so USD is correct here
+      // regardless of the source wishlist item's own currency.
+      currency: "USD",
       targetDate: targetDate.toISOString().slice(0, 10),
       createdAt: new Date().toISOString(),
     };

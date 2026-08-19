@@ -126,7 +126,7 @@ export default function Home() {
     if (loggingRecurringRef.current.has(recurringId)) return; // already in flight
     const rec = financials.recurring.find((r) => r.id === recurringId);
     if (!rec) return;
-    const result = buildRecurringPaymentLog(rec, new Date());
+    const result = buildRecurringPaymentLog(rec, financials.lbpRate ?? 89500, new Date());
     if (!result) return;
     loggingRecurringRef.current.add(recurringId);
     setLoggingRecurringIds(new Set(loggingRecurringRef.current));
