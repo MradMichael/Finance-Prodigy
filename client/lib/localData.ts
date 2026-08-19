@@ -328,14 +328,31 @@ export const DEFAULT_DATA: LocalFinancials = {
 
 /**
  * Ordered migration steps, each moving data from exactly `fromVersion` to
- * `fromVersion + 1`. Empty today -- this sub-phase only proves the harness
- * itself is safe (a version stamp, nothing else) before Phase 1.2 adds the
- * first real transform (currency + rate on every monetary record). Add
- * new entries here, in order; migrateFinancials applies whichever ones
- * apply, in sequence, so a record several versions behind gets every step
- * between its version and CURRENT_SCHEMA_VERSION, not just the latest.
+ * `fromVersion + 1`. migrateFinancials walks this in a single pass,
+ * advancing one step whenever the data's current version exactly matches
+ * a step's fromVersion -- which means the array must be a CONTIGUOUS chain
+ * with no gaps, or a record several versions behind silently stops partway
+ * through and gets stamped current anyway (see the 0->1 entry below).
+ *
+ * The 0->1 entry exists purely to close that gap. Phase 1.1 shipped with
+ * this table empty -- harmless at the time, since CURRENT_SCHEMA_VERSION
+ * was 1 and a v0 record just fell through to the unconditional final stamp
+ * with nothing to apply. The gap became load-bearing the moment a real
+ * fromVersion:1 step was going to be added for Phase 1.2's currency/rate
+ * transform: every real account in production is v0 (no schemaVersion
+ * field at all), so without this bridge, EVERY one of them would match
+ * neither the (absent) v0 step nor the v1 step, fall through untouched,
+ * and get silently stamped to the current version anyway -- the version
+ * marker lying about a transform that never ran, permanently, with no
+ * self-healing path once loadData's write-back (also Phase 1.2) persists
+ * that wrong stamp to disk. Closing it now, on its own, independent of
+ * Phase 1.2 itself, since it's a real defect in already-merged, already-
+ * deployed code -- not something to leave latent until the next version
+ * bump trips over it.
  */
-const MIGRATIONS: { fromVersion: number; migrate: (d: LocalFinancials) => LocalFinancials }[] = [];
+const MIGRATIONS: { fromVersion: number; migrate: (d: LocalFinancials) => LocalFinancials }[] = [
+  { fromVersion: 0, migrate: (d) => ({ ...d, schemaVersion: 1 }) },
+];
 
 /**
  * Turns whatever was actually in localStorage (or just pulled from the
@@ -351,13 +368,21 @@ const MIGRATIONS: { fromVersion: number; migrate: (d: LocalFinancials) => LocalF
  * current one the instant the merge ran, defeating the whole point of the
  * marker. A missing/non-number version is treated as 0 -- every real
  * account in production today.
+ *
+ * `migrations` defaults to the real MIGRATIONS table above; every
+ * production call site relies on that default and never passes its own.
+ * The parameter exists so a test can supply a synthetic multi-step chain
+ * to verify the chain-walking mechanism itself (does a record several
+ * versions behind actually receive every intermediate transform, not just
+ * end up with the right-looking version number) without needing a second
+ * real schema version to exist yet -- see localData.test.ts.
  */
-export function migrateFinancials(raw: unknown): LocalFinancials {
+export function migrateFinancials(raw: unknown, migrations: typeof MIGRATIONS = MIGRATIONS): LocalFinancials {
   const input = (raw && typeof raw === "object" ? raw : {}) as Partial<LocalFinancials>;
   const rawVersion = typeof input.schemaVersion === "number" ? input.schemaVersion : 0;
 
   let data: LocalFinancials = { ...DEFAULT_DATA, ...input, schemaVersion: rawVersion };
-  for (const step of MIGRATIONS) {
+  for (const step of migrations) {
     if (data.schemaVersion === step.fromVersion) data = step.migrate(data);
   }
   return { ...data, schemaVersion: CURRENT_SCHEMA_VERSION };
