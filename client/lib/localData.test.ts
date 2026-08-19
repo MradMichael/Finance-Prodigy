@@ -586,4 +586,40 @@ describe("migrateFinancials", () => {
     expect(migrateFinancials("not an object").schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(migrateFinancials(undefined)).toEqual(DEFAULT_DATA);
   });
+
+  // Regression guard for the chain-gap bug: MIGRATIONS must be a contiguous
+  // fromVersion chain, or a record several versions behind silently stops
+  // partway through and still gets stamped current -- the version marker
+  // lying about a transform that never ran. There's only one real version
+  // transition in the codebase today (0->1, a no-op bump), so a second,
+  // synthetic step with a REAL field change is supplied here to prove the
+  // chain-walking mechanism itself correctly carries a v0 record through
+  // multiple hops -- not just that the final version number looks right,
+  // which is exactly the value this failure mode gets wrong for free.
+  describe("multi-step chain walking (synthetic second step -- Phase 1.2 will add the real one)", () => {
+    const bridgeStep = { fromVersion: 0, migrate: (d: LocalFinancials) => ({ ...d, schemaVersion: 1 }) };
+    const realTransformStep = {
+      fromVersion: 1,
+      migrate: (d: LocalFinancials) => ({ ...d, schemaVersion: 2, userName: `${d.userName} [migrated-v2]` }),
+    };
+
+    it("a v0 record walks through BOTH hops, receiving the second step's real field change -- not just a version number", () => {
+      const legacy = legacyFixture();
+      const migrated = migrateFinancials(legacy, [bridgeStep, realTransformStep]);
+      // If the bridge step were missing (the actual bug), this record would
+      // never reach realTransformStep at all, and userName would be untouched.
+      expect(migrated.userName).toBe("Test User [migrated-v2]");
+      // Still correctly normalized to today's real CURRENT_SCHEMA_VERSION (1)
+      // regardless of the synthetic chain's own higher intermediate number --
+      // migrateFinancials's final line stamps this independently of migrations.
+      expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    });
+
+    it("documents the exact failure mode: without the bridge step, a v0 record skips the transform entirely while the version stamp still claims current", () => {
+      const legacy = legacyFixture();
+      const migrated = migrateFinancials(legacy, [realTransformStep]); // no bridge -- reproduces the original bug
+      expect(migrated.userName).toBe("Test User"); // unchanged -- silently skipped
+      expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION); // yet the stamp still lies, claiming current
+    });
+  });
 });

@@ -89,7 +89,7 @@ Stored data is encrypted client-side. A schema change is not a server-side opera
 
 | # | Sub-phase | Stop-safe after? |
 |---|---|---|
-| 1.1 | Schema version marker + lazy migration harness, no currency logic yet. **Built, `feat/schema-migration-harness`, 251/251 tests (tsc/build clean) — byte-identical proven against both a synthetic fixture and the owner's real 42-transaction export. Branch only — not merged, per Rule 6 (owner confirms).** | Yes — no behaviour change |
+| 1.1 | Schema version marker + lazy migration harness, no currency logic yet. **Built and merged to `main`. 251/251 tests at merge time (tsc/build clean) — byte-identical proven against both a synthetic fixture and the owner's real 42-transaction export. Not yet marked complete — the owner's own live-verification check (real account, deployed build, dashboard renders identically) per Rule 6 has not been confirmed in-session.** | Yes — no behaviour change |
 | 1.2 | Data model: currency code and rate on every monetary record, defaulting to USD. **Must also add write-back-on-migration to the 1.1 harness — required, see Migration requirements above.** | Yes — app behaves identically, model is richer |
 | 1.3 | Reference rate as configurable stored data, with history | Yes |
 | 1.4 | Entry in either currency | Yes |
