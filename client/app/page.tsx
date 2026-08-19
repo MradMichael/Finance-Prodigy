@@ -20,8 +20,8 @@ import Sidebar from "../components/shell/Sidebar";
 import BottomNav from "../components/shell/BottomNav";
 import TopBar from "../components/shell/TopBar";
 import type { Screen, SyncStatus } from "../components/screens/shared";
-import { loadData, saveData, isEmptyFinancials, uid, todayISO, nextOccurrence } from "../lib/localData";
-import type { LocalFinancials, StoredTransaction } from "../lib/localData";
+import { loadData, saveData, isEmptyFinancials, buildRecurringPaymentLog } from "../lib/localData";
+import type { LocalFinancials } from "../lib/localData";
 import { computeDashboard } from "../lib/computeDashboard";
 import { getSession, hasValidSession, signOut } from "../lib/auth";
 import type { Session } from "../lib/auth";
@@ -41,9 +41,21 @@ export default function Home() {
   const [financials, setFinancials] = useState<LocalFinancials | null>(null);
   const [screen,     setScreen]     = useState<Screen>("overview");
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
+  // Mirrors loggingRecurringRef for rendering (disables the "Log payment"
+  // button while its own write is in flight) -- the ref below is the
+  // actual guard; this is display-only and can lag it by a render.
+  const [loggingRecurringIds, setLoggingRecurringIds] = useState<Set<string>>(new Set());
 
   const syncTimer   = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionRef  = useRef<Session | null>(null);
+  // Synchronous re-entrancy guard for handleLogRecurringPayment -- a second
+  // click for the same item, arriving before the first click's handleChange
+  // has resolved, reads this before doing anything else and bails. Must be
+  // a ref, not state: state updates aren't guaranteed to have committed
+  // before a rapid second click re-enters the handler, which is exactly
+  // the race that let a double-click create two transactions for the same
+  // bill.
+  const loggingRecurringRef = useRef<Set<string>>(new Set());
 
   // keep a stable ref so the debounce closure always sees the latest session
   useEffect(() => { sessionRef.current = session; }, [session]);
@@ -106,24 +118,28 @@ export default function Home() {
   // Logs a real transaction for a recurring item's current due cycle (the
   // "Log payment" button on Overview's Renewing soon list), and stamps
   // lastPaidCycle so monthlyEquivalent stops also accruing its automatic
-  // pro-rated estimate for that same month -- see localData.ts.
-  function handleLogRecurringPayment(recurringId: string) {
+  // estimate for that same month -- see buildRecurringPaymentLog in
+  // localData.ts for why the transaction and the stamp have to be derived
+  // from the same value.
+  async function handleLogRecurringPayment(recurringId: string) {
     if (!financials) return;
+    if (loggingRecurringRef.current.has(recurringId)) return; // already in flight
     const rec = financials.recurring.find((r) => r.id === recurringId);
     if (!rec) return;
-    const due = nextOccurrence(rec, new Date());
-    if (!due) return;
-    const cycleYm = due.toISOString().slice(0, 7);
-    const tx: StoredTransaction = {
-      id: uid(), amount: rec.amount, currency: rec.currency, bucket: rec.bucket,
-      ...(rec.category ? { category: rec.category } : {}),
-      description: rec.name, date: todayISO(), paymentMethod: "cash",
-    };
-    handleChange({
-      ...financials,
-      transactions: [tx, ...financials.transactions],
-      recurring: financials.recurring.map((r) => r.id === recurringId ? { ...r, lastPaidCycle: cycleYm } : r),
-    });
+    const result = buildRecurringPaymentLog(rec, new Date());
+    if (!result) return;
+    loggingRecurringRef.current.add(recurringId);
+    setLoggingRecurringIds(new Set(loggingRecurringRef.current));
+    try {
+      await handleChange({
+        ...financials,
+        transactions: [result.tx, ...financials.transactions],
+        recurring: financials.recurring.map((r) => r.id === recurringId ? { ...r, lastPaidCycle: result.cycleYm } : r),
+      });
+    } finally {
+      loggingRecurringRef.current.delete(recurringId);
+      setLoggingRecurringIds(new Set(loggingRecurringRef.current));
+    }
   }
 
   function handleSignOut() {
@@ -257,7 +273,7 @@ export default function Home() {
 
         {/* Main content */}
         <div style={{ flex: 1, overflowY: "auto" }}>
-          {screen === "overview"     && <FinancialDashboard data={dashboardData} onNavigate={setScreen} onLogRecurringPayment={handleLogRecurringPayment} />}
+          {screen === "overview"     && <FinancialDashboard data={dashboardData} onNavigate={setScreen} onLogRecurringPayment={handleLogRecurringPayment} loggingRecurringIds={loggingRecurringIds} />}
           {screen === "budget"       && <BudgetScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
           {screen === "setup"        && <SetupScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
           {screen === "finances"     && <InputPanel financials={financials} dashData={dashboardData} onChange={handleChange} session={session} />}
