@@ -1,4 +1,4 @@
-import type { LocalFinancials, BudgetRuleKey } from "./localData";
+import type { LocalFinancials, BudgetRuleKey, StoredDebt, Currency } from "./localData";
 import { monthlyEquivalent, nextOccurrence, BUDGET_RULES, valueForMonth, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, DEFAULT_LBP_RATE } from "./localData";
 import { simulateDebtPayoff, type DebtInput } from "./debtEngine";
 
@@ -52,7 +52,7 @@ export interface DashboardPayload {
   };
   goals: {
     id: number; name: string; emoji: string | null; type: string;
-    targetAmount: number; currentAmount: number; projection: Projection;
+    targetAmount: number; currentAmount: number; currency: Currency; projection: Projection;
     paused: boolean;
   }[];
   sixMonthTrend: { ymKey: number; income: number; spend: number; savingsContrib: number }[];
@@ -93,6 +93,49 @@ export interface DashboardPayload {
 
 export function dateFmt(d: Date) {
   return `${String(d.getDate()).padStart(2, "0")}-${String(d.getMonth() + 1).padStart(2, "0")}-${d.getFullYear()}`;
+}
+
+/**
+ * Converts StoredDebt[] to the currency-blind DebtInput[] debtEngine.ts
+ * expects -- the ONE place this conversion happens (Phase 1.4). Previously
+ * two independent, near-identical construction sites existed here and in
+ * ProjectionsScreen.tsx; debtEngine.ts itself has zero currency awareness
+ * anywhere in its amortization loop and stays that way deliberately (it's
+ * already a pure, tested engine -- converting at this boundary is lower
+ * risk than teaching the simulation loop about currency). Filters
+ * balance > 0, matching the convention used everywhere else a debt list
+ * gets aggregated (DebtsScreen's activeDebts, totalMinPayments above) --
+ * harmless either way since simulateDebtPayoff re-filters internally, but
+ * one behavior, not two slightly different ones.
+ */
+export function toDebtInputs(debts: StoredDebt[], lbpRate: number): DebtInput[] {
+  return debts.filter((d) => d.balance > 0).map((d) => ({
+    id: d.id, name: d.name,
+    balance: toUSDShared(d.balance, d.currency, lbpRate),
+    aprPct: d.apr,
+    minimumPayment: toUSDShared(d.minPayment, d.currency, lbpRate),
+  }));
+}
+
+/**
+ * CurrencyScreen's "cash & assets, by currency" split: assets, tracked
+ * balances, and goals (each locked to its own currency since Phase 1.4) --
+ * a saved goal balance is a real currency holding, same bucket as an asset
+ * or tracked balance. The emergency fund stays out (always USD, no currency
+ * field of its own). Debts are deliberately excluded, not just forgotten --
+ * a liability moves the OPPOSITE direction from an asset when LBP devalues
+ * (cheaper to repay in USD terms, not "exposed" the way an LBP asset is);
+ * netting it into this sum would understate real exposure, not double-count.
+ */
+export function computeHoldingsByCurrency(data: LocalFinancials, lbpRate: number): { usdAssets: number; lbpAssets: number; holdingsTotalUSD: number } {
+  const usdAssets = data.assets.filter((a) => a.currency === "USD").reduce((s, a) => s + a.value, 0)
+    + data.trackedBalances.filter((b) => b.currency === "USD").reduce((s, b) => s + (b.actualBalance ?? b.startingBalance), 0)
+    + data.goals.filter((g) => g.currency === "USD").reduce((s, g) => s + g.currentAmount, 0);
+  const lbpAssets = data.assets.filter((a) => a.currency === "LBP").reduce((s, a) => s + a.value, 0)
+    + data.trackedBalances.filter((b) => b.currency === "LBP").reduce((s, b) => s + (b.actualBalance ?? b.startingBalance), 0)
+    + data.goals.filter((g) => g.currency === "LBP").reduce((s, g) => s + g.currentAmount, 0);
+  const holdingsTotalUSD = toUSDShared(usdAssets, "USD", lbpRate) + toUSDShared(lbpAssets, "LBP", lbpRate);
+  return { usdAssets, lbpAssets, holdingsTotalUSD };
 }
 
 export function computeDashboard(data: LocalFinancials): DashboardPayload {
@@ -210,24 +253,43 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   // Paid-off debts stay in the array (balance 0, paidOffAt set) for history —
   // their minPayment isn't cleared, so summing over all debts unfiltered
   // would keep counting a payment obligation that no longer exists.
-  const totalMinPayments = data.debts.filter((d) => d.balance > 0).reduce((s, d) => s + d.minPayment, 0);
+  // Converted per-debt before summing (Phase 1.4) -- debts can now be LBP,
+  // and this feeds debtPressurePct, a ratio against USD income.
+  const totalMinPayments = data.debts.filter((d) => d.balance > 0).reduce((s, d) => s + toUSD(d.minPayment, d.currency), 0);
   const debtPressurePct  = totalMinPayments / incomeSafe;
   const debtScore = Math.max(0, 100 - debtPressurePct * 400);
+
+  /**
+   * Per-goal remaining/pace, shared by the health-score average below and
+   * the goals[] projection array further down -- previously two
+   * independently-computed, structurally identical blocks (the code's own
+   * comment already warned they could drift). Phase 1.4 sharpens that risk:
+   * `req` (rem/ms) is in the goal's OWN currency, and needs opposite
+   * treatment for two different consumers. `req` itself (native currency)
+   * is what GoalsScreen seeds its "quick amount" contribution buttons
+   * from -- converting it to USD would make an LBP goal's quick-add button
+   * suggest a USD-scale number that then gets added UNconverted to an LBP
+   * currentAmount. `reqUSD` is what pace/onTrack compare against
+   * savingsContrib (a USD aggregate) -- using native `req` there instead
+   * would be off by roughly the LBP rate. One function computing both,
+   * called from both sites, is what makes them structurally incapable of
+   * disagreeing -- not just tested to currently agree.
+   */
+  const goalPace = (g: LocalFinancials["goals"][number]) => {
+    const rem = Math.max(0, g.targetAmount - g.currentAmount);
+    const rawMs = Math.round((new Date(g.targetDate).getTime() - now.getTime()) / (30.44 * 24 * 3600 * 1000));
+    const ms = Math.max(1, rawMs); // safe denominator -- never displayed directly
+    const req = rem / ms; // native currency -- GoalsScreen's quick-add seed
+    const reqUSD = toUSD(req, g.currency); // for comparing against savingsContrib (USD)
+    const pace = rem <= 0 ? 1 : (reqUSD > 0 ? Math.min(2, savingsContrib / reqUSD) : 0.5);
+    return { rem, rawMs, ms, req, reqUSD, pace };
+  };
 
   // Paused goals stay in data.goals (and in the `goals` display array above)
   // for history, but are excluded here the same way paid-off debts are
   // excluded from totalMinPayments above -- an intentionally-stalled goal
   // shouldn't drag down the pace score of goals you're actively working.
-  const goalScores = data.goals.filter((g) => !g.pausedAt).map((g) => {
-    const rem = g.targetAmount - g.currentAmount;
-    if (rem <= 0) return 1;
-    // Rounded the same way the `goals` array below computes its own `ms` for
-    // the same goal — otherwise the two independently-computed paces can
-    // drift by a hair and disagree right at a threshold (e.g. onTrack).
-    const ms = Math.max(1, Math.round((new Date(g.targetDate).getTime() - now.getTime()) / (30.44 * 24 * 3600 * 1000)));
-    const req = rem / ms;
-    return req > 0 ? Math.min(2, savingsContrib / req) : 0.5;
-  });
+  const goalScores = data.goals.filter((g) => !g.pausedAt).map((g) => goalPace(g).pace);
   const avgGoalPace = goalScores.length ? goalScores.reduce((s, v) => s + v, 0) / goalScores.length : 0.5;
   const goalScore   = Math.min(100, avgGoalPace * 100);
 
@@ -268,15 +330,15 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   }
 
   // ── Debt plan (real per-debt amortization, not an average-APR estimate) ──
-  const totalDebtBalance = data.debts.reduce((s, d) => s + d.balance, 0);
+  // Converted per-debt (Phase 1.4) -- feeds nwLiabilities and debt.totalBalance,
+  // both USD-scale figures.
+  const totalDebtBalance = data.debts.reduce((s, d) => s + toUSD(d.balance, d.currency), 0);
   let debtPlan = null;
   let debtComparison: DashboardPayload["debt"]["comparison"] = null;
   if (data.debts.length > 0 && totalDebtBalance > 0) {
     const extra = Math.max(0, netCashFlow * 0.3);
     const monthlyPayment = totalMinPayments + extra;
-    const debtInputs: DebtInput[] = data.debts.map((d) => ({
-      id: d.id, name: d.name, balance: d.balance, aprPct: d.apr, minimumPayment: d.minPayment,
-    }));
+    const debtInputs: DebtInput[] = toDebtInputs(data.debts, lbpRate);
     if (monthlyPayment > 0) {
       const chosen = simulateDebtPayoff(debtInputs, extra, "AVALANCHE", now);
       debtPlan = {
@@ -301,15 +363,14 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
 
   // ── Goals ────────────────────────────────────────────────────────
   const goals = data.goals.map((g, i) => {
-    const rem = Math.max(0, g.targetAmount - g.currentAmount);
     const td = new Date(g.targetDate);
-    const rawMs = Math.round((td.getTime() - now.getTime()) / (30.44 * 24 * 3600 * 1000));
-    const ms = Math.max(1, rawMs); // safe denominator for req below — never displayed directly
-    const req = rem / ms;
-    const pace = req > 0 ? Math.min(2, savingsContrib / req) : 1;
+    // Same goalPace() the health-score average above already used for this
+    // goal -- structurally the same numbers, not just independently
+    // re-derived to (hopefully) match.
+    const { rawMs, req, pace } = goalPace(g);
     return {
       id: i + 1, name: g.name, emoji: g.emoji || null, type: "SAVINGS",
-      targetAmount: g.targetAmount, currentAmount: g.currentAmount,
+      targetAmount: g.targetAmount, currentAmount: g.currentAmount, currency: g.currency,
       paused: !!g.pausedAt,
       projection: {
         // targetAmount of exactly 0 (e.g. a goal saved before an amount was
@@ -319,6 +380,10 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
         // left", not the misleading "1 mo left" the div-by-zero-safe `ms`
         // above would otherwise leak into display.
         monthsRemaining: Math.max(0, rawMs),
+        // Native currency, deliberately NOT converted -- see goalPace's own
+        // comment. GoalsScreen seeds its quick-add contribution buttons
+        // directly from this number, which must match the goal's own
+        // currency, the same currency a contribution gets added to.
         requiredMonthly: Math.round(req),
         paceRatio: Math.round(pace * 100) / 100,
         onTrack: pace >= 0.9,

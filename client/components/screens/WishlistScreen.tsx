@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { LocalFinancials, WishlistItem, Currency, StoredGoal } from "../../lib/localData";
 import { uid, toUSD as toUSDShared, withRate, DEFAULT_LBP_RATE } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
-import { SERIF, money } from "./shared";
+import { SERIF, money, fmtCur } from "./shared";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, CurrencyToggle } from "../form/Primitives";
 
 const PRIORITIES: { value: WishlistItem["priority"]; label: string }[] = [
@@ -68,19 +68,21 @@ export default function WishlistScreen({
   // Bridges to the existing Goals feature instead of reinventing savings-
   // toward-a-purchase tracking -- a wishlist item you're serious about
   // becomes a real goal (6 months out by default, editable like any other
-  // goal afterward) with one click, in whatever it costs converted to USD
-  // (goals have no currency field of their own -- see localData.ts).
+  // goal afterward) with one click, in the item's own native currency
+  // (store-native/convert-at-use, same as everywhere else -- see
+  // localData.ts). The rate is captured fresh at goal-creation time, not
+  // copied from the wishlist item's own lbpRateAtEntry -- same precedent
+  // as buildRecurringPaymentLog: "the rate at which this was entered"
+  // means the rate at the moment of *this* action.
   function saveTowardGoal(item: WishlistItem) {
     const targetDate = new Date();
     targetDate.setMonth(targetDate.getMonth() + 6);
     const goal: StoredGoal = {
       id: uid(), name: item.name, emoji: item.emoji,
-      targetAmount: Math.round(toUSD(item.price, item.currency) * 100) / 100,
+      targetAmount: item.price,
       currentAmount: 0,
-      // Already converted to USD above (goals have no currency field of
-      // their own yet -- see localData.ts), so USD is correct here
-      // regardless of the source wishlist item's own currency.
-      currency: "USD",
+      currency: item.currency,
+      ...withRate(item.currency, lbpRate),
       targetDate: targetDate.toISOString().slice(0, 10),
       createdAt: new Date().toISOString(),
     };
@@ -176,7 +178,7 @@ export default function WishlistScreen({
                         )}
                       </p>
                       <p className="text-xs mt-1 tabular-nums" style={{ color: T.mute }}>
-                        {w.currency === "LBP" ? `L£${w.price.toLocaleString()}` : money(w.price)}
+                        {fmtCur(w.price, w.currency)}
                         {w.currency === "LBP" && ` · ${money(toUSD(w.price, w.currency))}`}
                       </p>
                     </div>

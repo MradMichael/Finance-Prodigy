@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
-import { todayISO, roundMoney } from "../../lib/localData";
+import { todayISO, roundMoney, buildGoalContributionTx, toUSD as toUSDShared, DEFAULT_LBP_RATE } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
-import { SERIF, money } from "./shared";
+import { SERIF, money, fmtCur } from "./shared";
 
 export default function GoalsScreen({
   dashData,
@@ -23,11 +23,15 @@ export default function GoalsScreen({
   const [payAmt,     setPayAmt]     = useState("");
   const [paySuccess, setPaySuccess] = useState<number | null>(null);
 
+  const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
   const prefix = todayISO().slice(0, 7);
   const goalTxThisMonth = (financials.transactions ?? []).filter(
     (t) => t.bucket === "SAVINGS" && t.date.startsWith(prefix) && t.description.startsWith("Goal:")
   );
-  const totalPaidThisMonth = goalTxThisMonth.reduce((s, t) => s + t.amount, 0);
+  // Converted per-transaction before summing -- a contribution is always
+  // in its own goal's currency (see buildGoalContributionTx), so this sum
+  // is mixed-currency the moment any goal is LBP, not just a display nit.
+  const totalPaidThisMonth = goalTxThisMonth.reduce((s, t) => s + toUSDShared(t.amount, t.currency, lbpRate), 0);
 
   function pay(dashGoalId: number) {
     const amt = parseFloat(payAmt.replace(/,/g, ""));
@@ -47,15 +51,7 @@ export default function GoalsScreen({
           : g.achievedAt,
       };
     });
-    // Hardcoded USD, no rate needed -- same reasoning as InputPanel's
-    // contributeToGoal (goals have no currency picker yet, Phase 1.4).
-    const tx = {
-      id: Math.random().toString(36).slice(2, 10),
-      amount: amt, currency: "USD" as const, bucket: "SAVINGS" as const,
-      description: `Goal: ${rawGoal.name}`,
-      date: new Date().toISOString().slice(0, 10),
-      paymentMethod: "other" as const,
-    };
+    const tx = buildGoalContributionTx(rawGoal, amt, lbpRate);
     onChange({ ...financials, goals: updated, transactions: [tx, ...(financials.transactions ?? [])] });
     setPaySuccess(dashGoalId);
     setPayGoalId(null);
@@ -194,16 +190,16 @@ export default function GoalsScreen({
                       <div className="space-y-2 flex-1 min-w-0">
                         <div>
                           <p className="text-[10px] uppercase tracking-widest" style={{ color: T.mute }}>Saved</p>
-                          <p className="text-xl font-medium tabular-nums" style={{ ...SERIF, color: T.text }}>{money(g.currentAmount)}</p>
+                          <p className="text-xl font-medium tabular-nums" style={{ ...SERIF, color: T.text }}>{fmtCur(g.currentAmount, g.currency)}</p>
                         </div>
                         <div className="flex gap-3">
                           <div>
                             <p className="text-[10px] uppercase tracking-widest" style={{ color: T.mute }}>Target</p>
-                            <p className="text-sm tabular-nums" style={{ color: T.mute }}>{money(g.targetAmount)}</p>
+                            <p className="text-sm tabular-nums" style={{ color: T.mute }}>{fmtCur(g.targetAmount, g.currency)}</p>
                           </div>
                           <div>
                             <p className="text-[10px] uppercase tracking-widest" style={{ color: T.mute }}>Left</p>
-                            <p className="text-sm tabular-nums font-medium" style={{ color: remaining > 0 ? T.brass : T.jade }}>{money(remaining)}</p>
+                            <p className="text-sm tabular-nums font-medium" style={{ color: remaining > 0 ? T.brass : T.jade }}>{fmtCur(remaining, g.currency)}</p>
                           </div>
                         </div>
                       </div>
@@ -219,7 +215,7 @@ export default function GoalsScreen({
 
                     {/* Timeline row */}
                     <div className="mt-3 flex flex-wrap gap-x-4 text-xs" style={{ color: T.mute }}>
-                      <span><span style={{ color }}>{money(suggested)}/mo</span> needed</span>
+                      <span><span style={{ color }}>{fmtCur(suggested, g.currency)}/mo</span> needed</span>
                       <span>{g.projection.monthsRemaining} mo left</span>
                       <span>by {g.projection.targetDateDisplay}</span>
                     </div>
@@ -259,7 +255,7 @@ export default function GoalsScreen({
                                     color: payAmt === String(qa) ? T.jade : T.mute,
                                   }}
                                 >
-                                  {money(qa)}
+                                  {fmtCur(qa, g.currency)}
                                 </button>
                               ))}
                               <button
@@ -271,7 +267,7 @@ export default function GoalsScreen({
                                   color: T.jade,
                                 }}
                               >
-                                {money(suggested)} target
+                                {fmtCur(suggested, g.currency)} target
                               </button>
                             </div>
                           )}
@@ -280,7 +276,7 @@ export default function GoalsScreen({
                           <div className="flex gap-2">
                             <input
                               type="number" min="0" step="1"
-                              placeholder="Custom amount ($)"
+                              placeholder={`Custom amount (${g.currency === "LBP" ? "L£" : "$"})`}
                               value={payAmt}
                               onChange={(e) => setPayAmt(e.target.value)}
                               onKeyDown={(e) => e.key === "Enter" && pay(g.id)}

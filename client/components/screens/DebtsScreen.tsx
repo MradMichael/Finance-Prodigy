@@ -1,13 +1,14 @@
 "use client";
 
 import type { LocalFinancials } from "../../lib/localData";
-import { fmtDate } from "../../lib/localData";
+import { fmtDate, toUSD as toUSDShared, DEFAULT_LBP_RATE } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
-import { SERIF, NUMS, money } from "./shared";
+import { SERIF, NUMS, money, fmtCur } from "./shared";
 
 export default function DebtsScreen({ financials, dashData }: { financials: LocalFinancials; dashData: ReturnType<typeof computeDashboard> }) {
   const T = useTheme();
+  const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
   // Paid-off debts stay in the array for history (balance 0, paidOffAt set)
   // -- their minPayment is never cleared, so summing over every debt
   // unfiltered keeps counting a payment obligation that no longer exists,
@@ -16,8 +17,11 @@ export default function DebtsScreen({ financials, dashData }: { financials: Loca
   // score and payoff plan; matching it here keeps this screen's own
   // numbers from disagreeing with those.
   const activeDebts = financials.debts.filter((d) => d.balance > 0);
-  const totalBal  = activeDebts.reduce((s, d) => s + d.balance, 0);
-  const totalMin  = activeDebts.reduce((s, d) => s + d.minPayment, 0);
+  // Summed across debts that may carry different currencies -- USD is the
+  // only sensible display for a combined figure (same reasoning as every
+  // other cross-record aggregation in Phase 1.4).
+  const totalBal  = activeDebts.reduce((s, d) => s + toUSDShared(d.balance, d.currency, lbpRate), 0);
+  const totalMin  = activeDebts.reduce((s, d) => s + toUSDShared(d.minPayment, d.currency, lbpRate), 0);
   const plan      = dashData.debt.plan;
 
   return (
@@ -99,12 +103,12 @@ export default function DebtsScreen({ financials, dashData }: { financials: Loca
                           <span className="ml-1.5 text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full" style={{ background: T.jade + "22", color: T.jade }}>Paid off</span>
                         )}
                       </p>
-                      <p className="text-xl font-semibold tabular-nums flex-shrink-0" style={{ ...SERIF, color: d.paidOffAt ? T.jade : T.coral }}>{money(d.balance)}</p>
+                      <p className="text-xl font-semibold tabular-nums flex-shrink-0" style={{ ...SERIF, color: d.paidOffAt ? T.jade : T.coral }}>{fmtCur(d.balance, d.currency)}</p>
                     </div>
                     <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs" style={{ color: T.mute }}>
                       <span>APR <span style={{ color: T.text }}>{d.apr}%</span></span>
-                      <span>Min payment <span style={{ color: T.text }}>{money(d.minPayment)}/mo</span></span>
-                      <span>Monthly interest <span style={{ color: T.coral }}>{money(monthlyInt)}</span></span>
+                      <span>Min payment <span style={{ color: T.text }}>{fmtCur(d.minPayment, d.currency)}/mo</span></span>
+                      <span>Monthly interest <span style={{ color: T.coral }}>{fmtCur(monthlyInt, d.currency)}</span></span>
                       {d.paidOffAt && <span style={{ color: T.jade }}>Paid {fmtDate(d.paidOffAt)}</span>}
                     </div>
                   </div>
