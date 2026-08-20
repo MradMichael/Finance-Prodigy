@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   monthlyEquivalent, nominalMonthlyEquivalent, isRecurringActive, isPaidThisCycle,
-  nextOccurrence, recurringPaidSoFar, buildRecurringPaymentLog, fmtDate, valueForMonth,
+  nextOccurrence, recurringPaidSoFar, buildRecurringPaymentLog, buildGoalContributionTx, fmtDate, valueForMonth,
   loadData, saveData, DEFAULT_DATA, type StoredRecurring, type StoredGoal, type StoredTransaction,
   allCategories, categoryLabel, categoryIcon, CATEGORIES,
   matchCategoryRule, type CategoryRule,
@@ -277,6 +277,46 @@ describe("buildRecurringPaymentLog", () => {
     const r = makeRecurring({ currency: "USD" });
     const result = buildRecurringPaymentLog(r, RATE, new Date(2026, 5, 1))!;
     expect(result.tx.lbpRateAtEntry).toBeUndefined();
+  });
+});
+
+// CRITICAL, written before the implementation per Standing Rule 4: this is
+// the fix for a real defect the Phase 1.4 plan review caught before it
+// shipped -- GoalsScreen.pay() and InputPanel.contributeToGoal() both
+// hardcoded `currency: "USD"` on the transaction they log for a
+// contribution, independent of the goal's own (now possibly LBP) currency.
+// Left unfixed, an LBP goal contribution logs a transaction carrying the
+// raw LBP number tagged as USD -- computeDashboard.ts's toUSD treats that
+// as a bare USD amount, inflating that month's savingsContrib/budget
+// totals by roughly the LBP rate (tens of thousands of times over).
+// Consolidating both call sites into one function closes the exact
+// duplicate-site drift this codebase has already been bitten by more than
+// once (GoalsScreen.pay vs InputPanel.contributeToGoal is literally the
+// same pair that drifted on `achievedAt` earlier in this project).
+describe("buildGoalContributionTx", () => {
+  const goal: StoredGoal = { id: "g1", name: "Travel", emoji: "🎯", targetAmount: 1000, currentAmount: 0, currency: "USD", targetDate: "2027-01-01", createdAt: "2026-01-01T00:00:00.000Z" };
+
+  it("a USD goal's contribution transaction is USD, no rate captured", () => {
+    const tx = buildGoalContributionTx(goal, 100, 89500);
+    expect(tx.currency).toBe("USD");
+    expect(tx.amount).toBe(100);
+    expect(tx.bucket).toBe("SAVINGS");
+    expect(tx.description).toBe("Goal: Travel");
+    expect(tx.lbpRateAtEntry).toBeUndefined();
+  });
+
+  it("an LBP goal's contribution transaction is LBP, with the current rate captured -- NOT silently tagged USD", () => {
+    const lbpGoal: StoredGoal = { ...goal, currency: "LBP" };
+    const tx = buildGoalContributionTx(lbpGoal, 4_500_000, 89500);
+    expect(tx.currency).toBe("LBP");
+    expect(tx.amount).toBe(4_500_000);
+    expect(tx.lbpRateAtEntry).toBe(89500);
+  });
+
+  it("generates a fresh id per call", () => {
+    const a = buildGoalContributionTx(goal, 50, 89500);
+    const b = buildGoalContributionTx(goal, 50, 89500);
+    expect(a.id).not.toBe(b.id);
   });
 });
 

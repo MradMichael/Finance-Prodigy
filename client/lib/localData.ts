@@ -872,3 +872,25 @@ export function buildRecurringPaymentLog(r: StoredRecurring, lbpRate: number, no
   };
   return { tx, cycleYm };
 }
+
+/**
+ * Builds the transaction logged for a contribution toward a goal (Phase
+ * 1.4) -- always in the GOAL's own currency, never USD by default. Two
+ * independent call sites (GoalsScreen.pay, InputPanel.contributeToGoal)
+ * used to each construct this transaction by hand, both hardcoding
+ * `currency: "USD"` regardless of the goal's own currency -- exactly the
+ * same class of duplicate-site drift that has already bitten this
+ * codebase before (achievedAt, in these same two functions, earlier in
+ * this project's history). Left unfixed once goals can be LBP, this would
+ * silently mistag a real LBP contribution as USD, inflating that month's
+ * savingsContrib/budget totals by roughly the LBP rate. Contributions are
+ * NOT convertible to a different currency than the goal itself in this
+ * phase -- see docs/ROADMAP.md Phase 1.4's own scope note.
+ */
+export function buildGoalContributionTx(goal: StoredGoal, amount: number, lbpRate: number): StoredTransaction {
+  return {
+    id: uid(), amount, currency: goal.currency, bucket: "SAVINGS",
+    description: `Goal: ${goal.name}`, date: todayISO(), paymentMethod: "other",
+    ...withRate(goal.currency, lbpRate),
+  };
+}

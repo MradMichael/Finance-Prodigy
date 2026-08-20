@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
 import { monthlyEquivalent, toUSD as toUSDShared, todayISO, moneyEquals, DEFAULT_LBP_RATE } from "../../lib/localData";
+import { computeHoldingsByCurrency } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money } from "./shared";
 import Donut from "../charts/Donut";
@@ -24,16 +25,9 @@ export default function CurrencyScreen({ financials }: { financials: LocalFinanc
     + (financials.recurring ?? []).filter((r) => r.currency === "LBP").reduce((s, r) => s + monthlyEquivalent(r), 0);
   const spendTotalUSD = toUSD(spendUSD, "USD") + toUSD(spendLBP, "LBP");
 
-  // ── Holdings by currency: assets + tracked cash/bank balances. Goals,
-  // the emergency fund, and debts have no currency field at all (always
-  // USD in this data model -- see localData.ts), so they're deliberately
-  // left out here rather than silently assumed. This is "cash & assets by
-  // currency," not the app's official net worth figure. ──
-  const usdAssets = financials.assets.filter((a) => a.currency === "USD").reduce((s, a) => s + a.value, 0)
-    + financials.trackedBalances.filter((b) => b.currency === "USD").reduce((s, b) => s + (b.actualBalance ?? b.startingBalance), 0);
-  const lbpAssets = financials.assets.filter((a) => a.currency === "LBP").reduce((s, a) => s + a.value, 0)
-    + financials.trackedBalances.filter((b) => b.currency === "LBP").reduce((s, b) => s + (b.actualBalance ?? b.startingBalance), 0);
-  const holdingsTotalUSD = toUSD(usdAssets, "USD") + toUSD(lbpAssets, "LBP");
+  // See computeHoldingsByCurrency's own doc comment for why debts are
+  // deliberately excluded from this bucket while goals are included.
+  const { usdAssets, lbpAssets, holdingsTotalUSD } = computeHoldingsByCurrency(financials, lbpRate);
 
   const lbpAtStress = stressRate > 0 ? lbpAssets / stressRate : 0;
   const lbpAtCurrent = toUSD(lbpAssets, "LBP");
@@ -103,7 +97,7 @@ export default function CurrencyScreen({ financials }: { financials: LocalFinanc
         <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
           <p className="text-xs uppercase tracking-widest mb-1" style={{ color: T.mute }}>Cash & assets, by currency</p>
           <p className="text-[11px] mb-4" style={{ color: T.mute }}>
-            Tracked balances and assets only — goals, your safety net, and debts are always USD in ESSA, so they&apos;re not currency-exposed and aren&apos;t counted here.
+            Tracked balances, assets, and goals — each counted in whichever currency it&apos;s held in. Your safety net is always USD. Debts aren&apos;t counted here: a liability moves the opposite direction from an asset when LBP devalues, so it isn&apos;t &ldquo;exposure&rdquo; in the same sense.
           </p>
           {moneyEquals(holdingsTotalUSD, 0) ? (
             <p className="text-sm" style={{ color: T.mute }}>No LBP or USD assets/balances tracked yet.</p>
@@ -150,7 +144,7 @@ export default function CurrencyScreen({ financials }: { financials: LocalFinanc
           <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
             <p className="text-xs uppercase tracking-widest mb-1" style={{ color: T.mute }}>Devaluation stress-test</p>
             <p className="text-[11px] mb-4" style={{ color: T.mute }}>
-              What your L£{lbpAssets.toLocaleString()} in tracked assets/balances would be worth in USD at a worse exchange rate.
+              What your L£{lbpAssets.toLocaleString()} in tracked assets, balances, and goals would be worth in USD at a worse exchange rate.
             </p>
             <div className="flex items-center justify-between gap-3 mb-2">
               <span className="text-xs" style={{ color: T.mute }}>Hypothetical rate</span>

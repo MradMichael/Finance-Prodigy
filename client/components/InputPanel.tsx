@@ -7,10 +7,11 @@ import type {
 } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, monthlyEquivalent, nominalMonthlyEquivalent, isRecurringActive, isPaidThisCycle, recurringPaidSoFar, toUSD as toUSDShared, withRate, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
+import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, monthlyEquivalent, nominalMonthlyEquivalent, isRecurringActive, isPaidThisCycle, recurringPaidSoFar, toUSD as toUSDShared, withRate, buildGoalContributionTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY } from "./form/Primitives";
+import { fmtCur } from "./screens/shared";
 import ImportStatement from "./ImportStatement";
 
 type Bucket = "NEEDS" | "WANTS" | "SAVINGS";
@@ -96,12 +97,14 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
   const [gTarget,  setGTarget]  = useState("");
   const [gCurrent, setGCurrent] = useState("");
   const [gDate,    setGDate]    = useState("");
+  const [gCurrency, setGCurrency] = useState<Currency>("USD");
 
   // Debt form
   const [dName,    setDName]    = useState("");
   const [dBalance, setDBalance] = useState("");
   const [dApr,     setDApr]     = useState("");
   const [dMin,     setDMin]     = useState("");
+  const [dCurrency, setDCurrency] = useState<Currency>("USD");
   // Debt payment state: track which debt is open for payment
   const [payingDebtId, setPayingDebtId] = useState<string | null>(null);
   const [debtPayAmt,   setDebtPayAmt]   = useState("");
@@ -259,16 +262,17 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
       id: uid(), name: gName.trim(), emoji: gEmoji || "🎯",
       targetAmount: parseFloat(gTarget.replace(/,/g, "")),
       currentAmount: parseFloat(gCurrent.replace(/,/g, "")) || 0,
-      // Goals don't have a currency picker yet -- that's Phase 1.4 ("Entry
-      // in either currency"), not this phase. Every goal this app has ever
-      // supported has been USD; hardcoding it here keeps behavior
-      // identical to before schema v2 added the field.
-      currency: "USD",
+      // Currency is locked at creation and never editable afterward --
+      // contributions are recorded against a goal in this currency, and
+      // changing it later would silently reinterpret them. See
+      // buildGoalContributionTx in localData.ts.
+      currency: gCurrency,
+      ...withRate(gCurrency, financials.lbpRate ?? DEFAULT_LBP_RATE),
       targetDate: gDate,
       createdAt: new Date().toISOString(),
     };
     update({ goals: [...financials.goals, goal] });
-    setGName(""); setGTarget(""); setGCurrent(""); setGDate(""); setGEmoji("🎯");
+    setGName(""); setGTarget(""); setGCurrent(""); setGDate(""); setGEmoji("🎯"); setGCurrency("USD");
   }
 
   function addDebt() {
@@ -279,12 +283,13 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
       apr: Math.max(0, parseFloat(dApr) || 0),
       minPayment: parseFloat(dMin.replace(/,/g, "")) || 0,
       // Same reasoning as addGoal's currency field -- see its comment.
-      currency: "USD",
+      currency: dCurrency,
+      ...withRate(dCurrency, financials.lbpRate ?? DEFAULT_LBP_RATE),
       createdAt: new Date().toISOString(),
       ...(dOpenedDate ? { openedDate: dOpenedDate } : {}),
     };
     update({ debts: [...financials.debts, debt] });
-    setDName(""); setDBalance(""); setDApr(""); setDMin(""); setDOpenedDate("");
+    setDName(""); setDBalance(""); setDApr(""); setDMin(""); setDOpenedDate(""); setDCurrency("USD");
   }
 
   function addAsset() {
@@ -389,16 +394,11 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
     const amt = parseFloat(contributeGoalAmt.replace(/,/g, ""));
     if (!amt || amt <= 0) return;
     const goal = financials.goals.find((g) => g.id === goalId);
+    if (!goal) return; // required by buildGoalContributionTx needing the goal's own currency -- also just more correct than the old silent "savings" fallback
     const goals = financials.goals.map((g) =>
       g.id === goalId ? { ...g, currentAmount: roundMoney(g.currentAmount + amt) } : g
     );
-    // Hardcoded USD, no rate needed -- goal contributions are always USD
-    // today (goals themselves have no currency picker yet, see addGoal).
-    const tx: StoredTransaction = {
-      id: uid(), amount: amt, currency: "USD" as Currency,
-      bucket: "SAVINGS", description: `Goal: ${goal?.name ?? "savings"}`,
-      date: todayISO(), paymentMethod: "other",
-    };
+    const tx = buildGoalContributionTx(goal, amt, financials.lbpRate ?? DEFAULT_LBP_RATE);
     update({ goals, transactions: [tx, ...financials.transactions] });
     setContributeGoalId(null); setContributeGoalAmt("");
   }
@@ -556,9 +556,6 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
   const now      = new Date();
   const lbpRate  = financials.lbpRate ?? DEFAULT_LBP_RATE;
   const toUSD    = (amt: number, cur?: Currency) => toUSDShared(amt, cur, lbpRate);
-  const fmtCur   = (amt: number, cur: Currency) => cur === "LBP"
-    ? `L£${amt.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
-    : `$${amt.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const recs     = financials.recurring ?? [];
   // Recurring bills already fed the Needs/Wants/Savings totals just below
   // (and the Transactions screen's own list), but never appeared as rows in
@@ -1321,8 +1318,8 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
-                      <div><Label htmlFor="edit-goal-target">Target ($)</Label><MoneyInput id="edit-goal-target" value={editGTarget} onChange={setEditGTarget} placeholder="0" /></div>
-                      <div><Label htmlFor="edit-goal-saved">Saved ($)</Label><MoneyInput id="edit-goal-saved" value={editGCurrent} onChange={setEditGCurrent} placeholder="0" /></div>
+                      <div><Label htmlFor="edit-goal-target">Target ({g.currency === "LBP" ? "L£" : "$"})</Label><MoneyInput id="edit-goal-target" value={editGTarget} onChange={setEditGTarget} placeholder="0" /></div>
+                      <div><Label htmlFor="edit-goal-saved">Saved ({g.currency === "LBP" ? "L£" : "$"})</Label><MoneyInput id="edit-goal-saved" value={editGCurrent} onChange={setEditGCurrent} placeholder="0" /></div>
                     </div>
                     <div>
                       <Label htmlFor="edit-goal-date">Target date</Label>
@@ -1350,8 +1347,8 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
                           )}
                         </p>
                         <p className="text-[10px] tabular-nums mt-0.5" style={{ color: T.mute }}>
-                          ${g.currentAmount.toLocaleString()} of ${g.targetAmount.toLocaleString()}
-                          {remaining > 0 && <span style={{ color: T.brass }}> · ${remaining.toLocaleString()} to go</span>}
+                          {fmtCur(g.currentAmount, g.currency)} of {fmtCur(g.targetAmount, g.currency)}
+                          {remaining > 0 && <span style={{ color: T.brass }}> · {fmtCur(remaining, g.currency)} to go</span>}
                         </p>
                         {(g.createdAt || g.achievedAt || g.pausedAt) && (
                           <p className="text-[9px] mt-0.5" style={{ color: T.mute }}>
@@ -1440,17 +1437,23 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <Label htmlFor="new-goal-target">Target ($)</Label>
+                <Label htmlFor="new-goal-target">Target ({gCurrency === "LBP" ? "L£" : "$"})</Label>
                 <MoneyInput id="new-goal-target" value={gTarget} onChange={setGTarget} placeholder="5,000" />
               </div>
               <div>
-                <Label htmlFor="new-goal-saved">Saved ($)</Label>
+                <Label htmlFor="new-goal-saved">Saved ({gCurrency === "LBP" ? "L£" : "$"})</Label>
                 <MoneyInput id="new-goal-saved" value={gCurrent} onChange={setGCurrent} placeholder="0" />
               </div>
             </div>
-            <div>
-              <Label htmlFor="new-goal-date">Target date</Label>
-              <DateFieldDMY id="new-goal-date" value={gDate} onChange={setGDate} />
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label htmlFor="new-goal-date">Target date</Label>
+                <DateFieldDMY id="new-goal-date" value={gDate} onChange={setGDate} />
+              </div>
+              <div>
+                <Label>Currency</Label>
+                <CurrencyToggle value={gCurrency} onChange={setGCurrency} />
+              </div>
             </div>
             <PrimaryBtn onClick={addGoal} color={T.brass} disabled={!gName.trim() || !gTarget || !gDate}>+ Add goal</PrimaryBtn>
           </div>
@@ -1850,7 +1853,7 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
                       <FocusInput id="edit-debt-name" value={editDName} onChange={(e) => setEditDName(e.target.value)} />
                     </div>
                     <div className="grid grid-cols-3 gap-2">
-                      <div><Label htmlFor="edit-debt-balance">Balance ($)</Label><MoneyInput id="edit-debt-balance" value={editDBalance} onChange={setEditDBalance} placeholder="0" /></div>
+                      <div><Label htmlFor="edit-debt-balance">Balance ({d.currency === "LBP" ? "L£" : "$"})</Label><MoneyInput id="edit-debt-balance" value={editDBalance} onChange={setEditDBalance} placeholder="0" /></div>
                       <div><Label htmlFor="edit-debt-apr">APR (%)</Label><FocusInput id="edit-debt-apr" type="number" min="0" step="0.1" value={editDApr} onChange={(e) => setEditDApr(e.target.value)} placeholder="0" /></div>
                       <div><Label htmlFor="edit-debt-min">Min/mo</Label><MoneyInput id="edit-debt-min" value={editDMin} onChange={setEditDMin} placeholder="0" /></div>
                     </div>
@@ -1881,7 +1884,7 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
                           )}
                         </p>
                         <p className="text-[10px] tabular-nums mt-0.5" style={{ color: T.mute }}>
-                          ${d.balance.toLocaleString()} · {d.apr}% APR · min ${d.minPayment.toLocaleString()}/mo
+                          {fmtCur(d.balance, d.currency)} · {d.apr}% APR · min {fmtCur(d.minPayment, d.currency)}/mo
                         </p>
                         {(d.openedDate || d.createdAt || d.paidOffAt) && (
                           <p className="text-[9px] mt-1" style={{ color: T.mute }}>
@@ -1932,7 +1935,7 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
                           >Apply</button>
                         </div>
                         <p className="text-[10px]" style={{ color: T.mute }}>
-                          Balance after: ${Math.max(0, d.balance - (parseFloat(debtPayAmt.replace(/,/g, "")) || 0)).toLocaleString()}
+                          Balance after: {fmtCur(Math.max(0, d.balance - (parseFloat(debtPayAmt.replace(/,/g, "")) || 0)), d.currency)}
                           {parseFloat(debtPayAmt.replace(/,/g, "")) >= d.balance && (
                             <span style={{ color: T.jade }}>, fully paid off 🏁</span>
                           )}
@@ -1958,7 +1961,7 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
             </div>
             <div className="grid grid-cols-3 gap-2">
               <div>
-                <Label htmlFor="new-debt-balance">Balance ($)</Label>
+                <Label htmlFor="new-debt-balance">Balance ({dCurrency === "LBP" ? "L£" : "$"})</Label>
                 <MoneyInput id="new-debt-balance" value={dBalance} onChange={setDBalance} placeholder="0" />
               </div>
               <div>
@@ -1970,9 +1973,15 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
                 <MoneyInput id="new-debt-min" value={dMin} onChange={setDMin} placeholder="25" />
               </div>
             </div>
-            <div>
-              <Label htmlFor="new-debt-opened">Opened date (optional: when this debt started)</Label>
-              <DateFieldDMY id="new-debt-opened" value={dOpenedDate} onChange={setDOpenedDate} />
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label htmlFor="new-debt-opened">Opened date (optional: when this debt started)</Label>
+                <DateFieldDMY id="new-debt-opened" value={dOpenedDate} onChange={setDOpenedDate} />
+              </div>
+              <div>
+                <Label>Currency</Label>
+                <CurrencyToggle value={dCurrency} onChange={setDCurrency} />
+              </div>
             </div>
             <PrimaryBtn onClick={addDebt} color={T.coral} disabled={!dName.trim() || !dBalance}>+ Add debt</PrimaryBtn>
           </div>

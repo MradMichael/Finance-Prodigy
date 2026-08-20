@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { computeDashboard } from "./computeDashboard";
+import { computeDashboard, computeHoldingsByCurrency } from "./computeDashboard";
 import { DEFAULT_DATA, type LocalFinancials, type BudgetRuleKey } from "./localData";
 
 function makeData(overrides: Partial<LocalFinancials> = {}): LocalFinancials {
@@ -107,6 +107,136 @@ describe("net worth tiers", () => {
     const result = computeDashboard(data);
     expect(result.netWorth.tier).toBe(expectedTier);
     expect(result.netWorth.tierColor).toBe(expectedColor);
+  });
+});
+
+describe("net worth: goal currency conversion (regression guard)", () => {
+  // Was toUSD(g.currentAmount, undefined) -- a no-op that silently treated
+  // every goal as USD regardless of its own currency field. Harmless while
+  // every goal really was USD; a real bug the moment any goal is LBP.
+  it("an LBP goal's currentAmount converts correctly into net worth assets, not treated as a bare USD number", () => {
+    const lbpGoal = { id: "g1", name: "LBP savings", emoji: "🎯", targetAmount: 89_500_000, currentAmount: 8_950_000, currency: "LBP" as const, targetDate: "2027-01-01", createdAt: NOW.toISOString() };
+    const data = makeData({ income: 1000, lbpRate: 89500, goals: [lbpGoal] });
+    const result = computeDashboard(data);
+    // 8,950,000 LBP / 89,500 = $100 -- if the bug were still present, this
+    // would instead compute as if $8,950,000 were held in USD.
+    expect(result.netWorth.assets).toBe(100);
+    expect(result.netWorth.total).toBe(100);
+  });
+});
+
+describe("computeHoldingsByCurrency (CurrencyScreen's exposure figure)", () => {
+  it("includes an LBP goal's currentAmount in lbpAssets, converted correctly into holdingsTotalUSD", () => {
+    const lbpGoal = { id: "g1", name: "LBP savings", emoji: "🎯", targetAmount: 89_500_000, currentAmount: 8_950_000, currency: "LBP" as const, targetDate: "2027-01-01", createdAt: NOW.toISOString() };
+    const data = makeData({ goals: [lbpGoal] });
+    const { usdAssets, lbpAssets, holdingsTotalUSD } = computeHoldingsByCurrency(data, 89500);
+    expect(lbpAssets).toBe(8_950_000);
+    expect(usdAssets).toBe(0);
+    // 8,950,000 / 89,500 = $100.
+    expect(holdingsTotalUSD).toBe(100);
+  });
+
+  it("a USD goal's currentAmount lands in usdAssets, not lbpAssets", () => {
+    const usdGoal = { id: "g1", name: "USD savings", emoji: "🎯", targetAmount: 1000, currentAmount: 250, currency: "USD" as const, targetDate: "2027-01-01", createdAt: NOW.toISOString() };
+    const data = makeData({ goals: [usdGoal] });
+    const { usdAssets, lbpAssets, holdingsTotalUSD } = computeHoldingsByCurrency(data, 89500);
+    expect(usdAssets).toBe(250);
+    expect(lbpAssets).toBe(0);
+    expect(holdingsTotalUSD).toBe(250);
+  });
+
+  it("debts are never counted, regardless of currency -- a liability isn't exposure the way an asset is", () => {
+    const lbpDebt = { id: "d1", name: "LBP loan", balance: 8_950_000, apr: 5, minPayment: 100000, currency: "LBP" as const, createdAt: NOW.toISOString() };
+    const data = makeData({ debts: [lbpDebt] });
+    const { usdAssets, lbpAssets, holdingsTotalUSD } = computeHoldingsByCurrency(data, 89500);
+    expect(usdAssets).toBe(0);
+    expect(lbpAssets).toBe(0);
+    expect(holdingsTotalUSD).toBe(0);
+  });
+
+  it("sums goals alongside assets and tracked balances in the same currency bucket", () => {
+    const lbpGoal = { id: "g1", name: "LBP goal", emoji: "🎯", targetAmount: 1_000_000, currentAmount: 500_000, currency: "LBP" as const, targetDate: "2027-01-01", createdAt: NOW.toISOString() };
+    const data = makeData({
+      goals: [lbpGoal],
+      assets: [{ id: "a1", name: "Cash stash", value: 200_000, currency: "LBP" as const, createdAt: NOW.toISOString() }],
+      trackedBalances: [{ id: "b1", name: "Wallet", paymentMethod: "cash", startingBalance: 100_000, startingDate: "2026-07-01", currency: "LBP" as const }],
+    });
+    const { lbpAssets } = computeHoldingsByCurrency(data, 89500);
+    expect(lbpAssets).toBe(500_000 + 200_000 + 100_000);
+  });
+});
+
+// CRITICAL, written before the implementation per Standing Rule 4. Caught
+// during Phase 1.4 plan review: the goals[] projection block computes one
+// "req" (required-monthly-pace) value and uses it for two things that need
+// OPPOSITE currency treatment -- requiredMonthly must stay in the goal's
+// own native currency (GoalsScreen seeds its "quick amount" contribution
+// buttons directly from this number; converting it to USD would make an
+// LBP goal's quick-add button suggest a USD-scale amount that then gets
+// added UNconverted to an LBP currentAmount, under-contributing by
+// roughly the LBP rate). paceRatio/onTrack, by contrast, MUST be
+// USD-converted, since they're compared against savingsContrib (a USD
+// aggregate). Also guards the pre-existing goalScores/goals[].projection
+// drift risk the code's own comment already flags (line ~224-226) --
+// currency conversion sharpens that risk, since it's easy to convert one
+// independently-computed block and miss the other.
+describe("goal pace: native-currency requiredMonthly vs USD-converted paceRatio", () => {
+  it("an LBP goal's requiredMonthly stays LBP-scale; paceRatio correctly reflects the USD-converted comparison against savingsContrib", () => {
+    const lbpGoal = {
+      id: "g1", name: "LBP goal", emoji: "🎯",
+      targetAmount: 89_500_000, currentAmount: 0, currency: "LBP" as const,
+      targetDate: "2026-08-15", // 31 days after NOW -> ms rounds to 1
+      createdAt: "2026-01-01T00:00:00.000Z",
+    };
+    const data = makeData({
+      income: 3000,
+      lbpRate: 89500,
+      goals: [lbpGoal],
+      transactions: [
+        { id: "t1", amount: 500, currency: "USD", bucket: "SAVINGS", description: "Savings", date: "2026-07-01" },
+      ],
+    });
+    const result = computeDashboard(data);
+    const g = result.goals[0];
+
+    // req = 89,500,000 / 1 month = 89,500,000 LBP/month, native -- NOT
+    // divided down to a USD-scale ~1000. If this were wrongly converted,
+    // requiredMonthly would read ~1000, not ~89,500,000.
+    expect(g.projection.requiredMonthly).toBeCloseTo(89_500_000, -3);
+
+    // reqUSD = 89,500,000 / 89,500 = $1000/month. savingsContrib = $500.
+    // Correctly converted: pace = 500/1000 = 0.5. If unconverted (raw req
+    // treated as if USD), pace would be ~500/89,500,000 ≈ 0.0000056 -> 0.00.
+    expect(g.projection.paceRatio).toBeCloseTo(0.5, 1);
+    expect(g.projection.onTrack).toBe(false); // 0.5 < the 0.9 threshold
+
+    // The health-score component (goalScores, computed independently) must
+    // agree with the projection above, not drift -- same underlying pace.
+    const goalsComponent = result.health.components.find((c) => c.key === "goals")!;
+    // avgGoalPace over one goal at pace 0.5 -> goalScore = round(0.5 * 100) = 50.
+    expect(goalsComponent.score).toBe(50);
+  });
+
+  it("a USD goal (unchanged behavior): requiredMonthly and paceRatio both already effectively 'USD', no regression", () => {
+    const usdGoal = {
+      id: "g1", name: "USD goal", emoji: "🎯",
+      targetAmount: 1000, currentAmount: 0, currency: "USD" as const,
+      targetDate: "2026-08-15",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    };
+    const data = makeData({
+      income: 3000,
+      goals: [usdGoal],
+      transactions: [
+        { id: "t1", amount: 500, currency: "USD", bucket: "SAVINGS", description: "Savings", date: "2026-07-01" },
+      ],
+    });
+    const result = computeDashboard(data);
+    const g = result.goals[0];
+    expect(g.projection.requiredMonthly).toBeCloseTo(1000, -1);
+    expect(g.projection.paceRatio).toBeCloseTo(0.5, 1);
+    const goalsComponent = result.health.components.find((c) => c.key === "goals")!;
+    expect(goalsComponent.score).toBe(50);
   });
 });
 

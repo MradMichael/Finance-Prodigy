@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
-import { BUDGET_RULES, moneyEquals } from "../../lib/localData";
-import { dateFmt, type computeDashboard } from "../../lib/computeDashboard";
+import { BUDGET_RULES, moneyEquals, toUSD as toUSDShared, DEFAULT_LBP_RATE } from "../../lib/localData";
+import { dateFmt, toDebtInputs, type computeDashboard } from "../../lib/computeDashboard";
 import { simulateDebtPayoff, addMonths, type DebtInput } from "../../lib/debtEngine";
 import { projectCompletion } from "../../lib/projections";
 import { useTheme } from "../../contexts/ThemeContext";
@@ -56,11 +56,13 @@ export default function ProjectionsScreen({
 
   const hasIncome = month.income > 0;
   const efRemaining = Math.max(0, emergencyFund.remaining);
-  const liveDebts: DebtInput[] = financials.debts
-    .filter((d) => d.balance > 0)
-    .map((d) => ({ id: d.id, name: d.name, balance: d.balance, aprPct: d.apr, minimumPayment: d.minPayment }));
+  const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
+  const liveDebts: DebtInput[] = toDebtInputs(financials.debts, lbpRate);
   const openGoals = goals.filter((g) => g.projection.pctComplete < 100 && !g.paused);
-  const totalGoalsRemaining = openGoals.reduce((s, g) => s + Math.max(0, g.targetAmount - g.currentAmount), 0);
+  const totalGoalsRemaining = openGoals.reduce((s, g) => {
+    const remaining = Math.max(0, g.targetAmount - g.currentAmount);
+    return s + toUSDShared(remaining, g.currency, lbpRate);
+  }, 0);
 
   // The one number that drives every projection below — directly set, not a
   // hidden sum of "recommended savings + something else" (that combination
