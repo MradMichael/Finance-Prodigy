@@ -110,6 +110,21 @@ describe("net worth tiers", () => {
   });
 });
 
+describe("net worth: goal currency conversion (regression guard)", () => {
+  // Was toUSD(g.currentAmount, undefined) -- a no-op that silently treated
+  // every goal as USD regardless of its own currency field. Harmless while
+  // every goal really was USD; a real bug the moment any goal is LBP.
+  it("an LBP goal's currentAmount converts correctly into net worth assets, not treated as a bare USD number", () => {
+    const lbpGoal = { id: "g1", name: "LBP savings", emoji: "🎯", targetAmount: 89_500_000, currentAmount: 8_950_000, currency: "LBP" as const, targetDate: "2027-01-01", createdAt: NOW.toISOString() };
+    const data = makeData({ income: 1000, lbpRate: 89500, goals: [lbpGoal] });
+    const result = computeDashboard(data);
+    // 8,950,000 LBP / 89,500 = $100 -- if the bug were still present, this
+    // would instead compute as if $8,950,000 were held in USD.
+    expect(result.netWorth.assets).toBe(100);
+    expect(result.netWorth.total).toBe(100);
+  });
+});
+
 describe("debt plan", () => {
   it("is null when there are no debts", () => {
     const result = computeDashboard(makeData({ income: 3000 }));

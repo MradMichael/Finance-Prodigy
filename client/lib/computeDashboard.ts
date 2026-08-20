@@ -329,7 +329,11 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
 
   // ── Net worth ─────────────────────────────────────────────────────
   const nwAssets      = data.emergencyFundBalance
-    + data.goals.reduce((s, g) => s + toUSD(g.currentAmount, undefined), 0)
+    // Was toUSD(g.currentAmount, undefined) -- always a no-op conversion
+    // (undefined reads as USD), harmless only because every goal has been
+    // USD until Phase 1.4 added a currency picker. Passing g.currency here
+    // is what the line next to it (a.currency, one line down) already did.
+    + data.goals.reduce((s, g) => s + toUSD(g.currentAmount, g.currency), 0)
     + data.assets.reduce((s, a) => s + toUSD(a.value, a.currency), 0);
   const nwLiabilities = totalDebtBalance;
   const nwTotal       = nwAssets - nwLiabilities;
