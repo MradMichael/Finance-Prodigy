@@ -20,7 +20,7 @@ import Sidebar from "../components/shell/Sidebar";
 import BottomNav from "../components/shell/BottomNav";
 import TopBar from "../components/shell/TopBar";
 import type { Screen, SyncStatus } from "../components/screens/shared";
-import { loadData, saveData, isEmptyFinancials, buildRecurringPaymentLog } from "../lib/localData";
+import { loadData, saveData, isEmptyFinancials, buildRecurringPaymentLog, DEFAULT_LBP_RATE } from "../lib/localData";
 import type { LocalFinancials } from "../lib/localData";
 import { computeDashboard } from "../lib/computeDashboard";
 import { getSession, hasValidSession, signOut } from "../lib/auth";
@@ -126,7 +126,7 @@ export default function Home() {
     if (loggingRecurringRef.current.has(recurringId)) return; // already in flight
     const rec = financials.recurring.find((r) => r.id === recurringId);
     if (!rec) return;
-    const result = buildRecurringPaymentLog(rec, financials.lbpRate ?? 89500, new Date());
+    const result = buildRecurringPaymentLog(rec, financials.lbpRate ?? DEFAULT_LBP_RATE, new Date());
     if (!result) return;
     loggingRecurringRef.current.add(recurringId);
     setLoggingRecurringIds(new Set(loggingRecurringRef.current));

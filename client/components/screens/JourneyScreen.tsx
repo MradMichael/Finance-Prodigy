@@ -2,6 +2,7 @@
 
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import type { LocalFinancials } from "../../lib/localData";
+import { DEFAULT_LBP_RATE } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { projectCompletion } from "../../lib/projections";
 import { useTheme } from "../../contexts/ThemeContext";
@@ -59,7 +60,7 @@ export default function JourneyScreen({
   };
 
   // ── Category shift: earliest vs. latest calendar month with logged transactions ──
-  const lbpRate = financials.lbpRate ?? 89500;
+  const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
   const toUSD = (n: number, cur?: string) => (cur === "LBP" ? n / lbpRate : n);
   const byMonth: Record<string, { needs: number; wants: number; savings: number }> = {};
   for (const t of financials.transactions) {
