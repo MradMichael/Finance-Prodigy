@@ -342,11 +342,16 @@ export interface LocalFinancials {
 // captured lbpRateAtEntry to every LBP-currency record.
 export const CURRENT_SCHEMA_VERSION = 2;
 
+// The reference rate a new account starts with, and the fallback used
+// anywhere financials.lbpRate is momentarily absent. Single source of
+// truth -- see docs/ROADMAP.md Phase 1.3.
+export const DEFAULT_LBP_RATE = 89500;
+
 export const DEFAULT_DATA: LocalFinancials = {
   schemaVersion: CURRENT_SCHEMA_VERSION,
   userName: "You",
   income: 0,
-  lbpRate: 89500,
+  lbpRate: DEFAULT_LBP_RATE,
   emergencyFundTargetMonths: 6,
   emergencyFundBalance: 0,
   transactions: [],

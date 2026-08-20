@@ -1,5 +1,5 @@
 import type { LocalFinancials, BudgetRuleKey } from "./localData";
-import { monthlyEquivalent, nextOccurrence, BUDGET_RULES, valueForMonth, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit } from "./localData";
+import { monthlyEquivalent, nextOccurrence, BUDGET_RULES, valueForMonth, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, DEFAULT_LBP_RATE } from "./localData";
 import { simulateDebtPayoff, type DebtInput } from "./debtEngine";
 
 interface Projection {
@@ -132,7 +132,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   // against, using a target they were never actually held to at the time.
   const budgetTargetPctForMonth = (ym: string) => budgetPctForMonth(data.budgetRuleHistory, ym, budgetTargetPct);
 
-  const lbpRate = data.lbpRate ?? 89500;
+  const lbpRate = data.lbpRate ?? DEFAULT_LBP_RATE;
   const toUSD = (amount: number, currency?: string) => toUSDShared(amount, currency as "USD" | "LBP" | undefined, lbpRate);
 
   // For judging a PAST month: use the income/LBP-rate/budget-rule that were

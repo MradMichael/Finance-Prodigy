@@ -7,7 +7,7 @@ import type {
 } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, monthlyEquivalent, nominalMonthlyEquivalent, isRecurringActive, isPaidThisCycle, recurringPaidSoFar, toUSD as toUSDShared, withRate, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney, DEFAULT_DATA } from "../lib/localData";
+import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, monthlyEquivalent, nominalMonthlyEquivalent, isRecurringActive, isPaidThisCycle, recurringPaidSoFar, toUSD as toUSDShared, withRate, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY } from "./form/Primitives";
@@ -221,7 +221,7 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
         if (card) { cardId = card.id; cardLabel = card.label; }
       }
     }
-    const amtUSD = txCurrency === "LBP" ? amt / (financials.lbpRate ?? 89500) : amt;
+    const amtUSD = txCurrency === "LBP" ? amt / (financials.lbpRate ?? DEFAULT_LBP_RATE) : amt;
     const description = txDesc.trim() || txBucket.charAt(0) + txBucket.slice(1).toLowerCase();
     // "If null only": a category rule only ever fills in a category the
     // user hasn't already picked -- never overrides an explicit choice.
@@ -231,7 +231,7 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
       description,
       date: txDate,
       paymentMethod: txPayMethod,
-      ...withRate(txCurrency, financials.lbpRate ?? 89500),
+      ...withRate(txCurrency, financials.lbpRate ?? DEFAULT_LBP_RATE),
       ...(autoCategory ? { category: autoCategory } : {}),
       ...(txPayMethod === "other" && txPayNote.trim() ? { paymentNote: txPayNote.trim() } : {}),
       ...(cardId ? { cardId, cardLabel } : {}),
@@ -293,7 +293,7 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
       id: uid(), name: aName.trim(),
       value: parseFloat(aValue.replace(/,/g, "")),
       currency: aCurrency,
-      ...withRate(aCurrency, financials.lbpRate ?? 89500),
+      ...withRate(aCurrency, financials.lbpRate ?? DEFAULT_LBP_RATE),
       createdAt: new Date().toISOString(),
     };
     update({ assets: [...(financials.assets ?? []), asset] });
@@ -313,7 +313,7 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
       ...(tbMethod === "card" ? { cardId: tbCardId } : {}),
       startingBalance: parseFloat(tbStartBal.replace(/,/g, "")),
       startingDate: tbStartDate, currency: tbCurrency,
-      ...withRate(tbCurrency, financials.lbpRate ?? 89500),
+      ...withRate(tbCurrency, financials.lbpRate ?? DEFAULT_LBP_RATE),
     };
     update({ trackedBalances: [...(financials.trackedBalances ?? []), tb] });
     setTbName(""); setTbMethod("cash"); setTbCardId(""); setTbStartBal(""); setTbStartDate(todayISO()); setTbCurrency("USD");
@@ -410,7 +410,7 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
       id: uid(), amount: amt, currency: rec.currency,
       bucket: rec.bucket,
       ...(rec.category ? { category: rec.category } : {}),
-      ...withRate(rec.currency, financials.lbpRate ?? 89500),
+      ...withRate(rec.currency, financials.lbpRate ?? DEFAULT_LBP_RATE),
       description: `Extra: ${rec.name}`,
       date: todayISO(),
       paymentMethod: "cash",
@@ -554,7 +554,7 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
   const prefix   = todayISO().slice(0, 7);
   const monthTx  = financials.transactions.filter((t) => t.date.startsWith(prefix));
   const now      = new Date();
-  const lbpRate  = financials.lbpRate ?? 89500;
+  const lbpRate  = financials.lbpRate ?? DEFAULT_LBP_RATE;
   const toUSD    = (amt: number, cur?: Currency) => toUSDShared(amt, cur, lbpRate);
   const fmtCur   = (amt: number, cur: Currency) => cur === "LBP"
     ? `L£${amt.toLocaleString("en-US", { maximumFractionDigits: 0 })}`

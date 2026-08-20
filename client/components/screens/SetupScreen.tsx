@@ -1,7 +1,7 @@
 "use client";
 
 import type { LocalFinancials, BudgetRuleKey } from "../../lib/localData";
-import { BUDGET_RULES, MIN_SPLIT_PCT, floorCustomSplit } from "../../lib/localData";
+import { BUDGET_RULES, MIN_SPLIT_PCT, floorCustomSplit, DEFAULT_LBP_RATE } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF } from "./shared";
@@ -129,7 +129,7 @@ export default function SetupScreen({
               className="w-full rounded-xl px-4 py-2.5 text-sm tabular-nums"
               style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
               type="number" min="0" step="500"
-              value={financials.lbpRate ?? 89500}
+              value={financials.lbpRate ?? DEFAULT_LBP_RATE}
               onChange={(e) => {
                 // Only commit — and only stamp "just updated" — on a real,
                 // valid, positive number. The old `parseFloat(...) || 89500`

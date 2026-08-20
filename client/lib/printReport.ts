@@ -1,5 +1,5 @@
 import type { LocalFinancials } from "./localData";
-import { BUDGET_RULES, nominalMonthlyEquivalent, isPaidThisCycle, toUSD as toUSDShared, categoryLabel } from "./localData";
+import { BUDGET_RULES, nominalMonthlyEquivalent, isPaidThisCycle, toUSD as toUSDShared, categoryLabel, DEFAULT_LBP_RATE } from "./localData";
 import type { computeDashboard } from "./computeDashboard";
 
 type DashboardPayload = ReturnType<typeof computeDashboard>;
@@ -23,7 +23,7 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
   const money = (n: number) => `$${Math.round(n).toLocaleString()}`;
   const generatedAt = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
   const ruleLabel = BUDGET_RULES[dash.budgetRule]?.label ?? dash.budgetRule;
-  const lbpRate = data.lbpRate ?? 89500;
+  const lbpRate = data.lbpRate ?? DEFAULT_LBP_RATE;
   const toUSD = (n: number, cur?: string) => toUSDShared(n, cur as "USD" | "LBP" | undefined, lbpRate);
   const BL = { NEEDS: "Needs", WANTS: "Wants", SAVINGS: "Savings", INCOME: "Income" } as const;
 

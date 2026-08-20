@@ -1,7 +1,7 @@
 "use client";
 
 import type { LocalFinancials } from "../../lib/localData";
-import { nextOccurrence, isRecurringActive, monthlyEquivalent, valueForMonth, toUSD as toUSDShared } from "../../lib/localData";
+import { nextOccurrence, isRecurringActive, monthlyEquivalent, valueForMonth, toUSD as toUSDShared, DEFAULT_LBP_RATE } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money } from "./shared";
@@ -20,7 +20,7 @@ export default function StatisticsScreen({
   dashData: ReturnType<typeof computeDashboard>;
 }) {
   const T = useTheme();
-  const lbpRate = financials.lbpRate ?? 89500;
+  const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
   const toUSD = (n: number, cur?: string) => toUSDShared(n, cur as "USD" | "LBP" | undefined, lbpRate);
   const now = new Date();
 

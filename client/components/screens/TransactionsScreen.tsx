@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, StoredRecurring } from "../../lib/localData";
-import { fmtDate, monthlyEquivalent, toUSD as toUSDShared, categoryLabel as categoryLabelShared, categoryIcon as categoryIconShared, todayISO } from "../../lib/localData";
+import { fmtDate, monthlyEquivalent, toUSD as toUSDShared, categoryLabel as categoryLabelShared, categoryIcon as categoryIconShared, todayISO, DEFAULT_LBP_RATE } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money } from "./shared";
 import Donut from "../charts/Donut";
@@ -64,7 +64,7 @@ export default function TransactionsScreen({ financials }: { financials: LocalFi
   const [query,  setQuery]  = useState("");
   const [donutView, setDonutView] = useState<"type" | "category">("type");
 
-  const lbpRate = financials.lbpRate ?? 89500;
+  const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
   const toUSD   = (n: number, cur?: string) => toUSDShared(n, cur as "USD" | "LBP" | undefined, lbpRate);
 
   const allTx  = [...financials.transactions].sort((a, b) => b.date.localeCompare(a.date));

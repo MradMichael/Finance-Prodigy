@@ -2,14 +2,14 @@
 
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
-import { monthlyEquivalent, toUSD as toUSDShared, todayISO, moneyEquals } from "../../lib/localData";
+import { monthlyEquivalent, toUSD as toUSDShared, todayISO, moneyEquals, DEFAULT_LBP_RATE } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money } from "./shared";
 import Donut from "../charts/Donut";
 
 export default function CurrencyScreen({ financials }: { financials: LocalFinancials }) {
   const T = useTheme();
-  const lbpRate = financials.lbpRate ?? 89500;
+  const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
   const toUSD = (n: number, cur?: string) => toUSDShared(n, cur as "USD" | "LBP" | undefined, lbpRate);
   const [stressRate, setStressRate] = useState(lbpRate);
 
