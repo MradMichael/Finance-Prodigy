@@ -55,7 +55,7 @@ Small, contained, no design decisions. Each is one commit on its own branch.
 
 ## Phase 1 — F1 Dual-currency (USD / LBP)
 
-**Status:** in progress — 1.1 complete, 1.2 starting · **Blocks:** cohort launch · **Depends on:** Phase 0
+**Status:** in progress — 1.1 and 1.2 complete, 1.3 not started (explicitly not begun per owner instruction) · **Blocks:** cohort launch · **Depends on:** Phase 0
 **This is the last Launch Blocker. Nothing ships to the cohort before it is complete.**
 
 ### Why this is pre-cohort
@@ -90,7 +90,7 @@ Stored data is encrypted client-side. A schema change is not a server-side opera
 | # | Sub-phase | Stop-safe after? |
 |---|---|---|
 | 1.1 | Schema version marker + lazy migration harness, no currency logic yet. **✅ COMPLETE — 2026-08-19.** Built and merged to `main`; the separate migration-chain-gap defect found while planning 1.2 closed on its own branch and merged (`5903f2d`). Owner's live-verification check against the deployed build, signed into the real account, confirmed per Rule 6: 42 transactions, 4 goals, 2 debts, debt payoff figures unchanged. | Yes — no behaviour change |
-| 1.2 | Data model: currency code and rate on every monetary record, defaulting to USD. **Must also add write-back-on-migration to the 1.1 harness — required, see Migration requirements above.** | Yes — app behaves identically, model is richer |
+| 1.2 | Data model: currency code and rate on every monetary record, defaulting to USD. **✅ COMPLETE — 2026-08-20.** Built and merged (`8f4f408`); write-back-on-migration added to the 1.1 harness as required. Verified against the owner's real 42-transaction export (both as its own schemaVersion and forced to v0, to exercise the double-hop) — byte-identical dashboard totals before/after. Owner's live-verification check per Rule 6: write-back confirmed in a real browser against the deployed build (disposable account, real reload, decrypted straight from localStorage — `schemaVersion: 2`, `goals[0].currency: "USD"`, LBP transaction's `lbpRateAtEntry` correctly populated), plus the owner's own visible check against the deployed build, passed. | Yes — app behaves identically, model is richer |
 | 1.3 | Reference rate as configurable stored data, with history | Yes |
 | 1.4 | Entry in either currency | Yes |
 | 1.5 | Display and reporting in either currency, every total labelled | Yes — feature complete |
