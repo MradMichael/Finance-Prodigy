@@ -124,8 +124,9 @@ The owner's own dominant financial fact is a fixed monthly installment with a kn
 - Excluded from projections beyond its end date.
 - UI surfaces remaining installments and total remaining commitment.
 - A forward view shows monthly disposable capacity, **including the step change when an obligation terminates.**
+- **In-app due-date reminder banner** (owner request, 2026-08-20). When a recurring obligation is due or overdue, show a prominent in-app banner/modal on open — e.g. "University tuition due, is it paid?" — Yes/No. Yes reuses the existing `buildRecurringPaymentLog` + `lastPaidCycle` path (already built, tested, and wired to the dashboard's "Renewing soon" panel) so it logs the same way the manual "Log payment" button does today. **Scoped to in-app only — no push/`Notification` API, no service-worker changes.** `sw.js`'s no-op caching is a documented, deliberate non-goal for this app and stays that way; a real push notification (fires with the app closed) would need a permission flow, a push subscription, a server-side sender, and a service-worker push handler — out of scope here, revisit only if the owner explicitly asks for it later.
 
-**Acceptance:** given the owner's real installment schedule, the forward view correctly shows capacity increasing at termination.
+**Acceptance:** given the owner's real installment schedule, the forward view correctly shows capacity increasing at termination; opening the app with a due/overdue obligation shows the reminder banner, and confirming "paid" produces the same transaction/state result as the existing manual Log-payment button.
 
 **SAFE STOP.**
 
