@@ -103,21 +103,13 @@ Stored data is encrypted client-side. A schema change is not a server-side opera
 
 ---
 
-## Phase 2 — Cohort launch
-
-**Not a development phase.** Owner-executed.
-
-Preconditions: Phase 0 and Phase 1 complete, 12 of 12 on the launch checklist in `CLAUDE_CODE_BRIEF.md` §3.2, real-device mobile check passed.
-
-Once live, **Rule 8 activates**: the ordering below becomes provisional and subject to what real users actually do.
-
----
-
 ## Phase 2.5 — Recurring items: confirm-on-due, not live-estimated
 
-**Status:** not started · **Depends on:** Phase 1, Phase 2 (cohort live) · **Blocks:** Phase 3
+**Status:** not started · **Depends on:** Phase 1 · **Blocks:** Phase 2 (cohort launch), Phase 3
 
-**Decided 2026-08-22, first thing after launch, ahead of everything else in Phase 3.** Not a display fix — a model change. Read-only investigation completed (not written up as a separate doc; findings summarized below since this is the durable planning record for the work).
+**Decided 2026-08-22, moved ahead of the cohort — reordered from the original "first thing after launch" decision, same day.** Not a display fix — a model change. Read-only investigation completed (not written up as a separate doc; findings summarized below since this is the durable planning record for the work).
+
+**Why moved before launch, reversing the original call:** owner's explicit reason — the ledger should reconcile before anyone else uses it. The original post-launch placement was reasoned from the app's own perspective (this class of bug is already fixed, waiting costs nothing *technically*); moving it earlier is reasoned from trust — a cohort's very first experience of the app's numbers should be under the model that's actually going to stay, not one already known to drift from reality via an unstored live estimate. Everything below (the model itself, the rationale bullets on scope/sizing, and the three implementation decisions) is unchanged from the original entry — only the position in the sequence and its dependency on Phase 2 changed.
 
 ### The model change
 
@@ -125,12 +117,12 @@ Today, a recurring item's cost is estimated live on every render (`monthlyEquiva
 
 The new model: a recurring item's due date prompts the user to confirm payment. On confirmation, it becomes a real `StoredTransaction` in the ledger — the only path in. Unconfirmed past its due date, it shows OVERDUE until resolved. No live estimate deducting from balances with no row behind it, ever.
 
-### Why after the cohort, not before
+### Scope and sizing (why this isn't a quick fix, regardless of timing)
 
 - **Phase 1.4-sized.** A full sweep found `monthlyEquivalent()` feeding spend totals across 8 files (`computeDashboard.ts` — needs/wants/savings spend, health score, budget pace, rollover, trend chart, savings streak, alerts — plus `InputPanel.tsx`, `CategoriesScreen.tsx`, `CurrencyScreen.tsx`, `StatisticsScreen.tsx`, `TransactionsScreen.tsx`). Removing it is mechanical in most of those; the historical-months question below is not.
-- **The owner's time is unpredictable** (the governing constraint stated at the top of this document) — a change this size deserves a full, uninterrupted design pass, not a squeeze into the launch runway.
-- **The confirm/overdue UX is exactly the thing real usage should inform.** How pushy should an OVERDUE state be, how many days of grace, what it looks like on a phone — better answered from watching a real cohort than guessed in advance.
-- **2.4.21 (the cross-month double-count bug this model obsoletes) is already fixed**, and its trigger required clicking "Log payment" — a button no new cohort member will have pressed in week one. Nothing currently live is at risk by waiting.
+- **The owner's time is unpredictable** (the governing constraint stated at the top of this document) — a change this size still deserves a full, uninterrupted design pass; moving it earlier doesn't shrink the work, it just changes what's waiting on it.
+- **The confirm/overdue UX is something real usage will keep refining.** How pushy an OVERDUE state should be, how many days of grace, what it looks like on a phone — pre-launch design gets this to a reasonable first version; **Rule 8** (below) still applies once the cohort is live and using it for real.
+- **2.4.21 (the cross-month double-count bug this model obsoletes) is already fixed.** Its trigger required clicking "Log payment," a button no brand-new user presses in week one regardless of whether this ships before or after them — this was never itself an argument for either ordering, just a reason the *old* placement carried little near-term risk. The reconciliation argument for building it first stands on its own.
 
 ### Design decisions made ahead of implementation (recorded now, not re-litigated later)
 
@@ -148,6 +140,16 @@ The new model: a recurring item's due date prompts the user to confirm payment. 
 **Acceptance:** a recurring item due today prompts for confirmation and only affects totals once confirmed; left unconfirmed, it reads OVERDUE, not silently deducted; an account with recurring history from before the migration shows no false OVERDUE backlog; 2.4.21/2.5.26 closed as obsolete in the audit doc.
 
 **SAFE STOP.**
+
+---
+
+## Phase 2 — Cohort launch
+
+**Not a development phase.** Owner-executed.
+
+Preconditions: Phase 0, Phase 1, **and Phase 2.5** complete (updated 2026-08-22 — the ledger reconciles under its final model before anyone outside the owner uses it), 12 of 12 on the launch checklist in `CLAUDE_CODE_BRIEF.md` §3.2, real-device mobile check passed.
+
+Once live, **Rule 8 activates**: the ordering below becomes provisional and subject to what real users actually do.
 
 ---
 
