@@ -51,8 +51,8 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
   const goalRows = dash.goals.map((g) => `
     <tr>
       <td>${escapeHtml(g.emoji ?? "")} ${escapeHtml(g.name)}${g.paused ? ' <span class="tag">paused</span>' : ""}</td>
-      <td class="num">${money(g.currentAmount)}</td>
-      <td class="num">${money(g.targetAmount)}</td>
+      <td class="num">${money(toUSD(g.currentAmount, g.currency))}</td>
+      <td class="num">${money(toUSD(g.targetAmount, g.currency))}</td>
       <td class="num">${g.projection.pctComplete}%</td>
       <td class="num">${g.projection.targetDateDisplay}</td>
     </tr>`).join("");
@@ -60,9 +60,9 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
   const debtRows = data.debts.map((d) => `
     <tr>
       <td>${escapeHtml(d.name)}${d.paidOffAt ? ' <span class="tag">paid off</span>' : ""}</td>
-      <td class="num">${money(d.balance)}</td>
+      <td class="num">${money(toUSD(d.balance, d.currency))}</td>
       <td class="num">${d.apr}%</td>
-      <td class="num">${money(d.minPayment)}/mo</td>
+      <td class="num">${money(toUSD(d.minPayment, d.currency))}/mo</td>
     </tr>`).join("");
 
   const FREQ_LABEL = { weekly: "Weekly", biweekly: "Every 2 weeks", monthly: "Monthly", every2months: "Every 2 months", quarterly: "Quarterly", biannually: "Every 6 months", yearly: "Yearly" } as const;

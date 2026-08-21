@@ -31,7 +31,7 @@ import { fmtDate, moneyEquals } from "../lib/localData";
 import { getLastSyncTime } from "../lib/syncService";
 import type { DashboardPayload } from "../lib/computeDashboard";
 import OnboardingChecklist from "./OnboardingChecklist";
-import type { Screen } from "./screens/shared";
+import { fmtCur, type Screen } from "./screens/shared";
 const SERIF: React.CSSProperties = { fontFamily: "Georgia, 'Times New Roman', serif" };
 const NUMS: React.CSSProperties = { fontVariantNumeric: "tabular-nums" };
 
@@ -378,7 +378,7 @@ export default function FinancialDashboard({
               >
                 <span>{r.emoji}</span>
                 <span>{r.name}</span>
-                <span style={{ color: T.mute }}>· {money(r.amount)}</span>
+                <span style={{ color: T.mute }}>· {fmtCur(r.amount, r.currency)}</span>
                 <span style={{ color: r.dueInDays <= 2 ? T.coral : T.brass }}>
                   · {r.dueInDays === 0 ? "today" : r.dueInDays === 1 ? "tomorrow" : `in ${r.dueInDays}d`}
                 </span>
@@ -688,11 +688,11 @@ export default function FinancialDashboard({
                 </div>
                 <div className="mt-3"><Bar pct={g.projection.pctComplete} color={T.brass} /></div>
                 <div className="flex justify-between text-xs mt-2" style={{ color: T.mute }}>
-                  <span style={NUMS}>{money(g.currentAmount)} of {money(g.targetAmount)}</span>
+                  <span style={NUMS}>{fmtCur(g.currentAmount, g.currency)} of {fmtCur(g.targetAmount, g.currency)}</span>
                   <span style={NUMS}>{g.projection.pctComplete.toFixed(0)}%</span>
                 </div>
                 <p className="text-xs mt-2" style={{ color: T.text }}>
-                  <span style={{ ...NUMS, color: T.brass }}>{money(g.projection.requiredMonthly)}/mo</span> keeps this on schedule for {g.projection.targetDateDisplay}
+                  <span style={{ ...NUMS, color: T.brass }}>{fmtCur(g.projection.requiredMonthly, g.currency)}/mo</span> keeps this on schedule for {g.projection.targetDateDisplay}
                 </p>
               </div>
             ))}
