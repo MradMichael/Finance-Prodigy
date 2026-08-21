@@ -58,7 +58,7 @@ export interface DashboardPayload {
   sixMonthTrend: { ymKey: number; income: number; spend: number; savingsContrib: number }[];
   netWorthTrend: { ym: string; value: number }[];
   upcomingRenewals: {
-    id: string; name: string; emoji: string; amount: number; currency: string;
+    id: string; name: string; emoji: string; amount: number; currency: Currency;
     dueDate: string; dueInDays: number;
   }[];
   balanceChecks: {
