@@ -192,15 +192,13 @@ export default function GoalsScreen({
                           <p className="text-[10px] uppercase tracking-widest" style={{ color: T.mute }}>Saved</p>
                           <p className="text-xl font-medium tabular-nums" style={{ ...SERIF, color: T.text }}>{fmtCur(g.currentAmount, g.currency)}</p>
                         </div>
-                        <div className="flex gap-3">
-                          <div>
-                            <p className="text-[10px] uppercase tracking-widest" style={{ color: T.mute }}>Target</p>
-                            <p className="text-sm tabular-nums" style={{ color: T.mute }}>{fmtCur(g.targetAmount, g.currency)}</p>
-                          </div>
-                          <div>
-                            <p className="text-[10px] uppercase tracking-widest" style={{ color: T.mute }}>Left</p>
-                            <p className="text-sm tabular-nums font-medium" style={{ color: remaining > 0 ? T.brass : T.jade }}>{fmtCur(remaining, g.currency)}</p>
-                          </div>
+                        <div>
+                          <p className="text-[10px] uppercase tracking-widest" style={{ color: T.mute }}>Target</p>
+                          <p className="text-sm tabular-nums" style={{ color: T.mute }}>{fmtCur(g.targetAmount, g.currency)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] uppercase tracking-widest" style={{ color: T.mute }}>Left</p>
+                          <p className="text-sm tabular-nums font-medium" style={{ color: remaining > 0 ? T.brass : T.jade }}>{fmtCur(remaining, g.currency)}</p>
                         </div>
                       </div>
                     </div>
