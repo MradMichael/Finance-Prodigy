@@ -41,6 +41,16 @@ export interface StoredTransaction {
   paymentNote?: string; // for "other": who paid / context (e.g. "Dad filled gas tank")
   cardId?: string;
   cardLabel?: string;
+  // Set only when this transaction was created by confirming a recurring
+  // item's due cycle (Phase 2.5) -- links back to the StoredRecurring.id it
+  // confirms. This is the single source of truth for "was cycle X of this
+  // recurring item ever confirmed": a transaction with this field set and a
+  // `date` falling in that cycle IS the confirmation, nothing else tracks
+  // it separately. Absent for every other transaction (manual entries,
+  // goal contributions, "+extra" recurring payments -- see
+  // buildGoalContributionTx/InputPanel's logExtraPayment for why those stay
+  // unlinked: they're additive, not a cycle's own settlement).
+  recurringId?: string;
 }
 
 export interface StoredGoal {
@@ -193,7 +203,24 @@ export interface StoredRecurring {
   // transaction (the "due" reminder's "Log payment" action) -- lets
   // monthlyEquivalent stop ALSO accruing its automatic pro-rated estimate
   // for that same month, so a confirmed payment doesn't count twice.
+  // Superseded by confirmCutoverDate/recurringId below (Phase 2.5) -- kept
+  // on the type, unread by anything new, until 2.5.4 removes it once
+  // nothing depends on it anymore.
   lastPaidCycle?: string;
+  // Added in schema v3 (Phase 2.5, docs/ROADMAP.md) -- an ISO date, set
+  // ONLY by the v2->v3 migration, only for recurring items that already
+  // existed at migration time. Cycles due BEFORE this date are
+  // grandfathered: settled without confirmation, never shown overdue, and
+  // historical months before it keep computing spend the OLD (live
+  // pro-rated estimate) way -- exactly like incomeHistory/lbpRateHistory
+  // already judge a past month against what was true then, not today.
+  // Cycles due ON OR AFTER it require an explicit confirmation (a real
+  // StoredTransaction with recurringId === this item's id) or they read
+  // OVERDUE. A recurring item created AFTER the account is already on
+  // schema v3 never gets this field at all -- there's no history to
+  // grandfather, so every one of its cycles needs confirmation from its
+  // own startDate onward.
+  confirmCutoverDate?: string;
 }
 
 // Finer-grained than the NEEDS/WANTS/SAVINGS/INCOME bucket -- one flat list
@@ -340,7 +367,7 @@ export interface LocalFinancials {
 // Bumped whenever a stored-shape migration step is added to MIGRATIONS
 // below. v2 (docs/ROADMAP.md Phase 1.2) adds currency to Goal/Debt and a
 // captured lbpRateAtEntry to every LBP-currency record.
-export const CURRENT_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEMA_VERSION = 3;
 
 // The reference rate a new account starts with, and the fallback used
 // anywhere financials.lbpRate is momentarily absent. Single source of
@@ -442,9 +469,37 @@ function addCurrencyAndRate(d: LocalFinancials): LocalFinancials {
   };
 }
 
+/**
+ * v2 -> v3 (Phase 2.5, sub-phase 2.5.1 -- data model only, nothing reads
+ * this yet). Stamps every EXISTING recurring item with confirmCutoverDate
+ * = today (the device's own migration moment) -- grandfathering every
+ * cycle due before today as settled, matching this migration's own
+ * "app behaves identically, model is richer" bar. A recurring item added
+ * AFTER this migration has already run (on an already-v3 account) never
+ * gets this field at all, by construction -- addRecurring's own creation
+ * path doesn't set it, only this migration does, and this migration only
+ * ever runs once per record's lifetime (the non-clobber check below).
+ * Nothing downstream reads confirmCutoverDate yet -- see StoredRecurring's
+ * own doc comment for what it means once 2.5.3 does.
+ *
+ * Non-clobbering, same idiom as addCurrencyAndRate above: a record that
+ * already has confirmCutoverDate (a second migration pass, or a device
+ * that already migrated) passes through untouched, so re-running this is
+ * a no-op -- required for double-migration idempotency.
+ */
+function addRecurringConfirmModel(d: LocalFinancials): LocalFinancials {
+  const today = todayISO();
+  return {
+    ...d,
+    schemaVersion: 3,
+    recurring: d.recurring.map((r) => r.confirmCutoverDate ? r : { ...r, confirmCutoverDate: today }),
+  };
+}
+
 const MIGRATIONS: { fromVersion: number; migrate: (d: LocalFinancials) => LocalFinancials }[] = [
   { fromVersion: 0, migrate: (d) => ({ ...d, schemaVersion: 1 }) },
   { fromVersion: 1, migrate: addCurrencyAndRate },
+  { fromVersion: 2, migrate: addRecurringConfirmModel },
 ];
 
 /** Reads the schema version off a raw, not-yet-migrated value -- treats a
