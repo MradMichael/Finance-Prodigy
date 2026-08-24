@@ -825,6 +825,26 @@ const MONTH_FREQ_LENGTH: Partial<Record<RecurringFrequency, number>> = {
   monthly: 1, every2months: 2, quarterly: 3, biannually: 6, yearly: 12,
 };
 
+/**
+ * Whether a computed occurrence is actually real -- not past endDate, and
+ * not beyond the totalAmount cap. `cycleIndex` is 0 for `start` itself, 1
+ * for the occurrence one period after it, etc.; "payments up to and
+ * including this one" is therefore cycleIndex + 1. Deliberately an EXACT
+ * cycle count, not recurringPaidSoFar's elapsed-real-time approximation --
+ * that approximation underestimates real cycle counts by a full period or
+ * more even for a monthly item at short horizons (e.g. 500/mo, 60 real
+ * days after start, 3 real cycles already occurred: it reports only 1).
+ * Fine for its own actual purpose (InputPanel.tsx's "$X of $Y paid"
+ * display, an approximate progress figure), wrong for deciding whether a
+ * specific computed date is a real occurrence at all -- so this check
+ * doesn't call it.
+ */
+function withinRecurringBounds(r: StoredRecurring, candidate: Date, cycleIndex: number): boolean {
+  if (r.endDate && candidate > new Date(r.endDate)) return false;
+  if (r.totalAmount != null && r.totalAmount > 0 && r.amount > 0 && (cycleIndex + 1) * r.amount > r.totalAmount) return false;
+  return true;
+}
+
 /** Next date this recurring item is due on/after `asOf`, or null if it's already ended (by end date or total-amount cap). */
 export function nextOccurrence(r: StoredRecurring, asOf: Date = new Date()): Date | null {
   // Normalized to UTC midnight of asOf's own (local) calendar date --
@@ -837,9 +857,19 @@ export function nextOccurrence(r: StoredRecurring, asOf: Date = new Date()): Dat
   // almost immediately, on nearly every day it was actually due.
   const asOfDay = new Date(Date.UTC(asOf.getFullYear(), asOf.getMonth(), asOf.getDate()));
   const start = new Date(r.startDate);
-  if (r.endDate && asOfDay > new Date(r.endDate)) return null;
-  if (r.totalAmount != null && r.totalAmount > 0 && recurringPaidSoFar(r, asOfDay) >= r.totalAmount) return null;
-  if (asOfDay <= start) return start;
+
+  // Bounds are checked against the date each branch actually COMPUTES,
+  // never against asOfDay (the query point) -- checking the query point
+  // only asks "has the item already ended by the time I'm asking," not
+  // "is the date I'm about to return still a real occurrence." Those agree
+  // when the next real cycle is also before the boundary, and silently
+  // disagree the moment it isn't: querying from just before an item's end
+  // (or its total-amount cap) can still compute a candidate PAST it --
+  // found while writing dueCycles' own tests (Phase 2.5.2), confirmed to
+  // also affect upcomingRenewals live today, not just new code.
+  if (asOfDay <= start) {
+    return withinRecurringBounds(r, start, 0) ? start : null;
+  }
 
   const dayLen = DAY_FREQ_LENGTH[r.frequency];
   if (dayLen != null) {
@@ -848,7 +878,8 @@ export function nextOccurrence(r: StoredRecurring, asOf: Date = new Date()): Dat
     // (due exactly today), floor+1 skips past it to the following period;
     // ceil correctly returns that boundary itself, matching "on/after".
     const periodsElapsed = Math.ceil((asOfDay.getTime() - start.getTime()) / msPerPeriod);
-    return new Date(start.getTime() + periodsElapsed * msPerPeriod);
+    const candidate = new Date(start.getTime() + periodsElapsed * msPerPeriod);
+    return withinRecurringBounds(r, candidate, periodsElapsed) ? candidate : null;
   }
 
   // Clamp to the target month's actual last day instead of letting
@@ -859,6 +890,7 @@ export function nextOccurrence(r: StoredRecurring, asOf: Date = new Date()): Dat
   const monthLen = MONTH_FREQ_LENGTH[r.frequency] ?? 1;
   const targetDay = start.getUTCDate();
   let next = new Date(start);
+  let cycleIndex = 0;
   // Strictly-less-than: stop as soon as `next` is on/after asOfDay and
   // return that value, instead of advancing past an exact match (the
   // same boundary bug as the day-frequency branch above, just as a loop).
@@ -867,8 +899,9 @@ export function nextOccurrence(r: StoredRecurring, asOf: Date = new Date()): Dat
     const daysInTargetMonth = new Date(Date.UTC(candidate.getUTCFullYear(), candidate.getUTCMonth() + 1, 0)).getUTCDate();
     candidate.setUTCDate(Math.min(targetDay, daysInTargetMonth));
     next = candidate;
+    cycleIndex++;
   }
-  return next;
+  return withinRecurringBounds(r, next, cycleIndex) ? next : null;
 }
 
 /** How much has been paid so far on a totalAmount-capped recurring item. */
@@ -941,26 +974,18 @@ export function buildRecurringPaymentLog(r: StoredRecurring, lbpRate: number, no
  * `to` is expected to be UTC-midnight-anchored, matching nextOccurrence's
  * own basis and every date this function returns.
  *
- * Defensively re-validates each result against endDate/totalAmount rather
- * than trusting nextOccurrence's own end-of-window handling -- found while
- * writing this function's own tests (Standing Rule 4): nextOccurrence only
- * checks endDate/recurringPaidSoFar against the QUERY point (asOf), never
- * against the date it actually computes, so asking "what's next after X"
- * from just before an item ends can still return a date past its end.
- * recurringPaidSoFar compounds this for totalAmount specifically -- it's an
- * elapsed-real-time approximation, decoupled from how many cycles a walk
- * like this one has actually counted, so it can't be trusted to stop this
- * enumeration at the right cycle either. Pre-existing, unrelated to Phase
- * 2.5, real (it would also affect upcomingRenewals for an item nearing its
- * end), and NOT fixed here deliberately -- touching already-shipped
- * nextOccurrence/recurringPaidSoFar is a separate concern from this new,
- * unwired function; scoped the fix to stay entirely inside dueCycles' own
- * new code instead. Flagged to the owner, not silently patched.
+ * No longer needs to re-validate endDate/totalAmount itself -- it used to
+ * (found while writing this function's own tests, Standing Rule 4:
+ * nextOccurrence checked those bounds against the query point, not the
+ * date it actually computed, so a call from just before an item's end
+ * could still return a date past it). Fixed at the source in nextOccurrence
+ * itself once found (see its own doc comment) -- it now returns null the
+ * moment a computed candidate is out of bounds, which the `!next` check
+ * below already handles.
  */
 export function dueCycles(r: StoredRecurring, from: Date, to: Date): Date[] {
   const cycles: Date[] = [];
   let cursor = from;
-  let cumulativePaid = 0;
   // Generous safety cap, not a realistic limit (a weekly item over 90+
   // years) -- each iteration strictly advances cursor past the cycle it
   // just recorded, so nextOccurrence's own determinism already guarantees
@@ -969,10 +994,7 @@ export function dueCycles(r: StoredRecurring, from: Date, to: Date): Date[] {
   for (let i = 0; i < 5000; i++) {
     const next = nextOccurrence(r, cursor);
     if (!next || next > to) break;
-    if (r.endDate && next > new Date(r.endDate)) break;
-    if (r.totalAmount != null && r.totalAmount > 0 && cumulativePaid + r.amount > r.totalAmount) break;
     cycles.push(next);
-    cumulativePaid += r.amount;
     cursor = new Date(next.getTime() + 24 * 60 * 60 * 1000);
   }
   return cycles;

@@ -167,6 +167,45 @@ describe("nextOccurrence", () => {
     const next = nextOccurrence(r, new Date("2026-03-01"));
     expect(next?.toISOString().slice(0, 10)).toBe("2026-03-31");
   });
+
+  // Found while writing dueCycles' own tests (Phase 2.5.2, Standing Rule 4):
+  // the two tests just above only query FROM AFTER the boundary (endDate/cap
+  // already passed) and correctly get null. Neither covers querying from
+  // BEFORE the boundary where the COMPUTED next occurrence lands past it --
+  // the two checks above only ever inspect the query point (asOfDay), never
+  // the date the function is about to return.
+  it("BUG: querying from before endDate can still return a computed date PAST it, when the next real cycle would fall after the item has ended", () => {
+    // Monthly, ends Jul 15. Queried Jul 2 (before the end) -- the next
+    // monthly cycle from Jul 2 is Aug 1, which is after Jul 15. The item
+    // has no more real occurrences at all past Jul 1; this must be null,
+    // not a phantom Aug 1 the item will never actually reach.
+    const r = makeRecurring({ frequency: "monthly", startDate: "2026-01-01", endDate: "2026-07-15" });
+    const next = nextOccurrence(r, new Date("2026-07-02"));
+    expect(next).toBeNull();
+  });
+
+  it("contrast: querying from before endDate correctly still returns a real upcoming cycle when one exists before the end", () => {
+    const r = makeRecurring({ frequency: "monthly", startDate: "2026-01-01", endDate: "2026-07-15" });
+    const next = nextOccurrence(r, new Date("2026-06-02"));
+    expect(next?.toISOString().slice(0, 10)).toBe("2026-07-01"); // still within bounds
+  });
+
+  it("BUG: querying before the total-amount cap is reached can still return a computed date that would exceed it", () => {
+    // 3 payments of 500 = cap of 1500. Queried Mar 2 (after 2 payments have
+    // actually happened, Jan 1 and Feb 1) -- the next monthly cycle is
+    // Apr 1, but by Apr 1 a 4th payment would push cumulative paid to 2000,
+    // over the 1500 cap. There is no real 4th occurrence; this must be
+    // null, not a phantom Apr 1.
+    const r = makeRecurring({ frequency: "monthly", amount: 500, startDate: "2026-01-01", totalAmount: 1500 });
+    const next = nextOccurrence(r, new Date("2026-03-02"));
+    expect(next).toBeNull();
+  });
+
+  it("contrast: querying before the cap correctly still returns a real upcoming cycle when the cap isn't reached yet", () => {
+    const r = makeRecurring({ frequency: "monthly", amount: 500, startDate: "2026-01-01", totalAmount: 1500 });
+    const next = nextOccurrence(r, new Date("2026-02-02"));
+    expect(next?.toISOString().slice(0, 10)).toBe("2026-03-01"); // the 3rd and final payment, still within the cap
+  });
 });
 
 describe("buildRecurringPaymentLog", () => {
