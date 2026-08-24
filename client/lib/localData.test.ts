@@ -8,6 +8,7 @@ import {
   roundMoney, moneyEquals, isEmptyFinancials, type LocalFinancials,
   migrateFinancials, schemaVersionOf, withRate, CURRENT_SCHEMA_VERSION, todayISO,
   dueCycles, isCycleConfirmed, isCycleOverdue, buildRecurringConfirmLog,
+  nextConfirmTarget, historizedRecurringContribution,
 } from "./localData";
 
 // UTC midnight of a given local calendar date -- matches nextOccurrence's
@@ -531,6 +532,80 @@ describe("buildRecurringConfirmLog", () => {
     const a = buildRecurringConfirmLog(r, RATE, utcMidnight(2026, 5, 1));
     const b = buildRecurringConfirmLog(r, RATE, utcMidnight(2026, 5, 1));
     expect(a.tx.id).not.toBe(b.tx.id);
+  });
+});
+
+describe("historizedRecurringContribution", () => {
+  it("returns 0 for an item with NO confirmCutoverDate at all -- a v3-native item needs confirmation from its own first month, it does not fall back to the old accrual", () => {
+    // Naive implementation risk: `!cutoverYm || ym < cutoverYm` reads as
+    // "no cutover -> always old rule," which is backwards -- a fresh item
+    // created after the account was already on schema v3 has no history to
+    // grandfather at all.
+    const r = makeRecurring({ amount: 100, startDate: "2026-03-01" }); // no confirmCutoverDate
+    expect(historizedRecurringContribution(r, "2026-03", utcMidnight(2026, 2, 15))).toBe(0);
+  });
+
+  it("returns the old monthlyEquivalent accrual for a month strictly before the item's own cutover", () => {
+    const r = makeRecurring({ amount: 100, startDate: "2026-01-01", confirmCutoverDate: "2026-04-01" });
+    const asOf = utcMidnight(2026, 1, 15); // Feb 15 -- before the Apr 1 cutover
+    expect(historizedRecurringContribution(r, "2026-02", asOf)).toBe(monthlyEquivalent(r, asOf));
+    expect(historizedRecurringContribution(r, "2026-02", asOf)).toBe(100);
+  });
+
+  it("returns 0 for the cutover's own month, not the old accrual -- the cutover month itself is NOT grandfathered", () => {
+    const r = makeRecurring({ amount: 100, startDate: "2026-01-01", confirmCutoverDate: "2026-04-01" });
+    expect(historizedRecurringContribution(r, "2026-04", utcMidnight(2026, 3, 15))).toBe(0);
+  });
+
+  it("returns 0 for a month well after the cutover, even though monthlyEquivalent alone would still report a nonzero accrual", () => {
+    const r = makeRecurring({ amount: 100, startDate: "2026-01-01", confirmCutoverDate: "2026-04-01" });
+    const asOf = utcMidnight(2026, 5, 15); // Jun 15, well past cutover
+    expect(monthlyEquivalent(r, asOf)).toBe(100); // the old estimate would still say $100...
+    expect(historizedRecurringContribution(r, "2026-06", asOf)).toBe(0); // ...but the new rule says 0 -- confirmed cycles are already real transactions, counted elsewhere
+  });
+});
+
+describe("nextConfirmTarget", () => {
+  it("before the item's own startDate, returns the start date itself as the next confirmable cycle -- confirmable early, same as today's behavior, not null", () => {
+    const r = makeRecurring({ id: "r1", amount: 100, startDate: "2026-06-01" });
+    const result = nextConfirmTarget(r, [], utcMidnight(2026, 4, 1)); // May 1, before the Jun 1 start
+    expect(result?.dueDate.toISOString().slice(0, 10)).toBe("2026-06-01");
+    expect(result?.overdueCount).toBe(0);
+  });
+
+  it("a confirmed current cycle with no backlog returns the NEXT cycle, not the one just confirmed", () => {
+    const r = makeRecurring({ id: "r1", amount: 100, startDate: "2026-01-01" });
+    const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-01-01", recurringId: "r1" };
+    const result = nextConfirmTarget(r, [tx], utcMidnight(2026, 0, 20)); // Jan 20 -- Jan 1 cycle already confirmed
+    expect(result?.dueDate.toISOString().slice(0, 10)).toBe("2026-02-01");
+    expect(result?.overdueCount).toBe(0);
+  });
+
+  it("a 3-cycle backlog returns the OLDEST outstanding cycle first (FIFO), with the real count", () => {
+    const r = makeRecurring({ id: "r1", amount: 100, startDate: "2026-01-01" }); // no cutover -- overdue from day one
+    const result = nextConfirmTarget(r, [], utcMidnight(2026, 2, 15)); // Mar 15 -- Jan 1/Feb 1/Mar 1 all past due, none confirmed
+    expect(result?.dueDate.toISOString().slice(0, 10)).toBe("2026-01-01");
+    expect(result?.overdueCount).toBe(3);
+  });
+
+  it("confirming the oldest outstanding cycle decrements the count and advances to the next-oldest", () => {
+    const r = makeRecurring({ id: "r1", amount: 100, startDate: "2026-01-01" });
+    const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-01-01", recurringId: "r1" };
+    const result = nextConfirmTarget(r, [tx], utcMidnight(2026, 2, 15)); // same asOf as the 3-cycle-backlog test, Jan 1 now confirmed
+    expect(result?.dueDate.toISOString().slice(0, 10)).toBe("2026-02-01");
+    expect(result?.overdueCount).toBe(2);
+  });
+
+  it("null once totalAmount is fully accounted for -- even though calendar time would otherwise keep producing cycles", () => {
+    const r = makeRecurring({ id: "r1", amount: 100, totalAmount: 200, startDate: "2026-01-01" });
+    const paid = ["2026-01-01", "2026-02-01"].map((date): StoredTransaction => ({ id: `t-${date}`, amount: 100, currency: "USD", bucket: "NEEDS", description: "Rent", date, recurringId: "r1" }));
+    expect(nextConfirmTarget(r, paid, utcMidnight(2026, 2, 15))).toBeNull(); // Mar 15 -- fully paid off, nothing left to confirm
+  });
+
+  it("null once the item has genuinely ended -- endDate passed, and everything that was ever due is already confirmed", () => {
+    const r = makeRecurring({ id: "r1", amount: 100, startDate: "2026-01-01", endDate: "2026-01-31" }); // exactly one cycle, ever
+    const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-01-01", recurringId: "r1" };
+    expect(nextConfirmTarget(r, [tx], utcMidnight(2026, 2, 1))).toBeNull(); // Mar 1, well past endDate
   });
 });
 

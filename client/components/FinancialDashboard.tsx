@@ -104,7 +104,7 @@ const MOCK: DashboardPayload = {
     { ym: "2026-04", value: -7050 }, { ym: "2026-05", value: -6820 }, { ym: "2026-06", value: -6640 },
   ],
   upcomingRenewals: [
-    { id: "1", name: "Netflix", emoji: "🎬", amount: 15.49, currency: "USD", dueDate: "2026-06-20", dueInDays: 3 },
+    { id: "1", name: "Netflix", emoji: "🎬", amount: 15.49, currency: "USD", dueDate: "2026-06-20", dueInDays: 3, overdueCount: 0 },
   ],
   balanceChecks: [
     { id: "1", name: "Cash", currency: "USD", expected: 240, actual: 190, actualDate: "2026-06-18", discrepancy: -50, changeSinceCheck: 0 },
@@ -207,13 +207,13 @@ function Panel({ title, children, className = "" }: { title?: string; children: 
 // ---------------------------- screen ----------------------------- //
 
 export default function FinancialDashboard({
-  data: propData, onNavigate, onLogRecurringPayment, loggingRecurringIds,
+  data: propData, onNavigate, onConfirmRecurring, loggingRecurringIds,
 }: {
   data?: DashboardPayload;
   onNavigate?: (screen: Screen) => void;
-  /** Logs a real transaction for a recurring item's current due cycle -- see the "Log payment" button on Renewing soon. */
-  onLogRecurringPayment?: (recurringId: string) => void;
-  /** Recurring item ids whose "Log payment" write is currently in flight -- disables that item's button so a second click can't create a duplicate transaction while the first is still saving. */
+  /** Confirms a recurring item's oldest outstanding cycle -- see the "Confirm" button on Renewing soon. */
+  onConfirmRecurring?: (recurringId: string) => void;
+  /** Recurring item ids whose confirm write is currently in flight -- disables that item's button so a second click can't create a duplicate transaction while the first is still saving. */
   loggingRecurringIds?: Set<string>;
 }) {
   const T = useTheme();
@@ -370,31 +370,36 @@ export default function FinancialDashboard({
         {upcomingRenewals.length > 0 && (
           <div className="rounded-2xl px-5 py-4 flex flex-wrap gap-3" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
             <p className="text-xs uppercase tracking-widest flex-shrink-0 self-center" style={{ color: T.mute }}>Renewing soon</p>
-            {upcomingRenewals.map((r) => (
-              <span
-                key={r.id}
-                className="text-xs pl-3 pr-1.5 py-1.5 rounded-full flex items-center gap-1.5"
-                style={{ background: T.panelSoft, border: `1px solid ${T.line}`, color: T.text }}
-              >
-                <span>{r.emoji}</span>
-                <span>{r.name}</span>
-                <span style={{ color: T.mute }}>· {fmtCur(r.amount, r.currency)}</span>
-                <span style={{ color: r.dueInDays <= 2 ? T.coral : T.brass }}>
-                  · {r.dueInDays === 0 ? "today" : r.dueInDays === 1 ? "tomorrow" : `in ${r.dueInDays}d`}
+            {upcomingRenewals.map((r) => {
+              const overdue = r.overdueCount > 0;
+              return (
+                <span
+                  key={r.id}
+                  className="text-xs pl-3 pr-1.5 py-1.5 rounded-full flex items-center gap-1.5"
+                  style={overdue
+                    ? { background: T.coral + "18", border: `1px solid ${T.coral}`, color: T.text }
+                    : { background: T.panelSoft, border: `1px solid ${T.line}`, color: T.text }}
+                >
+                  <span>{r.emoji}</span>
+                  <span>{r.name}</span>
+                  <span style={{ color: T.mute }}>· {fmtCur(r.amount, r.currency)}</span>
+                  <span style={{ color: overdue || r.dueInDays <= 2 ? T.coral : T.brass, fontWeight: overdue ? 600 : undefined }}>
+                    · {overdue ? `${r.overdueCount} overdue` : r.dueInDays === 0 ? "today" : r.dueInDays === 1 ? "tomorrow" : `in ${r.dueInDays}d`}
+                  </span>
+                  {onConfirmRecurring && (
+                    <button
+                      onClick={() => onConfirmRecurring(r.id)}
+                      disabled={loggingRecurringIds?.has(r.id)}
+                      className="text-[10px] font-semibold px-2 py-1 rounded-full transition-all hover:opacity-80 disabled:opacity-40 disabled:hover:opacity-40"
+                      style={{ background: T.jade + "22", color: T.jade }}
+                      title={`Confirm this ${r.name} payment`}
+                    >
+                      {loggingRecurringIds?.has(r.id) ? "Confirming…" : "Confirm"}
+                    </button>
+                  )}
                 </span>
-                {onLogRecurringPayment && (
-                  <button
-                    onClick={() => onLogRecurringPayment(r.id)}
-                    disabled={loggingRecurringIds?.has(r.id)}
-                    className="text-[10px] font-semibold px-2 py-1 rounded-full transition-all hover:opacity-80 disabled:opacity-40 disabled:hover:opacity-40"
-                    style={{ background: T.jade + "22", color: T.jade }}
-                    title={`Log this ${r.name} payment as a transaction`}
-                  >
-                    {loggingRecurringIds?.has(r.id) ? "Logging…" : "Log payment"}
-                  </button>
-                )}
-              </span>
-            ))}
+              );
+            })}
           </div>
         )}
 

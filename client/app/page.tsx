@@ -20,7 +20,7 @@ import Sidebar from "../components/shell/Sidebar";
 import BottomNav from "../components/shell/BottomNav";
 import TopBar from "../components/shell/TopBar";
 import type { Screen, SyncStatus } from "../components/screens/shared";
-import { loadData, saveData, isEmptyFinancials, buildRecurringPaymentLog, DEFAULT_LBP_RATE } from "../lib/localData";
+import { loadData, saveData, isEmptyFinancials, buildRecurringConfirmLog, nextConfirmTarget, DEFAULT_LBP_RATE } from "../lib/localData";
 import type { LocalFinancials } from "../lib/localData";
 import { computeDashboard } from "../lib/computeDashboard";
 import { getSession, hasValidSession, signOut } from "../lib/auth";
@@ -28,6 +28,7 @@ import type { Session } from "../lib/auth";
 import { pushToServer, pullFromServer, hasAutoPulled, markAutoPulled } from "../lib/syncService";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "../components/EssaBrand";
+import RecurringModelNoticeModal from "../components/RecurringModelNoticeModal";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HOME
@@ -115,31 +116,38 @@ export default function Home() {
     }, SYNC_DEBOUNCE_MS);
   }
 
-  // Logs a real transaction for a recurring item's current due cycle (the
-  // "Log payment" button on Overview's Renewing soon list), and stamps
-  // lastPaidCycle so monthlyEquivalent stops also accruing its automatic
-  // estimate for that same month -- see buildRecurringPaymentLog in
-  // localData.ts for why the transaction and the stamp have to be derived
-  // from the same value.
-  async function handleLogRecurringPayment(recurringId: string) {
+  // Confirms a recurring item's oldest outstanding cycle (Phase 2.5.3) --
+  // the FIFO target nextConfirmTarget resolves, whether that's an overdue
+  // backlog entry or the plain next occurrence. Shared by every confirm
+  // surface (Overview's chip, InputPanel's row) so they can't independently
+  // drift on what "confirm" means -- exactly the class of cross-screen
+  // disagreement this project has already been burned by once.
+  async function handleConfirmRecurringPayment(recurringId: string) {
     if (!financials) return;
     if (loggingRecurringRef.current.has(recurringId)) return; // already in flight
     const rec = financials.recurring.find((r) => r.id === recurringId);
     if (!rec) return;
-    const result = buildRecurringPaymentLog(rec, financials.lbpRate ?? DEFAULT_LBP_RATE, new Date());
-    if (!result) return;
+    const now = new Date();
+    const todayMidnight = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+    const target = nextConfirmTarget(rec, financials.transactions, todayMidnight);
+    if (!target) return; // nothing left to confirm
+    const result = buildRecurringConfirmLog(rec, financials.lbpRate ?? DEFAULT_LBP_RATE, target.dueDate);
     loggingRecurringRef.current.add(recurringId);
     setLoggingRecurringIds(new Set(loggingRecurringRef.current));
     try {
       await handleChange({
         ...financials,
         transactions: [result.tx, ...financials.transactions],
-        recurring: financials.recurring.map((r) => r.id === recurringId ? { ...r, lastPaidCycle: result.cycleYm } : r),
       });
     } finally {
       loggingRecurringRef.current.delete(recurringId);
       setLoggingRecurringIds(new Set(loggingRecurringRef.current));
     }
+  }
+
+  function handleDismissRecurringModelNotice() {
+    if (!financials) return;
+    handleChange({ ...financials, recurringModelNoticeSeen: true });
   }
 
   function handleSignOut() {
@@ -273,10 +281,10 @@ export default function Home() {
 
         {/* Main content */}
         <div style={{ flex: 1, overflowY: "auto" }}>
-          {screen === "overview"     && <FinancialDashboard data={dashboardData} onNavigate={setScreen} onLogRecurringPayment={handleLogRecurringPayment} loggingRecurringIds={loggingRecurringIds} />}
+          {screen === "overview"     && <FinancialDashboard data={dashboardData} onNavigate={setScreen} onConfirmRecurring={handleConfirmRecurringPayment} loggingRecurringIds={loggingRecurringIds} />}
           {screen === "budget"       && <BudgetScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
           {screen === "setup"        && <SetupScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
-          {screen === "finances"     && <InputPanel financials={financials} dashData={dashboardData} onChange={handleChange} session={session} />}
+          {screen === "finances"     && <InputPanel financials={financials} dashData={dashboardData} onChange={handleChange} session={session} onConfirmRecurring={handleConfirmRecurringPayment} loggingRecurringIds={loggingRecurringIds} />}
           {screen === "transactions" && <TransactionsScreen financials={financials} />}
           {screen === "categories"   && <CategoriesScreen financials={financials} onChange={handleChange} />}
           {screen === "goals"        && <GoalsScreen dashData={dashboardData} financials={financials} onChange={handleChange} />}
@@ -293,6 +301,14 @@ export default function Home() {
 
       {/* Mobile bottom nav */}
       <BottomNav screen={screen} setScreen={setScreen} />
+
+      {/* One-time notice: shown once per account migrated onto the confirm-on-due model (Phase 2.5.3) */}
+      {!financials.recurringModelNoticeSeen && financials.recurring.some((r) => r.confirmCutoverDate) && (
+        <RecurringModelNoticeModal
+          outstandingCount={dashboardData.upcomingRenewals.reduce((s, r) => s + r.overdueCount, 0)}
+          onDismiss={handleDismissRecurringModelNotice}
+        />
+      )}
     </div>
   );
 }

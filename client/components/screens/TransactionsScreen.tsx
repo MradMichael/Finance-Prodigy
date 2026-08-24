@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, StoredRecurring } from "../../lib/localData";
-import { fmtDate, monthlyEquivalent, toUSD as toUSDShared, categoryLabel as categoryLabelShared, categoryIcon as categoryIconShared, todayISO, DEFAULT_LBP_RATE } from "../../lib/localData";
+import { fmtDate, historizedRecurringContribution, toUSD as toUSDShared, categoryLabel as categoryLabelShared, categoryIcon as categoryIconShared, todayISO, DEFAULT_LBP_RATE } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money } from "./shared";
 import Donut from "../charts/Donut";
@@ -50,7 +50,7 @@ function recurringForMonth(recurring: StoredRecurring[], ym: string, currentYm: 
   const asOf = ym === currentYm ? new Date() : new Date(`${ym}-01T00:00:00`);
   const out: BucketTotals = { needs: 0, wants: 0, savings: 0 };
   for (const r of recurring) {
-    const usd = toUSD(monthlyEquivalent(r, asOf), r.currency);
+    const usd = toUSD(historizedRecurringContribution(r, ym, asOf), r.currency);
     if (r.bucket === "NEEDS") out.needs += usd;
     else if (r.bucket === "WANTS") out.wants += usd;
     else out.savings += usd;
@@ -82,7 +82,7 @@ export default function TransactionsScreen({ financials }: { financials: LocalFi
     for (let i = 0; i < 24; i++) {
       const mo = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`;
       const asOf = mo === currentYm ? new Date() : new Date(cursor);
-      if (recurring.some((r) => toUSD(monthlyEquivalent(r, asOf), r.currency) > 0)) recurActiveMonths.push(mo);
+      if (recurring.some((r) => toUSD(historizedRecurringContribution(r, mo, asOf), r.currency) > 0)) recurActiveMonths.push(mo);
       cursor.setMonth(cursor.getMonth() - 1);
     }
   }
@@ -130,7 +130,7 @@ export default function TransactionsScreen({ financials }: { financials: LocalFi
   function recurringRowsForMonth(mo: string) {
     const asOf = mo === currentYm ? new Date() : new Date(`${mo}-01T00:00:00`);
     return recurring
-      .map((r) => ({ r, usd: toUSD(monthlyEquivalent(r, asOf), r.currency) }))
+      .map((r) => ({ r, usd: toUSD(historizedRecurringContribution(r, mo, asOf), r.currency) }))
       .filter(({ usd }) => usd > 0)
       .filter(({ r }) => !q || r.name.toLowerCase().includes(q) || r.bucket.toLowerCase().includes(q));
   }
@@ -172,7 +172,7 @@ export default function TransactionsScreen({ financials }: { financials: LocalFi
     if (filter !== "all") {
       const asOf = filter === currentYm ? new Date() : new Date(`${filter}-01T00:00:00`);
       for (const r of recurring) {
-        const amt = toUSD(monthlyEquivalent(r, asOf), r.currency);
+        const amt = toUSD(historizedRecurringContribution(r, filter, asOf), r.currency);
         if (amt > 0) bump(r.category ?? "uncategorized", amt);
       }
     }

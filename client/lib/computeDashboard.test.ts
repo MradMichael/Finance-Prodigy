@@ -356,23 +356,59 @@ describe("upcoming renewals", () => {
       recurring: [{
         id: "r1", name: "Netflix", emoji: "🎬", amount: 15, currency: "USD", frequency: "monthly",
         bucket: "WANTS", startDate: "2026-06-20", endDate: null, totalAmount: null, createdAt: "2026-06-20T00:00:00.000Z",
+        confirmCutoverDate: "2026-07-01", // grandfathers the June 20 cycle so only the upcoming July one is in play
       }],
     });
     const result = computeDashboard(data);
     // Monthly from June 20 -> next occurrence July 20, 5 days after "now" (July 15).
     expect(result.upcomingRenewals).toHaveLength(1);
     expect(result.upcomingRenewals[0].dueInDays).toBe(5);
+    expect(result.upcomingRenewals[0].overdueCount).toBe(0);
   });
 
   it("excludes a recurring item due more than 7 days out", () => {
     const data = makeData({
       recurring: [{
         id: "r1", name: "Annual plan", emoji: "📅", amount: 100, currency: "USD", frequency: "yearly",
-        bucket: "WANTS", startDate: "2025-09-01", endDate: null, totalAmount: null, createdAt: "2025-09-01T00:00:00.000Z",
+        bucket: "WANTS", startDate: "2026-09-01", endDate: null, totalAmount: null, createdAt: "2026-01-01T00:00:00.000Z", // starts in the future relative to NOW (July 15) -- not yet due, not overdue
       }],
     });
     const result = computeDashboard(data);
     expect(result.upcomingRenewals).toHaveLength(0);
+  });
+
+  it("an item with a cycle due BEFORE now that was never confirmed shows OVERDUE, not silently skipped to the next occurrence", () => {
+    // No confirmCutoverDate -- a fresh item, every cycle needs confirmation
+    // from day one. Its June 1 cycle was never confirmed, and it's now well
+    // past due (NOW is July 15) -- this is the core behavior change 2.5.3
+    // exists to ship: unconfirmed history doesn't just quietly roll forward
+    // to "next occurrence" the way the old live-estimate model did.
+    const data = makeData({
+      recurring: [{
+        id: "r1", name: "Rent", emoji: "🏠", amount: 500, currency: "USD", frequency: "monthly",
+        bucket: "NEEDS", startDate: "2026-06-01", endDate: null, totalAmount: null, createdAt: "2026-06-01T00:00:00.000Z",
+      }],
+    });
+    const result = computeDashboard(data);
+    // Both June 1 and July 1 have occurred by July 15 (NOW) -- 2 overdue, oldest first.
+    expect(result.upcomingRenewals).toHaveLength(1);
+    expect(result.upcomingRenewals[0].overdueCount).toBe(2);
+    expect(result.upcomingRenewals[0].dueDate).toBe("2026-06-01");
+  });
+
+  it("an overdue item is included regardless of how far the window would otherwise exclude it -- overdue never ages out of visibility", () => {
+    const data = makeData({
+      recurring: [{
+        id: "r1", name: "Old bill", emoji: "🧾", amount: 100, currency: "USD", frequency: "monthly",
+        bucket: "NEEDS", startDate: "2026-01-01", endDate: null, totalAmount: null, createdAt: "2026-01-01T00:00:00.000Z",
+      }],
+    });
+    const result = computeDashboard(data);
+    // Jan-Jul: 7 monthly cycles have occurred by July 15, none confirmed.
+    const renewal = result.upcomingRenewals.find((r) => r.id === "r1");
+    expect(renewal).toBeDefined();
+    expect(renewal!.overdueCount).toBe(7);
+    expect(renewal!.dueDate).toBe("2026-01-01"); // FIFO -- oldest first
   });
 });
 
@@ -686,7 +722,7 @@ describe("budget-rule history — past months judged against the rule that was a
     expect(result.budgetRollover.savings).toBeCloseTo(0, 0);
   });
 
-  it("budgetRollover counts a recurring item's spend in a past month even with no logged transaction that month", () => {
+  it("budgetRollover counts a GRANDFATHERED recurring item's spend in a past month even with no logged transaction that month", () => {
     const data = makeData({
       income: 1000,
       budgetRule: "50-30-20", // 50% needs target = $500/mo
@@ -694,17 +730,34 @@ describe("budget-rule history — past months judged against the rule that was a
         id: "r1", name: "Rent", emoji: "🏠", amount: 300, currency: "USD",
         frequency: "monthly", bucket: "NEEDS", startDate: "2025-01-01",
         endDate: null, totalAmount: null, createdAt: "2025-01-01T00:00:00.000Z",
+        confirmCutoverDate: "2026-07-01", // every rollover-eligible past month (Jan-Jun 2026) is before this -- grandfathered, old accrual preserved
       }],
       // No transactions logged at all -- rent is only ever recurring.
     });
     const result = computeDashboard(data);
     // 6 rollover-eligible past months (Jan-Jun 2026), each: $500 needs
     // target - $300 real recurring rent = $200 unspent, rolled forward.
-    // Before this fix, every one of these months had zero logged
-    // transactions and was skipped from rollover entirely, silently
-    // dropping all $1,200 of it (and, for a month where recurring spend
-    // exceeds the target, silently dropping a real deficit the same way).
+    // This is exactly the historized-value promise: a grandfathered item's
+    // past-month accrual is unchanged from what the old live-estimate model
+    // already showed -- 2.5.3 doesn't retroactively rewrite it.
     expect(result.budgetRollover.needs).toBeCloseTo(200 * 6, 5);
+  });
+
+  it("budgetRollover does NOT count a NON-grandfathered recurring item's spend in a past month unless it was actually confirmed -- the model's whole point", () => {
+    const data = makeData({
+      income: 1000,
+      budgetRule: "50-30-20",
+      recurring: [{
+        id: "r1", name: "Rent", emoji: "🏠", amount: 300, currency: "USD",
+        frequency: "monthly", bucket: "NEEDS", startDate: "2025-01-01",
+        endDate: null, totalAmount: null, createdAt: "2025-01-01T00:00:00.000Z",
+        // No confirmCutoverDate -- a fresh, v3-native item. Every month needs its own confirmation.
+      }],
+    });
+    const result = computeDashboard(data);
+    // No confirmations logged anywhere -- none of the 6 past months should
+    // roll over any recurring contribution at all (0, not $1,200).
+    expect(result.budgetRollover.needs).toBeCloseTo(0, 5);
   });
 
   it("savingsStreak counts past months against the savings target that was actually in effect then, not today's higher target", () => {
@@ -763,19 +816,40 @@ describe("balanceChecks — tracked balances in a non-USD currency must be compa
 });
 
 describe("sixMonthTrend current-month recurring — evaluated as of today, matching month.totalSpend", () => {
-  it("a recurring item starting mid-month is counted consistently between month.totalSpend and the trend's current-month bar", () => {
+  it("a GRANDFATHERED recurring item starting mid-month is counted consistently between month.totalSpend and the trend's current-month bar", () => {
     const data = makeData({
       income: 1000,
       recurring: [{
         id: "r1", name: "New subscription", emoji: "💳", amount: 20, currency: "USD",
         frequency: "monthly", bucket: "WANTS", startDate: "2026-07-10", // starts mid-current-month
         endDate: null, totalAmount: null, createdAt: "2026-07-10T00:00:00.000Z",
+        confirmCutoverDate: "2026-08-01", // cutover after this month -- July is still grandfathered, old accrual applies
       }],
     });
     const result = computeDashboard(data); // NOW is pinned to July 15 — after the 10th
     const currentMonthBar = result.sixMonthTrend.find((t) => t.ymKey === 202607)!;
-    // Both should include the $20 recurring item (today, July 15, is after its July 10 start).
+    // Both sites now route through the SAME historizedRecurringContribution
+    // call -- structurally incapable of disagreeing, not just tested to
+    // currently agree. Both should include the $20 recurring item (today,
+    // July 15, is after its July 10 start, and July is still pre-cutover).
     expect(currentMonthBar.spend).toBeCloseTo(result.month.totalSpend, 5);
+    expect(currentMonthBar.spend).toBeCloseTo(20, 5);
+  });
+
+  it("a NON-grandfathered recurring item contributes 0 to both sites until confirmed -- totals go down, not up, on ship day", () => {
+    const data = makeData({
+      income: 1000,
+      recurring: [{
+        id: "r1", name: "New subscription", emoji: "💳", amount: 20, currency: "USD",
+        frequency: "monthly", bucket: "WANTS", startDate: "2026-07-10",
+        endDate: null, totalAmount: null, createdAt: "2026-07-10T00:00:00.000Z",
+        // No confirmCutoverDate -- needs confirmation from day one.
+      }],
+    });
+    const result = computeDashboard(data);
+    const currentMonthBar = result.sixMonthTrend.find((t) => t.ymKey === 202607)!;
+    expect(currentMonthBar.spend).toBe(0);
+    expect(result.month.totalSpend).toBe(0);
   });
 });
 
@@ -787,6 +861,7 @@ describe("upcomingRenewals — exact calendar-day due counts, consistent regardl
         id: "r1", name: "Due in 5 days", emoji: "🔔", amount: 50, currency: "USD",
         frequency: "monthly", bucket: "NEEDS", startDate: "2026-06-20",
         endDate: null, totalAmount: null, createdAt: "2026-01-01T00:00:00.000Z",
+        confirmCutoverDate: "2026-07-01", // grandfathers the June cycle
       }],
     });
     // NOW is pinned to July 15, 2026 — next monthly occurrence (day 20) is July 20, exactly 5 days out.
@@ -803,6 +878,7 @@ describe("upcomingRenewals — exact calendar-day due counts, consistent regardl
         id: "r1", name: "Due today", emoji: "🔔", amount: 15, currency: "USD",
         frequency: "monthly", bucket: "WANTS", startDate: "2026-06-15",
         endDate: null, totalAmount: null, createdAt: "2026-01-01T00:00:00.000Z",
+        confirmCutoverDate: "2026-07-01", // grandfathers the June cycle
       }],
     });
     // Started June 15, monthly -> next occurrence is July 15, "today" under
@@ -816,40 +892,49 @@ describe("upcomingRenewals — exact calendar-day due counts, consistent regardl
     expect(renewal?.dueInDays).toBe(0);
   });
 
-  it("a recurring item already logged this cycle (lastPaidCycle) doesn't also double-count via monthlyEquivalent, and drops off the renewals list", () => {
+  it("a recurring item CONFIRMED this cycle via a real transaction doesn't also double-count via historizedRecurringContribution, and drops off the renewals list", () => {
     const data = makeData({
       income: 3000,
       recurring: [{
         id: "r1", name: "Rent", emoji: "🏠", amount: 500, currency: "USD",
         frequency: "monthly", bucket: "NEEDS", startDate: "2026-01-01",
         endDate: null, totalAmount: null, createdAt: "2026-01-01T00:00:00.000Z",
-        lastPaidCycle: "2026-07", // NOW is pinned to July 15, 2026
+        confirmCutoverDate: "2026-07-01", // Jan-Jun grandfathered; July's cycle needs confirmation
       }],
-      // The real transaction the "Log payment" action would have created.
-      transactions: [{ id: "t1", amount: 500, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-07-15" }],
+      // The real transaction confirming July's cycle would have created.
+      transactions: [{ id: "t1", amount: 500, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-07-01", recurringId: "r1" }],
     });
     const result = computeDashboard(data);
-    // $500 from the real transaction, NOT $1000 (which is what it'd be if
-    // monthlyEquivalent's automatic estimate also counted this month).
+    // $500 from the real transaction, NOT $1000 -- historizedRecurringContribution
+    // returns 0 for July (on/after cutover) regardless of confirmation status,
+    // so double-counting is structurally impossible now, not just avoided.
     expect(result.month.needsSpend).toBe(500);
+    // Confirmed -- not overdue, and the next occurrence (Aug 1) is more than
+    // 7 days out from July 15 -- correctly absent from the renewals list.
     expect(result.upcomingRenewals.find((r) => r.id === "r1")).toBeUndefined();
   });
 
-  it("lastPaidCycle only suppresses its own matching month -- the next cycle still accrues and shows as upcoming", () => {
-    vi.setSystemTime(new Date(2026, 7, 1)); // August 1, 2026 -- a new cycle since the July payment
+  it("confirming one cycle doesn't suppress the NEXT cycle -- it still surfaces once due, at $0 spend until it's confirmed too", () => {
+    vi.setSystemTime(new Date(2026, 7, 1)); // August 1, 2026 -- a new cycle since the July confirmation
     const data = makeData({
       income: 3000,
       recurring: [{
         id: "r1", name: "Rent", emoji: "🏠", amount: 500, currency: "USD",
         frequency: "monthly", bucket: "NEEDS", startDate: "2026-01-01",
         endDate: null, totalAmount: null, createdAt: "2026-01-01T00:00:00.000Z",
-        lastPaidCycle: "2026-07", // last month's cycle, already paid
+        confirmCutoverDate: "2026-07-01",
       }],
+      transactions: [{ id: "t1", amount: 500, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-07-01", recurringId: "r1" }],
     });
     const result = computeDashboard(data);
-    // August hasn't been paid -- the automatic estimate should still count.
-    expect(result.month.needsSpend).toBe(500);
-    expect(result.upcomingRenewals.find((r) => r.id === "r1")).toBeDefined();
+    // August hasn't been confirmed -- correctly $0, not a phantom $500
+    // estimate (the exact "totals go down until confirmed" promise), but it
+    // still shows up as due today so there's something to act on.
+    expect(result.month.needsSpend).toBe(0);
+    const renewal = result.upcomingRenewals.find((r) => r.id === "r1");
+    expect(renewal).toBeDefined();
+    expect(renewal!.dueInDays).toBe(0);
+    expect(renewal!.overdueCount).toBe(0); // due today, not yet overdue
   });
 });
 
@@ -999,8 +1084,8 @@ describe("alerts", () => {
     // days; one anchored on the 15th is due today.
     const data = makeData({
       recurring: [
-        { id: "r1", name: "Netflix", emoji: "🎬", amount: 15, currency: "USD", frequency: "monthly", bucket: "WANTS", startDate: "2026-06-17", endDate: null, totalAmount: null, createdAt: "2026-06-17T00:00:00.000Z" },
-        { id: "r2", name: "Rent", emoji: "🏠", amount: 800, currency: "USD", frequency: "monthly", bucket: "NEEDS", startDate: "2026-06-15", endDate: null, totalAmount: null, createdAt: "2026-06-15T00:00:00.000Z" },
+        { id: "r1", name: "Netflix", emoji: "🎬", amount: 15, currency: "USD", frequency: "monthly", bucket: "WANTS", startDate: "2026-06-17", endDate: null, totalAmount: null, createdAt: "2026-06-17T00:00:00.000Z", confirmCutoverDate: "2026-07-01" },
+        { id: "r2", name: "Rent", emoji: "🏠", amount: 800, currency: "USD", frequency: "monthly", bucket: "NEEDS", startDate: "2026-06-15", endDate: null, totalAmount: null, createdAt: "2026-06-15T00:00:00.000Z", confirmCutoverDate: "2026-07-01" },
       ],
     });
     const result = computeDashboard(data);
@@ -1008,6 +1093,31 @@ describe("alerts", () => {
     const rentAlert = result.alerts.find((a) => a.id === "renewal-r2");
     expect(netflixAlert).toEqual({ id: "renewal-r1", severity: "warning", message: "Netflix is due in 2 days", screen: "overview" });
     expect(rentAlert).toEqual({ id: "renewal-r2", severity: "critical", message: "Rent is due today", screen: "overview" });
+  });
+
+  it("flags an overdue recurring item as critical, stating the count", () => {
+    const data = makeData({
+      recurring: [{
+        id: "r1", name: "Uni", emoji: "🎓", amount: 750, currency: "USD", frequency: "monthly",
+        bucket: "NEEDS", startDate: "2026-04-01", endDate: null, totalAmount: null, createdAt: "2026-04-01T00:00:00.000Z",
+        // No confirmCutoverDate -- Apr/May/Jun/Jul cycles all unconfirmed by July 15.
+      }],
+    });
+    const result = computeDashboard(data);
+    const alert = result.alerts.find((a) => a.id === "renewal-r1");
+    expect(alert).toEqual({ id: "renewal-r1", severity: "critical", message: "Uni is 4 payments overdue", screen: "overview" });
+  });
+
+  it("uses the singular form for exactly one overdue payment", () => {
+    const data = makeData({
+      recurring: [{
+        id: "r1", name: "Gym", emoji: "💪", amount: 30, currency: "USD", frequency: "monthly",
+        bucket: "WANTS", startDate: "2026-07-01", endDate: null, totalAmount: null, createdAt: "2026-07-01T00:00:00.000Z",
+      }],
+    });
+    const result = computeDashboard(data);
+    const alert = result.alerts.find((a) => a.id === "renewal-r1");
+    expect(alert).toEqual({ id: "renewal-r1", severity: "critical", message: "Gym is overdue", screen: "overview" });
   });
 
   it("flags a tracked balance that doesn't match what was logged, but not a small/rounding-level difference", () => {
@@ -1025,7 +1135,7 @@ describe("alerts", () => {
   it("sorts critical alerts before warnings", () => {
     const data = makeData({
       income: 3000, emergencyFundTargetMonths: 6, emergencyFundBalance: 500, // critical (EF)
-      recurring: [{ id: "r1", name: "Gym", emoji: "💪", amount: 30, currency: "USD", frequency: "monthly", bucket: "WANTS", startDate: "2026-06-17", endDate: null, totalAmount: null, createdAt: "2026-06-17T00:00:00.000Z" }], // warning (due in 2 days)
+      recurring: [{ id: "r1", name: "Gym", emoji: "💪", amount: 30, currency: "USD", frequency: "monthly", bucket: "WANTS", startDate: "2026-06-17", endDate: null, totalAmount: null, createdAt: "2026-06-17T00:00:00.000Z", confirmCutoverDate: "2026-07-01" }], // warning (due in 2 days), grandfathered so it isn't overdue instead
     });
     const result = computeDashboard(data);
     const severities = result.alerts.map((a) => a.severity);

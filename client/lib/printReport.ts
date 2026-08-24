@@ -1,5 +1,5 @@
 import type { LocalFinancials } from "./localData";
-import { BUDGET_RULES, nominalMonthlyEquivalent, isPaidThisCycle, toUSD as toUSDShared, categoryLabel, DEFAULT_LBP_RATE } from "./localData";
+import { BUDGET_RULES, nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, toUSD as toUSDShared, categoryLabel, DEFAULT_LBP_RATE } from "./localData";
 import type { computeDashboard } from "./computeDashboard";
 
 type DashboardPayload = ReturnType<typeof computeDashboard>;
@@ -72,14 +72,25 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
   // to make it vanish from the report entirely the moment it got logged paid.
   const activeRecurring = (data.recurring ?? []).filter((r) => toUSD(nominalMonthlyEquivalent(r), r.currency) > 0);
   const recurringMonthlyTotal = activeRecurring.reduce((s, r) => s + toUSD(nominalMonthlyEquivalent(r), r.currency), 0);
-  const recurringRows = activeRecurring.map((r) => `
+  // nextConfirmTarget requires a UTC-midnight-anchored asOf, same contract as isCycleOverdue/dueCycles.
+  const now = new Date();
+  const reportToday = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+  const recurringRows = activeRecurring.map((r) => {
+    const target = nextConfirmTarget(r, data.transactions, reportToday);
+    const overdue = (target?.overdueCount ?? 0) > 0;
+    const paidThisCycle = target ? isCycleConfirmed(r, target.dueDate, data.transactions) : false;
+    const tag = overdue
+      ? ` <span class="tag">overdue${target!.overdueCount > 1 ? ` ×${target!.overdueCount}` : ""}</span>`
+      : paidThisCycle ? ' <span class="tag">paid</span>' : "";
+    return `
     <tr>
-      <td>${escapeHtml(r.emoji ?? "")} ${escapeHtml(r.name)}${isPaidThisCycle(r) ? ' <span class="tag">paid</span>' : ""}</td>
+      <td>${escapeHtml(r.emoji ?? "")} ${escapeHtml(r.name)}${tag}</td>
       <td>${BL[r.bucket]}</td>
       <td>${r.category ? escapeHtml(categoryLabel(r.category, data.customCategories)) : "—"}</td>
       <td>${FREQ_LABEL[r.frequency]}</td>
       <td class="num">${money(toUSD(r.amount, r.currency))}</td>
-    </tr>`).join("");
+    </tr>`;
+  }).join("");
 
   return `<!DOCTYPE html>
 <html>

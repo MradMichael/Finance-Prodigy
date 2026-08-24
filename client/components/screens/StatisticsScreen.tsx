@@ -1,7 +1,7 @@
 "use client";
 
 import type { LocalFinancials } from "../../lib/localData";
-import { nextOccurrence, isRecurringActive, monthlyEquivalent, valueForMonth, toUSD as toUSDShared, DEFAULT_LBP_RATE } from "../../lib/localData";
+import { nextOccurrence, isRecurringActive, historizedRecurringContribution, valueForMonth, toUSD as toUSDShared, DEFAULT_LBP_RATE } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money } from "./shared";
@@ -54,7 +54,7 @@ export default function StatisticsScreen({
     const txSum = (bucket: string) => tx.filter((t) => t.bucket === bucket).reduce((s, t) => s + toUSD(t.amount, t.currency), 0);
     const out = { income: incomeForMonth(ym), needs: txSum("NEEDS"), wants: txSum("WANTS"), savings: txSum("SAVINGS") };
     for (const r of financials.recurring ?? []) {
-      const usd = toUSD(monthlyEquivalent(r, recurAsOf), r.currency);
+      const usd = toUSD(historizedRecurringContribution(r, ym, recurAsOf), r.currency);
       if (r.bucket === "NEEDS") out.needs += usd;
       else if (r.bucket === "WANTS") out.wants += usd;
       else out.savings += usd;

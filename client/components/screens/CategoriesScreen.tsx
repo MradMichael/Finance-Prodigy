@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, CategoryRule } from "../../lib/localData";
-import { CATEGORIES, allCategories, categoryLabel, categoryIcon, matchCategoryRule, monthlyEquivalent, toUSD as toUSDShared, uid, todayISO, moneyEquals, DEFAULT_LBP_RATE } from "../../lib/localData";
+import { CATEGORIES, allCategories, categoryLabel, categoryIcon, matchCategoryRule, historizedRecurringContribution, toUSD as toUSDShared, uid, todayISO, moneyEquals, DEFAULT_LBP_RATE } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money } from "./shared";
 import { Label, FocusInput, PrimaryBtn } from "../form/Primitives";
@@ -125,7 +125,7 @@ export default function CategoriesScreen({
   }
   if (scope === "month") {
     for (const r of financials.recurring ?? []) {
-      const amt = toUSD(monthlyEquivalent(r), r.currency);
+      const amt = toUSD(historizedRecurringContribution(r, currentYm, new Date()), r.currency);
       if (amt > 0) bump(r.category ?? "uncategorized", amt);
     }
   }

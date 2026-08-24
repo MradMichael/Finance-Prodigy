@@ -1,5 +1,5 @@
 import type { LocalFinancials, BudgetRuleKey, StoredDebt, Currency } from "./localData";
-import { monthlyEquivalent, nextOccurrence, BUDGET_RULES, valueForMonth, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, DEFAULT_LBP_RATE } from "./localData";
+import { historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, valueForMonth, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, DEFAULT_LBP_RATE } from "./localData";
 import { simulateDebtPayoff, type DebtInput } from "./debtEngine";
 
 interface Projection {
@@ -60,6 +60,8 @@ export interface DashboardPayload {
   upcomingRenewals: {
     id: string; name: string; emoji: string; amount: number; currency: Currency;
     dueDate: string; dueInDays: number;
+    /** Count of unconfirmed past-due cycles, collapsed to one entry per item, never one per missed cycle. 0 means this entry is a plain upcoming (not yet due) renewal. */
+    overdueCount: number;
   }[];
   balanceChecks: {
     id: string; name: string; currency: string;
@@ -205,11 +207,14 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
 
   const monthTx = (data.transactions ?? []).filter((t) => t.date.startsWith(prefix));
 
-  // Recurring contributions this month (pro-rated by frequency, converted to USD)
+  // Recurring contributions this month -- historized (Phase 2.5): a
+  // grandfathered pre-cutover item still uses the old live-estimate
+  // accrual; a confirm-on-due item contributes 0 here, because a confirmed
+  // cycle is already a real transaction, already counted by monthTx below.
   const activeRecurring = (data.recurring ?? []);
-  const recurNeeds   = activeRecurring.filter((r) => r.bucket === "NEEDS").reduce((s, r)   => s + toUSD(monthlyEquivalent(r, now), r.currency), 0);
-  const recurWants   = activeRecurring.filter((r) => r.bucket === "WANTS").reduce((s, r)   => s + toUSD(monthlyEquivalent(r, now), r.currency), 0);
-  const recurSavings = activeRecurring.filter((r) => r.bucket === "SAVINGS").reduce((s, r) => s + toUSD(monthlyEquivalent(r, now), r.currency), 0);
+  const recurNeeds   = activeRecurring.filter((r) => r.bucket === "NEEDS").reduce((s, r)   => s + toUSD(historizedRecurringContribution(r, prefix, now), r.currency), 0);
+  const recurWants   = activeRecurring.filter((r) => r.bucket === "WANTS").reduce((s, r)   => s + toUSD(historizedRecurringContribution(r, prefix, now), r.currency), 0);
+  const recurSavings = activeRecurring.filter((r) => r.bucket === "SAVINGS").reduce((s, r) => s + toUSD(historizedRecurringContribution(r, prefix, now), r.currency), 0);
 
   const needsSpend  = monthTx.filter((t) => t.bucket === "NEEDS").reduce((s, t) => s + toUSD(t.amount, t.currency), 0)   + recurNeeds;
   const wantsSpend  = monthTx.filter((t) => t.bucket === "WANTS").reduce((s, t) => s + toUSD(t.amount, t.currency), 0)   + recurWants;
@@ -494,7 +499,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     // would disagree with month.totalSpend for any item that starts/ends
     // partway through the current month.
     const recurAsOf = isCurrent ? now : d;
-    const recurSpend = activeRecurring.reduce((s, r) => s + toUSDForMonth(monthlyEquivalent(r, recurAsOf), r.currency, mo), 0);
+    const recurSpend = activeRecurring.reduce((s, r) => s + toUSDForMonth(historizedRecurringContribution(r, mo, recurAsOf), r.currency, mo), 0);
     const sp = txSpend + recurSpend;
     // Savings-only slice of the same spend, for a real per-month savings
     // rate (savingsContrib / income) — kept separate from `spend`
@@ -504,7 +509,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     // approximating it via leftover cash flow, which disagreed once spend
     // was fully allocated across all three buckets.
     const txSavings = tx.filter((t) => t.bucket === "SAVINGS").reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, mo), 0);
-    const recurSavings = activeRecurring.filter((r) => r.bucket === "SAVINGS").reduce((s, r) => s + toUSDForMonth(monthlyEquivalent(r, recurAsOf), r.currency, mo), 0);
+    const recurSavings = activeRecurring.filter((r) => r.bucket === "SAVINGS").reduce((s, r) => s + toUSDForMonth(historizedRecurringContribution(r, mo, recurAsOf), r.currency, mo), 0);
     const savingsContrib = txSavings + recurSavings;
     // Raw (unfloored) income for display, same reasoning as the current-
     // month income/incomeSafe split — a genuinely $0 past month should
@@ -554,7 +559,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
       // month's needsSpend/wantsSpend/savingsContrib above.
       let recurActive = false;
       for (const r of activeRecurring) {
-        const amt = toUSDForMonth(monthlyEquivalent(r, d), r.currency, ym);
+        const amt = toUSDForMonth(historizedRecurringContribution(r, ym, d), r.currency, ym);
         if (amt <= 0) continue;
         recurActive = true;
         if (r.bucket === "NEEDS") spend.needs += amt;
@@ -666,7 +671,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
       let recurActive = false;
       for (const r of activeRecurring) {
         if (r.bucket !== "SAVINGS") continue;
-        const amt = toUSDForMonth(monthlyEquivalent(r, d), r.currency, ym);
+        const amt = toUSDForMonth(historizedRecurringContribution(r, ym, d), r.currency, ym);
         if (amt <= 0) continue;
         recurActive = true;
         monthSavings += amt;
@@ -699,20 +704,21 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   // offset — off by a day for anyone not at UTC+0, which is most of this
   // app's actual (Lebanon/MENA) audience.
   const todayMidnight = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+  // nextConfirmTarget requires a UTC-midnight-anchored asOf (same contract
+  // as isCycleOverdue/dueCycles) -- todayMidnight, not raw `now`, which may
+  // carry a local time-of-day.
   const upcomingRenewals: DashboardPayload["upcomingRenewals"] = data.recurring
     .map((r) => {
-      const next = nextOccurrence(r, now);
-      if (!next) return null;
-      // Already confirmed paid for this exact cycle (the "Log payment"
-      // action on this same list) -- don't keep nagging about a bill
-      // that's already been logged as a real transaction.
-      if (r.lastPaidCycle && r.lastPaidCycle === next.toISOString().slice(0, 7)) return null;
-      const dueInDays = Math.round((next.getTime() - todayMidnight.getTime()) / (24 * 3600 * 1000));
-      if (dueInDays < 0 || dueInDays > RENEWAL_WINDOW_DAYS) return null;
-      return { id: r.id, name: r.name, emoji: r.emoji, amount: r.amount, currency: r.currency, dueDate: next.toISOString().slice(0, 10), dueInDays };
+      const target = nextConfirmTarget(r, data.transactions, todayMidnight);
+      if (!target) return null; // nothing left to confirm -- exhausted or not yet started
+      const dueInDays = Math.round((target.dueDate.getTime() - todayMidnight.getTime()) / (24 * 3600 * 1000));
+      // Overdue never ages out of visibility -- only a plain (not yet due)
+      // upcoming cycle is subject to the 7-day window.
+      if (target.overdueCount === 0 && dueInDays > RENEWAL_WINDOW_DAYS) return null;
+      return { id: r.id, name: r.name, emoji: r.emoji, amount: r.amount, currency: r.currency, dueDate: target.dueDate.toISOString().slice(0, 10), dueInDays, overdueCount: target.overdueCount };
     })
     .filter((x): x is NonNullable<typeof x> => x !== null)
-    .sort((a, b) => a.dueInDays - b.dueInDays);
+    .sort((a, b) => a.dueInDays - b.dueInDays); // overdue items have negative dueInDays -- sort first for free, most-overdue first
 
   // ── Balance reconciliation — "did I forget to log a payment?" ──────
   // Expected = starting balance minus every transaction on this payment
@@ -816,9 +822,10 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     alerts.push({ id: "debt-infeasible", severity: "critical", message: debtPlan.warning, screen: "debts" });
   }
   for (const r of upcomingRenewals) {
-    // upcomingRenewals already excludes dueInDays < 0 (see its own filter
-    // above) -- 0 is the earliest this ever is, never overdue.
-    if (r.dueInDays === 0) {
+    if (r.overdueCount > 0) {
+      const message = r.overdueCount === 1 ? `${r.name} is overdue` : `${r.name} is ${r.overdueCount} payments overdue`;
+      alerts.push({ id: `renewal-${r.id}`, severity: "critical", message, screen: "overview" });
+    } else if (r.dueInDays === 0) {
       alerts.push({ id: `renewal-${r.id}`, severity: "critical", message: `${r.name} is due today`, screen: "overview" });
     } else if (r.dueInDays <= 3) {
       alerts.push({ id: `renewal-${r.id}`, severity: "warning", message: `${r.name} is due in ${r.dueInDays} day${r.dueInDays === 1 ? "" : "s"}`, screen: "overview" });
