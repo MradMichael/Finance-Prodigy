@@ -929,6 +929,116 @@ export function buildRecurringPaymentLog(r: StoredRecurring, lbpRate: number, no
 }
 
 /**
+ * Every due date this recurring item has between `from` and `to`
+ * (inclusive of both ends), for enumerating past cycles to check for
+ * confirmation/overdue status (Phase 2.5) -- nextOccurrence only ever
+ * answers "what's the next due date on/after asOf," never a full list, and
+ * can't itself walk backward. Built by repeatedly calling nextOccurrence
+ * and advancing past each result, rather than reimplementing its
+ * day-length/month-length stepping logic a second time -- the two
+ * functions are structurally incapable of disagreeing about what "the next
+ * cycle after X" means, since only one of them actually computes it.
+ * `to` is expected to be UTC-midnight-anchored, matching nextOccurrence's
+ * own basis and every date this function returns.
+ *
+ * Defensively re-validates each result against endDate/totalAmount rather
+ * than trusting nextOccurrence's own end-of-window handling -- found while
+ * writing this function's own tests (Standing Rule 4): nextOccurrence only
+ * checks endDate/recurringPaidSoFar against the QUERY point (asOf), never
+ * against the date it actually computes, so asking "what's next after X"
+ * from just before an item ends can still return a date past its end.
+ * recurringPaidSoFar compounds this for totalAmount specifically -- it's an
+ * elapsed-real-time approximation, decoupled from how many cycles a walk
+ * like this one has actually counted, so it can't be trusted to stop this
+ * enumeration at the right cycle either. Pre-existing, unrelated to Phase
+ * 2.5, real (it would also affect upcomingRenewals for an item nearing its
+ * end), and NOT fixed here deliberately -- touching already-shipped
+ * nextOccurrence/recurringPaidSoFar is a separate concern from this new,
+ * unwired function; scoped the fix to stay entirely inside dueCycles' own
+ * new code instead. Flagged to the owner, not silently patched.
+ */
+export function dueCycles(r: StoredRecurring, from: Date, to: Date): Date[] {
+  const cycles: Date[] = [];
+  let cursor = from;
+  let cumulativePaid = 0;
+  // Generous safety cap, not a realistic limit (a weekly item over 90+
+  // years) -- each iteration strictly advances cursor past the cycle it
+  // just recorded, so nextOccurrence's own determinism already guarantees
+  // termination; this is just insurance against a future change to that
+  // guarantee silently reintroducing an infinite loop here.
+  for (let i = 0; i < 5000; i++) {
+    const next = nextOccurrence(r, cursor);
+    if (!next || next > to) break;
+    if (r.endDate && next > new Date(r.endDate)) break;
+    if (r.totalAmount != null && r.totalAmount > 0 && cumulativePaid + r.amount > r.totalAmount) break;
+    cycles.push(next);
+    cumulativePaid += r.amount;
+    cursor = new Date(next.getTime() + 24 * 60 * 60 * 1000);
+  }
+  return cycles;
+}
+
+/**
+ * Whether a real, confirmed transaction exists for this exact cycle --
+ * keyed by the cycle's own due DATE (YYYY-MM-DD), not its month. A weekly
+ * or biweekly item can have several distinct due dates within the same
+ * calendar month; keying by month would let confirming one silently also
+ * "confirm" every other cycle sharing it, the same class of quiet
+ * correctness gap this model exists to remove. `dueDate` is expected to be
+ * the exact Date dueCycles/nextOccurrence produced for this cycle.
+ */
+export function isCycleConfirmed(r: StoredRecurring, dueDate: Date, transactions: StoredTransaction[]): boolean {
+  const dueISO = dueDate.toISOString().slice(0, 10);
+  return transactions.some((t) => t.recurringId === r.id && t.date === dueISO);
+}
+
+/**
+ * Whether this specific cycle should read OVERDUE right now: due, not yet
+ * confirmed, and not grandfathered by the item's own confirmCutoverDate
+ * (see StoredRecurring's own comment). Never true for a cycle due before
+ * the item's cutover, no matter how much time has passed -- that history is
+ * settled, by design (docs/ROADMAP.md Phase 2.5's explicit backfill
+ * decision). A cycle due exactly ON the cutover date is NOT grandfathered
+ * -- only strictly-before is.
+ *
+ * `dueDate` and `asOf` must both be UTC-midnight-anchored calendar days
+ * (nextOccurrence/dueCycles's own basis, and computeDashboard.ts's existing
+ * `todayMidnight` pattern for "today") -- comparing against a raw `new
+ * Date()` instant would make a cycle read overdue the moment its due day
+ * begins rather than once the full day has passed.
+ */
+export function isCycleOverdue(r: StoredRecurring, dueDate: Date, asOf: Date, transactions: StoredTransaction[]): boolean {
+  if (isCycleConfirmed(r, dueDate, transactions)) return false;
+  if (dueDate >= asOf) return false; // not due yet, or due today -- not overdue until the day is over
+  if (r.confirmCutoverDate && dueDate < new Date(r.confirmCutoverDate)) return false; // grandfathered
+  return true;
+}
+
+/**
+ * Builds the transaction for CONFIRMING a specific recurring cycle (Phase
+ * 2.5) -- the new model's only path a recurring item ever becomes a real
+ * StoredTransaction. Unlike buildRecurringPaymentLog, which always resolves
+ * "whatever's next from now," this takes the exact cycle being confirmed
+ * (from dueCycles), so it can confirm ANY outstanding cycle -- including an
+ * old, overdue one, dated to when it was actually due, not to today. The
+ * date-to-due-date behavior and re-entrancy risk this reuses are the same
+ * as buildRecurringPaymentLog's own (2.4.21's actual fix); the one
+ * addition is recurringId, which is what isCycleConfirmed later looks for.
+ */
+export function buildRecurringConfirmLog(r: StoredRecurring, lbpRate: number, dueDate: Date): { tx: StoredTransaction; cycleYm: string } {
+  const dueISO = dueDate.toISOString().slice(0, 10);
+  const cycleYm = dueISO.slice(0, 7);
+  const tx: StoredTransaction = {
+    id: uid(), amount: r.amount, currency: r.currency, bucket: r.bucket,
+    ...(r.category ? { category: r.category } : {}),
+    ...withRate(r.currency, lbpRate),
+    description: r.name, date: dueISO, paymentMethod: "cash",
+    recurringId: r.id,
+  };
+  return { tx, cycleYm };
+}
+
+/**
  * Builds the transaction logged for a contribution toward a goal (Phase
  * 1.4) -- always in the GOAL's own currency, never USD by default. Two
  * independent call sites (GoalsScreen.pay, InputPanel.contributeToGoal)

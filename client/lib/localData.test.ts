@@ -7,7 +7,20 @@ import {
   matchCategoryRule, type CategoryRule,
   roundMoney, moneyEquals, isEmptyFinancials, type LocalFinancials,
   migrateFinancials, schemaVersionOf, withRate, CURRENT_SCHEMA_VERSION, todayISO,
+  dueCycles, isCycleConfirmed, isCycleOverdue, buildRecurringConfirmLog,
 } from "./localData";
+
+// UTC midnight of a given local calendar date -- matches nextOccurrence's
+// own basis (localData.ts's own comment: date-only strings parse as UTC
+// midnight, and every occurrence nextOccurrence returns is built from that
+// same UTC-anchored arithmetic) and computeDashboard.ts's existing
+// `todayMidnight` pattern for the same reason. isCycleOverdue compares
+// `dueDate` (UTC-anchored, from dueCycles/nextOccurrence) against `asOf` --
+// passing a raw `new Date()` here would make "due today" already read as
+// overdue for most of the day, off by up to a day depending on time zone.
+function utcMidnight(y: number, m: number, d: number): Date {
+  return new Date(Date.UTC(y, m, d));
+}
 
 function makeRecurring(overrides: Partial<StoredRecurring> = {}): StoredRecurring {
   return {
@@ -277,6 +290,175 @@ describe("buildRecurringPaymentLog", () => {
     const r = makeRecurring({ currency: "USD" });
     const result = buildRecurringPaymentLog(r, RATE, new Date(2026, 5, 1))!;
     expect(result.tx.lbpRateAtEntry).toBeUndefined();
+  });
+});
+
+// Phase 2.5.2 -- pure cycle logic for the confirm-on-due-date model
+// (docs/ROADMAP.md Phase 2.5). Built and tested here, completely unwired:
+// nothing in computeDashboard.ts or any UI calls these yet (that's 2.5.3).
+// Standing Rule 4 in full -- this is the highest-value test surface in the
+// whole phase, and the logic everything else depends on, so it gets proven
+// correct in isolation before anything live touches it.
+//
+// One deliberate refinement from the original plan, worth recording:
+// confirmation is keyed by the cycle's EXACT due date (YYYY-MM-DD), not by
+// month (YYYY-MM) the way the old lastPaidCycle mechanism was. A weekly or
+// biweekly item can have several distinct due dates within the same
+// calendar month -- a month-granularity key would let one confirmed cycle
+// silently "confirm" every other cycle sharing that month, which is exactly
+// the kind of quiet correctness gap this whole phase exists to remove.
+// dueCycles already enumerates individual dates, not months, so keying off
+// the same unit costs nothing and closes the gap before it ships.
+describe("dueCycles", () => {
+  it("monthly item: returns each month's due date across a 3-month window, inclusive of both ends", () => {
+    const r = makeRecurring({ frequency: "monthly", startDate: "2026-01-01" });
+    const cycles = dueCycles(r, utcMidnight(2026, 5, 1), utcMidnight(2026, 7, 1)); // Jun 1 - Aug 1
+    expect(cycles.map((d) => d.toISOString().slice(0, 10))).toEqual(["2026-06-01", "2026-07-01", "2026-08-01"]);
+  });
+
+  it("weekly item: returns every distinct week's due date, not collapsed to one per month", () => {
+    const r = makeRecurring({ frequency: "weekly", startDate: "2026-08-03" }); // a Monday
+    const cycles = dueCycles(r, utcMidnight(2026, 7, 3), utcMidnight(2026, 7, 24)); // Aug 3 - Aug 24
+    expect(cycles.map((d) => d.toISOString().slice(0, 10))).toEqual(["2026-08-03", "2026-08-10", "2026-08-17", "2026-08-24"]);
+  });
+
+  it("an item that hasn't started yet within the window returns no cycles before its own start", () => {
+    const r = makeRecurring({ frequency: "monthly", startDate: "2026-09-01" });
+    const cycles = dueCycles(r, utcMidnight(2026, 5, 1), utcMidnight(2026, 7, 1)); // Jun 1 - Aug 1, starts Sep 1
+    expect(cycles).toEqual([]);
+  });
+
+  it("stops at an item's endDate -- cycles after it are never returned even though the window extends further", () => {
+    const r = makeRecurring({ frequency: "monthly", startDate: "2026-01-01", endDate: "2026-07-15" });
+    const cycles = dueCycles(r, utcMidnight(2026, 5, 1), utcMidnight(2026, 8, 1)); // Jun 1 - Sep 1
+    expect(cycles.map((d) => d.toISOString().slice(0, 10))).toEqual(["2026-06-01", "2026-07-01"]); // not Aug 1
+  });
+
+  it("stops once a totalAmount cap is exhausted, same as nextOccurrence's own ending logic", () => {
+    const r = makeRecurring({ frequency: "monthly", amount: 500, startDate: "2026-01-01", totalAmount: 1500 }); // 3 payments total
+    const cycles = dueCycles(r, utcMidnight(2026, 0, 1), utcMidnight(2026, 5, 1)); // Jan 1 - Jun 1
+    expect(cycles.map((d) => d.toISOString().slice(0, 10))).toEqual(["2026-01-01", "2026-02-01", "2026-03-01"]);
+  });
+
+  it("from after to: returns no cycles rather than looping forever or throwing", () => {
+    const r = makeRecurring({ frequency: "monthly", startDate: "2026-01-01" });
+    expect(dueCycles(r, utcMidnight(2026, 7, 1), utcMidnight(2026, 5, 1))).toEqual([]);
+  });
+});
+
+describe("isCycleConfirmed", () => {
+  const r = makeRecurring({ id: "r1" });
+  const due = utcMidnight(2026, 7, 1); // Aug 1, 2026
+
+  it("false when no transaction references this recurring item at all", () => {
+    expect(isCycleConfirmed(r, due, [])).toBe(false);
+  });
+
+  it("true when a transaction has this item's recurringId and is dated exactly on the cycle's due date", () => {
+    const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-08-01", recurringId: "r1" };
+    expect(isCycleConfirmed(r, due, [tx])).toBe(true);
+  });
+
+  it("false when the recurringId matches but the date is a DIFFERENT cycle -- exact-date keying, not month keying", () => {
+    // Same item, same month, but a different week's cycle (the reason this
+    // is keyed by date and not by month -- see this describe block's own
+    // header comment).
+    const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-08-08", recurringId: "r1" };
+    expect(isCycleConfirmed(r, due, [tx])).toBe(false);
+  });
+
+  it("false when the date matches but recurringId points at a DIFFERENT recurring item", () => {
+    const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Coincidence", date: "2026-08-01", recurringId: "r2" };
+    expect(isCycleConfirmed(r, due, [tx])).toBe(false);
+  });
+
+  it("false when the date matches but the transaction has no recurringId at all -- a manually-logged entry never counts as confirmation", () => {
+    const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Unrelated", date: "2026-08-01" };
+    expect(isCycleConfirmed(r, due, [tx])).toBe(false);
+  });
+});
+
+describe("isCycleOverdue", () => {
+  it("false when the cycle is already confirmed, even if it's well past due", () => {
+    const r = makeRecurring({ id: "r1" });
+    const due = utcMidnight(2026, 0, 1); // Jan 1, long past
+    const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-01-01", recurringId: "r1" };
+    expect(isCycleOverdue(r, due, utcMidnight(2026, 7, 1), [tx])).toBe(false);
+  });
+
+  it("false when the cycle isn't due yet", () => {
+    const r = makeRecurring();
+    const due = utcMidnight(2026, 8, 1); // Sep 1
+    expect(isCycleOverdue(r, due, utcMidnight(2026, 7, 1), [])).toBe(false); // asOf Aug 1
+  });
+
+  it("false on the due date itself -- overdue starts the day after, not the moment the day begins", () => {
+    const r = makeRecurring();
+    const due = utcMidnight(2026, 7, 1); // Aug 1
+    expect(isCycleOverdue(r, due, utcMidnight(2026, 7, 1), [])).toBe(false); // asOf also Aug 1
+  });
+
+  it("true the day after an unconfirmed cycle's due date, no cutover on the item at all", () => {
+    const r = makeRecurring(); // no confirmCutoverDate -- a fresh item, no grace ever
+    const due = utcMidnight(2026, 7, 1); // Aug 1
+    expect(isCycleOverdue(r, due, utcMidnight(2026, 7, 2), [])).toBe(true); // asOf Aug 2
+  });
+
+  it("false for a cycle due BEFORE the item's confirmCutoverDate -- grandfathered, never overdue no matter how much time has passed", () => {
+    const r = makeRecurring({ confirmCutoverDate: "2026-08-15" });
+    const due = utcMidnight(2026, 6, 1); // Jul 1 -- well before the Aug 15 cutover
+    expect(isCycleOverdue(r, due, utcMidnight(2026, 9, 1), [])).toBe(false); // asOf Oct 1, months later
+  });
+
+  it("true for a cycle due ON OR AFTER confirmCutoverDate, once past due and unconfirmed -- cutover itself is not grandfathered", () => {
+    const r = makeRecurring({ confirmCutoverDate: "2026-08-15" });
+    const dueOnCutover = utcMidnight(2026, 7, 15); // exactly Aug 15
+    expect(isCycleOverdue(r, dueOnCutover, utcMidnight(2026, 7, 16), [])).toBe(true); // asOf Aug 16
+  });
+});
+
+describe("buildRecurringConfirmLog", () => {
+  const RATE = 89500;
+
+  it("dates the transaction to the exact cycle passed in, not to today -- confirming an old overdue cycle stays dated when it was actually due", () => {
+    const r = makeRecurring({ amount: 500, startDate: "2026-01-01" });
+    const oldCycle = utcMidnight(2026, 2, 1); // Mar 1, an overdue cycle confirmed much later
+    const result = buildRecurringConfirmLog(r, RATE, oldCycle);
+    expect(result.tx.date).toBe("2026-03-01");
+    expect(result.cycleYm).toBe("2026-03");
+  });
+
+  it("stamps recurringId to the item's own id -- this is what makes isCycleConfirmed find it later", () => {
+    const r = makeRecurring({ id: "r7" });
+    const result = buildRecurringConfirmLog(r, RATE, utcMidnight(2026, 5, 1));
+    expect(result.tx.recurringId).toBe("r7");
+  });
+
+  it("carries amount/currency/bucket/description/paymentMethod from the recurring item, category only when set", () => {
+    const withCategory = makeRecurring({ category: "rent", currency: "LBP", bucket: "WANTS", name: "Netflix" });
+    const r1 = buildRecurringConfirmLog(withCategory, RATE, utcMidnight(2026, 5, 1));
+    expect(r1.tx).toMatchObject({ amount: 100, currency: "LBP", bucket: "WANTS", category: "rent", description: "Netflix", paymentMethod: "cash" });
+
+    const withoutCategory = makeRecurring({ name: "Gym" });
+    const r2 = buildRecurringConfirmLog(withoutCategory, RATE, utcMidnight(2026, 5, 1));
+    expect("category" in r2.tx).toBe(false);
+  });
+
+  it("captures lbpRateAtEntry for an LBP item using the rate passed in; nothing for USD", () => {
+    const lbpItem = makeRecurring({ currency: "LBP", amount: 500000 });
+    const lbpResult = buildRecurringConfirmLog(lbpItem, 91000, utcMidnight(2026, 5, 1));
+    expect(lbpResult.tx.lbpRateAtEntry).toBe(91000);
+
+    const usdItem = makeRecurring({ currency: "USD" });
+    const usdResult = buildRecurringConfirmLog(usdItem, RATE, utcMidnight(2026, 5, 1));
+    expect(usdResult.tx.lbpRateAtEntry).toBeUndefined();
+  });
+
+  it("generates a fresh id on every call", () => {
+    const r = makeRecurring();
+    const a = buildRecurringConfirmLog(r, RATE, utcMidnight(2026, 5, 1));
+    const b = buildRecurringConfirmLog(r, RATE, utcMidnight(2026, 5, 1));
+    expect(a.tx.id).not.toBe(b.tx.id);
   });
 });
 
