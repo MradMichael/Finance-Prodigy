@@ -1481,7 +1481,7 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
                       const sym    = cur === "LBP" ? "L£" : "$";
                       const ended  = !isRecurringActive(r, now);
                       const paidThisCycle = isPaidThisCycle(r, now);
-                      const paid   = r.totalAmount ? recurringPaidSoFar(r, now) : null;
+                      const paid   = r.totalAmount ? recurringPaidSoFar(r, financials.transactions, now) : null;
                       const pct    = paid != null && r.totalAmount ? Math.min(100, (paid / r.totalAmount) * 100) : null;
                       const isAddingExtra = extraRecId === r.id;
                       const isEditingRec  = editRecId === r.id;

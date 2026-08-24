@@ -904,14 +904,33 @@ export function nextOccurrence(r: StoredRecurring, asOf: Date = new Date()): Dat
   return withinRecurringBounds(r, next, cycleIndex) ? next : null;
 }
 
-/** How much has been paid so far on a totalAmount-capped recurring item. */
-export function recurringPaidSoFar(r: StoredRecurring, asOf: Date = new Date()): number {
+/**
+ * How much has been paid so far on a totalAmount-capped recurring item --
+ * "grandfathered pre-cutover cycles" (settled implicitly, no transaction of
+ * their own) plus "confirmed post-cutover transactions" (real, recurringId-
+ * linked). Deliberately NOT elapsed-calendar-time based: under confirm-on-
+ * due a cycle can sit unconfirmed indefinitely, so calendar time elapsed and
+ * amount actually accounted for are no longer the same question -- an item
+ * whose cycles were never all confirmed must still report the real partial
+ * amount once its cap's calendar horizon has passed, not silently 0 and not
+ * the cap. `endDate` still bounds the walk (a real calendar fact); the
+ * amount cap itself is stripped from the `dueCycles` call below because
+ * enforcing it there would just reintroduce the same bug from the other
+ * side -- the cap is enforced once, explicitly, via the final Math.min.
+ */
+export function recurringPaidSoFar(r: StoredRecurring, transactions: StoredTransaction[], asOf: Date = new Date()): number {
   if (!r.totalAmount || r.amount <= 0) return 0;
-  const start = parseLocalDate(r.startDate);
+  const start = new Date(r.startDate); // UTC midnight -- matches dueCycles/nextOccurrence's own basis
   if (asOf <= start) return 0;
-  const monthsElapsed = (asOf.getTime() - start.getTime()) / (30.4375 * 24 * 60 * 60 * 1000);
-  const periodsElapsed = Math.floor(monthsElapsed * FREQ_MONTHLY[r.frequency]);
-  return Math.min(r.totalAmount, periodsElapsed * r.amount);
+  const uncapped: StoredRecurring = { ...r, totalAmount: null };
+  const cutover = r.confirmCutoverDate ? new Date(r.confirmCutoverDate) : null;
+  const grandfatheredCount = cutover
+    ? dueCycles(uncapped, start, cutover < asOf ? cutover : asOf).filter((d) => d < cutover).length
+    : 0;
+  const confirmedSum = transactions
+    .filter((t) => t.recurringId === r.id && new Date(t.date) <= asOf)
+    .reduce((s, t) => s + t.amount, 0);
+  return Math.min(r.totalAmount, grandfatheredCount * r.amount + confirmedSum);
 }
 
 /**
