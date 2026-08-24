@@ -103,15 +103,48 @@ describe("nominalMonthlyEquivalent", () => {
 describe("recurringPaidSoFar", () => {
   it("is 0 before the start date and 0 without a totalAmount cap", () => {
     const capped = makeRecurring({ totalAmount: 500 });
-    expect(recurringPaidSoFar(capped, new Date(2025, 11, 1))).toBe(0); // before start
+    expect(recurringPaidSoFar(capped, [], utcMidnight(2025, 11, 1))).toBe(0); // before start
     const uncapped = makeRecurring({ totalAmount: null });
-    expect(recurringPaidSoFar(uncapped, new Date(2026, 5, 1))).toBe(0);
+    expect(recurringPaidSoFar(uncapped, [], utcMidnight(2026, 5, 1))).toBe(0);
   });
 
-  it("never exceeds the totalAmount cap", () => {
-    const r = makeRecurring({ amount: 100, totalAmount: 250, startDate: "2026-01-01" });
-    // Many periods elapsed by 2030 -- paid-so-far must clamp at the cap, not overshoot.
-    expect(recurringPaidSoFar(r, new Date(2030, 0, 1))).toBe(250);
+  it("counts grandfathered pre-cutover cycles even though none of them ever produced a confirming transaction", () => {
+    // $750/mo, $6,750 cap (9 cycles), migrated (cutover) after 3 cycles had
+    // already occurred, nothing confirmed yet under the new model.
+    const r = makeRecurring({ id: "r1", amount: 750, totalAmount: 6750, startDate: "2026-01-01", confirmCutoverDate: "2026-04-01" });
+    // Jan/Feb/Mar are all before the Apr 1 cutover -- 3 grandfathered cycles = $2,250.
+    expect(recurringPaidSoFar(r, [], utcMidnight(2026, 5, 1))).toBe(2250); // asOf June 1
+  });
+
+  it("adds confirmed post-cutover transactions on top of the grandfathered count", () => {
+    const r = makeRecurring({ id: "r1", amount: 750, totalAmount: 6750, startDate: "2026-01-01", confirmCutoverDate: "2026-04-01" });
+    const tx: StoredTransaction = { id: "t1", amount: 750, currency: "USD", bucket: "NEEDS", description: "Uni", date: "2026-04-01", recurringId: "r1" };
+    // 3 grandfathered ($2,250) + 1 confirmed Apr cycle ($750) = $3,000.
+    expect(recurringPaidSoFar(r, [tx], utcMidnight(2026, 5, 1))).toBe(3000);
+  });
+
+  it("reports the real partial amount once calendar time has passed every possible cycle date -- not 0, not the cap", () => {
+    const r = makeRecurring({ id: "r1", amount: 750, totalAmount: 6750, startDate: "2026-01-01", confirmCutoverDate: "2026-04-01" });
+    const tx = (date: string): StoredTransaction => ({ id: `t-${date}`, amount: 750, currency: "USD", bucket: "NEEDS", description: "Uni", date, recurringId: "r1" });
+    const transactions = [tx("2026-04-01"), tx("2026-05-01"), tx("2026-06-01")];
+    // Grandfathered Jan/Feb/Mar ($2,250) + confirmed Apr/May/Jun ($2,250) = $4,500.
+    // Jul/Aug/Sep (the last 3 of the 9 possible cycles) were never confirmed --
+    // asOf is in December, well past all 9 cycles' calendar dates. Must still
+    // report the real $4,500 owed-and-paid figure, not silently 0 and not the
+    // $6,750 cap -- this is the exact scenario the prerequisite fix exists for.
+    expect(recurringPaidSoFar(r, transactions, utcMidnight(2026, 11, 1))).toBe(4500);
+  });
+
+  it("clamps at totalAmount even if grandfathered cycles alone would exceed it", () => {
+    const r = makeRecurring({ id: "r1", amount: 750, totalAmount: 1500, startDate: "2026-01-01", confirmCutoverDate: "2026-04-01" });
+    // 3 grandfathered cycles = $2,250, already over the $1,500 cap on its own.
+    expect(recurringPaidSoFar(r, [], utcMidnight(2026, 5, 1))).toBe(1500);
+  });
+
+  it("is confirmed-transaction-based only, with no grandfathering, for an item created after the account was already on schema v3 (no confirmCutoverDate at all)", () => {
+    const r = makeRecurring({ id: "r1", amount: 100, totalAmount: 300, startDate: "2026-01-01" }); // no confirmCutoverDate
+    const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "New item", date: "2026-02-01", recurringId: "r1" };
+    expect(recurringPaidSoFar(r, [tx], utcMidnight(2026, 5, 1))).toBe(100); // only the one real confirmation, nothing grandfathered
   });
 });
 
