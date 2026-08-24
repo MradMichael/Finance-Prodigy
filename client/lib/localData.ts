@@ -1080,6 +1080,57 @@ export function buildRecurringConfirmLog(r: StoredRecurring, lbpRate: number, du
 }
 
 /**
+ * The single shared target for every "confirm this recurring item" action
+ * (Phase 2.5.3) -- Overview's chip, InputPanel's row, the FIFO backlog
+ * count. Not `isRecurringActive`'s calendar-cycle-count cap: under
+ * confirm-on-due, a cycle can sit unconfirmed indefinitely, so "calendar
+ * cycles elapsed" and "amount actually paid" stop being the same question
+ * (see `recurringPaidSoFar`'s own doc comment). `totalAmount` is stripped
+ * before walking calendar cycles -- `dueCycles`/`nextOccurrence`'s own cap
+ * would otherwise silently refuse to generate a candidate past the item's
+ * Nth calendar slot, regardless of how many of those N were ever confirmed
+ * -- and the real cap is enforced once, explicitly, up front instead,
+ * against `recurringPaidSoFar`'s grandfathered+confirmed accounting.
+ * `endDate` still bounds the walk; it's a real calendar fact, not a
+ * payment-status question.
+ */
+export function nextConfirmTarget(r: StoredRecurring, transactions: StoredTransaction[], asOf: Date): { dueDate: Date; overdueCount: number } | null {
+  if (r.totalAmount != null && r.totalAmount > 0 && recurringPaidSoFar(r, transactions, asOf) >= r.totalAmount) return null;
+  const uncapped: StoredRecurring = r.totalAmount != null ? { ...r, totalAmount: null } : r;
+  const from = new Date(r.confirmCutoverDate ?? r.startDate);
+  const overdue = dueCycles(uncapped, from, asOf).filter((d) => isCycleOverdue(r, d, asOf, transactions));
+  if (overdue.length > 0) return { dueDate: overdue[0], overdueCount: overdue.length }; // dueCycles is ascending -- FIFO falls out for free
+  const next = nextOccurrence(uncapped, asOf);
+  return next ? { dueDate: next, overdueCount: 0 } : null;
+}
+
+/**
+ * The historized-value rule for recurring accrual (Phase 2.5.3) -- exactly
+ * the same "what was true AS OF this month" treatment toUSDForMonth/
+ * valueForMonth/budgetTargetPctForMonth already give every other setting,
+ * applied to accrual: a month before this item's own cutover keeps the old
+ * live-estimate accrual (unchanged from what a user already saw); a month
+ * on/after it contributes nothing here, because a confirmed cycle is
+ * already a real StoredTransaction, already summed by the ordinary
+ * transaction loop wherever this is called -- adding it again here would
+ * double-count it, and an unconfirmed cycle correctly contributes nothing
+ * at all until it's confirmed.
+ *
+ * The no-`confirmCutoverDate` case (a recurring item created after the
+ * account was already on schema v3) MUST fall into the new rule, not the
+ * old one -- it has no history to grandfather, every cycle needs
+ * confirmation from its own first month. `!r.confirmCutoverDate ||
+ * ym < cutoverYm` would read as "no cutover -> always old rule," which is
+ * backwards; the condition below is deliberately the other way around.
+ */
+export function historizedRecurringContribution(r: StoredRecurring, ym: string, asOf: Date): number {
+  if (r.confirmCutoverDate && ym < r.confirmCutoverDate.slice(0, 7)) {
+    return monthlyEquivalent(r, asOf);
+  }
+  return 0;
+}
+
+/**
  * Builds the transaction logged for a contribution toward a goal (Phase
  * 1.4) -- always in the GOAL's own currency, never USD by default. Two
  * independent call sites (GoalsScreen.pay, InputPanel.contributeToGoal)
