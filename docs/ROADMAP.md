@@ -256,6 +256,26 @@ Users are on inconsistent Lebanese mobile networks.
 
 ---
 
+## Phase 9 — Generalized currency (beyond USD/LBP)
+
+**Status:** not started (added 2026-08-25, owner's explicit assessment: Phase 1-sized, not building before the cohort) · **Depends on:** Phase 1
+
+**The ask:** a user outside Lebanon (e.g. Europe) should be able to use EUR instead of LBP — USD stays the anchor currency, but the *second* currency shouldn't be hardcoded to LBP specifically.
+
+**Why this is Phase-1-sized, not a small follow-on.** `Currency` is a closed 2-value union (`"USD" | "LBP"`, `client/lib/localData.ts:3`), and that assumption is load-bearing, not incidental — 90 occurrences of LBP-specific branching (`=== "LBP"`, the `L£` symbol, dual-currency toggles) across 18 files, per a direct grep this session. Concretely, generalizing means:
+- Widening `Currency` from a 2-value union to an open set (ISO codes), which ripples into every `Currency`-typed field across `StoredTransaction`/`StoredRecurring`/`StoredGoal`/`StoredDebt`/`StoredAsset`/`TrackedBalance`.
+- `lbpRate`/`lbpRateHistory`/`lbpRateAtEntry`/`DEFAULT_LBP_RATE` are all LBP-*named*, single-flat-value fields — becoming a currency-keyed rate map (`exchangeRates: Record<string, number>`, and the historized equivalent) is a real data-model change requiring its own migration, not a rename.
+- `toUSDShared`/`toUSDForMonth`/`valueForMonth` (the entire conversion engine) assume exactly one foreign currency anchored against USD — generalizing to *any* foreign currency is an architecture change to the conversion layer itself, not a third hardcoded branch alongside the other two.
+- Every currency-symbol/toggle site (`CurrencyToggle` in `form/Primitives.tsx`, `fmtCur`, every hardcoded `"$"`/`"L£"` ternary) needs a symbol/formatting lookup instead of a binary choice.
+
+Phase 1 (1.1–1.5, the dual-currency work already built) took multiple sub-phases to introduce exactly *one* additional currency correctly. Generalizing to *any* second currency is comparable in size, arguably larger — it means removing the binary assumption Phase 1 just finished building in, everywhere it appears, not repeating Phase 1's pattern a third time.
+
+**Acceptance (sketch, not final — design this properly when scheduled):** a user can pick any supported currency as their "second currency" at setup; every screen that today hardcodes LBP behaves identically for the chosen currency; historized past-month figures for an account that switches its second currency mid-history don't retroactively rewrite what was already shown.
+
+**SAFE STOP.**
+
+---
+
 ## Deferred backlog
 
 Not scheduled. Each requires an explicit decision to activate.
@@ -269,6 +289,7 @@ Not scheduled. Each requires an explicit decision to activate.
 | Staging environment (option B) | New infrastructure; runbook written and ready | After cohort is live and stable |
 | Environment identifier in `/api/health` | Bundle with staging work | With staging |
 | Server-side admin gating | Nothing cross-user behind the gate | If anything sensitive is ever added to `/admin` |
+| Dual-currency single transaction (one bill paid partly USD, partly LBP — e.g. $10 + L£200,000) | Real gap, but small compared to Phase 9 above — added 2026-08-25. `StoredTransaction` has exactly one `amount`+`currency` pair; a schema-level split (`amount2?`/`currency2?`) would touch every one of the dozens of `t.amount`/`t.currency` read sites across the app. The pragmatic version doesn't touch the schema at all: one form submission in `InputPanel.tsx` creates *two* ordinary `StoredTransaction` rows (one per currency), no new fields, no consumer changes needed anywhere else — sized at roughly a day, not a phase. Minor accepted tradeoff: two line items in Transactions instead of one for what was conceptually a single payment. | Owner decides it's worth building — small enough to fold into any nearby work, not just a dedicated phase |
 
 ---
 
@@ -284,6 +305,7 @@ Phase 5  Monthly report
 Phase 6  Spending intelligence
 Phase 7  PWA / offline
 Phase 8  Arabic / RTL          — last, to avoid translating twice
+Phase 9  Generalized currency  — unscheduled, Phase-1-sized, not before cohort
 ```
 
 **Critical path to launch: Phase 0 → Phase 1 → real-device check → ship.** Everything after Phase 2 waits on evidence from real users.
