@@ -6,7 +6,7 @@ import {
   allCategories, categoryLabel, categoryIcon, CATEGORIES,
   matchCategoryRule, type CategoryRule,
   roundMoney, moneyEquals, isEmptyFinancials, type LocalFinancials,
-  migrateFinancials, schemaVersionOf, withRate, CURRENT_SCHEMA_VERSION,
+  migrateFinancials, schemaVersionOf, withRate, CURRENT_SCHEMA_VERSION, todayISO,
 } from "./localData";
 
 function makeRecurring(overrides: Partial<StoredRecurring> = {}): StoredRecurring {
@@ -706,10 +706,14 @@ describe("migrateFinancials", () => {
       { id: "t3", amount: 0, currency: "USD", bucket: "NEEDS", description: "Split bill", date: "2026-08-03", paymentMethod: "other", paymentNote: "Paid by roommate", category: "utilities" },
     ]);
 
-    // Recurring: deliberately never gets a rate -- byte-identical, both being USD anyway.
+    // Recurring: deliberately never gets a rate -- byte-identical on every
+    // pre-existing field, both being USD anyway. Phase 2.5's v2->v3 step
+    // additionally stamps confirmCutoverDate = today on both, since this
+    // fixture has no schemaVersion at all (a v0 record walks the full
+    // 0->1->2->3 chain in one migrateFinancials call).
     expect(migrated.recurring).toEqual([
-      { id: "r1", name: "Tuition", emoji: "🔄", amount: 500, currency: "USD", frequency: "monthly", bucket: "NEEDS", startDate: "2026-01-01", endDate: null, totalAmount: 4500, createdAt: "2026-01-01T00:00:00.000Z" },
-      { id: "r2", name: "Streaming", emoji: "🔄", amount: 8, currency: "USD", frequency: "monthly", bucket: "WANTS", startDate: "2026-01-01", endDate: null, totalAmount: null, createdAt: "2026-01-01T00:00:00.000Z" },
+      { id: "r1", name: "Tuition", emoji: "🔄", amount: 500, currency: "USD", frequency: "monthly", bucket: "NEEDS", startDate: "2026-01-01", endDate: null, totalAmount: 4500, createdAt: "2026-01-01T00:00:00.000Z", confirmCutoverDate: todayISO() },
+      { id: "r2", name: "Streaming", emoji: "🔄", amount: 8, currency: "USD", frequency: "monthly", bucket: "WANTS", startDate: "2026-01-01", endDate: null, totalAmount: null, createdAt: "2026-01-01T00:00:00.000Z", confirmCutoverDate: todayISO() },
     ]);
 
     // Tracked balance: USD, untouched.
@@ -751,6 +755,38 @@ describe("migrateFinancials", () => {
     };
     const migrated = migrateFinancials(withLbpRecurring);
     expect(migrated.recurring[0].lbpRateAtEntry).toBeUndefined();
+  });
+
+  it("v2 -> v3 in isolation (Phase 2.5.1): every existing recurring item gets confirmCutoverDate stamped to today, nothing else changes", () => {
+    const originalRecurring = legacyFixture().recurring as StoredRecurring[];
+    const v2 = { ...legacyFixture(), schemaVersion: 2 };
+    const migrated = migrateFinancials(v2);
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated.recurring.every((r) => r.confirmCutoverDate === todayISO())).toBe(true);
+    // Nothing else about the recurring items moved -- same amounts, same
+    // totalAmount cap, same ids, same order.
+    expect(migrated.recurring.map((r) => ({ ...r, confirmCutoverDate: undefined }))).toEqual(
+      originalRecurring.map((r) => ({ ...r, confirmCutoverDate: undefined })),
+    );
+  });
+
+  it("does not overwrite a recurring item that already has confirmCutoverDate -- idempotent, and correct for a device migrating a second time", () => {
+    const withExistingCutover: Record<string, unknown> = {
+      ...legacyFixture(),
+      recurring: [{ id: "r9", name: "Already cut over", emoji: "🔄", amount: 200, currency: "USD", frequency: "monthly", bucket: "NEEDS", startDate: "2025-01-01", endDate: null, totalAmount: null, createdAt: "2025-01-01T00:00:00.000Z", confirmCutoverDate: "2025-06-15" }],
+    };
+    const migrated = migrateFinancials(withExistingCutover);
+    expect(migrated.recurring[0].confirmCutoverDate).toBe("2025-06-15"); // not overwritten to today
+  });
+
+  it("a recurring item created fresh (no schemaVersion migration involved -- already at CURRENT_SCHEMA_VERSION) never gets a confirmCutoverDate: there's no history to grandfather", () => {
+    const freshAccount: LocalFinancials = {
+      ...DEFAULT_DATA,
+      recurring: [{ id: "r-new", name: "New subscription", emoji: "🔄", amount: 10, currency: "USD", frequency: "monthly", bucket: "WANTS", startDate: todayISO(), endDate: null, totalAmount: null, createdAt: new Date().toISOString() }],
+    };
+    // Already current -- migrateFinancials should pass it through untouched,
+    // exactly like the "already at CURRENT_SCHEMA_VERSION" test below.
+    expect(migrateFinancials(freshAccount).recurring[0].confirmCutoverDate).toBeUndefined();
   });
 
   it("running the migration twice over the same fixture produces identical output (idempotent, per the roadmap's explicit requirement)", () => {
