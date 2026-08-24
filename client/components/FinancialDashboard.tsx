@@ -104,7 +104,7 @@ const MOCK: DashboardPayload = {
     { ym: "2026-04", value: -7050 }, { ym: "2026-05", value: -6820 }, { ym: "2026-06", value: -6640 },
   ],
   upcomingRenewals: [
-    { id: "1", name: "Netflix", emoji: "🎬", amount: 15.49, currency: "USD", dueDate: "2026-06-20", dueInDays: 3 },
+    { id: "1", name: "Netflix", emoji: "🎬", amount: 15.49, currency: "USD", dueDate: "2026-06-20", dueInDays: 3, overdueCount: 0 },
   ],
   balanceChecks: [
     { id: "1", name: "Cash", currency: "USD", expected: 240, actual: 190, actualDate: "2026-06-18", discrepancy: -50, changeSinceCheck: 0 },
