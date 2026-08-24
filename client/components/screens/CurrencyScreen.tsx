@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
-import { monthlyEquivalent, toUSD as toUSDShared, todayISO, moneyEquals, DEFAULT_LBP_RATE } from "../../lib/localData";
+import { historizedRecurringContribution, toUSD as toUSDShared, todayISO, moneyEquals, DEFAULT_LBP_RATE } from "../../lib/localData";
 import { computeHoldingsByCurrency } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money } from "./shared";
@@ -20,9 +20,9 @@ export default function CurrencyScreen({ financials }: { financials: LocalFinanc
   const currentYm = todayISO().slice(0, 7);
   const monthTx = financials.transactions.filter((t) => t.date.startsWith(currentYm) && t.bucket !== "INCOME");
   const spendUSD = monthTx.filter((t) => (t.currency ?? "USD") === "USD").reduce((s, t) => s + t.amount, 0)
-    + (financials.recurring ?? []).filter((r) => (r.currency ?? "USD") === "USD").reduce((s, r) => s + monthlyEquivalent(r), 0);
+    + (financials.recurring ?? []).filter((r) => (r.currency ?? "USD") === "USD").reduce((s, r) => s + historizedRecurringContribution(r, currentYm, new Date()), 0);
   const spendLBP = monthTx.filter((t) => t.currency === "LBP").reduce((s, t) => s + t.amount, 0)
-    + (financials.recurring ?? []).filter((r) => r.currency === "LBP").reduce((s, r) => s + monthlyEquivalent(r), 0);
+    + (financials.recurring ?? []).filter((r) => r.currency === "LBP").reduce((s, r) => s + historizedRecurringContribution(r, currentYm, new Date()), 0);
   const spendTotalUSD = toUSD(spendUSD, "USD") + toUSD(spendLBP, "LBP");
 
   // See computeHoldingsByCurrency's own doc comment for why debts are

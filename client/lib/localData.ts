@@ -362,6 +362,8 @@ export interface LocalFinancials {
   /** Keyword -> category auto-assignment rules -- see matchCategoryRule. Only ever applied when a transaction/imported row has no category yet ("if null only"), never overriding a manual choice. */
   categoryRules?: CategoryRule[];
   wishlist?: WishlistItem[];
+  /** Whether the one-time "recurring bills now count once you confirm them" notice has been dismissed (Phase 2.5.3). Optional, defaults falsy -- no migration needed, matches the existing "absent means not yet seen" pattern. */
+  recurringModelNoticeSeen?: boolean;
 }
 
 // Bumped whenever a stored-shape migration step is added to MIGRATIONS

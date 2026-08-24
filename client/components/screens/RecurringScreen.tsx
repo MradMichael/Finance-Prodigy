@@ -1,13 +1,15 @@
 "use client";
 
 import type { LocalFinancials } from "../../lib/localData";
-import { nominalMonthlyEquivalent, isPaidThisCycle, FREQ_LABELS, toUSD as toUSDShared, categoryLabel, categoryIcon, DEFAULT_LBP_RATE } from "../../lib/localData";
+import { nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, FREQ_LABELS, toUSD as toUSDShared, categoryLabel, categoryIcon, DEFAULT_LBP_RATE } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money } from "./shared";
 
 export default function RecurringScreen({ financials }: { financials: LocalFinancials }) {
   const T    = useTheme();
   const now  = new Date();
+  // nextConfirmTarget requires a UTC-midnight-anchored asOf, same contract as isCycleOverdue/dueCycles.
+  const todayMidnight = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
   const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
   const toUSD   = (n: number, cur?: string) => toUSDShared(n, cur as "USD" | "LBP" | undefined, lbpRate);
   const BC   = { NEEDS: T.sky, WANTS: T.brass, SAVINGS: T.jade } as const;
@@ -58,7 +60,9 @@ export default function RecurringScreen({ financials }: { financials: LocalFinan
                 <div className="rounded-2xl overflow-hidden" style={{ border: `1px solid ${T.line}` }}>
                   {items.map((r, i) => {
                     const monthly = toUSD(nominalMonthlyEquivalent(r, now), r.currency);
-                    const paidThisCycle = isPaidThisCycle(r, now);
+                    const target = nextConfirmTarget(r, financials.transactions, todayMidnight);
+                    const overdue = (target?.overdueCount ?? 0) > 0;
+                    const paidThisCycle = target ? isCycleConfirmed(r, target.dueDate, financials.transactions) : false;
                     return (
                       <div
                         key={r.id}
@@ -69,7 +73,10 @@ export default function RecurringScreen({ financials }: { financials: LocalFinan
                         <div className="flex-1">
                           <p className="text-sm flex items-center gap-1.5" style={{ color: T.text }}>
                             {r.name}
-                            {paidThisCycle && (
+                            {overdue && (
+                              <span className="text-[9px] uppercase tracking-wider" style={{ color: T.coral }}>overdue{target!.overdueCount > 1 ? ` ×${target!.overdueCount}` : ""}</span>
+                            )}
+                            {!overdue && paidThisCycle && (
                               <span className="text-[9px] uppercase tracking-wider" style={{ color: T.jade }}>✓ paid</span>
                             )}
                           </p>

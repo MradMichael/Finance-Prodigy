@@ -7,7 +7,7 @@ import type {
 } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, monthlyEquivalent, nominalMonthlyEquivalent, isRecurringActive, isPaidThisCycle, recurringPaidSoFar, toUSD as toUSDShared, withRate, buildGoalContributionTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
+import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, recurringPaidSoFar, toUSD as toUSDShared, withRate, buildGoalContributionTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY } from "./form/Primitives";
@@ -51,9 +51,13 @@ interface Props {
   dashData: ReturnType<typeof computeDashboard>;
   onChange: (updated: LocalFinancials) => void;
   session?: Session;
+  /** Confirms a recurring item's oldest outstanding cycle -- same shared handler FinancialDashboard's Renewing-soon chip uses. */
+  onConfirmRecurring?: (recurringId: string) => void;
+  /** Recurring item ids whose confirm write is currently in flight. */
+  loggingRecurringIds?: Set<string>;
 }
 
-export default function InputPanel({ financials, dashData, onChange, session }: Props) {
+export default function InputPanel({ financials, dashData, onChange, session, onConfirmRecurring, loggingRecurringIds }: Props) {
   const T = useTheme();
   const BUCKETS: { value: Bucket; label: string; icon: string; color: string }[] = [
     { value: "NEEDS",   label: "Needs",   icon: "🏠", color: T.sky   },
@@ -554,6 +558,8 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
   const prefix   = todayISO().slice(0, 7);
   const monthTx  = financials.transactions.filter((t) => t.date.startsWith(prefix));
   const now      = new Date();
+  // nextConfirmTarget requires a UTC-midnight-anchored asOf, same contract as isCycleOverdue/dueCycles.
+  const todayMidnight = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
   const lbpRate  = financials.lbpRate ?? DEFAULT_LBP_RATE;
   const toUSD    = (amt: number, cur?: Currency) => toUSDShared(amt, cur, lbpRate);
   const recs     = financials.recurring ?? [];
@@ -563,14 +569,14 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
   // Someone scanning for "did my rent go through" would never find it, even
   // though it was already counted in every total on this page.
   const recurRowsThisMonth = recs
-    .map((r) => ({ r, usd: toUSD(monthlyEquivalent(r, now), r.currency) }))
+    .map((r) => ({ r, usd: toUSD(historizedRecurringContribution(r, prefix, now), r.currency) }))
     .filter(({ usd }) => usd > 0);
   const needsOut = monthTx.filter((t) => t.bucket === "NEEDS").reduce((s, t)   => s + toUSD(t.amount, t.currency), 0)
-                 + recs.filter((r) => r.bucket === "NEEDS").reduce((s, r)   => s + toUSD(monthlyEquivalent(r, now), r.currency), 0);
+                 + recs.filter((r) => r.bucket === "NEEDS").reduce((s, r)   => s + toUSD(historizedRecurringContribution(r, prefix, now), r.currency), 0);
   const wantsOut = monthTx.filter((t) => t.bucket === "WANTS").reduce((s, t)   => s + toUSD(t.amount, t.currency), 0)
-                 + recs.filter((r) => r.bucket === "WANTS").reduce((s, r)   => s + toUSD(monthlyEquivalent(r, now), r.currency), 0);
+                 + recs.filter((r) => r.bucket === "WANTS").reduce((s, r)   => s + toUSD(historizedRecurringContribution(r, prefix, now), r.currency), 0);
   const savOut   = monthTx.filter((t) => t.bucket === "SAVINGS").reduce((s, t) => s + toUSD(t.amount, t.currency), 0)
-                 + recs.filter((r) => r.bucket === "SAVINGS").reduce((s, r) => s + toUSD(monthlyEquivalent(r, now), r.currency), 0);
+                 + recs.filter((r) => r.bucket === "SAVINGS").reduce((s, r) => s + toUSD(historizedRecurringContribution(r, prefix, now), r.currency), 0);
   const totalOut = needsOut + wantsOut + savOut;
   const fmt      = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 
@@ -1480,7 +1486,10 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
                       const cur    = r.currency ?? "USD";
                       const sym    = cur === "LBP" ? "L£" : "$";
                       const ended  = !isRecurringActive(r, now);
-                      const paidThisCycle = isPaidThisCycle(r, now);
+                      const target = nextConfirmTarget(r, financials.transactions, todayMidnight);
+                      const overdue = (target?.overdueCount ?? 0) > 0;
+                      // Covers both "confirmed on time" and "confirmed early" (paid ahead of its due date) -- either way still shown as paid.
+                      const paidThisCycle = target ? isCycleConfirmed(r, target.dueDate, financials.transactions) : false;
                       const paid   = r.totalAmount ? recurringPaidSoFar(r, financials.transactions, now) : null;
                       const pct    = paid != null && r.totalAmount ? Math.min(100, (paid / r.totalAmount) * 100) : null;
                       const isAddingExtra = extraRecId === r.id;
@@ -1586,7 +1595,8 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
                                 <p className="text-sm" style={{ color: T.text }}>
                                   {r.emoji} {r.name}
                                   {ended && <span className="ml-1.5 text-[9px] uppercase tracking-wider" style={{ color: T.mute }}>ended</span>}
-                                  {!ended && paidThisCycle && <span className="ml-1.5 text-[9px] uppercase tracking-wider" style={{ color: T.jade }}>✓ paid</span>}
+                                  {!ended && overdue && <span className="ml-1.5 text-[9px] uppercase tracking-wider" style={{ color: T.coral }}>overdue{target!.overdueCount > 1 ? ` ×${target!.overdueCount}` : ""}</span>}
+                                  {!ended && !overdue && paidThisCycle && <span className="ml-1.5 text-[9px] uppercase tracking-wider" style={{ color: T.jade }}>✓ paid</span>}
                                   <span className="ml-1.5 text-[9px] uppercase tracking-wider px-1 rounded" style={{ background: cur === "LBP" ? T.brass + "22" : T.jade + "15", color: cur === "LBP" ? T.brass : T.jade }}>{cur}</span>
                                 </p>
                                 <p className="text-[10px] mt-0.5 tabular-nums" style={{ color: T.mute }}>
@@ -1623,6 +1633,17 @@ export default function InputPanel({ financials, dashData, onChange, session }: 
                                     className="text-[10px] px-1.5 py-0.5 rounded transition-all hover:opacity-80"
                                     style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
                                   >✎</button>
+                                  {!ended && target && onConfirmRecurring && (
+                                    <button
+                                      onClick={() => onConfirmRecurring(r.id)}
+                                      disabled={loggingRecurringIds?.has(r.id)}
+                                      aria-label={`Confirm this ${r.name} payment`}
+                                      className="text-[10px] px-1.5 py-0.5 rounded transition-all hover:opacity-80 disabled:opacity-40 disabled:hover:opacity-40"
+                                      style={{ color: overdue ? T.coral : T.jade, border: `1px solid ${overdue ? T.coral : T.jade}40` }}
+                                    >
+                                      {loggingRecurringIds?.has(r.id) ? "Confirming…" : "Confirm"}
+                                    </button>
+                                  )}
                                   {!ended && (
                                     <button
                                       onClick={() => { setExtraRecId(isAddingExtra ? null : r.id); setExtraRecAmt(""); }}
