@@ -145,11 +145,64 @@ The new model: a recurring item's due date prompts the user to confirm payment. 
 
 ---
 
+## Phase 2.6 — Emergency fund and debt balances become ledger-derived
+
+**Status:** not started, design only (added 2026-08-25) · **Depends on:** Phase 2.5 · **Blocks:** Phase 2 (cohort launch) — recommended, see below · **Read-only design, no code written.**
+
+### Context
+
+Found live, in normal use, not by audit sweep (`docs/AUDIT_2026-08.md`, finding 2.4.27, re-rated Launch Blocker): the owner paid a real $325 debt, $300 sourced from the emergency fund. There is currently no way to record that as a transaction without something breaking — tag it "pay from EF" and it can't also link to the debt it paid down or represent a partial ($300 of $325) source; log it untagged and it silently double-counts as ordinary NEEDS/WANTS spending on top of the balance changes that already happened through a different path; record it via the debt's own "pay" action and it creates no transaction at all, so the EF portion is invisible. **Every path forces a choice between correct balances and a visible, accurate ledger row.** The owner chose correct balances — a real $325 payment has zero transaction record, and (confirmed by direct code read) is unrecoverable: `StoredTransaction` has no soft-delete/tombstone, no `createdAt`, and neither the client (`localStorage`, single-key overwrite) nor the server (`POST /push`, a Postgres `upsert` overwriting one column) keeps any history.
+
+This is the same root defect Phase 2.5 was built to eliminate for recurring items (2.4.21: two parallel, unlinked sources of truth for "did this happen") — `emergencyFundBalance` and `debt.balance` are stored numbers nudged by a side effect of a different action (`InputPanel.tsx:254,257` for EF; `:352-367`'s `recordDebtPayment` for debts), with no ledger entry that can be inspected, edited, or reversed. A cohort user will hit this the first time they pay a debt from savings, and most won't notice which side of the tradeoff they landed on.
+
+### The key design insight: EF and debts are just TrackedBalances
+
+This app already has a structure that's immune to this exact bug: `TrackedBalance.expected` (`computeDashboard.ts`) is genuinely *derived* — recomputed from the live transaction list every time, never stored-and-mutated. That's precisely why 2.4.27/2.4.28 don't extend to tracked balances (checked directly this session). The fix isn't "add a link and hope edit/delete remember to reverse it" — it's to stop storing `emergencyFundBalance`/`debt.balance` as mutable fields at all, and derive them from the ledger the same way `expected` already works: an opening balance plus every linked transaction since.
+
+### Data model (Sub-phase 2.6.1)
+
+- **`StoredTransaction.createdAt?: string`** — new. Separates "when this was entered" from `date` ("when it happened"), per owner's explicit ask.
+- **`StoredTransaction.deletedAt?: string`** — new. Soft-delete/tombstone: "Delete transaction" stamps this instead of removing the row; every normal read (spend totals, lists, derived balances) filters `deletedAt == null`; a "recently deleted" view makes it recoverable. Directly closes the "delete-and-redo is the only correction path, and it destroys data" gap.
+- **`StoredTransaction.debtId?: string`** — links this transaction to the debt it paid down. v1 keeps it simple: the transaction's full `amount` applies to that one debt; a payment split across multiple debts is two transactions (same pattern already recommended for the dual-currency-single-transaction backlog item).
+- **`StoredTransaction.efAmount?: number`** — signed; positive = this transaction also added to EF, negative = also drew from EF. Replaces the `txAddToEF`/`txFromEF` checkboxes' side-effect with a real, inspectable field on the transaction itself. Critically, `|efAmount|` can be *less* than the transaction's own `amount` — this is what makes "$300 of this $325 came from EF" representable on one real transaction instead of forcing a choice.
+- **`emergencyFundOpeningBalance`** (on `LocalFinancials`) and **`StoredDebt.openingBalance`** — migration snapshots the current `emergencyFundBalance`/`debt.balance` values into these, exactly Phase 2.5.1's backfill shape: nothing retroactive, the balance a user already saw doesn't change, only movements from the migration point forward go through the new mechanism.
+- Migration step follows the established shape (`addRecurringConfirmModel` in `localData.ts` as the direct precedent) — schema version bump, non-clobbering.
+
+### Pure derivation logic (Sub-phase 2.6.2)
+
+Tests-first (Standing Rule 4 — this is money math), siblings of Phase 2.5's own pure functions:
+- **`derivedEfBalance(data)`** = `emergencyFundOpeningBalance` + sum of `efAmount` over every non-deleted transaction.
+- **`derivedDebtBalance(debt, transactions)`** = `debt.openingBalance` − sum of `amount` over every non-deleted transaction where `debtId` matches.
+
+Ships unwired, same discipline as 2.5.2 — proven correct in isolation before 8+ screens depend on it.
+
+### The flip + edit-transaction flow (Sub-phase 2.6.3)
+
+Every direct reader/writer of `emergencyFundBalance`/`debt.balance` switches together, atomically, same reasoning as 2.5.3 (a mix of derived and stored readings across screens would disagree with each other exactly the way this whole phase exists to prevent): `SetupScreen.tsx`'s manual EF field becomes an opening-balance-adjustment transaction; `InputPanel.tsx`'s EF checkboxes and `recordDebtPayment` become transaction-creation with `efAmount`/`debtId` set instead of direct field mutation; `computeDashboard.ts`, `DebtsScreen.tsx`, `printReport.ts`'s debt table, and everywhere else that reads the old fields switch to the derived functions.
+
+**Edit-transaction flow — new capability, doesn't exist today.** Once balances are derived instead of stored-and-mutated, editing *or* soft-deleting a transaction requires no special reversal logic anywhere: the derived balance recomputes fresh from whatever the transaction list now says, automatically. The UI work is real (an edit form per transaction row, mirroring the existing edit pattern already proven in Debts/Recurring — `startEditDebt`/`saveEditDebt` as the direct template) but the underlying mechanics are free once the derivation is real.
+
+### Migration for existing balances
+
+Answered directly, per owner's question: existing `emergencyFundBalance`/`debt.balance` values have no ledger behind them today, and none gets invented retroactively. They become each account's `emergencyFundOpeningBalance`/`debt.openingBalance` — a real, dated starting point (the migration moment), not a fabricated transaction history. Everything from that point forward goes through the new mechanism; everything before it stays exactly as it already was, matching Phase 2.5.1's own precedent exactly.
+
+### Acceptance
+
+A debt payment sourced partly from EF is recordable as one real transaction, visible in Transactions, correctly reducing both the debt and EF by their own real amounts. Editing or soft-deleting that transaction correctly and automatically adjusts both derived balances with no special-case code. A pre-existing account's EF/debt balances are unchanged by the migration itself. Soft-deleted transactions are recoverable from a "recently deleted" view, not gone.
+
+### Scope, and whether this sits before the cohort
+
+**Comparable in size to Phase 2.5 as a whole**, not a small follow-on — data model + migration, pure derivation logic, a genuinely new edit-transaction UI (nothing like it exists today), and a consumer sweep shaped like 2.5.3's own. **Recommended before the cohort**, same reasoning Phase 2.5 itself was reordered on: the ledger should reconcile under its final model before anyone else trusts it — and unlike 2.5's risk, this one has already fired once, in completely normal use, on a real account, not a contrived edge case.
+
+**SAFE STOP.**
+
+---
+
 ## Phase 2 — Cohort launch
 
 **Not a development phase.** Owner-executed.
 
-Preconditions: Phase 0, Phase 1, **and Phase 2.5** complete (updated 2026-08-22 — the ledger reconciles under its final model before anyone outside the owner uses it), 12 of 12 on the launch checklist in `CLAUDE_CODE_BRIEF.md` §3.2, real-device mobile check passed.
+Preconditions: Phase 0, Phase 1, **Phase 2.5, and Phase 2.6** complete (updated 2026-08-25 — same reasoning both times: the ledger reconciles under its final model before anyone outside the owner uses it), 12 of 12 on the launch checklist in `CLAUDE_CODE_BRIEF.md` §3.2, real-device mobile check passed.
 
 Once live, **Rule 8 activates**: the ordering below becomes provisional and subject to what real users actually do.
 
@@ -298,6 +351,8 @@ Not scheduled. Each requires an explicit decision to activate.
 ```
 Phase 0  Loose ends            — now
 Phase 1  Dual-currency         — last Launch Blocker
+Phase 2.5  Recurring confirm-on-due  — built, merged, 🟡 pending owner's live check
+Phase 2.6  EF/debt ledger-derived    — not started, design only, cohort-blocking (2.4.27)
 Phase 2  COHORT LAUNCH         — ordering below becomes provisional
 Phase 3  Recurring end dates
 Phase 4  Goal feasibility      — flagship
