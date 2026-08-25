@@ -194,6 +194,8 @@ A debt payment sourced partly from EF is recordable as one real transaction, vis
 
 **Comparable in size to Phase 2.5 as a whole**, not a small follow-on — data model + migration, pure derivation logic, a genuinely new edit-transaction UI (nothing like it exists today), and a consumer sweep shaped like 2.5.3's own. **Recommended before the cohort**, same reasoning Phase 2.5 itself was reordered on: the ledger should reconcile under its final model before anyone else trusts it — and unlike 2.5's risk, this one has already fired once, in completely normal use, on a real account, not a contrived edge case.
 
+**Added 2026-08-25, after 2.4.37/2.4.38/Import shipped — a new argument for this same design, not a change to it.** Import from file (2.4.39) restores `LocalFinancials` wholesale from a JSON snapshot, the same way Pull does. Under today's model, `emergencyFundBalance`/`debt.balance` are plain stored fields — an import restores whatever value happened to be in the file, correct or not, with no way to tell which. Under the derived model this phase builds, those fields don't exist to import at all: `derivedEfBalance`/`derivedDebtBalance` recompute fresh from whichever transactions came back with the file. An import that's missing a transaction produces a balance that's honestly wrong in an inspectable way (the ledger shows what's missing), not silently wrong in an invisible one (a stale number with nothing behind it). This is the same principle 2.4.31's fix was already built on (real dollars need a real transaction, never an assumption) — Import turns out to be a second, independent path that benefits from it for free, not just the recurring-confirm flow it was originally designed for.
+
 **SAFE STOP.**
 
 ---
