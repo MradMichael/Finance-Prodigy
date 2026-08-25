@@ -46,7 +46,7 @@ export default function TopBar({ session, onProfile, onSignOut, syncStatus }: { 
               <span
                 className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border"
                 style={{
-                  background: syncStatus === "synced" ? T.jade : syncStatus === "syncing" ? T.brass : T.mute,
+                  background: syncStatus === "synced" ? T.jade : syncStatus === "syncing" ? T.brass : syncStatus === "conflict" ? T.coral : T.mute,
                   borderColor: T.panel,
                 }}
               />
@@ -63,9 +63,9 @@ export default function TopBar({ session, onProfile, onSignOut, syncStatus }: { 
                 <p className="px-4 pb-2 mb-1 text-[10px] flex items-center gap-1.5" style={{ color: T.mute, borderBottom: `1px solid ${T.line}` }}>
                   <span
                     className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                    style={{ background: syncStatus === "synced" ? T.jade : syncStatus === "syncing" ? T.brass : T.mute }}
+                    style={{ background: syncStatus === "synced" ? T.jade : syncStatus === "syncing" ? T.brass : syncStatus === "conflict" ? T.coral : T.mute }}
                   />
-                  {syncStatus === "syncing" ? "Syncing…" : syncStatus === "synced" ? "Synced" : "Sync offline — changes saved on this device only"}
+                  {syncStatus === "syncing" ? "Syncing…" : syncStatus === "synced" ? "Synced" : syncStatus === "conflict" ? "Sync conflict — server has newer data. Resolve in Settings." : "Sync offline — changes saved on this device only"}
                 </p>
               )}
               <button onClick={() => { closeMenu(); onProfile(); }}

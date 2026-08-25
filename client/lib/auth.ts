@@ -180,6 +180,21 @@ async function signInFromSync(
     return { ok: false, error: `Couldn't verify your account right now (${pulled.error}). Check your connection and try again.` };
   }
 
+  // 2.4.37: this browser may already hold real data under some OTHER local
+  // account whose own confirmCutoverDate/etc. this pull-triggered path knows
+  // nothing about -- but more importantly, if `essa_users_v1` lost track of
+  // THIS email's own prior local record (a private window, a cleared
+  // browser, a session hiccup), the device can still be sitting on real
+  // data that a silent restore would orphan or feel like it erased. No
+  // specific userId is established yet at this point in the flow, so this
+  // is the coarse check -- see hasAnyLocalData's own comment for the
+  // false-positive tradeoff. Confirmed live: this exact gap, unguarded,
+  // silently reverted a real debt payment and ~12 transactions (2.4.33).
+  const { confirmOverwriteIfNeeded } = await import("./syncService");
+  if (!(await confirmOverwriteIfNeeded(undefined, "your account on the server"))) {
+    return { ok: false, error: "Cancelled — nothing on this device was changed." };
+  }
+
   if (!crypto.randomUUID) return { ok: false, error: "This browser doesn't support the security features ESSA needs. Please use an up-to-date browser over HTTPS." };
   const id = crypto.randomUUID();
   const [{ wrappedPassword, wrappedRecovery, recoveryCode, dek }, pwHash] = await Promise.all([
@@ -391,6 +406,16 @@ async function recoverFromSync(
     wrappedDekRecovery: wrappedRecovery,
     recoveryTokenForSync: newRecoveryToken,
   };
+  // 2.4.37: `existingId` means a local record for this email already exists
+  // on this device (its own envelope just failed to unwrap with the typed
+  // code) -- a KNOWN userId, so the precise check applies, same as
+  // handlePull's. Without `existingId`, same coarse case as
+  // signInFromSync's own guard just above.
+  const { confirmOverwriteIfNeeded } = await import("./syncService");
+  if (!(await confirmOverwriteIfNeeded(existingId, "your account on the server"))) {
+    return { ok: false, error: "Cancelled — nothing on this device was changed." };
+  }
+
   putUsers(existing ? users.map((u) => (u.id === existingId ? record : u)) : [...users, record]);
 
   const session: Session = { userId: id, email: normalizedEmail, name };

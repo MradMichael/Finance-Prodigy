@@ -17,6 +17,63 @@ export interface SyncResult {
   ok: boolean;
   syncedAt?: string;
   error?: string;
+  // Set true only for 2.4.38's specific "server has moved on since your
+  // last sync" rejection -- distinct from a transient/offline failure so
+  // callers (autoSync) can show something other than "offline" for a
+  // failure that retrying won't fix.
+  conflict?: boolean;
+}
+
+/**
+ * Guards every pull-then-overwrite path (2.4.37): handlePull, signInFromSync,
+ * recoverFromSync. Originally scoped to handlePull alone on the reasoning
+ * that the other two only run when there's no local account for this email,
+ * so there's nothing local to protect -- wrong: `essa_users_v1` can go
+ * missing (a private window, a cleared browser, a session hiccup) while the
+ * device still holds real data under an id that record no longer points to,
+ * and the guard needs to fire on THAT condition, not on which function is
+ * about to overwrite. Confirmed live: this exact gap let a routine
+ * `signInFromSync` silently revert a real debt payment and ~12 transactions
+ * (2.4.33).
+ *
+ * Two sub-checks because the condition doesn't map onto every call site the
+ * same way -- see hasRealLocalData/hasAnyLocalData's own comments.
+ */
+export async function confirmOverwriteIfNeeded(userId: string | undefined, sourceLabel: string): Promise<boolean> {
+  const hasData = userId ? await hasRealLocalData(userId) : hasAnyLocalData();
+  if (!hasData) return true; // nothing to lose -- proceed silently, no friction for the common new-device case
+  return confirm(overwriteWarningMessage(sourceLabel));
+}
+
+/**
+ * Coarse check for signInFromSync/recoverFromSync's no-known-local-userId
+ * case -- there's no specific account id yet to run hasRealLocalData
+ * against, since one hasn't been chosen/created. Does this browser hold
+ * ANY account's local data at all, regardless of whose. Less precise than
+ * hasRealLocalData (a legitimate multi-account device -- this app allows
+ * several local accounts per browser, see auth.ts's isAdmin/listUsers --
+ * occasionally gets an unnecessary prompt), but silent, irreversible data
+ * loss is the worse failure mode, so a false-positive prompt is the correct
+ * tradeoff here.
+ */
+export function hasAnyLocalData(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return Object.keys(localStorage).some((k) => k.startsWith("essa_data_"));
+  } catch {
+    return false;
+  }
+}
+
+/** Precise check for handlePull, and recoverFromSync's `existingId` branch: does this SPECIFIC local account currently hold real data a pull-driven overwrite would destroy. */
+export async function hasRealLocalData(userId: string): Promise<boolean> {
+  const { loadData, isEmptyFinancials } = await import("./localData");
+  return !isEmptyFinancials(await loadData(userId));
+}
+
+function overwriteWarningMessage(sourceLabel: string): string {
+  const last = getLastSyncTime();
+  return `This will replace your local data with ${sourceLabel}${last ? ` (last synced ${new Date(last).toLocaleString("en-GB")})` : ""}. Anything changed on this device since then will be lost. Continue?`;
 }
 
 // A non-2xx response isn't guaranteed to have a JSON body — a proxy/platform
@@ -36,14 +93,25 @@ export async function pushToServer(email: string, data: LocalFinancials): Promis
   // relinkSync below instead of hitting the old "server rejects every push
   // after a reset" limitation.
   const recoveryToken = getRecoveryTokenForSync(email);
+  // 2.4.38: the last syncedAt this device actually observed (from its own
+  // last successful push or pull) -- lets the server tell "I'm still
+  // building on what I last saw" apart from "something else has moved the
+  // server on since." Absent for a client that's never synced at all yet,
+  // or one running before this field existed -- the server treats a missing
+  // value as unknown rather than rejecting, so an old/mid-upgrade client
+  // isn't broken by a server that now expects it.
+  const baseSyncedAt = getLastSyncTime();
   try {
     const res = await fetch("/api/sync/push", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, data, token, ...(recoveryToken ? { recoveryToken } : {}) }),
+      body: JSON.stringify({ email, data, token, ...(recoveryToken ? { recoveryToken } : {}), ...(baseSyncedAt ? { baseSyncedAt } : {}) }),
       signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
     });
     const json = await parseJsonSafe(res);
+    if (res.status === 409 && json?.code === "stale_push") {
+      return { ok: false, conflict: true, error: json?.error ?? "Server data has changed since your last sync." };
+    }
     if (!res.ok) return { ok: false, error: json?.error ?? `Sync failed (HTTP ${res.status}).` };
     // A 200 with no/malformed JSON body (proxy glitch, truncated response)
     // is a real but different failure from "couldn't reach the server at

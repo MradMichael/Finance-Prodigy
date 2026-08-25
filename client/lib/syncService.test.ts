@@ -2,12 +2,21 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   pushToServer, pullFromServer, relinkSync, deleteFromServer, checkEmailExists,
   getLastSyncTime, hasAutoPulled, markAutoPulled,
+  hasAnyLocalData, hasRealLocalData, confirmOverwriteIfNeeded,
 } from "./syncService";
 import { getSyncToken } from "./crypto";
 import { getRecoveryTokenForSync } from "./auth";
-import { DEFAULT_DATA } from "./localData";
+import { saveData, DEFAULT_DATA, type LocalFinancials } from "./localData";
 
-vi.mock("./crypto", () => ({ getSyncToken: vi.fn() }));
+vi.mock("./crypto", async (importOriginal) => {
+  // Only getSyncToken is mocked -- activateSessionKey/encryptJSON/decryptJSON
+  // stay real (via importOriginal) so the 2.4.37 guard tests below can
+  // exercise actual saveData/loadData round-trips through hasRealLocalData,
+  // not just push/pull's own token-gated network calls this file originally
+  // covered.
+  const actual = await importOriginal<typeof import("./crypto")>();
+  return { ...actual, getSyncToken: vi.fn() };
+});
 vi.mock("./auth", () => ({ getRecoveryTokenForSync: vi.fn() }));
 
 function mockFetchOnce(status: number, body: unknown) {
@@ -18,8 +27,19 @@ function mockFetchOnce(status: number, body: unknown) {
   }));
 }
 
+// activateSessionKey needs a real key active for saveData/loadData (used by
+// hasRealLocalData's tests below) to actually encrypt/decrypt -- these tests
+// only care about presence/absence of a real financial payload, not what's
+// in it, so a fixed dummy key is enough.
+async function activateDummyKey() {
+  const { activateSessionKey } = await import("./crypto");
+  activateSessionKey(new Uint8Array(32).fill(7));
+}
+
 beforeEach(() => {
   localStorage.clear();
+  sessionStorage.clear();
+  vi.restoreAllMocks();
   vi.mocked(getSyncToken).mockReset().mockReturnValue("token-abc");
   vi.mocked(getRecoveryTokenForSync).mockReset().mockReturnValue(undefined);
 });
@@ -79,6 +99,37 @@ describe("pushToServer", () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")));
     const result = await pushToServer("a@test.com", DEFAULT_DATA);
     expect(result).toEqual({ ok: false, error: "Could not reach server. Is it running?" });
+  });
+
+  it("BUG regression guard (2.4.38): sends baseSyncedAt from the last known sync time, and surfaces a stale-push conflict distinctly from a generic failure", async () => {
+    // Prime getLastSyncTime() via a prior successful push, matching how a
+    // real session would have one before this second push happens.
+    mockFetchOnce(200, { syncedAt: "2026-01-01T00:00:00.000Z" });
+    await pushToServer("a@test.com", DEFAULT_DATA);
+
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: false, status: 409, json: async () => ({ code: "stale_push", error: "Server data has changed since your last sync." }) });
+    vi.stubGlobal("fetch", fetchSpy);
+    const result = await pushToServer("a@test.com", DEFAULT_DATA);
+    expect(result.ok).toBe(false);
+    expect(result.conflict).toBe(true);
+
+    const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(body.baseSyncedAt).toBe("2026-01-01T00:00:00.000Z");
+  });
+
+  it("omits baseSyncedAt entirely when this device has never successfully synced yet", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ syncedAt: "2026-01-01T00:00:00.000Z" }) });
+    vi.stubGlobal("fetch", fetchSpy);
+    await pushToServer("a@test.com", DEFAULT_DATA);
+    const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect("baseSyncedAt" in body).toBe(false);
+  });
+
+  it("a plain 409 without the stale_push code (e.g. the pre-existing 'sync is busy' case) is NOT reported as a conflict", async () => {
+    mockFetchOnce(409, { error: "Sync is busy. Please try again." });
+    const result = await pushToServer("a@test.com", DEFAULT_DATA);
+    expect(result.ok).toBe(false);
+    expect(result.conflict).toBeFalsy();
   });
 });
 
@@ -178,5 +229,80 @@ describe("local sync bookkeeping", () => {
     markAutoPulled("user-1");
     expect(hasAutoPulled("user-1")).toBe(true);
     expect(hasAutoPulled("user-2")).toBe(false); // a different account's flag is untouched
+  });
+});
+
+describe("hasAnyLocalData (2.4.37)", () => {
+  it("is false when no essa_data_* key exists in localStorage", () => {
+    expect(hasAnyLocalData()).toBe(false);
+  });
+
+  it("is true when ANY essa_data_* key exists, regardless of which account", () => {
+    localStorage.setItem("essa_data_some-other-user-id", "{}");
+    expect(hasAnyLocalData()).toBe(true);
+  });
+
+  it("ignores unrelated localStorage keys", () => {
+    localStorage.setItem("essa_users_v1", "[]");
+    localStorage.setItem("essa_session_v1", "{}");
+    expect(hasAnyLocalData()).toBe(false);
+  });
+});
+
+describe("hasRealLocalData (2.4.37)", () => {
+  it("is false for a userId with no stored data at all", async () => {
+    expect(await hasRealLocalData("nobody")).toBe(false);
+  });
+
+  it("is false for a userId whose stored data is the empty default", async () => {
+    await activateDummyKey();
+    await saveData(DEFAULT_DATA, "u1");
+    expect(await hasRealLocalData("u1")).toBe(false);
+  });
+
+  it("is true for a userId with real, non-empty financial data", async () => {
+    await activateDummyKey();
+    const real: LocalFinancials = { ...DEFAULT_DATA, income: 1000, transactions: [
+      { id: "t1", amount: 10, currency: "USD", bucket: "NEEDS", description: "Coffee", date: "2026-01-01" },
+    ] };
+    await saveData(real, "u2");
+    expect(await hasRealLocalData("u2")).toBe(true);
+  });
+});
+
+describe("confirmOverwriteIfNeeded (2.4.37)", () => {
+  it("proceeds silently, without prompting, when the coarse check (no userId) finds no local data at all", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm");
+    const result = await confirmOverwriteIfNeeded(undefined, "the server");
+    expect(result).toBe(true);
+    expect(confirmSpy).not.toHaveBeenCalled();
+  });
+
+  it("proceeds silently, without prompting, when the precise check (known userId) finds no real local data", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm");
+    const result = await confirmOverwriteIfNeeded("empty-user", "the server");
+    expect(result).toBe(true);
+    expect(confirmSpy).not.toHaveBeenCalled();
+  });
+
+  it("prompts, and returns false, when real local data exists (known userId) and the user declines", async () => {
+    await activateDummyKey();
+    await saveData({ ...DEFAULT_DATA, income: 5000 }, "u3");
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    expect(await confirmOverwriteIfNeeded("u3", "the server")).toBe(false);
+  });
+
+  it("prompts, and returns true, when real local data exists (known userId) and the user accepts", async () => {
+    await activateDummyKey();
+    await saveData({ ...DEFAULT_DATA, income: 5000 }, "u4");
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    expect(await confirmOverwriteIfNeeded("u4", "the server")).toBe(true);
+  });
+
+  it("prompts using the coarse check when no userId is known and SOME account's data exists in this browser", async () => {
+    localStorage.setItem("essa_data_someone-else", "{}");
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    expect(await confirmOverwriteIfNeeded(undefined, "the server")).toBe(true);
+    expect(confirmSpy).toHaveBeenCalled();
   });
 });

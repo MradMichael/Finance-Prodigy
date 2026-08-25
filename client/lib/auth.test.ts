@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { signUp, signIn, recoverAccount, getSession, hasValidSession, signOut, isAdmin, listUsers, getRecoveryTokenForSync, type StoredUser } from "./auth";
-import { pullFromServer, relinkSync } from "./syncService";
+import { pullFromServer, relinkSync, confirmOverwriteIfNeeded } from "./syncService";
 
 vi.mock("./syncService", () => ({
   pullFromServer: vi.fn(),
   relinkSync: vi.fn(),
   getRecoveryTokenForSync: vi.fn(),
+  confirmOverwriteIfNeeded: vi.fn(),
 }));
 
 const USERS_KEY = "essa_users_v1";
@@ -15,12 +16,18 @@ beforeEach(() => {
   sessionStorage.clear();
   vi.mocked(pullFromServer).mockReset();
   vi.mocked(relinkSync).mockReset();
+  vi.mocked(confirmOverwriteIfNeeded).mockReset();
   // Default: no synced data anywhere — matches signIn's "no local account,
   // and nothing to pull either" case unless a test overrides this.
   vi.mocked(pullFromServer).mockResolvedValue({ ok: false, error: "No data on server yet. Push first." });
   // Default: recoverAccount's sync fallback (recoverFromSync) finds no
   // matching account/recovery-code server-side either, unless overridden.
   vi.mocked(relinkSync).mockResolvedValue({ ok: false, error: "Could not verify ownership of this account's sync data." });
+  // Default: the 2.4.37 overwrite guard allows the operation to proceed —
+  // most existing tests here predate that guard and aren't testing it, so
+  // they should behave exactly as before unless a test explicitly overrides
+  // this to exercise the guard itself.
+  vi.mocked(confirmOverwriteIfNeeded).mockResolvedValue(true);
 });
 
 // Replicates auth.ts's private legacy djb2 hash, purely to construct a
@@ -139,6 +146,38 @@ describe("signIn", () => {
       const users = listUsers();
       expect(users.some((u) => u.email === "seconddevice@test.com")).toBe(true);
     }
+  });
+
+  it("BUG regression (2.4.37): a new-device sign-in asks before overwriting if this browser already holds SOME account's real local data, and aborts cleanly if declined", async () => {
+    vi.mocked(pullFromServer).mockResolvedValue({
+      ok: true,
+      syncedAt: "2026-01-01T00:00:00.000Z",
+      data: { ...(await import("./localData")).DEFAULT_DATA, userName: "Remote Name", income: 5000 },
+      hasRecoveryCode: false,
+    });
+    vi.mocked(confirmOverwriteIfNeeded).mockResolvedValue(false); // user declines
+    const result = await signIn("newdevice@test.com", "password12345");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/Cancelled/);
+    // No local account was provisioned for this email — the guard fired
+    // before any local write, not after.
+    expect(listUsers().some((u) => u.email === "newdevice@test.com")).toBe(false);
+    // signInFromSync has no established userId yet at this point — must use
+    // the coarse (undefined) check, not a guessed/premature one.
+    expect(confirmOverwriteIfNeeded).toHaveBeenCalledWith(undefined, expect.any(String));
+  });
+
+  it("proceeds normally when the guard finds nothing to protect, or the user accepts — unaffected by 2.4.37's addition", async () => {
+    vi.mocked(pullFromServer).mockResolvedValue({
+      ok: true,
+      syncedAt: "2026-01-01T00:00:00.000Z",
+      data: { ...(await import("./localData")).DEFAULT_DATA, userName: "Remote Name", income: 5000 },
+      hasRecoveryCode: false,
+    });
+    vi.mocked(confirmOverwriteIfNeeded).mockResolvedValue(true);
+    const result = await signIn("newdevice2@test.com", "password12345");
+    expect(result.ok).toBe(true);
+    expect(listUsers().some((u) => u.email === "newdevice2@test.com")).toBe(true);
   });
 
   it("does not provision a local account when the sync pull fails (wrong password or truly no account)", async () => {
@@ -444,6 +483,35 @@ describe("recoverAccount", () => {
     // The new password actually works on this device now.
     const signInAfter = await signIn("b@test.com", "brandnewpassword1");
     expect(signInAfter.ok).toBe(true);
+  });
+
+  it("BUG regression (2.4.37): recovering a device with an existing local record asks before overwriting it, using that record's OWN id -- not the coarse check -- and aborts cleanly if declined", async () => {
+    // Same state-B setup as the test above: a local record already exists
+    // for this email (joined via signInFromSync earlier), so recoverFromSync
+    // runs with `existingId` set -- the precise-check branch, not the
+    // coarse one signInFromSync itself uses.
+    vi.mocked(pullFromServer).mockResolvedValue({
+      ok: true, syncedAt: "2026-01-01T00:00:00.000Z",
+      data: { ...(await import("./localData")).DEFAULT_DATA, userName: "Existing Data", income: 4000 },
+      hasRecoveryCode: true,
+    });
+    const signInResult = await signIn("d@test.com", "originalpassword1");
+    expect(signInResult.ok).toBe(true);
+    const originalId = listUsers()[0].id;
+
+    vi.mocked(relinkSync).mockResolvedValue({ ok: true });
+    vi.mocked(confirmOverwriteIfNeeded).mockResolvedValue(false); // user declines this time
+    const result = await recoverAccount("d@test.com", "THE-REAL-SAVED-CODE-0000", "brandnewpassword1");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/Cancelled/);
+
+    // The precise check was used, keyed on the EXISTING local record's own
+    // id -- not undefined (the coarse case) and not some other id.
+    expect(confirmOverwriteIfNeeded).toHaveBeenCalledWith(originalId, expect.any(String));
+    // Nothing about the existing local record changed -- the old password
+    // still works, proving the record was never replaced.
+    const signInStill = await signIn("d@test.com", "originalpassword1");
+    expect(signInStill.ok).toBe(true);
   });
 
   it("still reports 'Invalid recovery code' -- not a generic account-not-found message -- when a joined-via-Pull device's fallback also gets a wrong code", async () => {
