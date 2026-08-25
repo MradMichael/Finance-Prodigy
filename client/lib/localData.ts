@@ -54,9 +54,14 @@ export interface StoredTransaction {
   // payment correctly); `cycleDate` is fixed at confirm time and is what
   // isCycleConfirmed actually matches against, so cycle-tracking can't
   // drift just because a bill was paid a few days late. Only ever set
-  // alongside recurringId. Absent on transactions confirmed before this
-  // field existed -- isCycleConfirmed falls back to `date` for those.
-  cycleDate?: string;
+  // alongside recurringId. Absent (undefined) on transactions confirmed
+  // before this field existed -- isCycleConfirmed falls back to `date` for
+  // those. Explicit `null` is a distinct, later state (2.4.32, finding 4b):
+  // the user deliberately detached this transaction from its cycle (e.g.
+  // after editing `date` to a different month), and isCycleConfirmed must
+  // NOT fall back to `date` in that case -- undefined means "never had one
+  // to begin with," null means "had one, no longer does."
+  cycleDate?: string | null;
 }
 
 export interface StoredGoal {
@@ -914,39 +919,56 @@ export function nextOccurrence(r: StoredRecurring, asOf: Date = new Date()): Dat
 
 /**
  * How much has been paid so far on a totalAmount-capped recurring item --
- * "grandfathered pre-cutover cycles" (settled implicitly, no transaction of
- * their own) plus "confirmed post-cutover transactions" (real, recurringId-
- * linked). Deliberately NOT elapsed-calendar-time based: under confirm-on-
- * due a cycle can sit unconfirmed indefinitely, so calendar time elapsed and
- * amount actually accounted for are no longer the same question -- an item
- * whose cycles were never all confirmed must still report the real partial
- * amount once its cap's calendar horizon has passed, not silently 0 and not
- * the cap. `endDate` still bounds the walk (a real calendar fact); the
- * amount cap itself is stripped from the `dueCycles` call below because
- * enforcing it there would just reintroduce the same bug from the other
- * side -- the cap is enforced once, explicitly, via the final Math.min.
+ * purely the sum of real, recurringId-linked confirmed transactions,
+ * clamped at the cap. No grandfathered credit for pre-cutover cycles (2.4.31
+ * fix, re-rated Launch Blocker 2026-08-25): a grandfathered cycle used to
+ * count as paid on the strength of the migration's own "settled" assumption
+ * alone, with zero StoredTransaction behind it -- confirmed live on the
+ * owner's account, where an item with no real pre-migration history (data
+ * collection started the same week as the migration) showed "$1,500 paid"
+ * against exactly one real $750 transaction. `isCycleOverdue`'s grandfather
+ * check is untouched -- it suppresses a different thing (alert flooding for
+ * genuinely old history) and was never justified by the same reasoning this
+ * function's old grandfathering was. See pendingBackfillCycles for how a
+ * real, long-history item recovers an accurate figure: by explicit backfill
+ * confirmation, not by assumption.
  *
- * `confirmedSum` counts every confirmed transaction regardless of its own
- * date (2.4.30) -- deliberately not `<= asOf`. A cycle confirmed early
- * (before its due date) is genuinely paid; excluding it here understated
- * "paid so far" for anyone who pays ahead, and worse, let the SAME item's
- * own cap check (nextConfirmTarget, below) miss real confirmed amounts and
- * keep offering cycles past what totalAmount actually allows -- the same
- * blind spot that let repeat confirms silently exceed the cap.
+ * Counts every confirmed transaction regardless of its own date (2.4.30) --
+ * a cycle confirmed early (before its due date) is genuinely paid; excluding
+ * it here understated "paid so far" for anyone who pays ahead, and worse,
+ * let the SAME item's own cap check (nextConfirmTarget, below) miss real
+ * confirmed amounts and keep offering cycles past what totalAmount actually
+ * allows -- the same blind spot that let repeat confirms silently exceed
+ * the cap.
  */
-export function recurringPaidSoFar(r: StoredRecurring, transactions: StoredTransaction[], asOf: Date = new Date()): number {
+export function recurringPaidSoFar(r: StoredRecurring, transactions: StoredTransaction[]): number {
   if (!r.totalAmount || r.amount <= 0) return 0;
-  const start = new Date(r.startDate); // UTC midnight -- matches dueCycles/nextOccurrence's own basis
-  if (asOf <= start) return 0;
-  const uncapped: StoredRecurring = { ...r, totalAmount: null };
-  const cutover = r.confirmCutoverDate ? new Date(r.confirmCutoverDate) : null;
-  const grandfatheredCount = cutover
-    ? dueCycles(uncapped, start, cutover < asOf ? cutover : asOf).filter((d) => d < cutover).length
-    : 0;
   const confirmedSum = transactions
     .filter((t) => t.recurringId === r.id)
     .reduce((s, t) => s + t.amount, 0);
-  return Math.min(r.totalAmount, grandfatheredCount * r.amount + confirmedSum);
+  return Math.min(r.totalAmount, confirmedSum);
+}
+
+/**
+ * Pre-cutover cycles for a grandfathered, capped recurring item that have no
+ * confirming transaction yet -- available to backfill (2.4.31 fix) rather
+ * than assumed paid. Only meaningful for items with both a totalAmount cap
+ * (recurringPaidSoFar's cap is the only thing a grandfathered cycle used to
+ * distort) and a confirmCutoverDate (nothing to backfill for a v3-native
+ * item, which never had grandfathering to begin with). Confirming one of
+ * these via buildRecurringConfirmLog, dated to its own historical due date
+ * (not today), is the deliberate, opt-in way a user with real pre-migration
+ * history restores an accurate progress figure -- under-counting by default,
+ * correct only through an explicit action, never the reverse.
+ */
+export function pendingBackfillCycles(r: StoredRecurring, transactions: StoredTransaction[]): Date[] {
+  if (!r.confirmCutoverDate || !r.totalAmount) return [];
+  const start = new Date(r.startDate);
+  const cutover = new Date(r.confirmCutoverDate);
+  const uncapped: StoredRecurring = { ...r, totalAmount: null };
+  return dueCycles(uncapped, start, cutover)
+    .filter((d) => d < cutover)
+    .filter((d) => !isCycleConfirmed(r, d, transactions));
 }
 
 /**
@@ -1046,11 +1068,19 @@ export function dueCycles(r: StoredRecurring, from: Date, to: Date): Date[] {
  * `cycleDate` when present (2.4.30, finding A -- `date` is the real payment
  * date, which can differ from the cycle it confirms); falls back to `date`
  * for transactions confirmed before `cycleDate` existed, where `date` was
- * always the due date itself.
+ * always the due date itself. Explicit `cycleDate: null` (2.4.32, finding
+ * 4b) is a deliberate detach and never matches, even if `date` happens to
+ * coincide with `dueDate` -- falling back to `date` here would make
+ * detaching a no-op for the one case (date left unedited) it's most likely
+ * used for.
  */
 export function isCycleConfirmed(r: StoredRecurring, dueDate: Date, transactions: StoredTransaction[]): boolean {
   const dueISO = dueDate.toISOString().slice(0, 10);
-  return transactions.some((t) => t.recurringId === r.id && (t.cycleDate ?? t.date) === dueISO);
+  return transactions.some((t) => {
+    if (t.recurringId !== r.id) return false;
+    if (t.cycleDate === null) return false;
+    return (t.cycleDate ?? t.date) === dueISO;
+  });
 }
 
 /**
@@ -1132,7 +1162,7 @@ export function buildRecurringConfirmLog(r: StoredRecurring, lbpRate: number, du
  * must skip past all of them, not just the first.
  */
 export function nextConfirmTarget(r: StoredRecurring, transactions: StoredTransaction[], asOf: Date): { dueDate: Date; overdueCount: number } | null {
-  if (r.totalAmount != null && r.totalAmount > 0 && recurringPaidSoFar(r, transactions, asOf) >= r.totalAmount) return null;
+  if (r.totalAmount != null && r.totalAmount > 0 && recurringPaidSoFar(r, transactions) >= r.totalAmount) return null;
   const uncapped: StoredRecurring = r.totalAmount != null ? { ...r, totalAmount: null } : r;
   const from = new Date(r.confirmCutoverDate ?? r.startDate);
   const overdue = dueCycles(uncapped, from, asOf).filter((d) => isCycleOverdue(r, d, asOf, transactions));

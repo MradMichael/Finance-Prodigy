@@ -8,7 +8,7 @@ import {
   roundMoney, moneyEquals, isEmptyFinancials, type LocalFinancials,
   migrateFinancials, schemaVersionOf, withRate, CURRENT_SCHEMA_VERSION, todayISO,
   dueCycles, isCycleConfirmed, isCycleOverdue, buildRecurringConfirmLog,
-  nextConfirmTarget, historizedRecurringContribution,
+  nextConfirmTarget, historizedRecurringContribution, pendingBackfillCycles,
 } from "./localData";
 
 // UTC midnight of a given local calendar date -- matches nextOccurrence's
@@ -102,57 +102,51 @@ describe("nominalMonthlyEquivalent", () => {
 });
 
 describe("recurringPaidSoFar", () => {
-  it("is 0 before the start date and 0 without a totalAmount cap", () => {
-    const capped = makeRecurring({ totalAmount: 500 });
-    expect(recurringPaidSoFar(capped, [], utcMidnight(2025, 11, 1))).toBe(0); // before start
-    const uncapped = makeRecurring({ totalAmount: null });
-    expect(recurringPaidSoFar(uncapped, [], utcMidnight(2026, 5, 1))).toBe(0);
+  it("is 0 without a totalAmount cap, regardless of any confirmed transactions", () => {
+    const uncapped = makeRecurring({ id: "r1", totalAmount: null });
+    const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-02-01", recurringId: "r1" };
+    expect(recurringPaidSoFar(uncapped, [tx])).toBe(0);
   });
 
-  it("counts grandfathered pre-cutover cycles even though none of them ever produced a confirming transaction", () => {
-    // $750/mo, $6,750 cap (9 cycles), migrated (cutover) after 3 cycles had
-    // already occurred, nothing confirmed yet under the new model.
+  it("is 0 for a capped item with real pre-cutover history and nothing confirmed -- NO grandfathered credit, even with a confirmCutoverDate (2.4.31 fix)", () => {
+    // Regression guard for the exact live bug: 3 grandfathered pre-cutover
+    // cycles used to count as $2,250 "paid" with zero StoredTransaction
+    // behind them. Every dollar in this figure must now have a real ledger
+    // row -- confirmed live: Uni's progress bar read "$1,500 paid" against
+    // exactly one real $750 transaction before this fix.
     const r = makeRecurring({ id: "r1", amount: 750, totalAmount: 6750, startDate: "2026-01-01", confirmCutoverDate: "2026-04-01" });
-    // Jan/Feb/Mar are all before the Apr 1 cutover -- 3 grandfathered cycles = $2,250.
-    expect(recurringPaidSoFar(r, [], utcMidnight(2026, 5, 1))).toBe(2250); // asOf June 1
+    expect(recurringPaidSoFar(r, [])).toBe(0);
   });
 
-  it("adds confirmed post-cutover transactions on top of the grandfathered count", () => {
+  it("counts only real confirmed transactions, ignoring grandfathered pre-cutover cycles entirely", () => {
     const r = makeRecurring({ id: "r1", amount: 750, totalAmount: 6750, startDate: "2026-01-01", confirmCutoverDate: "2026-04-01" });
     const tx: StoredTransaction = { id: "t1", amount: 750, currency: "USD", bucket: "NEEDS", description: "Uni", date: "2026-04-01", recurringId: "r1" };
-    // 3 grandfathered ($2,250) + 1 confirmed Apr cycle ($750) = $3,000.
-    expect(recurringPaidSoFar(r, [tx], utcMidnight(2026, 5, 1))).toBe(3000);
+    // Not $2,250 (3 grandfathered) + $750 -- just the one real transaction.
+    expect(recurringPaidSoFar(r, [tx])).toBe(750);
   });
 
-  it("reports the real partial amount once calendar time has passed every possible cycle date -- not 0, not the cap", () => {
-    const r = makeRecurring({ id: "r1", amount: 750, totalAmount: 6750, startDate: "2026-01-01", confirmCutoverDate: "2026-04-01" });
+  it("sums every confirmed transaction for this item", () => {
+    const r = makeRecurring({ id: "r1", amount: 750, totalAmount: 6750, startDate: "2026-01-01" });
     const tx = (date: string): StoredTransaction => ({ id: `t-${date}`, amount: 750, currency: "USD", bucket: "NEEDS", description: "Uni", date, recurringId: "r1" });
-    const transactions = [tx("2026-04-01"), tx("2026-05-01"), tx("2026-06-01")];
-    // Grandfathered Jan/Feb/Mar ($2,250) + confirmed Apr/May/Jun ($2,250) = $4,500.
-    // Jul/Aug/Sep (the last 3 of the 9 possible cycles) were never confirmed --
-    // asOf is in December, well past all 9 cycles' calendar dates. Must still
-    // report the real $4,500 owed-and-paid figure, not silently 0 and not the
-    // $6,750 cap -- this is the exact scenario the prerequisite fix exists for.
-    expect(recurringPaidSoFar(r, transactions, utcMidnight(2026, 11, 1))).toBe(4500);
+    expect(recurringPaidSoFar(r, [tx("2026-04-01"), tx("2026-05-01"), tx("2026-06-01")])).toBe(2250);
   });
 
-  it("clamps at totalAmount even if grandfathered cycles alone would exceed it", () => {
-    const r = makeRecurring({ id: "r1", amount: 750, totalAmount: 1500, startDate: "2026-01-01", confirmCutoverDate: "2026-04-01" });
-    // 3 grandfathered cycles = $2,250, already over the $1,500 cap on its own.
-    expect(recurringPaidSoFar(r, [], utcMidnight(2026, 5, 1))).toBe(1500);
+  it("clamps at totalAmount even if confirmed transactions alone would exceed it", () => {
+    const r = makeRecurring({ id: "r1", amount: 750, totalAmount: 1500, startDate: "2026-01-01" });
+    const tx = (date: string): StoredTransaction => ({ id: `t-${date}`, amount: 750, currency: "USD", bucket: "NEEDS", description: "Uni", date, recurringId: "r1" });
+    expect(recurringPaidSoFar(r, [tx("2026-01-01"), tx("2026-02-01"), tx("2026-03-01")])).toBe(1500);
   });
 
-  it("is confirmed-transaction-based only, with no grandfathering, for an item created after the account was already on schema v3 (no confirmCutoverDate at all)", () => {
-    const r = makeRecurring({ id: "r1", amount: 100, totalAmount: 300, startDate: "2026-01-01" }); // no confirmCutoverDate
-    const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "New item", date: "2026-02-01", recurringId: "r1" };
-    expect(recurringPaidSoFar(r, [tx], utcMidnight(2026, 5, 1))).toBe(100); // only the one real confirmation, nothing grandfathered
+  it("counts a confirmed transaction dated in the FUTURE relative to today -- paid-ahead money is genuinely paid and belongs against the cap (2.4.30 fix, unaffected by this change)", () => {
+    const r = makeRecurring({ id: "r1", amount: 750, totalAmount: 6750, startDate: "2026-01-01" });
+    const tx: StoredTransaction = { id: "t1", amount: 750, currency: "USD", bucket: "NEEDS", description: "Uni", date: "2026-09-01", recurringId: "r1" };
+    expect(recurringPaidSoFar(r, [tx])).toBe(750);
   });
 
-  it("counts a confirmed transaction dated in the FUTURE relative to asOf -- paid-ahead money is genuinely paid and belongs against the cap (2.4.30 fix)", () => {
-    const r = makeRecurring({ id: "r1", amount: 750, totalAmount: 6750, startDate: "2026-01-01" }); // no cutover
-    const tx: StoredTransaction = { id: "t1", amount: 750, currency: "USD", bucket: "NEEDS", description: "Uni", date: "2026-09-01", recurringId: "r1" }; // confirmed early, dated in September
-    // asOf is August -- before the transaction's own date -- must still count, not be silently excluded.
-    expect(recurringPaidSoFar(r, [tx], utcMidnight(2026, 7, 25))).toBe(750);
+  it("ignores a transaction belonging to a different recurring item", () => {
+    const r = makeRecurring({ id: "r1", amount: 750, totalAmount: 6750, startDate: "2026-01-01" });
+    const tx: StoredTransaction = { id: "t1", amount: 750, currency: "USD", bucket: "NEEDS", description: "Other", date: "2026-04-01", recurringId: "r2" };
+    expect(recurringPaidSoFar(r, [tx])).toBe(0);
   });
 });
 
@@ -465,6 +459,70 @@ describe("isCycleConfirmed", () => {
   it("falls back to date when cycleDate is absent -- backward compatible with transactions confirmed before this field existed", () => {
     const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-08-01", recurringId: "r1" };
     expect(isCycleConfirmed(r, due, [tx])).toBe(true);
+  });
+
+  it("BUG regression (4a/4c): an explicit null cycleDate never matches, even if the transaction's own date happens to coincide with the cycle -- a deliberately detached transaction", () => {
+    // Reproduces the live sequence: Uni's Sep 1 cycle was confirmed, then the
+    // transaction's date was edited away from Sep 1 -- but cycleDate stayed
+    // pinned to Sep 1 by design (4b), so isCycleConfirmed kept matching it
+    // and September silently stayed "settled" with no money in its own
+    // ledger. Detaching (explicit cycleDate: null) is what actually frees
+    // the cycle -- and must NOT fall back to `date`, even when `date`
+    // happens to still equal the cycle's own due date, or detaching would
+    // be a no-op for the one case (date unedited) it's most likely to be used for.
+    const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-08-01", cycleDate: null, recurringId: "r1" };
+    expect(isCycleConfirmed(r, due, [tx])).toBe(false);
+  });
+});
+
+describe("pendingBackfillCycles", () => {
+  it("returns nothing for an item with no confirmCutoverDate -- nothing to backfill for a v3-native item", () => {
+    const r = makeRecurring({ id: "r1", amount: 750, totalAmount: 6750, startDate: "2026-01-01" }); // no cutover
+    expect(pendingBackfillCycles(r, [])).toEqual([]);
+  });
+
+  it("returns nothing for an uncapped item -- backfill only matters where recurringPaidSoFar's cap is displayed", () => {
+    const r = makeRecurring({ id: "r1", amount: 750, totalAmount: null, startDate: "2026-01-01", confirmCutoverDate: "2026-04-01" });
+    expect(pendingBackfillCycles(r, [])).toEqual([]);
+  });
+
+  it("lists every pre-cutover cycle when none have been confirmed", () => {
+    const r = makeRecurring({ id: "r1", amount: 750, totalAmount: 6750, startDate: "2026-01-01", confirmCutoverDate: "2026-04-01" });
+    const cycles = pendingBackfillCycles(r, []);
+    expect(cycles.map((d) => d.toISOString().slice(0, 10))).toEqual(["2026-01-01", "2026-02-01", "2026-03-01"]);
+  });
+
+  it("excludes a pre-cutover cycle that already has a confirming transaction -- already backfilled once, not offered again", () => {
+    const r = makeRecurring({ id: "r1", amount: 750, totalAmount: 6750, startDate: "2026-01-01", confirmCutoverDate: "2026-04-01" });
+    const tx: StoredTransaction = { id: "t1", amount: 750, currency: "USD", bucket: "NEEDS", description: "Uni", date: "2026-02-01", recurringId: "r1", cycleDate: "2026-02-01" };
+    const cycles = pendingBackfillCycles(r, [tx]);
+    expect(cycles.map((d) => d.toISOString().slice(0, 10))).toEqual(["2026-01-01", "2026-03-01"]);
+  });
+
+  it("never includes a cycle due on or after the cutover -- those aren't grandfathered, they go through the normal confirm flow instead", () => {
+    const r = makeRecurring({ id: "r1", amount: 750, totalAmount: 6750, startDate: "2026-01-01", confirmCutoverDate: "2026-02-15" });
+    const cycles = pendingBackfillCycles(r, []);
+    // Jan 1 and Feb 1 both precede the Feb 15 cutover; Mar 1 does not.
+    expect(cycles.map((d) => d.toISOString().slice(0, 10))).toEqual(["2026-01-01", "2026-02-01"]);
+  });
+
+  it("returns nothing once every pre-cutover cycle is already confirmed", () => {
+    const r = makeRecurring({ id: "r1", amount: 750, totalAmount: 1500, startDate: "2026-01-01", confirmCutoverDate: "2026-03-01" });
+    const tx = (date: string): StoredTransaction => ({ id: `t-${date}`, amount: 750, currency: "USD", bucket: "NEEDS", description: "Uni", date, recurringId: "r1", cycleDate: date });
+    expect(pendingBackfillCycles(r, [tx("2026-01-01"), tx("2026-02-01")])).toEqual([]);
+  });
+
+  it("integration: backfilling a listed cycle via buildRecurringConfirmLog removes it from the pending list and makes recurringPaidSoFar count it -- the full 2.4.31 fix, end to end", () => {
+    const r = makeRecurring({ id: "r1", amount: 750, totalAmount: 6750, startDate: "2026-01-01", confirmCutoverDate: "2026-04-01" });
+    expect(recurringPaidSoFar(r, [])).toBe(0);
+    const pending = pendingBackfillCycles(r, []);
+    expect(pending.length).toBe(3);
+    const { tx } = buildRecurringConfirmLog(r, 89500, pending[0]); // backfill Jan 1
+    expect(tx.date).toBe("2026-01-01"); // dated to its own historical due date, not today
+    expect(tx.cycleDate).toBe("2026-01-01");
+    const afterBackfill = [tx];
+    expect(pendingBackfillCycles(r, afterBackfill).length).toBe(2); // Jan no longer pending
+    expect(recurringPaidSoFar(r, afterBackfill)).toBe(750); // and now counts toward the cap
   });
 });
 

@@ -7,7 +7,7 @@ import type {
 } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, recurringPaidSoFar, toUSD as toUSDShared, withRate, buildGoalContributionTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
+import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, recurringPaidSoFar, pendingBackfillCycles, toUSD as toUSDShared, withRate, buildGoalContributionTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY } from "./form/Primitives";
@@ -57,9 +57,13 @@ interface Props {
   loggingRecurringIds?: Set<string>;
   /** Recurring item ids that just finished confirming, briefly, before their target moves on to the next cycle (2.4.30, finding 3). */
   justConfirmedIds?: Set<string>;
+  /** Confirms one specific pre-cutover cycle (2.4.31 backfill) -- dated to that cycle's own historical due date, not today. */
+  onBackfillRecurring?: (recurringId: string, dueDate: Date) => void;
+  /** `${recurringId}:${dueISO}` keys whose backfill write is currently in flight. */
+  backfillingIds?: Set<string>;
 }
 
-export default function InputPanel({ financials, dashData, onChange, session, onConfirmRecurring, loggingRecurringIds, justConfirmedIds }: Props) {
+export default function InputPanel({ financials, dashData, onChange, session, onConfirmRecurring, loggingRecurringIds, justConfirmedIds, onBackfillRecurring, backfillingIds }: Props) {
   const T = useTheme();
   const BUCKETS: { value: Bucket; label: string; icon: string; color: string }[] = [
     { value: "NEEDS",   label: "Needs",   icon: "🏠", color: T.sky   },
@@ -194,6 +198,13 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   const [editTxPayMethod,  setEditTxPayMethod]  = useState<PaymentMethod>("cash");
   const [editTxPayNote,    setEditTxPayNote]    = useState("");
   const [editTxCardId,     setEditTxCardId]     = useState<string | null>(null);
+  // 2.4.32, finding 4c: undefined = never had a cycleDate (legacy or not
+  // recurring-sourced) -- nothing to show. A real string = still settles
+  // that cycle -- show it, offer Detach. null = already detached (this
+  // session's edit, or a previous one) -- nothing to show, matches
+  // undefined's UI treatment but is a distinct state isCycleConfirmed cares
+  // about (see its own comment).
+  const [editTxCycleDate,  setEditTxCycleDate]  = useState<string | null | undefined>(undefined);
 
   // ── helpers ────────────────────────────────────────────────────── //
 
@@ -522,6 +533,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     setEditTxDesc(tx.description); setEditTxDate(tx.date);
     setEditTxBucket(tx.bucket); setEditTxCategory(tx.category ?? ""); setEditTxCurrency(tx.currency ?? "USD");
     setEditTxPayMethod(tx.paymentMethod ?? "cash"); setEditTxPayNote(tx.paymentNote ?? ""); setEditTxCardId(tx.cardId ?? null);
+    setEditTxCycleDate(tx.cycleDate);
   }
   function saveEditTx(txId: string) {
     const amt = parseFloat(editTxAmt.replace(/,/g, ""));
@@ -549,6 +561,11 @@ export default function InputPanel({ financials, dashData, onChange, session, on
         paymentMethod: editTxPayMethod,
         paymentNote: editTxPayMethod === "other" && editTxPayNote.trim() ? editTxPayNote.trim() : undefined,
         cardId, cardLabel,
+        // Explicit, not implicitly preserved by the spread above -- this is
+        // what lets the Detach button (2.4.32, finding 4c) actually write
+        // `null`. Unchanged for every edit that doesn't touch it, since
+        // editTxCycleDate is seeded from tx.cycleDate in startEditTx.
+        cycleDate: editTxCycleDate,
       }),
     });
     setEditTxId(null);
@@ -1066,6 +1083,22 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                               <FocusInput value={editTxPayNote} onChange={(e) => setEditTxPayNote(e.target.value)} placeholder="Who paid or how?" />
                             )}
                           </div>
+                          {editTxCycleDate && (
+                            <div className="rounded-lg px-2.5 py-2 flex items-center justify-between gap-2" style={{ background: T.ink, border: `1px solid ${T.line}` }}>
+                              <p className="text-[10px]" style={{ color: T.mute }}>
+                                Settles: <span style={{ color: T.text }}>{financials.recurring?.find((r) => r.id === tx.recurringId)?.name ?? "a deleted recurring item"}</span> · {fmtDate(editTxCycleDate)}
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => setEditTxCycleDate(null)}
+                                aria-label="Detach this transaction from its recurring cycle"
+                                className="text-[10px] font-semibold px-2 py-1 rounded-lg transition-all hover:opacity-80 flex-shrink-0"
+                                style={{ color: T.coral, border: `1px solid ${T.coral}40` }}
+                              >
+                                Detach
+                              </button>
+                            </div>
+                          )}
                           <div className="flex gap-2">
                             <button onClick={() => saveEditTx(tx.id)} className="px-3 py-1.5 rounded-xl text-xs font-semibold hover:opacity-90" style={{ background: T.jade, color: T.ink }}>Save</button>
                             <button onClick={() => setEditTxId(null)} className="px-3 py-1.5 rounded-xl text-xs hover:opacity-70" style={{ color: T.mute }}>Cancel</button>
@@ -1255,6 +1288,22 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                                       <FocusInput value={editTxPayNote} onChange={(e) => setEditTxPayNote(e.target.value)} placeholder="Who paid or how?" />
                                     )}
                                   </div>
+                                  {editTxCycleDate && (
+                                    <div className="rounded-lg px-2.5 py-2 flex items-center justify-between gap-2" style={{ background: T.ink, border: `1px solid ${T.line}` }}>
+                                      <p className="text-[10px]" style={{ color: T.mute }}>
+                                        Settles: <span style={{ color: T.text }}>{financials.recurring?.find((r) => r.id === tx.recurringId)?.name ?? "a deleted recurring item"}</span> · {fmtDate(editTxCycleDate)}
+                                      </p>
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditTxCycleDate(null)}
+                                        aria-label="Detach this transaction from its recurring cycle"
+                                        className="text-[10px] font-semibold px-2 py-1 rounded-lg transition-all hover:opacity-80 flex-shrink-0"
+                                        style={{ color: T.coral, border: `1px solid ${T.coral}40` }}
+                                      >
+                                        Detach
+                                      </button>
+                                    </div>
+                                  )}
                                   <div className="flex gap-2">
                                     <button onClick={() => saveEditTx(tx.id)} className="px-3 py-1.5 rounded-lg text-xs font-semibold hover:opacity-90" style={{ background: T.jade, color: T.ink }}>Save</button>
                                     <button onClick={() => setEditTxId(null)} className="px-3 py-1.5 rounded-lg text-xs hover:opacity-70" style={{ color: T.mute }}>Cancel</button>
@@ -1498,7 +1547,8 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                       const overdue = (target?.overdueCount ?? 0) > 0;
                       // Covers both "confirmed on time" and "confirmed early" (paid ahead of its due date) -- either way still shown as paid.
                       const paidThisCycle = target ? isCycleConfirmed(r, target.dueDate, financials.transactions) : false;
-                      const paid   = r.totalAmount ? recurringPaidSoFar(r, financials.transactions, now) : null;
+                      const paid   = r.totalAmount ? recurringPaidSoFar(r, financials.transactions) : null;
+                      const pendingBackfill = pendingBackfillCycles(r, financials.transactions);
                       const pct    = paid != null && r.totalAmount ? Math.min(100, (paid / r.totalAmount) * 100) : null;
                       const isAddingExtra = extraRecId === r.id;
                       const isEditingRec  = editRecId === r.id;
@@ -1590,6 +1640,34 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                                 <button onClick={() => saveEditRec(r.id)} className="px-3 py-1.5 rounded-xl text-xs font-semibold hover:opacity-90" style={{ background: T.jade, color: T.ink }}>Save</button>
                                 <button onClick={() => setEditRecId(null)} className="px-3 py-1.5 rounded-xl text-xs hover:opacity-70" style={{ color: T.mute }}>Cancel</button>
                               </div>
+                              {pendingBackfill.length > 0 && onBackfillRecurring && (
+                                <div className="pt-2 space-y-1.5" style={{ borderTop: `1px solid ${T.line}` }}>
+                                  <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.brass }}>
+                                    Pre-migration cycles
+                                  </p>
+                                  <p className="text-[10px]" style={{ color: T.mute }}>
+                                    From before this item started requiring confirmation. Not assumed paid -- mark any you actually paid.
+                                  </p>
+                                  {pendingBackfill.map((cycleDate) => {
+                                    const cycleISO = cycleDate.toISOString().slice(0, 10);
+                                    const key = `${r.id}:${cycleISO}`;
+                                    const inFlight = backfillingIds?.has(key);
+                                    return (
+                                      <div key={cycleISO} className="flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5" style={{ background: T.ink }}>
+                                        <span className="text-[11px]" style={{ color: T.text }}>{fmtDate(cycleISO)}</span>
+                                        <button
+                                          onClick={() => onBackfillRecurring(r.id, cycleDate)}
+                                          disabled={inFlight}
+                                          className="text-[10px] font-semibold px-2 py-1 rounded-lg transition-all hover:opacity-80 disabled:opacity-40 disabled:hover:opacity-40"
+                                          style={{ background: T.jade + "22", color: T.jade }}
+                                        >
+                                          {inFlight ? "Confirming…" : "Confirm"}
+                                        </button>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
                             </div>
                           ) : (
                           <div
