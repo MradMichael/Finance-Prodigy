@@ -102,7 +102,7 @@ describe("net worth tiers", () => {
     const data = makeData({
       income: 3000,
       emergencyFundBalance: assets,
-      debts: debtBalance > 0 ? [{ id: "d1", name: "Loan", balance: debtBalance, apr: 10, minPayment: 100, currency: "USD", createdAt: NOW.toISOString() }] : [],
+      debts: debtBalance > 0 ? [{ id: "d1", name: "Loan", balance: debtBalance, apr: 10, minPayment: 100, currency: "USD", createdAt: NOW.toISOString(), openingBalance: debtBalance }] : [],
     });
     const result = computeDashboard(data);
     expect(result.netWorth.tier).toBe(expectedTier);
@@ -146,7 +146,7 @@ describe("computeHoldingsByCurrency (CurrencyScreen's exposure figure)", () => {
   });
 
   it("debts are never counted, regardless of currency -- a liability isn't exposure the way an asset is", () => {
-    const lbpDebt = { id: "d1", name: "LBP loan", balance: 8_950_000, apr: 5, minPayment: 100000, currency: "LBP" as const, createdAt: NOW.toISOString() };
+    const lbpDebt = { id: "d1", name: "LBP loan", balance: 8_950_000, apr: 5, minPayment: 100000, currency: "LBP" as const, createdAt: NOW.toISOString(), openingBalance: 8_950_000 };
     const data = makeData({ debts: [lbpDebt] });
     const { usdAssets, lbpAssets, holdingsTotalUSD } = computeHoldingsByCurrency(data, 89500);
     expect(usdAssets).toBe(0);
@@ -250,7 +250,7 @@ describe("debt plan", () => {
   it("is infeasible when the monthly commitment doesn't cover interest", () => {
     const data = makeData({
       income: 100, // tiny income -> tiny/no extra payment
-      debts: [{ id: "d1", name: "Huge APR loan", balance: 10000, apr: 99, minPayment: 1, currency: "USD", createdAt: NOW.toISOString() }],
+      debts: [{ id: "d1", name: "Huge APR loan", balance: 10000, apr: 99, minPayment: 1, currency: "USD", createdAt: NOW.toISOString(), openingBalance: 10000 }],
     });
     const result = computeDashboard(data);
     expect(result.debt.plan?.feasible).toBe(false);
@@ -261,8 +261,8 @@ describe("debt plan", () => {
     const data = makeData({
       income: 5000,
       debts: [
-        { id: "d1", name: "Card A", balance: 2000, apr: 24, minPayment: 50, currency: "USD", createdAt: NOW.toISOString() },
-        { id: "d2", name: "Card B", balance: 500, apr: 8, minPayment: 20, currency: "USD", createdAt: NOW.toISOString() },
+        { id: "d1", name: "Card A", balance: 2000, apr: 24, minPayment: 50, currency: "USD", createdAt: NOW.toISOString(), openingBalance: 2000 },
+        { id: "d2", name: "Card B", balance: 500, apr: 8, minPayment: 20, currency: "USD", createdAt: NOW.toISOString(), openingBalance: 500 },
       ],
     });
     const result = computeDashboard(data);
@@ -638,8 +638,8 @@ describe("paid-off debts don't inflate ongoing debt pressure", () => {
     const withPaidOffDebt = makeData({
       income: 1000,
       debts: [
-        { id: "d1", name: "Active loan", balance: 500, apr: 10, minPayment: 100, currency: "USD", createdAt: "2026-01-01T00:00:00.000Z" },
-        { id: "d2", name: "Paid off card", balance: 0, apr: 20, minPayment: 200, currency: "USD", createdAt: "2026-01-01T00:00:00.000Z", paidOffAt: "2026-06-01T00:00:00.000Z" },
+        { id: "d1", name: "Active loan", balance: 500, apr: 10, minPayment: 100, currency: "USD", createdAt: "2026-01-01T00:00:00.000Z", openingBalance: 500 },
+        { id: "d2", name: "Paid off card", balance: 0, apr: 20, minPayment: 200, currency: "USD", createdAt: "2026-01-01T00:00:00.000Z", paidOffAt: "2026-06-01T00:00:00.000Z", openingBalance: 300 },
       ],
     });
     const result = computeDashboard(withPaidOffDebt);
@@ -1070,7 +1070,7 @@ describe("alerts", () => {
     // rather than depending on exactly how much of a positive cash flow
     // gets auto-allocated toward debt.
     const data = makeData({
-      debts: [{ id: "d1", name: "Card", balance: 5000, apr: 29, minPayment: 0, currency: "USD", createdAt: "2026-01-01T00:00:00.000Z" }],
+      debts: [{ id: "d1", name: "Card", balance: 5000, apr: 29, minPayment: 0, currency: "USD", createdAt: "2026-01-01T00:00:00.000Z", openingBalance: 5000 }],
     });
     const result = computeDashboard(data);
     const debtAlert = result.alerts.find((a) => a.id === "debt-infeasible");

@@ -62,6 +62,35 @@ export interface StoredTransaction {
   // NOT fall back to `date` in that case -- undefined means "never had one
   // to begin with," null means "had one, no longer does."
   cycleDate?: string | null;
+  // Added in schema v4 (Phase 2.6.1) -- when this record was actually
+  // ENTERED, separate from `date` ("when it happened"). Absent on every
+  // transaction that predates this field, and never backfilled by
+  // migration -- there's no real value to recover for a pre-existing
+  // transaction, and stamping one with "today" would misrepresent when it
+  // was actually entered. Only ever set going forward, at creation.
+  createdAt?: string;
+  // Added in schema v4 (Phase 2.6.1) -- soft-delete tombstone. "Delete
+  // transaction" stamps this instead of removing the row; every normal
+  // read (spend totals, lists, derived balances) is meant to filter
+  // `deletedAt == null` once 2.6.3 wires that in. Absent means active.
+  // Closes the "delete-and-redo is the only correction path, and it's
+  // destructive" gap 2.4.27 found.
+  deletedAt?: string;
+  // Added in schema v4 (Phase 2.6.1) -- links this transaction to the
+  // StoredDebt it paid down, for derivedDebtBalance (2.6.2). v1 keeps it
+  // simple: the transaction's full `amount` applies to that one debt; a
+  // payment split across multiple debts is two transactions, same pattern
+  // already recommended for the dual-currency-single-transaction backlog
+  // item (docs/ROADMAP.md).
+  debtId?: string;
+  // Added in schema v4 (Phase 2.6.1) -- signed: positive means this
+  // transaction also added to the emergency fund, negative means it also
+  // drew from it, for derivedEfBalance (2.6.2). Deliberately independent
+  // of `amount`/`debtId` -- `|efAmount|` can be LESS than `amount`, which
+  // is what makes "$300 of this $325 payment came from EF" representable
+  // on one real transaction instead of forcing a choice (2.4.27's exact
+  // bug).
+  efAmount?: number;
 }
 
 export interface StoredGoal {
@@ -153,6 +182,14 @@ export interface StoredDebt {
   createdAt: string;     // ISO — when added to ESSA
   openedDate?: string;   // YYYY-MM-DD — when the debt was originally opened
   paidOffAt?: string;    // ISO — when balance reached 0
+  // Added in schema v4 (Phase 2.6.1) -- required, same reasoning as
+  // `currency` above: once migrated (or created fresh), every debt has
+  // one, so derivedDebtBalance (2.6.2) can read it without a fallback.
+  // The real starting point derivedDebtBalance builds from: this value
+  // minus every linked (debtId-matching) transaction since. Migration
+  // snapshots the CURRENT `balance` into this, once, non-clobbering --
+  // nothing retroactive, the balance a user already saw doesn't change.
+  openingBalance: number;
 }
 
 export type RecurringFrequency =
@@ -348,6 +385,12 @@ export interface LocalFinancials {
   lbpRate: number;
   emergencyFundTargetMonths: number;
   emergencyFundBalance: number;
+  // Added in schema v4 (Phase 2.6.1) -- required, same reasoning as
+  // StoredDebt.openingBalance above. The real starting point
+  // derivedEfBalance (2.6.2) builds from: this value plus every
+  // transaction's `efAmount` since. Migration snapshots the CURRENT
+  // emergencyFundBalance into this, once, non-clobbering.
+  emergencyFundOpeningBalance: number;
   transactions: StoredTransaction[];
   goals: StoredGoal[];
   debts: StoredDebt[];
@@ -379,8 +422,10 @@ export interface LocalFinancials {
 
 // Bumped whenever a stored-shape migration step is added to MIGRATIONS
 // below. v2 (docs/ROADMAP.md Phase 1.2) adds currency to Goal/Debt and a
-// captured lbpRateAtEntry to every LBP-currency record.
-export const CURRENT_SCHEMA_VERSION = 3;
+// captured lbpRateAtEntry to every LBP-currency record. v3 (Phase 2.5.1)
+// adds confirmCutoverDate to recurring items. v4 (Phase 2.6.1) adds
+// emergencyFundOpeningBalance and StoredDebt.openingBalance.
+export const CURRENT_SCHEMA_VERSION = 4;
 
 // The reference rate a new account starts with, and the fallback used
 // anywhere financials.lbpRate is momentarily absent. Single source of
@@ -394,6 +439,7 @@ export const DEFAULT_DATA: LocalFinancials = {
   lbpRate: DEFAULT_LBP_RATE,
   emergencyFundTargetMonths: 6,
   emergencyFundBalance: 0,
+  emergencyFundOpeningBalance: 0,
   transactions: [],
   goals: [],
   debts: [],
@@ -509,10 +555,39 @@ function addRecurringConfirmModel(d: LocalFinancials): LocalFinancials {
   };
 }
 
+/**
+ * v3 -> v4 (Phase 2.6.1 -- data model only, nothing reads these yet).
+ * Snapshots the current emergencyFundBalance and each debt's current
+ * balance into new opening-balance fields -- the real starting point
+ * sub-phase 2.6.2's derivation functions (derivedEfBalance/
+ * derivedDebtBalance) will build from. Non-clobbering, same idiom as every
+ * migration step above: a record that already has
+ * emergencyFundOpeningBalance/a debt's openingBalance (a second migration
+ * pass, or a device that already migrated) passes through untouched.
+ *
+ * StoredTransaction's new createdAt/deletedAt/debtId/efAmount fields need
+ * NO migration action at all -- unlike an opening balance, there's no
+ * historical value to snapshot for them (the app has never tracked which
+ * past transaction represented a debt payment or an EF movement), so they
+ * simply stay absent on every pre-existing transaction, exactly like
+ * cycleDate stayed absent on transactions confirmed before IT existed.
+ * They only ever get set going forward, once 2.6.3 wires the new
+ * transaction-creation paths that populate them.
+ */
+function addLedgerDerivedFields(d: LocalFinancials): LocalFinancials {
+  return {
+    ...d,
+    schemaVersion: 4,
+    emergencyFundOpeningBalance: d.emergencyFundOpeningBalance ?? d.emergencyFundBalance,
+    debts: d.debts.map((deb) => ({ ...deb, openingBalance: deb.openingBalance ?? deb.balance })),
+  };
+}
+
 const MIGRATIONS: { fromVersion: number; migrate: (d: LocalFinancials) => LocalFinancials }[] = [
   { fromVersion: 0, migrate: (d) => ({ ...d, schemaVersion: 1 }) },
   { fromVersion: 1, migrate: addCurrencyAndRate },
   { fromVersion: 2, migrate: addRecurringConfirmModel },
+  { fromVersion: 3, migrate: addLedgerDerivedFields },
 ];
 
 /** Reads the schema version off a raw, not-yet-migrated value -- treats a
@@ -538,6 +613,20 @@ export function schemaVersionOf(raw: unknown): number {
  * current one the instant the merge ran, defeating the whole point of the
  * marker.
  *
+ * Same reasoning applies to `emergencyFundOpeningBalance` (Phase 2.6.1) --
+ * the first new field this chain has ever added directly on LocalFinancials
+ * itself, rather than on a nested array element (StoredGoal.currency,
+ * StoredRecurring.confirmCutoverDate). A nested element's own missing field
+ * survives the DEFAULT_DATA merge below untouched (DEFAULT_DATA.debts is
+ * `[]`, so the merge takes `input.debts` wholesale, never reaching inside
+ * individual debt objects) -- but a TOP-LEVEL field doesn't: merging
+ * DEFAULT_DATA.emergencyFundOpeningBalance (0, correct for a brand-new
+ * account) in first would make a genuinely-old record that never had this
+ * field indistinguishable from one that legitimately has a real opening
+ * balance of exactly 0, defeating addLedgerDerivedFields' own non-clobber
+ * check the exact same way an eager schemaVersion merge would defeat this
+ * function's own version check. Read before defaulting, for the same reason.
+ *
  * `migrations` defaults to the real MIGRATIONS table above; every
  * production call site relies on that default and never passes its own.
  * The parameter exists so a test can supply a synthetic multi-step chain
@@ -548,12 +637,24 @@ export function schemaVersionOf(raw: unknown): number {
 export function migrateFinancials(raw: unknown, migrations: typeof MIGRATIONS = MIGRATIONS): LocalFinancials {
   const input = (raw && typeof raw === "object" ? raw : {}) as Partial<LocalFinancials>;
   const rawVersion = schemaVersionOf(raw);
+  const rawEfOpening = input.emergencyFundOpeningBalance;
 
-  let data: LocalFinancials = { ...DEFAULT_DATA, ...input, schemaVersion: rawVersion };
+  let data: LocalFinancials = {
+    ...DEFAULT_DATA, ...input, schemaVersion: rawVersion,
+    emergencyFundOpeningBalance: rawEfOpening as number, // may be genuinely undefined here -- resolved below, by the end of this function, either via addLedgerDerivedFields or the final fallback
+  };
   for (const step of migrations) {
     if (data.schemaVersion === step.fromVersion) data = step.migrate(data);
   }
-  return { ...data, schemaVersion: CURRENT_SCHEMA_VERSION };
+  return {
+    ...data, schemaVersion: CURRENT_SCHEMA_VERSION,
+    // Safety net, not the primary mechanism: addLedgerDerivedFields already
+    // resolves this for anything that actually walks through v3->v4. Only
+    // matters for a malformed record that somehow claims >= v4 while still
+    // missing the field -- shouldn't happen in practice, but the type
+    // promises a real number, not undefined.
+    emergencyFundOpeningBalance: data.emergencyFundOpeningBalance ?? data.emergencyFundBalance,
+  };
 }
 
 /** True when an account has literally nothing entered yet (fresh sign-up defaults) — used to gate the one-time auto-pull-on-first-load in app/page.tsx so it only ever fires for a genuinely blank local account, never silently overwriting real local data. */
