@@ -300,9 +300,10 @@ export default function InputPanel({ financials, dashData, onChange, session, on
 
   function addDebt() {
     if (!dName.trim() || !dBalance) return;
+    const balance = parseFloat(dBalance.replace(/,/g, ""));
     const debt: StoredDebt = {
       id: uid(), name: dName.trim(),
-      balance: parseFloat(dBalance.replace(/,/g, "")),
+      balance,
       apr: Math.max(0, parseFloat(dApr) || 0),
       minPayment: parseFloat(dMin.replace(/,/g, "")) || 0,
       // Same reasoning as addGoal's currency field -- see its comment.
@@ -310,6 +311,9 @@ export default function InputPanel({ financials, dashData, onChange, session, on
       ...withRate(dCurrency, financials.lbpRate ?? DEFAULT_LBP_RATE),
       createdAt: new Date().toISOString(),
       ...(dOpenedDate ? { openedDate: dOpenedDate } : {}),
+      // Phase 2.6.1 -- a brand-new debt has no history yet, so its own
+      // starting balance IS its opening balance, trivially.
+      openingBalance: balance,
     };
     update({ debts: [...financials.debts, debt] });
     setDName(""); setDBalance(""); setDApr(""); setDMin(""); setDOpenedDate(""); setDCurrency("USD");

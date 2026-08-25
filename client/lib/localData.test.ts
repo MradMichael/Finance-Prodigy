@@ -1137,8 +1137,11 @@ describe("migrateFinancials", () => {
       { id: "g2", name: "Paused Goal", emoji: "🎯", targetAmount: 1000, currentAmount: 0, targetDate: "2027-06-01", createdAt: "2026-02-01T00:00:00.000Z", pausedAt: "2026-07-01T00:00:00.000Z", currency: "USD" },
     ]);
     expect(migrated.debts).toEqual([
-      { id: "d1", name: "Loan", balance: 1500, apr: 0, minPayment: 0, createdAt: "2026-01-01T00:00:00.000Z", openedDate: "2026-01-01", currency: "USD" },
+      { id: "d1", name: "Loan", balance: 1500, apr: 0, minPayment: 0, createdAt: "2026-01-01T00:00:00.000Z", openedDate: "2026-01-01", currency: "USD", openingBalance: 1500 },
     ]);
+    // Phase 2.6.1 (v3 -> v4): emergencyFundOpeningBalance snapshotted from
+    // the fixture's own emergencyFundBalance (500).
+    expect(migrated.emergencyFundOpeningBalance).toBe(500);
 
     // Transactions: the LBP one (t2) gets lbpRateAtEntry backfilled from
     // valueForMonth(lbpRateHistory, "2026-08", lbpRate) -- the fixture's
@@ -1221,6 +1224,48 @@ describe("migrateFinancials", () => {
     };
     const migrated = migrateFinancials(withExistingCutover);
     expect(migrated.recurring[0].confirmCutoverDate).toBe("2025-06-15"); // not overwritten to today
+  });
+
+  it("v3 -> v4 (Phase 2.6.1): emergencyFundOpeningBalance and every debt's openingBalance are snapshotted from their current values, nothing else changes", () => {
+    const v3 = { ...legacyFixture(), schemaVersion: 3 };
+    const migrated = migrateFinancials(v3);
+    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated.emergencyFundOpeningBalance).toBe(500); // legacyFixture's emergencyFundBalance
+    // Field-specific, not a full toEqual -- this fixture is artificially
+    // relabeled schemaVersion:3 (skipping v1->v2's currency backfill, which
+    // a genuine v3 record would already have gone through), so only the
+    // field this migration step itself is responsible for is asserted.
+    expect(migrated.debts[0].id).toBe("d1");
+    expect(migrated.debts[0].balance).toBe(1500);
+    expect(migrated.debts[0].openingBalance).toBe(1500);
+    // StoredTransaction's new fields (createdAt/deletedAt/debtId/efAmount)
+    // get NO migration action -- unlike an opening balance, there's no
+    // historical value to recover for a pre-existing transaction.
+    for (const t of migrated.transactions) {
+      expect(t.createdAt).toBeUndefined();
+      expect(t.deletedAt).toBeUndefined();
+      expect(t.debtId).toBeUndefined();
+      expect(t.efAmount).toBeUndefined();
+    }
+  });
+
+  it("does not overwrite emergencyFundOpeningBalance or a debt's openingBalance that's already set -- idempotent, and correct for a device migrating a second time", () => {
+    const withExistingOpening: Record<string, unknown> = {
+      ...legacyFixture(),
+      emergencyFundBalance: 900, // current balance has since moved...
+      emergencyFundOpeningBalance: 500, // ...but the real opening snapshot must not be re-taken from the new current value
+      debts: [{ id: "d9", name: "Already migrated", balance: 800, apr: 0, minPayment: 0, createdAt: "2026-01-01T00:00:00.000Z", currency: "USD", openingBalance: 1500 }],
+    };
+    const migrated = migrateFinancials(withExistingOpening);
+    expect(migrated.emergencyFundOpeningBalance).toBe(500); // not reset to the current 900
+    expect(migrated.debts[0].openingBalance).toBe(1500); // not reset to the current 800
+  });
+
+  it("running the v3 -> v4 migration twice over the same fixture produces identical output (idempotent)", () => {
+    const v3 = { ...legacyFixture(), schemaVersion: 3 };
+    const once = migrateFinancials(v3);
+    const twice = migrateFinancials(once);
+    expect(twice).toEqual(once);
   });
 
   it("a recurring item created fresh (no schemaVersion migration involved -- already at CURRENT_SCHEMA_VERSION) never gets a confirmCutoverDate: there's no history to grandfather", () => {
