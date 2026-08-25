@@ -1322,3 +1322,64 @@ export function buildGoalContributionTx(goal: StoredGoal, amount: number, lbpRat
     ...withRate(goal.currency, lbpRate),
   };
 }
+
+// ── Phase 2.6.2 -- ledger-derived EF/debt balances (pure logic, shipped
+// completely unwired; see docs/ROADMAP.md Phase 2.6). No caller anywhere
+// in the app uses these yet -- `emergencyFundBalance`/`debt.balance`
+// remain the live, mutated fields until 2.6.3 flips every reader/writer
+// over together, same discipline as 2.5.2's own pure functions shipping
+// unwired before 2.5.3's flip. Proven correct in isolation now, against
+// the owner's real 2.4.27 scenario, rather than debugged live while the
+// flip is also in flight. ──────────────────────────────────────────────
+
+/**
+ * The emergency fund balance, derived instead of stored-and-mutated
+ * (2.4.27/2.4.31's own root fix, applied to EF/debt): opening balance plus
+ * every non-deleted transaction's `efAmount` since. Replaces
+ * `emergencyFundBalance` once 2.6.3 wires this in -- until then, this
+ * function has no callers.
+ *
+ * `efAmount` is always USD-terms, matching `emergencyFundBalance`/
+ * `emergencyFundOpeningBalance`'s own currency-less, implicitly-USD
+ * nature (neither has ever had a `currency` field, unlike goals/debts
+ * since Phase 1.2) -- an LBP transaction's `efAmount` must already be
+ * converted to USD by whatever sets it (2.6.3's transaction-creation
+ * code), the same way `InputPanel.tsx`'s current `txAddToEF` computes
+ * `amtUSD` before touching the old field. This function does no
+ * conversion itself; it trusts the value it's given.
+ *
+ * Soft-deleted transactions (`deletedAt` set) are excluded -- exactly
+ * what makes editing/deleting a transaction require no special reversal
+ * logic anywhere once this is wired in: the derived balance just
+ * recomputes fresh from whatever the transaction list now says.
+ */
+export function derivedEfBalance(data: LocalFinancials): number {
+  const contributions = data.transactions
+    .filter((t) => t.deletedAt == null && t.efAmount != null)
+    .reduce((s, t) => s + (t.efAmount as number), 0);
+  return roundMoney(data.emergencyFundOpeningBalance + contributions);
+}
+
+/**
+ * A single debt's balance, derived instead of stored-and-mutated: opening
+ * balance minus every non-deleted transaction whose `debtId` matches this
+ * debt, summed by its own `amount`. Replaces `debt.balance` once 2.6.3
+ * wires this in -- until then, this function has no callers.
+ *
+ * v1 keeps it simple, matching `docs/ROADMAP.md`'s own scope note: a
+ * linked transaction's `amount` is assumed to already be in the debt's
+ * own currency -- no conversion, same way a payment split across
+ * multiple debts is two transactions rather than one transaction split
+ * across two debts. Clamped at 0, matching the existing (pre-2.6)
+ * `recordDebtPayment`'s own `Math.max(0, ...)` -- an overpayment doesn't
+ * produce a negative debt once this is wired in, same as it doesn't today.
+ *
+ * Soft-deleted transactions are excluded, same reasoning as
+ * derivedEfBalance above.
+ */
+export function derivedDebtBalance(debt: StoredDebt, transactions: StoredTransaction[]): number {
+  const paid = transactions
+    .filter((t) => t.debtId === debt.id && t.deletedAt == null)
+    .reduce((s, t) => s + t.amount, 0);
+  return roundMoney(Math.max(0, debt.openingBalance - paid));
+}
