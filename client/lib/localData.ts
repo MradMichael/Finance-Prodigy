@@ -43,14 +43,20 @@ export interface StoredTransaction {
   cardLabel?: string;
   // Set only when this transaction was created by confirming a recurring
   // item's due cycle (Phase 2.5) -- links back to the StoredRecurring.id it
-  // confirms. This is the single source of truth for "was cycle X of this
-  // recurring item ever confirmed": a transaction with this field set and a
-  // `date` falling in that cycle IS the confirmation, nothing else tracks
-  // it separately. Absent for every other transaction (manual entries,
-  // goal contributions, "+extra" recurring payments -- see
+  // confirms. Absent for every other transaction (manual entries, goal
+  // contributions, "+extra" recurring payments -- see
   // buildGoalContributionTx/InputPanel's logExtraPayment for why those stay
   // unlinked: they're additive, not a cycle's own settlement).
   recurringId?: string;
+  // Which cycle this confirms -- the due date, not necessarily this
+  // transaction's own `date` (2.4.30, finding A). `date` is the real
+  // payment date (defaults to the due date, editable to record a late
+  // payment correctly); `cycleDate` is fixed at confirm time and is what
+  // isCycleConfirmed actually matches against, so cycle-tracking can't
+  // drift just because a bill was paid a few days late. Only ever set
+  // alongside recurringId. Absent on transactions confirmed before this
+  // field existed -- isCycleConfirmed falls back to `date` for those.
+  cycleDate?: string;
 }
 
 export interface StoredGoal {
@@ -919,6 +925,14 @@ export function nextOccurrence(r: StoredRecurring, asOf: Date = new Date()): Dat
  * amount cap itself is stripped from the `dueCycles` call below because
  * enforcing it there would just reintroduce the same bug from the other
  * side -- the cap is enforced once, explicitly, via the final Math.min.
+ *
+ * `confirmedSum` counts every confirmed transaction regardless of its own
+ * date (2.4.30) -- deliberately not `<= asOf`. A cycle confirmed early
+ * (before its due date) is genuinely paid; excluding it here understated
+ * "paid so far" for anyone who pays ahead, and worse, let the SAME item's
+ * own cap check (nextConfirmTarget, below) miss real confirmed amounts and
+ * keep offering cycles past what totalAmount actually allows -- the same
+ * blind spot that let repeat confirms silently exceed the cap.
  */
 export function recurringPaidSoFar(r: StoredRecurring, transactions: StoredTransaction[], asOf: Date = new Date()): number {
   if (!r.totalAmount || r.amount <= 0) return 0;
@@ -930,7 +944,7 @@ export function recurringPaidSoFar(r: StoredRecurring, transactions: StoredTrans
     ? dueCycles(uncapped, start, cutover < asOf ? cutover : asOf).filter((d) => d < cutover).length
     : 0;
   const confirmedSum = transactions
-    .filter((t) => t.recurringId === r.id && new Date(t.date) <= asOf)
+    .filter((t) => t.recurringId === r.id)
     .reduce((s, t) => s + t.amount, 0);
   return Math.min(r.totalAmount, grandfatheredCount * r.amount + confirmedSum);
 }
@@ -1028,11 +1042,15 @@ export function dueCycles(r: StoredRecurring, from: Date, to: Date): Date[] {
  * calendar month; keying by month would let confirming one silently also
  * "confirm" every other cycle sharing it, the same class of quiet
  * correctness gap this model exists to remove. `dueDate` is expected to be
- * the exact Date dueCycles/nextOccurrence produced for this cycle.
+ * the exact Date dueCycles/nextOccurrence produced for this cycle. Matches
+ * `cycleDate` when present (2.4.30, finding A -- `date` is the real payment
+ * date, which can differ from the cycle it confirms); falls back to `date`
+ * for transactions confirmed before `cycleDate` existed, where `date` was
+ * always the due date itself.
  */
 export function isCycleConfirmed(r: StoredRecurring, dueDate: Date, transactions: StoredTransaction[]): boolean {
   const dueISO = dueDate.toISOString().slice(0, 10);
-  return transactions.some((t) => t.recurringId === r.id && t.date === dueISO);
+  return transactions.some((t) => t.recurringId === r.id && (t.cycleDate ?? t.date) === dueISO);
 }
 
 /**
@@ -1067,16 +1085,22 @@ export function isCycleOverdue(r: StoredRecurring, dueDate: Date, asOf: Date, tr
  * date-to-due-date behavior and re-entrancy risk this reuses are the same
  * as buildRecurringPaymentLog's own (2.4.21's actual fix); the one
  * addition is recurringId, which is what isCycleConfirmed later looks for.
+ * `paidDate` (2.4.30, finding A) is the real payment date, defaulting to
+ * `dueDate` -- `date` on the built transaction is always `paidDate`, so
+ * every spend/budget/trend total reflects when the money actually moved;
+ * `cycleDate` is always `dueDate`, so isCycleConfirmed can't lose track of
+ * which cycle this is just because it was paid a few days late.
  */
-export function buildRecurringConfirmLog(r: StoredRecurring, lbpRate: number, dueDate: Date): { tx: StoredTransaction; cycleYm: string } {
+export function buildRecurringConfirmLog(r: StoredRecurring, lbpRate: number, dueDate: Date, paidDate: Date = dueDate): { tx: StoredTransaction; cycleYm: string } {
   const dueISO = dueDate.toISOString().slice(0, 10);
+  const paidISO = paidDate.toISOString().slice(0, 10);
   const cycleYm = dueISO.slice(0, 7);
   const tx: StoredTransaction = {
     id: uid(), amount: r.amount, currency: r.currency, bucket: r.bucket,
     ...(r.category ? { category: r.category } : {}),
     ...withRate(r.currency, lbpRate),
-    description: r.name, date: dueISO, paymentMethod: "cash",
-    recurringId: r.id,
+    description: r.name, date: paidISO, paymentMethod: "cash",
+    recurringId: r.id, cycleDate: dueISO,
   };
   return { tx, cycleYm };
 }
@@ -1095,6 +1119,17 @@ export function buildRecurringConfirmLog(r: StoredRecurring, lbpRate: number, du
  * against `recurringPaidSoFar`'s grandfathered+confirmed accounting.
  * `endDate` still bounds the walk; it's a real calendar fact, not a
  * payment-status question.
+ *
+ * The fallback branch below (2.4.30) must itself skip past any cycle
+ * that's already confirmed EARLY -- before its own due date. `dueCycles`
+ * (the overdue branch) can only ever return dates on/before `asOf`, so a
+ * cycle confirmed ahead of schedule never enters that branch at all and
+ * its confirmation is invisible to it; without this loop, nextOccurrence
+ * just recomputes the same future date every time, forever, regardless of
+ * how many times it's already been confirmed -- the exact mechanism that
+ * produced 3 duplicate transactions from 3 ordinary clicks in live use.
+ * A loop, not a single check: confirming several cycles ahead in a row
+ * must skip past all of them, not just the first.
  */
 export function nextConfirmTarget(r: StoredRecurring, transactions: StoredTransaction[], asOf: Date): { dueDate: Date; overdueCount: number } | null {
   if (r.totalAmount != null && r.totalAmount > 0 && recurringPaidSoFar(r, transactions, asOf) >= r.totalAmount) return null;
@@ -1102,7 +1137,10 @@ export function nextConfirmTarget(r: StoredRecurring, transactions: StoredTransa
   const from = new Date(r.confirmCutoverDate ?? r.startDate);
   const overdue = dueCycles(uncapped, from, asOf).filter((d) => isCycleOverdue(r, d, asOf, transactions));
   if (overdue.length > 0) return { dueDate: overdue[0], overdueCount: overdue.length }; // dueCycles is ascending -- FIFO falls out for free
-  const next = nextOccurrence(uncapped, asOf);
+  let next = nextOccurrence(uncapped, asOf);
+  for (let i = 0; next && isCycleConfirmed(r, next, transactions) && i < 5000; i++) {
+    next = nextOccurrence(uncapped, new Date(next.getTime() + 24 * 60 * 60 * 1000));
+  }
   return next ? { dueDate: next, overdueCount: 0 } : null;
 }
 

@@ -147,6 +147,13 @@ describe("recurringPaidSoFar", () => {
     const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "New item", date: "2026-02-01", recurringId: "r1" };
     expect(recurringPaidSoFar(r, [tx], utcMidnight(2026, 5, 1))).toBe(100); // only the one real confirmation, nothing grandfathered
   });
+
+  it("counts a confirmed transaction dated in the FUTURE relative to asOf -- paid-ahead money is genuinely paid and belongs against the cap (2.4.30 fix)", () => {
+    const r = makeRecurring({ id: "r1", amount: 750, totalAmount: 6750, startDate: "2026-01-01" }); // no cutover
+    const tx: StoredTransaction = { id: "t1", amount: 750, currency: "USD", bucket: "NEEDS", description: "Uni", date: "2026-09-01", recurringId: "r1" }; // confirmed early, dated in September
+    // asOf is August -- before the transaction's own date -- must still count, not be silently excluded.
+    expect(recurringPaidSoFar(r, [tx], utcMidnight(2026, 7, 25))).toBe(750);
+  });
 });
 
 describe("nextOccurrence", () => {
@@ -449,6 +456,16 @@ describe("isCycleConfirmed", () => {
     const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Unrelated", date: "2026-08-01" };
     expect(isCycleConfirmed(r, due, [tx])).toBe(false);
   });
+
+  it("matches on cycleDate when present, even if the transaction's own date (the actual paid date) differs -- paid late, still confirms the right cycle", () => {
+    const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-08-05", cycleDate: "2026-08-01", recurringId: "r1" };
+    expect(isCycleConfirmed(r, due, [tx])).toBe(true);
+  });
+
+  it("falls back to date when cycleDate is absent -- backward compatible with transactions confirmed before this field existed", () => {
+    const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-08-01", recurringId: "r1" };
+    expect(isCycleConfirmed(r, due, [tx])).toBe(true);
+  });
 });
 
 describe("isCycleOverdue", () => {
@@ -533,6 +550,23 @@ describe("buildRecurringConfirmLog", () => {
     const b = buildRecurringConfirmLog(r, RATE, utcMidnight(2026, 5, 1));
     expect(a.tx.id).not.toBe(b.tx.id);
   });
+
+  it("dates the transaction to the paid date when given, defaulting to the due date when not -- cycleDate always tracks the real cycle regardless (2.4.30 fix, finding A)", () => {
+    const r = makeRecurring({ amount: 500, startDate: "2026-01-01" });
+    const due = utcMidnight(2026, 7, 1); // Aug 1
+    const paidLate = utcMidnight(2026, 7, 5); // Aug 5
+    const result = buildRecurringConfirmLog(r, RATE, due, paidLate);
+    expect(result.tx.date).toBe("2026-08-05"); // the real payment date
+    expect(result.tx.cycleDate).toBe("2026-08-01"); // still the cycle it confirms
+  });
+
+  it("defaults paidDate to the due date when not given -- unchanged behavior for the common case", () => {
+    const r = makeRecurring({ amount: 500, startDate: "2026-01-01" });
+    const due = utcMidnight(2026, 7, 1);
+    const result = buildRecurringConfirmLog(r, RATE, due);
+    expect(result.tx.date).toBe("2026-08-01");
+    expect(result.tx.cycleDate).toBe("2026-08-01");
+  });
 });
 
 describe("historizedRecurringContribution", () => {
@@ -606,6 +640,29 @@ describe("nextConfirmTarget", () => {
     const r = makeRecurring({ id: "r1", amount: 100, startDate: "2026-01-01", endDate: "2026-01-31" }); // exactly one cycle, ever
     const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-01-01", recurringId: "r1" };
     expect(nextConfirmTarget(r, [tx], utcMidnight(2026, 2, 1))).toBeNull(); // Mar 1, well past endDate
+  });
+
+  it("BUG regression (2.4.30): confirming a cycle EARLY -- before its own due date -- must not be re-offered on the next call", () => {
+    const r = makeRecurring({ id: "r1", amount: 750, startDate: "2026-02-01" }); // no cutover
+    const asOf = utcMidnight(2026, 0, 25); // Jan 25 -- before the Feb 1 start/first cycle is even due
+    const first = nextConfirmTarget(r, [], asOf);
+    expect(first?.dueDate.toISOString().slice(0, 10)).toBe("2026-02-01"); // confirmable early, as designed
+    // Confirm it early -- a transaction dated to the cycle (Feb 1); asOf hasn't moved, still Jan 25,
+    // so this cycle is nowhere near "overdue" -- exactly the blind spot that produced 3 duplicate
+    // transactions in live use (the owner clicking Confirm on Uni in Renewing Soon).
+    const tx: StoredTransaction = { id: "t1", amount: 750, currency: "USD", bucket: "NEEDS", description: "Uni", date: "2026-02-01", recurringId: "r1" };
+    const second = nextConfirmTarget(r, [tx], asOf);
+    // Must advance to the NEXT cycle (Mar 1), not re-offer the one just confirmed.
+    expect(second?.dueDate.toISOString().slice(0, 10)).toBe("2026-03-01");
+  });
+
+  it("confirming several cycles ahead in a row advances past all of them, not just the first -- a loop, not a single check", () => {
+    const r = makeRecurring({ id: "r1", amount: 750, startDate: "2026-02-01" });
+    const asOf = utcMidnight(2026, 0, 25); // Jan 25
+    const tx1: StoredTransaction = { id: "t1", amount: 750, currency: "USD", bucket: "NEEDS", description: "Uni", date: "2026-02-01", recurringId: "r1" };
+    const tx2: StoredTransaction = { id: "t2", amount: 750, currency: "USD", bucket: "NEEDS", description: "Uni", date: "2026-03-01", recurringId: "r1" };
+    const result = nextConfirmTarget(r, [tx1, tx2], asOf);
+    expect(result?.dueDate.toISOString().slice(0, 10)).toBe("2026-04-01");
   });
 });
 
