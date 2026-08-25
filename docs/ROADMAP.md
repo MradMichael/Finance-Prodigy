@@ -147,7 +147,7 @@ The new model: a recurring item's due date prompts the user to confirm payment. 
 
 ## Phase 2.6 — Emergency fund and debt balances become ledger-derived
 
-**Status:** not started, design only (added 2026-08-25) · **Depends on:** Phase 2.5 · **Blocks:** Phase 2 (cohort launch) — recommended, see below · **Read-only design, no code written.**
+**Status:** in progress (updated 2026-08-25) · **Depends on:** Phase 2.5 · **Blocks:** Phase 2 (cohort launch) — recommended, see below. **2.6.1 (data model + migration) merged, live. 2.6.2 (`derivedEfBalance`/`derivedDebtBalance`, pure logic, shipped unwired) built, held for review, verified against the owner's real numbers. 2.6.3 (the flip) not started.**
 
 ### Context
 

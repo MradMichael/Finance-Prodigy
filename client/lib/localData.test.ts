@@ -2,13 +2,14 @@ import { describe, it, expect, vi } from "vitest";
 import {
   monthlyEquivalent, nominalMonthlyEquivalent, isRecurringActive, isPaidThisCycle,
   nextOccurrence, recurringPaidSoFar, buildRecurringPaymentLog, buildGoalContributionTx, fmtDate, valueForMonth,
-  loadData, saveData, DEFAULT_DATA, type StoredRecurring, type StoredGoal, type StoredTransaction,
+  loadData, saveData, DEFAULT_DATA, type StoredRecurring, type StoredGoal, type StoredTransaction, type StoredDebt,
   allCategories, categoryLabel, categoryIcon, CATEGORIES,
   matchCategoryRule, type CategoryRule,
   roundMoney, moneyEquals, isEmptyFinancials, type LocalFinancials,
   migrateFinancials, schemaVersionOf, withRate, CURRENT_SCHEMA_VERSION, todayISO,
   dueCycles, isCycleConfirmed, isCycleOverdue, buildRecurringConfirmLog,
   nextConfirmTarget, historizedRecurringContribution, pendingBackfillCycles,
+  derivedEfBalance, derivedDebtBalance,
 } from "./localData";
 
 // UTC midnight of a given local calendar date -- matches nextOccurrence's
@@ -1329,6 +1330,112 @@ describe("migrateFinancials", () => {
       const migrated = migrateFinancials(legacy, [realTransformStep]); // no bridge -- reproduces the original bug
       expect(migrated.userName).toBe("Test User"); // unchanged -- silently skipped
       expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION); // yet the stamp still lies, claiming current
+    });
+  });
+
+  describe("Phase 2.6.2 -- derivedEfBalance and derivedDebtBalance (pure derivation logic, shipped completely unwired, tests-first per Standing Rule 4)", () => {
+    function makeDebt(overrides: Partial<StoredDebt> = {}): StoredDebt {
+      return {
+        id: "d1", name: "Dad", balance: 2000, apr: 0, minPayment: 0, currency: "USD",
+        createdAt: "2026-01-01T00:00:00.000Z", openingBalance: 2000,
+        ...overrides,
+      };
+    }
+    function makeTx(overrides: Partial<StoredTransaction> = {}): StoredTransaction {
+      return {
+        id: "t1", amount: 100, currency: "USD", bucket: "NEEDS",
+        description: "Test", date: "2026-08-01",
+        ...overrides,
+      };
+    }
+
+    describe("derivedEfBalance", () => {
+      it("returns the opening balance unchanged when no transaction has an efAmount", () => {
+        const data = { ...DEFAULT_DATA, emergencyFundOpeningBalance: 900, transactions: [makeTx()] };
+        expect(derivedEfBalance(data)).toBe(900);
+      });
+
+      it("adds a positive efAmount (an EF contribution)", () => {
+        const data = { ...DEFAULT_DATA, emergencyFundOpeningBalance: 900, transactions: [makeTx({ efAmount: 200 })] };
+        expect(derivedEfBalance(data)).toBe(1100);
+      });
+
+      it("subtracts a negative efAmount (an EF draw) -- the exact 2.4.27 scenario: $300 of a $325 debt payment sourced from EF", () => {
+        const data = { ...DEFAULT_DATA, emergencyFundOpeningBalance: 900, transactions: [makeTx({ id: "t1", amount: 325, debtId: "d1", efAmount: -300 })] };
+        expect(derivedEfBalance(data)).toBe(600);
+      });
+
+      it("sums efAmount across multiple transactions, mixed sign", () => {
+        const data = {
+          ...DEFAULT_DATA, emergencyFundOpeningBalance: 500,
+          transactions: [makeTx({ id: "t1", efAmount: 200 }), makeTx({ id: "t2", efAmount: -50 }), makeTx({ id: "t3", efAmount: 100 })],
+        };
+        expect(derivedEfBalance(data)).toBe(750);
+      });
+
+      it("excludes a soft-deleted transaction's efAmount entirely, even though the field is still set on it", () => {
+        const data = {
+          ...DEFAULT_DATA, emergencyFundOpeningBalance: 900,
+          transactions: [makeTx({ id: "t1", efAmount: 300 }), makeTx({ id: "t2", efAmount: -500, deletedAt: "2026-08-20T00:00:00.000Z" })],
+        };
+        expect(derivedEfBalance(data)).toBe(1200); // only t1 counts -- t2 is soft-deleted
+      });
+
+      it("ignores a transaction with no efAmount at all -- not treated as a 0 contribution needing special-casing, just absent from the sum", () => {
+        const data = { ...DEFAULT_DATA, emergencyFundOpeningBalance: 900, transactions: [makeTx({ id: "t1" }), makeTx({ id: "t2", efAmount: 50 })] };
+        expect(derivedEfBalance(data)).toBe(950);
+      });
+
+      it("rounds the final result to the cent, absorbing float accumulation dust from many small contributions", () => {
+        const data = {
+          ...DEFAULT_DATA, emergencyFundOpeningBalance: 0,
+          transactions: Array.from({ length: 3 }, (_, i) => makeTx({ id: `t${i}`, efAmount: 0.1 })),
+        };
+        expect(derivedEfBalance(data)).toBe(0.3); // not 0.30000000000000004
+      });
+    });
+
+    describe("derivedDebtBalance", () => {
+      it("returns the opening balance unchanged when no transaction links to this debt", () => {
+        expect(derivedDebtBalance(makeDebt(), [makeTx()])).toBe(2000);
+      });
+
+      it("subtracts a single linked payment", () => {
+        expect(derivedDebtBalance(makeDebt(), [makeTx({ debtId: "d1", amount: 325 })])).toBe(1675);
+      });
+
+      it("reproduces the exact real 2.4.27 scenario: $2,000 opening balance, one real $325 payment, correct $1,675 result", () => {
+        const debt = makeDebt({ id: "p76rh1el", name: "Dad", balance: 2000, openingBalance: 2000 });
+        const tx = makeTx({ id: "t1", amount: 325, debtId: "p76rh1el", efAmount: -300 });
+        expect(derivedDebtBalance(debt, [tx])).toBe(1675);
+      });
+
+      it("accumulates multiple linked payments", () => {
+        const txs = [makeTx({ id: "t1", debtId: "d1", amount: 325 }), makeTx({ id: "t2", debtId: "d1", amount: 200 })];
+        expect(derivedDebtBalance(makeDebt(), txs)).toBe(1475);
+      });
+
+      it("ignores a transaction linked to a DIFFERENT debt", () => {
+        expect(derivedDebtBalance(makeDebt({ id: "d1" }), [makeTx({ debtId: "d2", amount: 1000 })])).toBe(2000);
+      });
+
+      it("ignores a transaction with no debtId at all", () => {
+        expect(derivedDebtBalance(makeDebt(), [makeTx({ amount: 1000 })])).toBe(2000);
+      });
+
+      it("excludes a soft-deleted linked transaction from the sum", () => {
+        const txs = [makeTx({ id: "t1", debtId: "d1", amount: 325 }), makeTx({ id: "t2", debtId: "d1", amount: 500, deletedAt: "2026-08-20T00:00:00.000Z" })];
+        expect(derivedDebtBalance(makeDebt(), txs)).toBe(1675); // only t1 counts
+      });
+
+      it("clamps at 0 -- an overpayment doesn't produce a negative debt balance", () => {
+        expect(derivedDebtBalance(makeDebt({ openingBalance: 100 }), [makeTx({ debtId: "d1", amount: 500 })])).toBe(0);
+      });
+
+      it("rounds the final result to the cent", () => {
+        const txs = Array.from({ length: 3 }, (_, i) => makeTx({ id: `t${i}`, debtId: "d1", amount: 0.1 }));
+        expect(derivedDebtBalance(makeDebt({ openingBalance: 1 }), txs)).toBe(0.7); // 1 - 0.3, not float dust
+      });
     });
   });
 });
