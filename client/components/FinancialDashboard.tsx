@@ -207,14 +207,16 @@ function Panel({ title, children, className = "" }: { title?: string; children: 
 // ---------------------------- screen ----------------------------- //
 
 export default function FinancialDashboard({
-  data: propData, onNavigate, onConfirmRecurring, loggingRecurringIds,
+  data: propData, onNavigate, onConfirmRecurring, loggingRecurringIds, justConfirmedIds,
 }: {
   data?: DashboardPayload;
   onNavigate?: (screen: Screen) => void;
-  /** Confirms a recurring item's oldest outstanding cycle -- see the "Confirm" button on Renewing soon. */
+  /** Confirms a recurring item's oldest outstanding cycle -- see the "Confirm" button on Renewing soon. Quick-confirm only here (defaults to the due date); date-override lives in My Finances' Recurring section. */
   onConfirmRecurring?: (recurringId: string) => void;
   /** Recurring item ids whose confirm write is currently in flight -- disables that item's button so a second click can't create a duplicate transaction while the first is still saving. */
   loggingRecurringIds?: Set<string>;
+  /** Recurring item ids that just finished confirming, briefly, before their target moves on to the next cycle (2.4.30, finding 3). */
+  justConfirmedIds?: Set<string>;
 }) {
   const T = useTheme();
   const router = useRouter();
@@ -394,7 +396,7 @@ export default function FinancialDashboard({
                       style={{ background: T.jade + "22", color: T.jade }}
                       title={`Confirm this ${r.name} payment`}
                     >
-                      {loggingRecurringIds?.has(r.id) ? "Confirming…" : "Confirm"}
+                      {loggingRecurringIds?.has(r.id) ? "Confirming…" : justConfirmedIds?.has(r.id) ? "Confirmed ✓" : "Confirm"}
                     </button>
                   )}
                 </span>

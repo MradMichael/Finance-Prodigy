@@ -42,10 +42,17 @@ export default function Home() {
   const [financials, setFinancials] = useState<LocalFinancials | null>(null);
   const [screen,     setScreen]     = useState<Screen>("overview");
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
-  // Mirrors loggingRecurringRef for rendering (disables the "Log payment"
-  // button while its own write is in flight) -- the ref below is the
-  // actual guard; this is display-only and can lag it by a render.
+  // Mirrors loggingRecurringRef for rendering (disables the Confirm button
+  // while its own write is in flight) -- the ref below is the actual
+  // guard; this is display-only and can lag it by a render.
   const [loggingRecurringIds, setLoggingRecurringIds] = useState<Set<string>>(new Set());
+  // Brief post-success state (2.4.30, finding 3) -- without this, the
+  // button reverts straight to "Confirm" (now correctly targeting the
+  // NEXT cycle, not a duplicate of the one just confirmed), which reads as
+  // "nothing happened" and invites another click. Cleared on a timer, not
+  // on next render, so it's visible even if nothing else changes on screen.
+  const [justConfirmedIds, setJustConfirmedIds] = useState<Set<string>>(new Set());
+  const justConfirmedTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const syncTimer   = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionRef  = useRef<Session | null>(null);
@@ -122,7 +129,11 @@ export default function Home() {
   // surface (Overview's chip, InputPanel's row) so they can't independently
   // drift on what "confirm" means -- exactly the class of cross-screen
   // disagreement this project has already been burned by once.
-  async function handleConfirmRecurringPayment(recurringId: string) {
+  // `paidDate` (2.4.30, finding A) is optional -- when the caller doesn't
+  // offer a choice (Overview's quick-confirm), it's left undefined and
+  // buildRecurringConfirmLog defaults it to the due date, unchanged from
+  // before.
+  async function handleConfirmRecurringPayment(recurringId: string, paidDate?: Date) {
     if (!financials) return;
     if (loggingRecurringRef.current.has(recurringId)) return; // already in flight
     const rec = financials.recurring.find((r) => r.id === recurringId);
@@ -131,7 +142,7 @@ export default function Home() {
     const todayMidnight = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
     const target = nextConfirmTarget(rec, financials.transactions, todayMidnight);
     if (!target) return; // nothing left to confirm
-    const result = buildRecurringConfirmLog(rec, financials.lbpRate ?? DEFAULT_LBP_RATE, target.dueDate);
+    const result = buildRecurringConfirmLog(rec, financials.lbpRate ?? DEFAULT_LBP_RATE, target.dueDate, paidDate);
     loggingRecurringRef.current.add(recurringId);
     setLoggingRecurringIds(new Set(loggingRecurringRef.current));
     try {
@@ -139,6 +150,16 @@ export default function Home() {
         ...financials,
         transactions: [result.tx, ...financials.transactions],
       });
+      // Brief "Confirmed" state (2.4.30, finding 3) -- cleared on its own
+      // timer, not tied to the next render, so it's visible even though the
+      // button's own target has already moved on to the next cycle.
+      const existingTimer = justConfirmedTimers.current.get(recurringId);
+      if (existingTimer) clearTimeout(existingTimer);
+      setJustConfirmedIds((prev) => new Set(prev).add(recurringId));
+      justConfirmedTimers.current.set(recurringId, setTimeout(() => {
+        setJustConfirmedIds((prev) => { const next = new Set(prev); next.delete(recurringId); return next; });
+        justConfirmedTimers.current.delete(recurringId);
+      }, 1600));
     } finally {
       loggingRecurringRef.current.delete(recurringId);
       setLoggingRecurringIds(new Set(loggingRecurringRef.current));
@@ -281,10 +302,10 @@ export default function Home() {
 
         {/* Main content */}
         <div style={{ flex: 1, overflowY: "auto" }}>
-          {screen === "overview"     && <FinancialDashboard data={dashboardData} onNavigate={setScreen} onConfirmRecurring={handleConfirmRecurringPayment} loggingRecurringIds={loggingRecurringIds} />}
+          {screen === "overview"     && <FinancialDashboard data={dashboardData} onNavigate={setScreen} onConfirmRecurring={handleConfirmRecurringPayment} loggingRecurringIds={loggingRecurringIds} justConfirmedIds={justConfirmedIds} />}
           {screen === "budget"       && <BudgetScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
           {screen === "setup"        && <SetupScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
-          {screen === "finances"     && <InputPanel financials={financials} dashData={dashboardData} onChange={handleChange} session={session} onConfirmRecurring={handleConfirmRecurringPayment} loggingRecurringIds={loggingRecurringIds} />}
+          {screen === "finances"     && <InputPanel financials={financials} dashData={dashboardData} onChange={handleChange} session={session} onConfirmRecurring={handleConfirmRecurringPayment} loggingRecurringIds={loggingRecurringIds} justConfirmedIds={justConfirmedIds} />}
           {screen === "transactions" && <TransactionsScreen financials={financials} />}
           {screen === "categories"   && <CategoriesScreen financials={financials} onChange={handleChange} />}
           {screen === "goals"        && <GoalsScreen dashData={dashboardData} financials={financials} onChange={handleChange} />}

@@ -51,13 +51,15 @@ interface Props {
   dashData: ReturnType<typeof computeDashboard>;
   onChange: (updated: LocalFinancials) => void;
   session?: Session;
-  /** Confirms a recurring item's oldest outstanding cycle -- same shared handler FinancialDashboard's Renewing-soon chip uses. */
-  onConfirmRecurring?: (recurringId: string) => void;
+  /** Confirms a recurring item's oldest outstanding cycle -- same shared handler FinancialDashboard's Renewing-soon chip uses. `paidDate` is optional -- when set, records the real payment date instead of defaulting to the cycle's due date (2.4.30, finding A). */
+  onConfirmRecurring?: (recurringId: string, paidDate?: Date) => void;
   /** Recurring item ids whose confirm write is currently in flight. */
   loggingRecurringIds?: Set<string>;
+  /** Recurring item ids that just finished confirming, briefly, before their target moves on to the next cycle (2.4.30, finding 3). */
+  justConfirmedIds?: Set<string>;
 }
 
-export default function InputPanel({ financials, dashData, onChange, session, onConfirmRecurring, loggingRecurringIds }: Props) {
+export default function InputPanel({ financials, dashData, onChange, session, onConfirmRecurring, loggingRecurringIds, justConfirmedIds }: Props) {
   const T = useTheme();
   const BUCKETS: { value: Bucket; label: string; icon: string; color: string }[] = [
     { value: "NEEDS",   label: "Needs",   icon: "🏠", color: T.sky   },
@@ -142,6 +144,12 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   // Recurring extra payment state
   const [extraRecId,  setExtraRecId]  = useState<string | null>(null);
   const [extraRecAmt, setExtraRecAmt] = useState("");
+
+  // Recurring confirm state (2.4.30, finding A) -- confirmDate defaults to
+  // the target cycle's own due date when the form opens, editable to
+  // record the date actually paid.
+  const [confirmingRecId, setConfirmingRecId] = useState<string | null>(null);
+  const [confirmDate,     setConfirmDate]     = useState("");
 
   // Goal contribution state
   const [contributeGoalId,  setContributeGoalId]  = useState<string | null>(null);
@@ -1494,6 +1502,8 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                       const pct    = paid != null && r.totalAmount ? Math.min(100, (paid / r.totalAmount) * 100) : null;
                       const isAddingExtra = extraRecId === r.id;
                       const isEditingRec  = editRecId === r.id;
+                      const isConfirming  = confirmingRecId === r.id;
+                      const justConfirmed = justConfirmedIds?.has(r.id);
                       return (
                         <div key={r.id}>
                           {isEditingRec ? (
@@ -1635,13 +1645,13 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                                   >✎</button>
                                   {!ended && target && onConfirmRecurring && (
                                     <button
-                                      onClick={() => onConfirmRecurring(r.id)}
+                                      onClick={() => { setConfirmingRecId(isConfirming ? null : r.id); setConfirmDate(target.dueDate.toISOString().slice(0, 10)); }}
                                       disabled={loggingRecurringIds?.has(r.id)}
                                       aria-label={`Confirm this ${r.name} payment`}
                                       className="text-[10px] px-1.5 py-0.5 rounded transition-all hover:opacity-80 disabled:opacity-40 disabled:hover:opacity-40"
-                                      style={{ color: overdue ? T.coral : T.jade, border: `1px solid ${overdue ? T.coral : T.jade}40` }}
+                                      style={{ color: justConfirmed ? T.jade : overdue ? T.coral : T.jade, border: `1px solid ${(justConfirmed ? T.jade : overdue ? T.coral : T.jade)}40` }}
                                     >
-                                      {loggingRecurringIds?.has(r.id) ? "Confirming…" : "Confirm"}
+                                      {loggingRecurringIds?.has(r.id) ? "Confirming…" : justConfirmed ? "Confirmed ✓" : "Confirm"}
                                     </button>
                                   )}
                                   {!ended && (
@@ -1693,6 +1703,39 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                                 </div>
                                 <p className="text-[10px]" style={{ color: T.mute }}>
                                   Logged as a transaction in {b.label} · {cur} this month.
+                                </p>
+                              </div>
+                            )}
+                            {/* Confirm inline form (2.4.30, finding A) -- date actually paid, defaults to the cycle's own due date */}
+                            {isConfirming && target && (
+                              <div className="mt-2 pt-2 space-y-2" style={{ borderTop: `1px solid ${T.line}` }}>
+                                <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.jade }}>
+                                  Confirm payment
+                                </p>
+                                <div className="flex gap-2 items-end">
+                                  <div className="flex-1">
+                                    <Label htmlFor={`confirm-date-${r.id}`}>Date actually paid</Label>
+                                    <DateFieldDMY id={`confirm-date-${r.id}`} value={confirmDate} onChange={setConfirmDate} />
+                                  </div>
+                                  <button
+                                    onClick={() => {
+                                      onConfirmRecurring?.(r.id, confirmDate ? new Date(confirmDate) : undefined);
+                                      setConfirmingRecId(null);
+                                    }}
+                                    className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all hover:opacity-90"
+                                    style={{ background: T.jade, color: T.ink }}
+                                  >
+                                    Confirm
+                                  </button>
+                                  <button
+                                    onClick={() => setConfirmingRecId(null)}
+                                    aria-label="Cancel confirm"
+                                    className="px-2 py-1.5 rounded-xl text-xs transition-all hover:opacity-70"
+                                    style={{ color: T.mute }}
+                                  >✕</button>
+                                </div>
+                                <p className="text-[10px]" style={{ color: T.mute }}>
+                                  Due {fmtDate(target.dueDate.toISOString().slice(0, 10))} · defaults to the due date if left as-is.
                                 </p>
                               </div>
                             )}
