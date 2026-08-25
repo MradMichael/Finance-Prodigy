@@ -64,6 +64,12 @@ export default function Home() {
   // the race that let a double-click create two transactions for the same
   // bill.
   const loggingRecurringRef = useRef<Set<string>>(new Set());
+  // Same re-entrancy-guard shape as loggingRecurringRef, but keyed by
+  // `${recurringId}:${dueISO}` rather than just recurringId (2.4.31 backfill)
+  // -- a user can have several pending backfill cycles for the same item
+  // open at once, and confirming one must not disable the others.
+  const backfillingRef = useRef<Set<string>>(new Set());
+  const [backfillingIds, setBackfillingIds] = useState<Set<string>>(new Set());
 
   // keep a stable ref so the debounce closure always sees the latest session
   useEffect(() => { sessionRef.current = session; }, [session]);
@@ -163,6 +169,30 @@ export default function Home() {
     } finally {
       loggingRecurringRef.current.delete(recurringId);
       setLoggingRecurringIds(new Set(loggingRecurringRef.current));
+    }
+  }
+
+  // Confirms one specific pre-cutover cycle from pendingBackfillCycles
+  // (2.4.31) -- unlike handleConfirmRecurringPayment, the caller already
+  // knows exactly which cycle (from the item's own detail view), so there's
+  // no nextConfirmTarget resolution here, just building and logging the
+  // transaction for that exact historical due date. Dates the transaction
+  // to that due date, not today (buildRecurringConfirmLog's default
+  // paidDate), the same way any other confirm does.
+  async function handleBackfillRecurringCycle(recurringId: string, dueDate: Date) {
+    if (!financials) return;
+    const key = `${recurringId}:${dueDate.toISOString().slice(0, 10)}`;
+    if (backfillingRef.current.has(key)) return; // already in flight
+    const rec = financials.recurring.find((r) => r.id === recurringId);
+    if (!rec) return;
+    const result = buildRecurringConfirmLog(rec, financials.lbpRate ?? DEFAULT_LBP_RATE, dueDate);
+    backfillingRef.current.add(key);
+    setBackfillingIds(new Set(backfillingRef.current));
+    try {
+      await handleChange({ ...financials, transactions: [result.tx, ...financials.transactions] });
+    } finally {
+      backfillingRef.current.delete(key);
+      setBackfillingIds(new Set(backfillingRef.current));
     }
   }
 
@@ -305,7 +335,7 @@ export default function Home() {
           {screen === "overview"     && <FinancialDashboard data={dashboardData} onNavigate={setScreen} onConfirmRecurring={handleConfirmRecurringPayment} loggingRecurringIds={loggingRecurringIds} justConfirmedIds={justConfirmedIds} />}
           {screen === "budget"       && <BudgetScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
           {screen === "setup"        && <SetupScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
-          {screen === "finances"     && <InputPanel financials={financials} dashData={dashboardData} onChange={handleChange} session={session} onConfirmRecurring={handleConfirmRecurringPayment} loggingRecurringIds={loggingRecurringIds} justConfirmedIds={justConfirmedIds} />}
+          {screen === "finances"     && <InputPanel financials={financials} dashData={dashboardData} onChange={handleChange} session={session} onConfirmRecurring={handleConfirmRecurringPayment} loggingRecurringIds={loggingRecurringIds} justConfirmedIds={justConfirmedIds} onBackfillRecurring={handleBackfillRecurringCycle} backfillingIds={backfillingIds} />}
           {screen === "transactions" && <TransactionsScreen financials={financials} />}
           {screen === "categories"   && <CategoriesScreen financials={financials} onChange={handleChange} />}
           {screen === "goals"        && <GoalsScreen dashData={dashboardData} financials={financials} onChange={handleChange} />}
