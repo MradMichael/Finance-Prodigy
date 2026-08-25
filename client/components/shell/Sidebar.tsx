@@ -124,7 +124,7 @@ export default function Sidebar({
               <span
                 className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border"
                 style={{
-                  background: syncStatus === "synced" ? T.jade : syncStatus === "syncing" ? T.brass : T.mute,
+                  background: syncStatus === "synced" ? T.jade : syncStatus === "syncing" ? T.brass : syncStatus === "conflict" ? T.coral : T.mute,
                   borderColor: T.panel,
                 }}
               />
@@ -134,7 +134,7 @@ export default function Sidebar({
             <div className="text-left overflow-hidden flex-1">
               <p className="text-xs font-medium truncate" style={{ color: T.text }}>{session.name}</p>
               <p className="text-[10px] truncate" style={{ color: T.mute }}>
-                {syncStatus === "syncing" ? "Syncing…" : syncStatus === "synced" ? "Synced" : syncStatus === "offline" ? "Offline" : session.email}
+                {syncStatus === "syncing" ? "Syncing…" : syncStatus === "synced" ? "Synced" : syncStatus === "conflict" ? "Sync conflict" : syncStatus === "offline" ? "Offline" : session.email}
               </p>
             </div>
           )}

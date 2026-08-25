@@ -1,7 +1,10 @@
 import type { CSSProperties } from "react";
 import type { Currency } from "../../lib/localData";
 
-export type SyncStatus = "idle" | "syncing" | "synced" | "offline";
+// "conflict" (2.4.38): the server's data has moved on since this device
+// last synced -- a real conflict, not a transient failure, so it's kept
+// distinct from "offline" (which a plain retry can resolve on its own).
+export type SyncStatus = "idle" | "syncing" | "synced" | "offline" | "conflict";
 
 export type Screen = "overview" | "budget" | "setup" | "finances" | "transactions" | "categories" | "goals" | "debts" | "recurring" | "projections" | "journey" | "currency" | "wishlist" | "statistics";
 

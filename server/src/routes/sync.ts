@@ -61,6 +61,13 @@ const pushSchema = z.object({
   // password or recovery code itself. Optional so older clients (or a
   // client mid-upgrade) can still push without it.
   recoveryToken: tokenSchema.optional(),
+  // 2.4.38: the syncedAt this client last actually observed (from its own
+  // last successful push or pull), used to detect a push that's building on
+  // data older than what the server currently holds. Optional so an
+  // old/mid-upgrade client that doesn't send it yet isn't rejected outright
+  // -- see the push handler's own comment on why a missing value is treated
+  // as "unknown," not "conflicting."
+  baseSyncedAt: z.string().datetime().optional(),
   data: z.record(z.unknown()).refine(
     // .length counts UTF-16 code units, not bytes — a payload heavy in
     // multi-byte UTF-8 characters (e.g. Arabic text in transaction notes,
@@ -108,11 +115,16 @@ const hashesEqual = (a: string, b: string): boolean =>
   a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 
 class SyncAuthError extends Error {}
+// 2.4.38: distinct from SyncAuthError -- this is a real conflict (the
+// server has moved on since this client last synced), not an auth failure,
+// and the client needs to tell the two apart to know whether to pull before
+// retrying or just retry.
+class SyncConflictError extends Error {}
 
-// POST /api/sync/push  — body: { email, data, token }
+// POST /api/sync/push  — body: { email, data, token, baseSyncedAt? }
 router.post("/push", async (req, res, next) => {
   try {
-    const { email: normalizedEmail, data, token, recoveryToken } = pushSchema.parse(req.body);
+    const { email: normalizedEmail, data, token, recoveryToken, baseSyncedAt } = pushSchema.parse(req.body);
     const tokenHash = hashToken(token);
     const recoveryTokenHash = recoveryToken ? hashToken(recoveryToken) : undefined;
     // Computed once and reused in both the create and update branches below —
@@ -132,6 +144,19 @@ router.post("/push", async (req, res, next) => {
         if (existing?.authTokenHash && !hashesEqual(existing.authTokenHash, tokenHash)) {
           logger.warn("push_denied_token_mismatch", { email: normalizedEmail, userAgent: req.header("user-agent") ?? null, lastSyncedAt: existing.syncedAt });
           throw new SyncAuthError();
+        }
+        // 2.4.38: reject a push that's building on data older than what's
+        // currently stored, instead of the previous unconditional
+        // last-write-wins upsert -- this is very likely how the server got
+        // stuck on a pre-08-19 snapshot in the first place (see 2.4.33's
+        // confirmed timeline), well before signInFromSync ever made the
+        // staleness visible locally. A MISSING baseSyncedAt is treated as
+        // "unknown," not "conflicting" -- an old or mid-upgrade client that
+        // doesn't send it yet must keep working exactly as before, not
+        // start getting rejected the moment this ships.
+        if (existing?.syncedAt && baseSyncedAt && new Date(baseSyncedAt).getTime() < existing.syncedAt.getTime()) {
+          logger.warn("push_denied_stale", { email: normalizedEmail, userAgent: req.header("user-agent") ?? null, baseSyncedAt, serverSyncedAt: existing.syncedAt });
+          throw new SyncConflictError();
         }
         const now = new Date();
         // Preserve an already-registered recoveryTokenHash on every regular
@@ -154,6 +179,12 @@ router.post("/push", async (req, res, next) => {
     } catch (err) {
       if (err instanceof SyncAuthError) {
         return res.status(401).json({ error: "Invalid sync credentials for this account." });
+      }
+      // Distinct `code` from the P2034 case just below -- both are 409s,
+      // but only one of them means "retry now," so the client needs to be
+      // able to tell them apart (see syncService.ts's pushToServer).
+      if (err instanceof SyncConflictError) {
+        return res.status(409).json({ code: "stale_push", error: "Server data has changed since your last sync. Pull the latest before pushing." });
       }
       // P2034 = write conflict / deadlock from the isolation level above —
       // the losing side of a genuine race. Safe to ask the client to retry.

@@ -7,9 +7,10 @@ export default function SyncDot({ status }: { status: SyncStatus }) {
   const T = useTheme();
   if (status === "idle") return null;
   const cfg = {
-    syncing: { color: T.brass,  label: "Syncing…",  animate: true  },
-    synced:  { color: T.jade,   label: "Synced",     animate: false },
-    offline: { color: T.mute,   label: "Offline",    animate: false },
+    syncing:  { color: T.brass,  label: "Syncing…",  animate: true  },
+    synced:   { color: T.jade,   label: "Synced",     animate: false },
+    offline:  { color: T.mute,   label: "Offline",    animate: false },
+    conflict: { color: T.coral,  label: "Sync conflict — resolve in Settings", animate: false },
   }[status];
   return (
     <span

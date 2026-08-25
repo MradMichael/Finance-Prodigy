@@ -9,7 +9,8 @@ import type { Session } from "../../lib/auth";
 import { loadData, saveData } from "../../lib/localData";
 import { computeDashboard } from "../../lib/computeDashboard";
 import { buildReportHtml } from "../../lib/printReport";
-import { pushToServer, pullFromServer, getLastSyncTime } from "../../lib/syncService";
+import { pushToServer, pullFromServer, getLastSyncTime, confirmOverwriteIfNeeded } from "../../lib/syncService";
+import type { LocalFinancials } from "../../lib/localData";
 import { isAnalyticsOptedIn, setAnalyticsOptIn } from "../../lib/analytics";
 import { useTheme, useThemeControl } from "../../contexts/ThemeContext";
 import { THEMES, type ThemeKey } from "../../lib/theme";
@@ -41,6 +42,8 @@ export default function ProfilePage() {
   const [pdfDateTo,     setPdfDateTo]     = useState("");
   const [downloading,   setDownloading]   = useState<"data" | "pdf" | null>(null);
   const [downloadMsg,   setDownloadMsg]   = useState("");
+  const [importing,     setImporting]     = useState(false);
+  const [importMsg,     setImportMsg]     = useState("");
   const [newRecoveryCode, setNewRecoveryCode] = useState<string | null>(null);
   const [recoveryMsg,     setRecoveryMsg]     = useState("");
   const [regenerating,    setRegenerating]    = useState(false);
@@ -71,6 +74,10 @@ export default function ProfilePage() {
 
   async function handlePull() {
     if (!session) return;
+    // 2.4.37: this device may hold real data the server's copy would
+    // silently replace -- ask first if so, rather than the previous
+    // unconditional overwrite.
+    if (!(await confirmOverwriteIfNeeded(session.userId, "what's on the server"))) return;
     setSyncing(true); setSyncMsg("");
     const result = await pullFromServer(session.email);
     if (result.ok) {
@@ -141,6 +148,57 @@ export default function ProfilePage() {
       URL.revokeObjectURL(url);
     } finally {
       setDownloading(null);
+    }
+  }
+
+  // The counterpart to handleExport — restoring one of those downloaded
+  // files back into the account. Added per owner's explicit request (2.4.37):
+  // before this, an export was read-only for anyone but a developer with
+  // filesystem access — the data existed but there was no way in the app
+  // itself to put it back, which is exactly the gap the owner hit recovering
+  // from 2.4.33 by hand. Same destination as Pull (saveData, full reload),
+  // same guard (confirmOverwriteIfNeeded) — the only thing that changes is
+  // where the replacement data comes from.
+  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // clears the input so re-selecting the same file later still fires onChange
+    if (!file || !session) return;
+    setImportMsg("");
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(await file.text());
+    } catch {
+      setImportMsg("✗ That file isn't valid JSON.");
+      return;
+    }
+    // Deliberately loose — this only needs to catch "wrong file entirely"
+    // (a PDF renamed .json, a bank statement CSV saved as .json, an empty
+    // file), not validate the full schema. migrateFinancials (via saveData)
+    // already handles real schema differences between export vintages; a
+    // strict validator here would just be a second, competing definition of
+    // "valid," another duplicate-logic site this project has been bitten by
+    // before.
+    if (
+      typeof parsed !== "object" || parsed === null ||
+      !Array.isArray((parsed as Record<string, unknown>).transactions) ||
+      typeof (parsed as Record<string, unknown>).schemaVersion !== "number"
+    ) {
+      setImportMsg("✗ That doesn't look like an ESSA export file.");
+      return;
+    }
+
+    if (!(await confirmOverwriteIfNeeded(session.userId, "the file you selected"))) return;
+
+    setImporting(true);
+    try {
+      await saveData(parsed as LocalFinancials, session.userId);
+      setImportMsg("✓ Data restored from file. Reloading…");
+      // Same reload requirement as handlePull — see its own comment.
+      setTimeout(() => { window.location.href = "/"; }, 700);
+    } catch {
+      setImportMsg("✗ Couldn't restore that file.");
+      setImporting(false);
     }
   }
 
@@ -454,12 +512,33 @@ export default function ProfilePage() {
             >
               {downloading === "pdf" ? "⏳ Preparing…" : "⬇ Download as PDF"}
             </button>
+            <label
+              className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 flex items-center gap-2 cursor-pointer"
+              style={{ background: T.line, color: T.text, opacity: importing ? 0.5 : 1 }}
+            >
+              {importing ? "⏳ Restoring…" : "📁 Import from file"}
+              <input
+                type="file"
+                accept="application/json,.json"
+                onChange={handleImportFile}
+                disabled={importing}
+                className="hidden"
+              />
+            </label>
           </div>
           {downloadMsg && (
             <p className="text-xs" style={{ color: downloadMsg.startsWith("✓") ? T.jade : T.coral }}>
               {downloadMsg}
             </p>
           )}
+          {importMsg && (
+            <p className="text-xs" style={{ color: importMsg.startsWith("✓") ? T.jade : T.coral }}>
+              {importMsg}
+            </p>
+          )}
+          <p className="text-[10px]" style={{ color: T.mute }}>
+            Restores from a previously downloaded export — replaces this device&apos;s current data, same as Restore from database above, just from a file instead of the server.
+          </p>
 
           {/* PDF report options */}
           <div className="rounded-xl px-4 py-3 space-y-3" style={{ background: T.panelSoft }}>

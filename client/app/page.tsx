@@ -77,6 +77,11 @@ export default function Home() {
   const autoSync = useCallback(async (data: LocalFinancials, email: string) => {
     setSyncStatus("syncing");
     const result = await pushToServer(email, data);
+    // 2.4.38: a conflict isn't a transient failure a retry would fix (unlike
+    // "offline"), and this device's local changes are still sitting
+    // unsynced -- stays visible until the owner resolves it via Push/Pull on
+    // the profile page, not faded away like the other statuses below.
+    if (result.conflict) { setSyncStatus("conflict"); return; }
     setSyncStatus(result.ok ? "synced" : "offline");
     // fade back to idle after 4 s so the indicator doesn't stay forever
     setTimeout(() => setSyncStatus((s) => s !== "syncing" ? "idle" : s), 4000);
