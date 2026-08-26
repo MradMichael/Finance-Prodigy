@@ -1,13 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import type {
   LocalFinancials, StoredTransaction, StoredGoal, StoredDebt,
   StoredRecurring, StoredCard, RecurringFrequency, Currency, PaymentMethod, BudgetRuleKey, TrackedBalance,
 } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, recurringPaidSoFar, pendingBackfillCycles, toUSD as toUSDShared, withRate, buildGoalContributionTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
+import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, recurringPaidSoFar, pendingBackfillCycles, toUSD as toUSDShared, withRate, buildGoalContributionTx, buildDebtPaymentTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney, derivedDebtBalance, activeTransactions, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY } from "./form/Primitives";
@@ -90,11 +90,25 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   const [txPayNote,   setTxPayNote]   = useState("");
   const [txAddToEF,   setTxAddToEF]   = useState(false);
   const [txFromEF,    setTxFromEF]    = useState(false);
+  // Phase 2.6.3c: how much of this transaction is EF-related -- blank means
+  // "the full transaction amount" (today's implicit behavior, zero extra
+  // typing for the common case), a typed value overrides it down to a
+  // partial amount. Entered in the transaction's own currency, like txAmt
+  // itself -- converted to USD at commit, same as amtUSD.
+  const [txEfAmt,     setTxEfAmt]     = useState("");
   const [txCardId,    setTxCardId]    = useState<string | null>(null);
   const [showAddCard, setShowAddCard] = useState(false);
   const [newCardType, setNewCardType] = useState<StoredCard["type"]>("Visa");
   const [newCardLast4, setNewCardLast4] = useState("");
   const [showImport, setShowImport] = useState(false);
+  // Phase 2.6.3b: brief confirmation after a soft-delete, telling the user
+  // recovery exists at the exact moment it becomes relevant -- see
+  // TransactionsScreen's "Recently deleted" view, the persistent, always-
+  // visible entry point for later. No expiry is stated: retention is
+  // undecided, and promising one that doesn't exist would either be a lie
+  // or make someone think a real window is closing.
+  const [deletedMsg, setDeletedMsg] = useState<string | null>(null);
+  const deletedMsgTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Replaces native confirm() for the "LBP amount looks like a typo'd USD
   // entry" guard below -- OK/Cancel semantics don't map cleanly onto "save
   // it anyway" vs "let me fix the currency", so this stores enough to
@@ -118,6 +132,11 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   // Debt payment state: track which debt is open for payment
   const [payingDebtId, setPayingDebtId] = useState<string | null>(null);
   const [debtPayAmt,   setDebtPayAmt]   = useState("");
+  // Phase 2.6.3c: recordDebtPayment now creates a real transaction, which
+  // needs a bucket like any other -- owner's explicit instruction not to
+  // default it silently (a minimum payment is a Need, a voluntary
+  // overpayment is closer to Savings, and guessing wrong skews budget pace).
+  const [debtPayBucket, setDebtPayBucket] = useState<Bucket>("NEEDS");
 
   // Asset form
   const [aName,     setAName]     = useState("");
@@ -162,7 +181,6 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   // ── edit state ──────────────────────────────────────────────── //
   const [editDebtId,       setEditDebtId]       = useState<string | null>(null);
   const [editDName,        setEditDName]        = useState("");
-  const [editDBalance,     setEditDBalance]     = useState("");
   const [editDApr,         setEditDApr]         = useState("");
   const [editDMin,         setEditDMin]         = useState("");
   const [editDOpened,      setEditDOpened]      = useState("");
@@ -205,6 +223,20 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   // undefined's UI treatment but is a distinct state isCycleConfirmed cares
   // about (see its own comment).
   const [editTxCycleDate,  setEditTxCycleDate]  = useState<string | null | undefined>(undefined);
+  // Phase 2.6.3c: same tri-state shape as editTxCycleDate above -- undefined
+  // = never linked to the emergency fund (nothing to show), a string = linked
+  // with that raw amount (in the transaction's own currency, mirroring
+  // editTxAmt -- converted to USD at commit), null = deliberately detached
+  // (owner's instruction: mirror cycleDate's undefined-vs-null distinction
+  // for efAmount specifically, since 0 is a legitimate amount someone might
+  // genuinely mean and can't double as "not linked").
+  const [editTxEfAmount,   setEditTxEfAmount]   = useState<string | null | undefined>(undefined);
+  // debtId has no equivalent null-sentinel need -- it's a bare id reference
+  // with no fallback behavior that would make undefined vs. a deliberate
+  // "detached" state ambiguous the way cycleDate's fallback-to-date does.
+  // Owner's explicit confirmation: don't add a sentinel carrying no
+  // information.
+  const [editTxDebtId,     setEditTxDebtId]     = useState<string | undefined>(undefined);
 
   // ── helpers ────────────────────────────────────────────────────── //
 
@@ -252,31 +284,30 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     // "If null only": a category rule only ever fills in a category the
     // user hasn't already picked -- never overrides an explicit choice.
     const autoCategory = txCategory || matchCategoryRule(description, financials.categoryRules);
+    // Phase 2.6.3c: EF is now a real, signed field on the transaction itself
+    // instead of a side-effect mutation of emergencyFundBalance -- blank
+    // txEfAmt means "the full transaction amount" (today's implicit
+    // behavior); a typed value makes a partial amount representable (e.g.
+    // "$300 of this $325 came from EF," 2.4.27's exact case). Entered in the
+    // transaction's own currency like txAmt itself, converted the same way.
+    const efAmtRaw = txEfAmt.trim() ? parseFloat(txEfAmt.replace(/,/g, "")) : amt;
+    const efAmtUSD = txCurrency === "LBP" ? efAmtRaw / (financials.lbpRate ?? DEFAULT_LBP_RATE) : efAmtRaw;
+    const now = new Date().toISOString();
     const tx: StoredTransaction = {
       id: uid(), amount: amt, currency: txCurrency, bucket: txBucket,
       description,
       date: txDate,
       paymentMethod: txPayMethod,
+      createdAt: now, updatedAt: now,
       ...withRate(txCurrency, financials.lbpRate ?? DEFAULT_LBP_RATE),
       ...(autoCategory ? { category: autoCategory } : {}),
       ...(txPayMethod === "other" && txPayNote.trim() ? { paymentNote: txPayNote.trim() } : {}),
       ...(cardId ? { cardId, cardLabel } : {}),
+      ...(txBucket === "SAVINGS" && txAddToEF ? { efAmount: roundMoney(efAmtUSD) } : {}),
+      ...(txBucket !== "SAVINGS" && txBucket !== "INCOME" && txFromEF ? { efAmount: roundMoney(-efAmtUSD) } : {}),
     };
-    update({
-      transactions: [tx, ...financials.transactions],
-      // roundMoney at every settled write to this field specifically because
-      // it's an accumulator, not a replaced-wholesale value like income --
-      // left unrounded, small float dust from each +/- compounds silently
-      // across however many transactions ever touch it over the life of
-      // the account.
-      ...(txBucket === "SAVINGS" && txAddToEF
-        ? { emergencyFundBalance: roundMoney((financials.emergencyFundBalance ?? 0) + amtUSD) }
-        : {}),
-      ...(txBucket !== "SAVINGS" && txBucket !== "INCOME" && txFromEF
-        ? { emergencyFundBalance: roundMoney(Math.max(0, (financials.emergencyFundBalance ?? 0) - amtUSD)) }
-        : {}),
-    });
-    setTxAmt(""); setTxDesc(""); setTxPayNote(""); setTxAddToEF(false); setTxFromEF(false); setTxCategory("");
+    update({ transactions: [tx, ...financials.transactions] });
+    setTxAmt(""); setTxDesc(""); setTxPayNote(""); setTxAddToEF(false); setTxFromEF(false); setTxEfAmt(""); setTxCategory("");
   }
 
   function addGoal() {
@@ -372,20 +403,26 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     update({ trackedBalances: (financials.trackedBalances ?? []).filter((tb) => tb.id !== id) });
   }
 
+  // Phase 2.6.3c: creates a real, debtId-linked transaction instead of
+  // mutating d.balance directly -- a debt payment is real money leaving the
+  // pocket and now counts toward spend totals for the first time, in
+  // whichever bucket the owner actually picks (never defaulted, see
+  // debtPayBucket's own comment). paidOffAt stays a real, separately-set
+  // flag (there's no "when did this reach zero" fact the derived balance
+  // alone can answer) -- set once the payment being recorded brings the
+  // derived balance to 0, cleared if a later payment/edit brings it back up.
   function recordDebtPayment(debtId: string) {
     const amt = parseFloat(debtPayAmt.replace(/,/g, ""));
     if (!amt || amt <= 0) return;
-    const updated = financials.debts.map((d) => {
-      if (d.id !== debtId) return d;
-      // roundMoney at this settled write, not before -- this is where the
-      // computed balance actually gets persisted. moneyEquals for the
-      // paid-off check regardless, since even a rounded balance and 0 can
-      // still disagree by a fraction of a cent depending on how amt itself
-      // was entered.
-      const newBal = roundMoney(Math.max(0, d.balance - amt));
-      return { ...d, balance: newBal, paidOffAt: moneyEquals(newBal, 0) ? (d.paidOffAt ?? new Date().toISOString()) : d.paidOffAt };
+    const debt = financials.debts.find((d) => d.id === debtId);
+    if (!debt) return;
+    const tx = buildDebtPaymentTx(debt, amt, debtPayBucket, financials.lbpRate ?? DEFAULT_LBP_RATE);
+    const newTransactions = [tx, ...financials.transactions];
+    const newBal = derivedDebtBalance(debt, newTransactions);
+    const updatedDebts = financials.debts.map((d) => d.id !== debtId ? d : {
+      ...d, paidOffAt: moneyEquals(newBal, 0) ? (d.paidOffAt ?? new Date().toISOString()) : d.paidOffAt,
     });
-    update({ debts: updated });
+    update({ transactions: newTransactions, debts: updatedDebts });
     setPayingDebtId(null); setDebtPayAmt("");
   }
 
@@ -433,6 +470,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   function logExtraPayment(rec: StoredRecurring) {
     const amt = parseFloat(extraRecAmt.replace(/,/g, ""));
     if (!amt || amt <= 0) return;
+    const now = new Date().toISOString();
     const tx: StoredTransaction = {
       id: uid(), amount: amt, currency: rec.currency,
       bucket: rec.bucket,
@@ -441,6 +479,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
       description: `Extra: ${rec.name}`,
       date: todayISO(),
       paymentMethod: "cash",
+      createdAt: now, updatedAt: now,
     };
     update({ transactions: [tx, ...financials.transactions] });
     setExtraRecId(null); setExtraRecAmt("");
@@ -450,24 +489,23 @@ export default function InputPanel({ financials, dashData, onChange, session, on
 
   function startEditDebt(d: StoredDebt) {
     setEditDebtId(d.id); setEditDName(d.name);
-    setEditDBalance(String(d.balance)); setEditDApr(String(d.apr));
+    setEditDApr(String(d.apr));
     setEditDMin(String(d.minPayment)); setEditDOpened(d.openedDate ?? "");
     setPayingDebtId(null);
   }
+  // Phase 2.6.3a: no longer touches balance/paidOffAt -- the balance is
+  // derived from openingBalance + the transaction ledger now, and there's no
+  // ledger-editing UI yet (that's 2.6.3(c)). Editing name/APR/min payment/
+  // opened date is still safe to do directly; correcting a balance is not,
+  // until (c) gives it a real, linked way to happen.
   function saveEditDebt(debtId: string) {
-    const bal = parseFloat(editDBalance.replace(/,/g, ""));
-    if (!editDName.trim() || isNaN(bal)) return;
+    if (!editDName.trim()) return;
     update({
       debts: financials.debts.map((d) => d.id !== debtId ? d : {
-        ...d, name: editDName.trim(), balance: bal,
+        ...d, name: editDName.trim(),
         apr: Math.max(0, parseFloat(editDApr) || 0),
         minPayment: parseFloat(editDMin.replace(/,/g, "")) || 0,
         openedDate: editDOpened || undefined,
-        // Clear paidOffAt when the edited balance goes back above 0 (e.g.
-        // correcting a mistake, or a new charge) — otherwise a live debt
-        // keeps showing the "Paid off" badge and gets excluded from the
-        // active-debt count indefinitely.
-        paidOffAt: bal <= 0 ? (d.paidOffAt ?? new Date().toISOString()) : undefined,
       }),
     });
     setEditDebtId(null);
@@ -538,6 +576,14 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     setEditTxBucket(tx.bucket); setEditTxCategory(tx.category ?? ""); setEditTxCurrency(tx.currency ?? "USD");
     setEditTxPayMethod(tx.paymentMethod ?? "cash"); setEditTxPayNote(tx.paymentNote ?? ""); setEditTxCardId(tx.cardId ?? null);
     setEditTxCycleDate(tx.cycleDate);
+    // Phase 2.6.3c: efAmount seeded as a raw string (in the transaction's
+    // own currency, converted back from the stored USD-terms value) so the
+    // amount field behaves like editTxAmt itself; undefined/null pass through
+    // unchanged, matching editTxCycleDate's own tri-state seeding.
+    setEditTxEfAmount(tx.efAmount == null ? tx.efAmount : String(
+      tx.currency === "LBP" ? roundMoney(tx.efAmount * (financials.lbpRate ?? DEFAULT_LBP_RATE)) : tx.efAmount
+    ));
+    setEditTxDebtId(tx.debtId);
   }
   function saveEditTx(txId: string) {
     const amt = parseFloat(editTxAmt.replace(/,/g, ""));
@@ -558,6 +604,15 @@ export default function InputPanel({ financials, dashData, onChange, session, on
       const card = cards.find((c) => c.id === editTxCardId);
       if (card) { cardId = card.id; cardLabel = card.label; }
     }
+    // Phase 2.6.3c: editTxEfAmount is a raw string in editTxCurrency (like
+    // editTxAmt), converted to the USD-terms value derivedEfBalance expects.
+    // null/undefined pass through unchanged -- see editTxCycleDate's own
+    // comment on why that's what makes Detach actually write `null`.
+    const efAmount = editTxEfAmount == null ? editTxEfAmount : roundMoney(
+      editTxCurrency === "LBP"
+        ? (parseFloat(editTxEfAmount.replace(/,/g, "")) || 0) / (financials.lbpRate ?? DEFAULT_LBP_RATE)
+        : (parseFloat(editTxEfAmount.replace(/,/g, "")) || 0)
+    );
     update({
       transactions: financials.transactions.map((t) => t.id !== txId ? t : {
         ...t, amount: amt, description: editTxDesc.trim(),
@@ -570,9 +625,25 @@ export default function InputPanel({ financials, dashData, onChange, session, on
         // `null`. Unchanged for every edit that doesn't touch it, since
         // editTxCycleDate is seeded from tx.cycleDate in startEditTx.
         cycleDate: editTxCycleDate,
+        efAmount,
+        debtId: editTxDebtId,
+        updatedAt: new Date().toISOString(),
       }),
     });
     setEditTxId(null);
+  }
+
+  // Phase 2.6.3b: soft-delete -- stamps deletedAt instead of removing the
+  // row, so it's recoverable from TransactionsScreen's "Recently deleted"
+  // view rather than gone the moment "Delete transaction" is confirmed.
+  function softDeleteTransaction(txId: string) {
+    const now = new Date().toISOString();
+    update({
+      transactions: financials.transactions.map((t) => t.id !== txId ? t : { ...t, deletedAt: now, updatedAt: now }),
+    });
+    setDeletedMsg("Deleted — recoverable in Transactions");
+    if (deletedMsgTimer.current) clearTimeout(deletedMsgTimer.current);
+    deletedMsgTimer.current = setTimeout(() => setDeletedMsg(null), 4000);
   }
 
   // ── tab state ─────────────────────────────────────────────────── //
@@ -585,7 +656,11 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   // ── derived ───────────────────────────────────────────────────── //
 
   const prefix   = todayISO().slice(0, 7);
-  const monthTx  = financials.transactions.filter((t) => t.date.startsWith(prefix));
+  // Phase 2.6.3b: a soft-deleted transaction must not keep counting toward
+  // this month's totals or appear in "This month"'s list -- deleting is
+  // meant to behave exactly like the old hard-delete from here on.
+  const activeTx = activeTransactions(financials.transactions);
+  const monthTx  = activeTx.filter((t) => t.date.startsWith(prefix));
   const now      = new Date();
   // nextConfirmTarget requires a UTC-midnight-anchored asOf, same contract as isCycleOverdue/dueCycles.
   const todayMidnight = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
@@ -779,24 +854,31 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                 </div>
                 {/* EF toggle */}
                 {!efFull ? (
-                  <button
-                    onClick={() => setTxAddToEF((v) => !v)}
-                    className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-left transition-all"
-                    style={{
-                      background: txAddToEF ? T.jade + "18" : T.panelSoft,
-                      border: `1px solid ${txAddToEF ? T.jade : T.line}`,
-                    }}
-                  >
-                    <div>
-                      <p className="text-xs font-medium" style={{ color: txAddToEF ? T.jade : T.text }}>
-                        Also add to Safety net
-                      </p>
-                      <p className="text-[10px]" style={{ color: T.mute }}>
-                        EF: ${efBalance.toLocaleString()} of ${efTarget.toLocaleString()} · ${efRemaining.toLocaleString()} remaining
-                      </p>
-                    </div>
-                    <span className="text-base ml-2">{txAddToEF ? "✓" : "○"}</span>
-                  </button>
+                  <>
+                    <button
+                      onClick={() => setTxAddToEF((v) => !v)}
+                      className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-left transition-all"
+                      style={{
+                        background: txAddToEF ? T.jade + "18" : T.panelSoft,
+                        border: `1px solid ${txAddToEF ? T.jade : T.line}`,
+                      }}
+                    >
+                      <div>
+                        <p className="text-xs font-medium" style={{ color: txAddToEF ? T.jade : T.text }}>
+                          Also add to Safety net
+                        </p>
+                        <p className="text-[10px]" style={{ color: T.mute }}>
+                          EF: ${efBalance.toLocaleString()} of ${efTarget.toLocaleString()} · ${efRemaining.toLocaleString()} remaining
+                        </p>
+                      </div>
+                      <span className="text-base ml-2">{txAddToEF ? "✓" : "○"}</span>
+                    </button>
+                    {/* Blank = full transaction amount -- only needed to type
+                        something here for a PARTIAL EF contribution. */}
+                    {txAddToEF && (
+                      <MoneyInput value={txEfAmt} onChange={setTxEfAmt} placeholder={`Full amount (${txAmt || "0"})`} />
+                    )}
+                  </>
                 ) : (
                   <div className="rounded-xl px-3 py-2" style={{ background: T.jade + "14", border: `1px solid ${T.jade}30` }}>
                     <p className="text-xs font-medium" style={{ color: T.jade }}>✓ Safety net is fully funded</p>
@@ -807,25 +889,33 @@ export default function InputPanel({ financials, dashData, onChange, session, on
           })()}
 
           {/* Needs/Wants: option to pay this from the Emergency Fund instead of new spending */}
-          {txBucket !== "SAVINGS" && txBucket !== "INCOME" && (financials.emergencyFundBalance ?? 0) > 0 && (
-            <button
-              onClick={() => setTxFromEF((v) => !v)}
-              className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-left transition-all"
-              style={{
-                background: txFromEF ? T.coral + "18" : T.panelSoft,
-                border: `1px solid ${txFromEF ? T.coral : T.line}`,
-              }}
-            >
-              <div>
-                <p className="text-xs font-medium" style={{ color: txFromEF ? T.coral : T.text }}>
-                  Pay this from Safety net
-                </p>
-                <p className="text-[10px]" style={{ color: T.mute }}>
-                  EF balance: ${(financials.emergencyFundBalance ?? 0).toLocaleString()} · reduces it by this amount
-                </p>
-              </div>
-              <span className="text-base ml-2">{txFromEF ? "✓" : "○"}</span>
-            </button>
+          {txBucket !== "SAVINGS" && txBucket !== "INCOME" && dashData.emergencyFund.balance > 0 && (
+            <>
+              <button
+                onClick={() => setTxFromEF((v) => !v)}
+                className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-left transition-all"
+                style={{
+                  background: txFromEF ? T.coral + "18" : T.panelSoft,
+                  border: `1px solid ${txFromEF ? T.coral : T.line}`,
+                }}
+              >
+                <div>
+                  <p className="text-xs font-medium" style={{ color: txFromEF ? T.coral : T.text }}>
+                    Pay this from Safety net
+                  </p>
+                  <p className="text-[10px]" style={{ color: T.mute }}>
+                    EF balance: ${dashData.emergencyFund.balance.toLocaleString()} · reduces it by this amount
+                  </p>
+                </div>
+                <span className="text-base ml-2">{txFromEF ? "✓" : "○"}</span>
+              </button>
+              {/* Blank = full transaction amount -- type a smaller number to
+                  represent only PART of this payment coming from EF (2.4.27's
+                  exact case: $300 of a $325 payment). */}
+              {txFromEF && (
+                <MoneyInput value={txEfAmt} onChange={setTxEfAmt} placeholder={`Full amount (${txAmt || "0"})`} />
+              )}
+            </>
           )}
 
           <div>
@@ -837,7 +927,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
               placeholder={txBucket === "INCOME" ? "Bonus, freelance gig, gift…" : "Rent, groceries, gym…"}
               onKeyDown={(e) => e.key === "Enter" && addTransaction()}
             />
-            {txBucket !== "INCOME" && looksRecurring(txDesc, txDate, financials.transactions, financials.recurring ?? []) && (
+            {txBucket !== "INCOME" && looksRecurring(txDesc, txDate, activeTx, financials.recurring ?? []) && (
               <div className="mt-2 rounded-xl px-3 py-2.5 flex items-center justify-between gap-2" style={{ background: T.brass + "14", border: `1px solid ${T.brass}30` }}>
                 <p className="text-[11px]" style={{ color: T.brass }}>You&apos;ve logged this before in another month. Looks recurring.</p>
                 <button
@@ -1026,7 +1116,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                           <div>
                             <Label htmlFor="edit-tx-desc">Description</Label>
                             <FocusInput id="edit-tx-desc" value={editTxDesc} onChange={(e) => setEditTxDesc(e.target.value)} />
-                            {editTxBucket !== "INCOME" && looksRecurring(editTxDesc, editTxDate, financials.transactions.filter((t) => t.id !== tx.id), financials.recurring ?? []) && (
+                            {editTxBucket !== "INCOME" && looksRecurring(editTxDesc, editTxDate, activeTx.filter((t) => t.id !== tx.id), financials.recurring ?? []) && (
                               <div className="mt-2 rounded-xl px-3 py-2.5 flex items-center justify-between gap-2" style={{ background: T.brass + "14", border: `1px solid ${T.brass}30` }}>
                                 <p className="text-[11px]" style={{ color: T.brass }}>You&apos;ve logged this before in another month. Looks recurring.</p>
                                 <button
@@ -1103,6 +1193,33 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                               </button>
                             </div>
                           )}
+                          {editTxEfAmount != null ? (
+                            <div className="rounded-lg px-2.5 py-2 space-y-1.5" style={{ background: T.ink, border: `1px solid ${T.line}` }}>
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-[10px]" style={{ color: T.mute }}>Emergency fund</p>
+                                <button type="button" onClick={() => setEditTxEfAmount(null)} aria-label="Detach this transaction from the emergency fund" className="text-[10px] font-semibold px-2 py-1 rounded-lg transition-all hover:opacity-80 flex-shrink-0" style={{ color: T.coral, border: `1px solid ${T.coral}40` }}>Detach</button>
+                              </div>
+                              <MoneyInput value={editTxEfAmount} onChange={setEditTxEfAmount} placeholder="0" />
+                              <p className="text-[9px]" style={{ color: T.mute }}>Positive adds to it, negative draws from it.</p>
+                            </div>
+                          ) : (
+                            <button type="button" onClick={() => setEditTxEfAmount(editTxAmt)} className="text-[10px] font-medium px-2.5 py-1.5 rounded-lg transition-all hover:opacity-80" style={{ color: T.jade, border: `1px solid ${T.jade}40` }}>+ Link to Emergency fund</button>
+                          )}
+                          <div>
+                            <Label htmlFor="edit-tx-debt">Linked debt</Label>
+                            <select
+                              id="edit-tx-debt"
+                              value={editTxDebtId ?? ""}
+                              onChange={(e) => setEditTxDebtId(e.target.value || undefined)}
+                              className="w-full rounded-lg px-2 py-1.5 text-[10px]"
+                              style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
+                            >
+                              <option value="">Not linked</option>
+                              {financials.debts.map((d) => (
+                                <option key={d.id} value={d.id}>{d.name}</option>
+                              ))}
+                            </select>
+                          </div>
                           <div className="flex gap-2">
                             <button onClick={() => saveEditTx(tx.id)} className="px-3 py-1.5 rounded-xl text-xs font-semibold hover:opacity-90" style={{ background: T.jade, color: T.ink }}>Save</button>
                             <button onClick={() => setEditTxId(null)} className="px-3 py-1.5 rounded-xl text-xs hover:opacity-70" style={{ color: T.mute }}>Cancel</button>
@@ -1147,7 +1264,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                               style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
                             >✎</button>
                             <button
-                              onClick={() => { if (confirm("Delete this transaction?")) update({ transactions: financials.transactions.filter((t) => t.id !== tx.id) }); }}
+                              onClick={() => { if (confirm("Delete this transaction?")) softDeleteTransaction(tx.id); }}
                               aria-label="Delete transaction"
                               className="opacity-70 md:opacity-0 md:group-hover:opacity-100 hover:!opacity-100 transition-opacity text-xs px-1"
                               style={{ color: T.coral }}
@@ -1196,7 +1313,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
 
         {/* History — past months */}
         {(() => {
-          const pastTx = financials.transactions.filter((t) => !t.date.startsWith(prefix));
+          const pastTx = activeTx.filter((t) => !t.date.startsWith(prefix));
           if (pastTx.length === 0) return null;
           const byMonth: Record<string, StoredTransaction[]> = {};
           pastTx.forEach((t) => {
@@ -1308,6 +1425,33 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                                       </button>
                                     </div>
                                   )}
+                                  {editTxEfAmount != null ? (
+                                    <div className="rounded-lg px-2.5 py-2 space-y-1.5" style={{ background: T.ink, border: `1px solid ${T.line}` }}>
+                                      <div className="flex items-center justify-between gap-2">
+                                        <p className="text-[10px]" style={{ color: T.mute }}>Emergency fund</p>
+                                        <button type="button" onClick={() => setEditTxEfAmount(null)} aria-label="Detach this transaction from the emergency fund" className="text-[10px] font-semibold px-2 py-1 rounded-lg transition-all hover:opacity-80 flex-shrink-0" style={{ color: T.coral, border: `1px solid ${T.coral}40` }}>Detach</button>
+                                      </div>
+                                      <MoneyInput value={editTxEfAmount} onChange={setEditTxEfAmount} placeholder="0" />
+                                      <p className="text-[9px]" style={{ color: T.mute }}>Positive adds to it, negative draws from it.</p>
+                                    </div>
+                                  ) : (
+                                    <button type="button" onClick={() => setEditTxEfAmount(editTxAmt)} className="text-[10px] font-medium px-2.5 py-1.5 rounded-lg transition-all hover:opacity-80" style={{ color: T.jade, border: `1px solid ${T.jade}40` }}>+ Link to Emergency fund</button>
+                                  )}
+                                  <div>
+                                    <Label htmlFor="edit-tx-debt-2">Linked debt</Label>
+                                    <select
+                                      id="edit-tx-debt-2"
+                                      value={editTxDebtId ?? ""}
+                                      onChange={(e) => setEditTxDebtId(e.target.value || undefined)}
+                                      className="w-full rounded-lg px-2 py-1.5 text-[10px]"
+                                      style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
+                                    >
+                                      <option value="">Not linked</option>
+                                      {financials.debts.map((d) => (
+                                        <option key={d.id} value={d.id}>{d.name}</option>
+                                      ))}
+                                    </select>
+                                  </div>
                                   <div className="flex gap-2">
                                     <button onClick={() => saveEditTx(tx.id)} className="px-3 py-1.5 rounded-lg text-xs font-semibold hover:opacity-90" style={{ background: T.jade, color: T.ink }}>Save</button>
                                     <button onClick={() => setEditTxId(null)} className="px-3 py-1.5 rounded-lg text-xs hover:opacity-70" style={{ color: T.mute }}>Cancel</button>
@@ -1333,7 +1477,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                                       style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
                                     >✎</button>
                                     <button
-                                      onClick={() => { if (confirm("Delete this transaction?")) update({ transactions: financials.transactions.filter((t) => t.id !== tx.id) }); }}
+                                      onClick={() => { if (confirm("Delete this transaction?")) softDeleteTransaction(tx.id); }}
                                       aria-label="Delete transaction"
                                       className="opacity-70 md:opacity-0 md:group-hover:opacity-100 hover:!opacity-100 transition-opacity text-[10px] px-1"
                                       style={{ color: T.coral }}
@@ -1989,6 +2133,10 @@ export default function InputPanel({ financials, dashData, onChange, session, on
           {financials.debts.map((d) => {
             const isPaying  = payingDebtId === d.id;
             const isEditing = editDebtId === d.id;
+            // Phase 2.6.3a: derived once per row from openingBalance + the
+            // linked transaction ledger, not read from the stored `balance`
+            // field.
+            const balance = derivedDebtBalance(d, financials.transactions);
             return (
               <div key={d.id}>
                 {isEditing ? (
@@ -1999,7 +2147,14 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                       <FocusInput id="edit-debt-name" value={editDName} onChange={(e) => setEditDName(e.target.value)} />
                     </div>
                     <div className="grid grid-cols-3 gap-2">
-                      <div><Label htmlFor="edit-debt-balance">Balance ({d.currency === "LBP" ? "L£" : "$"})</Label><MoneyInput id="edit-debt-balance" value={editDBalance} onChange={setEditDBalance} placeholder="0" /></div>
+                      <div>
+                        <Label htmlFor="edit-debt-balance">Balance ({d.currency === "LBP" ? "L£" : "$"})</Label>
+                        {/* Phase 2.6.3a: read-only -- balance is derived from
+                            openingBalance + the transaction ledger now.
+                            Correcting it directly is deferred to 2.6.3(c),
+                            which gives it a real, linked way to happen. */}
+                        <p id="edit-debt-balance" className="text-sm tabular-nums px-3 py-2 rounded-lg" style={{ background: T.ink, color: T.mute, border: `1px solid ${T.line}` }}>{fmtCur(balance, d.currency)}</p>
+                      </div>
                       <div><Label htmlFor="edit-debt-apr">APR (%)</Label><FocusInput id="edit-debt-apr" type="number" min="0" step="0.1" value={editDApr} onChange={(e) => setEditDApr(e.target.value)} placeholder="0" /></div>
                       <div><Label htmlFor="edit-debt-min">Min/mo</Label><MoneyInput id="edit-debt-min" value={editDMin} onChange={setEditDMin} placeholder="0" /></div>
                     </div>
@@ -2030,7 +2185,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                           )}
                         </p>
                         <p className="text-[10px] tabular-nums mt-0.5" style={{ color: T.mute }}>
-                          {fmtCur(d.balance, d.currency)} · {d.apr}% APR · min {fmtCur(d.minPayment, d.currency)}/mo
+                          {fmtCur(balance, d.currency)} · {d.apr}% APR · min {fmtCur(d.minPayment, d.currency)}/mo
                         </p>
                         {(d.openedDate || d.createdAt || d.paidOffAt) && (
                           <p className="text-[9px] mt-1" style={{ color: T.mute }}>
@@ -2080,9 +2235,23 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                             style={{ background: T.jade, color: T.ink }}
                           >Apply</button>
                         </div>
+                        {/* Owner's explicit instruction: never default this --
+                            a minimum payment is a Need, a voluntary
+                            overpayment is closer to Savings, and guessing
+                            wrong silently skews budget pace. */}
+                        <div className="grid grid-cols-3 gap-1.5">
+                          {BUCKETS.map((bkt) => (
+                            <button key={bkt.value} onClick={() => setDebtPayBucket(bkt.value)}
+                              aria-pressed={debtPayBucket === bkt.value}
+                              className="py-1.5 rounded-lg text-[10px] font-medium transition-all"
+                              style={{ background: debtPayBucket === bkt.value ? bkt.color + "22" : T.panelSoft, border: `1px solid ${debtPayBucket === bkt.value ? bkt.color : T.line}`, color: debtPayBucket === bkt.value ? bkt.color : T.mute }}>
+                              {bkt.icon} {bkt.label}
+                            </button>
+                          ))}
+                        </div>
                         <p className="text-[10px]" style={{ color: T.mute }}>
-                          Balance after: {fmtCur(Math.max(0, d.balance - (parseFloat(debtPayAmt.replace(/,/g, "")) || 0)), d.currency)}
-                          {parseFloat(debtPayAmt.replace(/,/g, "")) >= d.balance && (
+                          Balance after: {fmtCur(Math.max(0, balance - (parseFloat(debtPayAmt.replace(/,/g, "")) || 0)), d.currency)}
+                          {parseFloat(debtPayAmt.replace(/,/g, "")) >= balance && (
                             <span style={{ color: T.jade }}>, fully paid off 🏁</span>
                           )}
                         </p>
@@ -2411,6 +2580,15 @@ export default function InputPanel({ financials, dashData, onChange, session, on
             </button>
           </div>
         </div>
+      </div>
+    )}
+
+    {deletedMsg && (
+      <div
+        className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl text-xs font-medium shadow-lg"
+        style={{ background: T.panel, border: `1px solid ${T.jade}50`, color: T.text }}
+      >
+        <span style={{ color: T.jade }}>✓</span> {deletedMsg}
       </div>
     )}
     </>

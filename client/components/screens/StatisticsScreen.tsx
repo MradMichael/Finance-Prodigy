@@ -1,7 +1,7 @@
 "use client";
 
 import type { LocalFinancials } from "../../lib/localData";
-import { nextOccurrence, isRecurringActive, historizedRecurringContribution, valueForMonth, toUSD as toUSDShared, DEFAULT_LBP_RATE } from "../../lib/localData";
+import { nextOccurrence, isRecurringActive, historizedRecurringContribution, valueForMonth, toUSD as toUSDShared, activeTransactions, DEFAULT_LBP_RATE } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money } from "./shared";
@@ -23,6 +23,8 @@ export default function StatisticsScreen({
   const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
   const toUSD = (n: number, cur?: string) => toUSDShared(n, cur as "USD" | "LBP" | undefined, lbpRate);
   const now = new Date();
+  // Phase 2.6.3b: soft-deleted transactions excluded from every total below.
+  const activeTx = activeTransactions(financials.transactions);
 
   // ── Cash flow trend + table (same underlying data, two views) ──────
   const trend = dashData.sixMonthTrend;
@@ -43,14 +45,14 @@ export default function StatisticsScreen({
   // the trend chart right above this on the same page.
   function incomeForMonth(ym: string): number {
     const salary = valueForMonth(financials.incomeHistory, ym, financials.income);
-    const txIncome = financials.transactions
+    const txIncome = activeTx
       .filter((t) => t.bucket === "INCOME" && t.date.startsWith(ym))
       .reduce((s, t) => s + toUSD(t.amount, t.currency), 0);
     return salary + txIncome;
   }
 
   function periodTotals(ym: string, recurAsOf: Date) {
-    const tx = financials.transactions.filter((t) => t.date.startsWith(ym));
+    const tx = activeTx.filter((t) => t.date.startsWith(ym));
     const txSum = (bucket: string) => tx.filter((t) => t.bucket === bucket).reduce((s, t) => s + toUSD(t.amount, t.currency), 0);
     const out = { income: incomeForMonth(ym), needs: txSum("NEEDS"), wants: txSum("WANTS"), savings: txSum("SAVINGS") };
     for (const r of financials.recurring ?? []) {

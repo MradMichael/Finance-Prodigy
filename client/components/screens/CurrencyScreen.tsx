@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
-import { historizedRecurringContribution, toUSD as toUSDShared, todayISO, moneyEquals, DEFAULT_LBP_RATE } from "../../lib/localData";
+import { historizedRecurringContribution, toUSD as toUSDShared, todayISO, moneyEquals, activeTransactions, DEFAULT_LBP_RATE } from "../../lib/localData";
 import { computeHoldingsByCurrency } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money } from "./shared";
@@ -18,7 +18,7 @@ export default function CurrencyScreen({ financials }: { financials: LocalFinanc
   // native currency (not converted) so this actually measures which
   // currency money is changing hands in, not just USD-equivalent totals. ──
   const currentYm = todayISO().slice(0, 7);
-  const monthTx = financials.transactions.filter((t) => t.date.startsWith(currentYm) && t.bucket !== "INCOME");
+  const monthTx = activeTransactions(financials.transactions).filter((t) => t.date.startsWith(currentYm) && t.bucket !== "INCOME");
   const spendUSD = monthTx.filter((t) => (t.currency ?? "USD") === "USD").reduce((s, t) => s + t.amount, 0)
     + (financials.recurring ?? []).filter((r) => (r.currency ?? "USD") === "USD").reduce((s, r) => s + historizedRecurringContribution(r, currentYm, new Date()), 0);
   const spendLBP = monthTx.filter((t) => t.currency === "LBP").reduce((s, t) => s + t.amount, 0)

@@ -89,8 +89,19 @@ export interface StoredTransaction {
   // of `amount`/`debtId` -- `|efAmount|` can be LESS than `amount`, which
   // is what makes "$300 of this $325 payment came from EF" representable
   // on one real transaction instead of forcing a choice (2.4.27's exact
-  // bug).
-  efAmount?: number;
+  // bug). Widened to `| null` in 2.6.3c, mirroring `cycleDate`'s own
+  // undefined-vs-null distinction: undefined = never linked to EF, explicit
+  // null = deliberately detached (owner's instruction) -- 0 is a legitimate
+  // amount someone might genuinely mean and can't double as "not linked."
+  efAmount?: number | null;
+  // Added in schema v4 (Phase 2.6.3c) -- stamped on every write (create,
+  // edit, confirm, restore, soft-delete). What makes edit-vs-edit sync
+  // conflicts resolvable at all (Phase 2.7): with no way to tell which of
+  // two devices' copies of the same transaction is newer, a merge has
+  // nothing to arbitrate with. Absent on every transaction that predates
+  // this field, and never backfilled -- there's no real value to recover
+  // for one that already existed, matching createdAt's own precedent.
+  updatedAt?: string;
 }
 
 export interface StoredGoal {
@@ -1044,8 +1055,10 @@ export function nextOccurrence(r: StoredRecurring, asOf: Date = new Date()): Dat
  */
 export function recurringPaidSoFar(r: StoredRecurring, transactions: StoredTransaction[]): number {
   if (!r.totalAmount || r.amount <= 0) return 0;
+  // Phase 2.6.3b: a soft-deleted confirming transaction no longer counts --
+  // same reasoning as isCycleConfirmed above.
   const confirmedSum = transactions
-    .filter((t) => t.recurringId === r.id)
+    .filter((t) => t.deletedAt == null && t.recurringId === r.id)
     .reduce((s, t) => s + t.amount, 0);
   return Math.min(r.totalAmount, confirmedSum);
 }
@@ -1178,6 +1191,12 @@ export function dueCycles(r: StoredRecurring, from: Date, to: Date): Date[] {
 export function isCycleConfirmed(r: StoredRecurring, dueDate: Date, transactions: StoredTransaction[]): boolean {
   const dueISO = dueDate.toISOString().slice(0, 10);
   return transactions.some((t) => {
+    // Phase 2.6.3b: a soft-deleted transaction never counts as confirming --
+    // deleting it un-pays the cycle, with no special-case code needed
+    // anywhere that calls this (isCycleOverdue, nextConfirmTarget,
+    // pendingBackfillCycles all inherit this for free, since none of them
+    // reads `transactions` any other way).
+    if (t.deletedAt != null) return false;
     if (t.recurringId !== r.id) return false;
     if (t.cycleDate === null) return false;
     return (t.cycleDate ?? t.date) === dueISO;
@@ -1226,12 +1245,14 @@ export function buildRecurringConfirmLog(r: StoredRecurring, lbpRate: number, du
   const dueISO = dueDate.toISOString().slice(0, 10);
   const paidISO = paidDate.toISOString().slice(0, 10);
   const cycleYm = dueISO.slice(0, 7);
+  const now = new Date().toISOString();
   const tx: StoredTransaction = {
     id: uid(), amount: r.amount, currency: r.currency, bucket: r.bucket,
     ...(r.category ? { category: r.category } : {}),
     ...withRate(r.currency, lbpRate),
     description: r.name, date: paidISO, paymentMethod: "cash",
     recurringId: r.id, cycleDate: dueISO,
+    createdAt: now, updatedAt: now,
   };
   return { tx, cycleYm };
 }
@@ -1316,10 +1337,53 @@ export function historizedRecurringContribution(r: StoredRecurring, ym: string, 
  * phase -- see docs/ROADMAP.md Phase 1.4's own scope note.
  */
 export function buildGoalContributionTx(goal: StoredGoal, amount: number, lbpRate: number): StoredTransaction {
+  const now = new Date().toISOString();
   return {
     id: uid(), amount, currency: goal.currency, bucket: "SAVINGS",
     description: `Goal: ${goal.name}`, date: todayISO(), paymentMethod: "other",
+    createdAt: now, updatedAt: now,
     ...withRate(goal.currency, lbpRate),
+  };
+}
+
+/**
+ * Phase 2.6.3c -- the transaction behind a real debt payment, replacing
+ * recordDebtPayment's old direct `d.balance -= amt` mutation. `bucket` is
+ * caller-supplied, never defaulted: a minimum payment is a Need, a
+ * voluntary overpayment is closer to Savings, and guessing wrong silently
+ * miscategorizes real spend and skews budget pace (owner's explicit
+ * instruction).
+ */
+export function buildDebtPaymentTx(debt: StoredDebt, amount: number, bucket: "NEEDS" | "WANTS" | "SAVINGS", lbpRate: number): StoredTransaction {
+  const now = new Date().toISOString();
+  return {
+    id: uid(), amount, currency: debt.currency, bucket,
+    description: `Debt payment: ${debt.name}`, date: todayISO(), paymentMethod: "other",
+    debtId: debt.id, createdAt: now, updatedAt: now,
+    ...withRate(debt.currency, lbpRate),
+  };
+}
+
+/**
+ * Phase 2.6.3c -- SetupScreen's EF field is no longer an opening-balance
+ * editor; it reads as "your real current balance." Saving computes
+ * `delta = entered - derivedEfBalance(financials)` and this builds the one
+ * transaction that carries it. `amount: 0` is deliberate, not an oversight:
+ * a correction is neither real spend nor income and must not move any
+ * NEEDS/WANTS/SAVINGS total -- only `efAmount` (independent of `amount`,
+ * see StoredTransaction's own comment) should move. This is what keeps
+ * `emergencyFundOpeningBalance` write-once forever after its initial
+ * migration/creation snapshot, matching the same reasoning that made
+ * `debt.openingBalance` write-once -- every correction becomes a real,
+ * inspectable ledger row instead of a silently-edited scalar with nothing
+ * behind it.
+ */
+export function buildEfAdjustmentTx(delta: number): StoredTransaction {
+  const now = new Date().toISOString();
+  return {
+    id: uid(), amount: 0, currency: "USD", bucket: "SAVINGS",
+    description: "Emergency fund balance correction", date: todayISO(), paymentMethod: "other",
+    efAmount: roundMoney(delta), createdAt: now, updatedAt: now,
   };
 }
 
@@ -1382,4 +1446,17 @@ export function derivedDebtBalance(debt: StoredDebt, transactions: StoredTransac
     .filter((t) => t.debtId === debt.id && t.deletedAt == null)
     .reduce((s, t) => s + t.amount, 0);
   return roundMoney(Math.max(0, debt.openingBalance - paid));
+}
+
+/**
+ * Phase 2.6.3b -- the transaction ledger with soft-deleted rows excluded.
+ * What every normal read (spend totals, lists, category/currency/goal
+ * aggregation, recurring-confirm status) is meant to see. The only
+ * legitimate readers of the full array (deletedAt included) are the
+ * "Recently deleted" recovery view itself and the delete/restore actions
+ * that flip the field -- everything else should read through this instead
+ * of re-deriving its own `t.deletedAt == null` filter inline.
+ */
+export function activeTransactions(transactions: StoredTransaction[]): StoredTransaction[] {
+  return transactions.filter((t) => t.deletedAt == null);
 }

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
-import { todayISO, roundMoney, buildGoalContributionTx, toUSD as toUSDShared, DEFAULT_LBP_RATE } from "../../lib/localData";
+import { todayISO, roundMoney, buildGoalContributionTx, toUSD as toUSDShared, activeTransactions, DEFAULT_LBP_RATE } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
@@ -25,7 +25,7 @@ export default function GoalsScreen({
 
   const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
   const prefix = todayISO().slice(0, 7);
-  const goalTxThisMonth = (financials.transactions ?? []).filter(
+  const goalTxThisMonth = activeTransactions(financials.transactions ?? []).filter(
     (t) => t.bucket === "SAVINGS" && t.date.startsWith(prefix) && t.description.startsWith("Goal:")
   );
   // Converted per-transaction before summing -- a contribution is always
