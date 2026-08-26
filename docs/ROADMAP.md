@@ -200,11 +200,46 @@ A debt payment sourced partly from EF is recordable as one real transaction, vis
 
 ---
 
+## Phase 2.7 — Sync merge for transactions
+
+**Status:** not started, design approved 2026-08-26 · **Depends on:** Phase 2.6 (all of 2.6.3, including (c)) · **Blocks:** Phase 2 (cohort launch).
+
+### Context
+
+Found while designing 2.6.3(c), not by audit sweep: two devices (phone, laptop) each recording a transaction between syncs is a routine, weekly occurrence for a two-device user, not an edge case. Today, whichever device pushes second either silently overwrites the other's real transaction or gets rejected outright (2.4.38's `stale_push` conflict) — and detection without merge just names which data is about to be lost, it doesn't save it. A finance app that silently drops a transaction during completely normal dual-device use is a worse defect than most of what's already on the Launch Blocker list, and unlike 2.4.33 it needs no outage or sign-in trigger to fire.
+
+### Why this depends on 2.6.3(c) specifically, not just (a)/(b)
+
+`derivedEfBalance`/`derivedDebtBalance` (2.6.2/2.6.3a) already make EF/debt balances a pure function of the transaction ledger — that's what makes "merge the transactions, the balances fall out correct for free" true at all. But per the owner's own deploy-together decision, (a)/(b)/(c) ship as one unit — so by the time this phase's merge logic runs against a live account, every EF/debt write will already be transaction-based (2.6.3(c)'s EF checkboxes/`recordDebtPayment`/`SetupScreen` rework). No non-transaction EF/debt mutation path exists left to worry about.
+
+### Design (approved 2026-08-26)
+
+**Scope: transactions merge automatically; everything else keeps today's pick-a-side resolution, applied after the transaction merge lands on top of whichever side is chosen** — not a full merge of every entity array. `debts`/`goals`/`recurring`/`assets`/`cards`/`trackedBalances` have no delete-tombstones today; naively unioning them by id would risk resurrecting something one device hard-deleted, the same bug class 2.6.3(b) exists to prevent, just on a different entity. Left alone for this phase.
+
+- **`mergeTransactions(local, server)`** — pure function, siblings of `derivedEfBalance`/`derivedDebtBalance`, tests-first (Standing Rule 4 — this is the merge the rest of the phase leans on). Union by `id`: present on one side only → keep it. `deletedAt` set on either side → tombstone wins over an active copy. Same `id`, both active, fields differ (a real edit-vs-edit conflict) → resolved by `updatedAt` (added to `StoredTransaction` in 2.6.3(c) — see below) once a device has both timestamps; last-writer-wins, since a genuine conflict is rare enough for a two-device personal app that blocking a routine sync on it is worse than an occasional silently-applied "wrong" pick — but the merge result should carry enough information for the caller to say what happened (e.g. "resolved 1 conflicting edit"), not resolve it invisibly. Exact confirm/note UX to be decided when this phase starts, not now.
+- **Known residual gap, accepted, not hidden**: a merged-in transaction can reference a `debtId`/`recurringId` that only exists on the discarded side of a non-transaction conflict. Low blast radius — `derivedDebtBalance` only counts a transaction toward a debt it actually matches, so a dangling reference sits inert rather than corrupting anything, same severity class as the already-logged 2.4.35 (orphaned `recurringId`).
+- **`syncService.ts` wiring** — no server changes: the server already stores one opaque blob with zero merge awareness (confirmed by reading `sync.ts`), so merge is entirely client-side. On a conflict: pull the server's current data via the existing `pullFromServer`, run `mergeTransactions` against local, keep local's non-transaction fields (falling back to today's pick-a-side prompt only if those also differ), push the merged result via the existing `pushToServer` (succeeds now that `baseSyncedAt` reflects the just-pulled `syncedAt`).
+- **`autoSync`'s conflict path** (`page.tsx`) attempts the merge automatically in the background on a 409, rather than only setting the static "Sync conflict — resolve in Settings" indicator — the pain point is routine, so the fix should be too. Surface a brief, dismissible confirmation of what happened (e.g. "Merged with your other device — 2 new transactions added"), matching the toast precedent from 2.6.3(b) — a number moving with no explanation is worse than the conflict badge it replaces. Falls back to today's static conflict indicator only when a real non-transaction conflict remains.
+- **Profile page's existing Push/Pull conflict card** gains a third, primary "Merge" action (Push/Pull demoted to manual overrides for when someone actually wants to discard a side).
+
+### Two additions folded into 2.6.3(c)'s own data model, not built here
+
+1. **`StoredTransaction.updatedAt?: string`**, stamped on every write (create, edit, confirm, restore) — added as part of 2.6.3(c) since that sub-phase is already touching the transaction model and building the edit form; adding it later would mean a second migration for a field already known to be needed now. This is what makes edit-vs-edit resolution above possible at all.
+2. Edit-vs-edit resolution itself (last-writer-wins vs. requiring manual review) was revisited once `updatedAt` is available and decided in favor of auto-resolving with a note, not blocking — see the design section above.
+
+### Acceptance
+
+Two devices each log a different transaction between syncs; both survive after either device's next sync, with no user action required beyond the existing sync flow. A transaction deleted on one device stays deleted after merging with a stale copy of it from the other. A genuine same-transaction edit conflict resolves automatically (last-writer-wins) and is visible in the outcome, not silent. No server-side change required.
+
+**SAFE STOP.**
+
+---
+
 ## Phase 2 — Cohort launch
 
 **Not a development phase.** Owner-executed.
 
-Preconditions: Phase 0, Phase 1, **Phase 2.5, and Phase 2.6** complete (updated 2026-08-25 — same reasoning both times: the ledger reconciles under its final model before anyone outside the owner uses it), 12 of 12 on the launch checklist in `CLAUDE_CODE_BRIEF.md` §3.2, real-device mobile check passed.
+Preconditions: Phase 0, Phase 1, **Phase 2.5, Phase 2.6, and Phase 2.7** complete (updated 2026-08-26 — same reasoning each time: the ledger, and now sync itself, should reconcile under its final model before anyone outside the owner uses it), 12 of 12 on the launch checklist in `CLAUDE_CODE_BRIEF.md` §3.2, real-device mobile check passed.
 
 Once live, **Rule 8 activates**: the ordering below becomes provisional and subject to what real users actually do.
 
@@ -354,7 +389,8 @@ Not scheduled. Each requires an explicit decision to activate.
 Phase 0  Loose ends            — now
 Phase 1  Dual-currency         — last Launch Blocker
 Phase 2.5  Recurring confirm-on-due  — built, merged, 🟡 pending owner's live check
-Phase 2.6  EF/debt ledger-derived    — not started, design only, cohort-blocking (2.4.27)
+Phase 2.6  EF/debt ledger-derived    — 2.6.1/2.6.2 merged, 2.6.3(a) approved+held, (b) built+held, (c) in progress, held for combined deploy, cohort-blocking (2.4.27)
+Phase 2.7  Sync merge (transactions) — design approved, not started, depends on 2.6.3(c), cohort-blocking
 Phase 2  COHORT LAUNCH         — ordering below becomes provisional
 Phase 3  Recurring end dates
 Phase 4  Goal feasibility      — flagship
