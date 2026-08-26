@@ -9,7 +9,7 @@ import {
   migrateFinancials, schemaVersionOf, withRate, CURRENT_SCHEMA_VERSION, todayISO,
   dueCycles, isCycleConfirmed, isCycleOverdue, buildRecurringConfirmLog,
   nextConfirmTarget, historizedRecurringContribution, pendingBackfillCycles,
-  derivedEfBalance, derivedDebtBalance,
+  derivedEfBalance, derivedDebtBalance, activeTransactions,
 } from "./localData";
 
 // UTC midnight of a given local calendar date -- matches nextOccurrence's
@@ -147,6 +147,12 @@ describe("recurringPaidSoFar", () => {
   it("ignores a transaction belonging to a different recurring item", () => {
     const r = makeRecurring({ id: "r1", amount: 750, totalAmount: 6750, startDate: "2026-01-01" });
     const tx: StoredTransaction = { id: "t1", amount: 750, currency: "USD", bucket: "NEEDS", description: "Other", date: "2026-04-01", recurringId: "r2" };
+    expect(recurringPaidSoFar(r, [tx])).toBe(0);
+  });
+
+  it("Phase 2.6.3b: a soft-deleted confirming transaction no longer counts toward paid-so-far -- deleting it un-pays the cycle, no special-case code needed", () => {
+    const r = makeRecurring({ id: "r1", amount: 750, totalAmount: 6750, startDate: "2026-01-01" });
+    const tx: StoredTransaction = { id: "t1", amount: 750, currency: "USD", bucket: "NEEDS", description: "Uni", date: "2026-04-01", recurringId: "r1", deletedAt: "2026-08-20T00:00:00.000Z" };
     expect(recurringPaidSoFar(r, [tx])).toBe(0);
   });
 });
@@ -472,6 +478,11 @@ describe("isCycleConfirmed", () => {
     // happens to still equal the cycle's own due date, or detaching would
     // be a no-op for the one case (date unedited) it's most likely to be used for.
     const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-08-01", cycleDate: null, recurringId: "r1" };
+    expect(isCycleConfirmed(r, due, [tx])).toBe(false);
+  });
+
+  it("Phase 2.6.3b: a soft-deleted transaction never counts as confirming, even though every other field matches exactly", () => {
+    const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-08-01", recurringId: "r1", deletedAt: "2026-08-20T00:00:00.000Z" };
     expect(isCycleConfirmed(r, due, [tx])).toBe(false);
   });
 });
@@ -1330,6 +1341,36 @@ describe("migrateFinancials", () => {
       const migrated = migrateFinancials(legacy, [realTransformStep]); // no bridge -- reproduces the original bug
       expect(migrated.userName).toBe("Test User"); // unchanged -- silently skipped
       expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION); // yet the stamp still lies, claiming current
+    });
+  });
+
+  describe("Phase 2.6.3b -- activeTransactions (soft-delete filter, tests-first per Standing Rule 4)", () => {
+    function makeTx(overrides: Partial<StoredTransaction> = {}): StoredTransaction {
+      return {
+        id: "t1", amount: 100, currency: "USD", bucket: "NEEDS",
+        description: "Test", date: "2026-08-01",
+        ...overrides,
+      };
+    }
+
+    it("returns every transaction unchanged when nothing is deleted", () => {
+      const txs = [makeTx({ id: "t1" }), makeTx({ id: "t2" })];
+      expect(activeTransactions(txs)).toEqual(txs);
+    });
+
+    it("excludes a transaction with deletedAt set", () => {
+      const txs = [makeTx({ id: "t1" }), makeTx({ id: "t2", deletedAt: "2026-08-20T00:00:00.000Z" })];
+      expect(activeTransactions(txs).map((t) => t.id)).toEqual(["t1"]);
+    });
+
+    it("returns an empty array when every transaction is deleted", () => {
+      const txs = [makeTx({ id: "t1", deletedAt: "2026-08-20T00:00:00.000Z" })];
+      expect(activeTransactions(txs)).toEqual([]);
+    });
+
+    it("treats undefined deletedAt as active, not just a literal absence check quirk", () => {
+      const txs = [makeTx({ id: "t1", deletedAt: undefined })];
+      expect(activeTransactions(txs)).toEqual(txs);
     });
   });
 

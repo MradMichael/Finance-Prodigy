@@ -358,6 +358,45 @@ describe("Phase 2.6.3a — computeDashboard reads ledger-derived EF/debt balance
   });
 });
 
+// Phase 2.6.3b: proves computeDashboard's own transaction reads (not just
+// the ledger-derivation functions, already covered above) respect the
+// soft-delete tombstone -- a deleted transaction must vanish from every
+// total exactly the way the old hard-delete made it vanish, not silently
+// keep counting because a filter was missed at one of the many read sites
+// this file has. Three structurally distinct consumers, not an exhaustive
+// sweep of every site, since all of them share the same single fix (the
+// tombstone is filtered once, where computeDashboard normalizes its input).
+describe("Phase 2.6.3b — computeDashboard excludes soft-deleted transactions from every total", () => {
+  it("a soft-deleted transaction doesn't count toward this month's spend", () => {
+    const data = makeData({
+      income: 3000,
+      transactions: [
+        { id: "t1", amount: 200, currency: "USD", bucket: "NEEDS", description: "Groceries", date: "2026-07-01" },
+        { id: "t2", amount: 500, currency: "USD", bucket: "NEEDS", description: "Deleted rent", date: "2026-07-02", deletedAt: "2026-07-03T00:00:00.000Z" },
+      ],
+    });
+    const result = computeDashboard(data);
+    expect(result.month.needsSpend).toBe(200);
+    expect(result.month.totalSpend).toBe(200);
+  });
+
+  it("hasLoggedTransactions is false when every transaction is soft-deleted", () => {
+    const data = makeData({
+      transactions: [{ id: "t1", amount: 50, currency: "USD", bucket: "NEEDS", description: "Deleted", date: "2026-07-01", deletedAt: "2026-07-02T00:00:00.000Z" }],
+    });
+    expect(computeDashboard(data).hasLoggedTransactions).toBe(false);
+  });
+
+  it("a soft-deleted transaction doesn't count toward a past month's spend in sixMonthTrend", () => {
+    const data = makeData({
+      transactions: [{ id: "t1", amount: 300, currency: "USD", bucket: "NEEDS", description: "Deleted", date: "2026-03-10", deletedAt: "2026-07-01T00:00:00.000Z" }],
+    });
+    const result = computeDashboard(data);
+    const mar = result.sixMonthTrend.find((t) => t.ymKey === 202603)!;
+    expect(mar.spend).toBe(0);
+  });
+});
+
 describe("budget pace", () => {
   it("flags 'over' once spend reaches the effective target", () => {
     const data = makeData({

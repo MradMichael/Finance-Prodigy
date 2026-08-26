@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import type { LocalFinancials, StoredCard, StoredTransaction, TrackedBalance } from "../lib/localData";
-import { uid, todayISO, allCategories, matchCategoryRule } from "../lib/localData";
+import { uid, todayISO, allCategories, matchCategoryRule, activeTransactions } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, DateFieldDMY } from "./form/Primitives";
 import { extractPositionedText, TooManyPagesError, CancelledError, LoadTimeoutError } from "../lib/statementImport/pdfText";
@@ -98,7 +98,10 @@ export default function ImportStatement({
       setUnmatchedRefundCount(result.unmatchedRefunds.length);
       setSkippedTransferCount(result.skippedTransferCount);
       setUnparsedAmountCount(result.unparsedAmountCount);
-      setRows(buildReviewRows(result.transactions, financials.transactions));
+      // Phase 2.6.3b: dedup against active transactions only -- a
+      // deliberately-deleted entry shouldn't silently suppress a legitimate
+      // re-import of the same real bank line.
+      setRows(buildReviewRows(result.transactions, activeTransactions(financials.transactions)));
       setStep("card");
     } catch (e) {
       if (cancelledRef.current || e instanceof CancelledError) return;

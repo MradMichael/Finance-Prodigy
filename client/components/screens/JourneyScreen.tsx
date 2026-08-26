@@ -2,7 +2,7 @@
 
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import type { LocalFinancials } from "../../lib/localData";
-import { DEFAULT_LBP_RATE } from "../../lib/localData";
+import { DEFAULT_LBP_RATE, activeTransactions } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { projectCompletion } from "../../lib/projections";
 import { useTheme } from "../../contexts/ThemeContext";
@@ -62,8 +62,11 @@ export default function JourneyScreen({
   // ── Category shift: earliest vs. latest calendar month with logged transactions ──
   const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
   const toUSD = (n: number, cur?: string) => (cur === "LBP" ? n / lbpRate : n);
+  // Phase 2.6.3b: soft-deleted transactions excluded from both the
+  // category-shift arc and the "transactions logged" milestone count below.
+  const activeTx = activeTransactions(financials.transactions);
   const byMonth: Record<string, { needs: number; wants: number; savings: number }> = {};
-  for (const t of financials.transactions) {
+  for (const t of activeTx) {
     // This arc is specifically about the Needs/Wants/Savings spend mix --
     // one-off INCOME transactions aren't spend, and the old catch-all
     // (anything not NEEDS/WANTS landed in savings) would have miscounted
@@ -87,7 +90,7 @@ export default function JourneyScreen({
   const latestMonthLabel = latestMonthKey ? ymStrLabel(latestMonthKey) : null;
 
   // ── Milestones ───────────────────────────────────────────────────
-  const totalTx = financials.transactions.length;
+  const totalTx = activeTx.length;
   const goalsAchieved = financials.goals.filter((g) => g.achievedAt).length;
   const debtsPaidOff = financials.debts.filter((d) => d.paidOffAt).length;
 

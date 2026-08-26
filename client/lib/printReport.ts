@@ -1,5 +1,5 @@
 import type { LocalFinancials } from "./localData";
-import { BUDGET_RULES, nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, toUSD as toUSDShared, categoryLabel, derivedDebtBalance, DEFAULT_LBP_RATE } from "./localData";
+import { BUDGET_RULES, nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, toUSD as toUSDShared, categoryLabel, derivedDebtBalance, activeTransactions, DEFAULT_LBP_RATE } from "./localData";
 import type { computeDashboard } from "./computeDashboard";
 
 type DashboardPayload = ReturnType<typeof computeDashboard>;
@@ -28,7 +28,9 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
   const BL = { NEEDS: "Needs", WANTS: "Wants", SAVINGS: "Savings", INCOME: "Income" } as const;
 
   const ledgerTx = options.detailed
-    ? [...data.transactions]
+    // Phase 2.6.3b: a soft-deleted transaction must not appear in the
+    // exported ledger.
+    ? activeTransactions(data.transactions)
         .filter((t) => (!options.dateFrom || t.date >= options.dateFrom) && (!options.dateTo || t.date <= options.dateTo))
         .sort((a, b) => b.date.localeCompare(a.date))
     : [];

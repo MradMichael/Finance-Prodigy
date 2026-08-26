@@ -1044,8 +1044,10 @@ export function nextOccurrence(r: StoredRecurring, asOf: Date = new Date()): Dat
  */
 export function recurringPaidSoFar(r: StoredRecurring, transactions: StoredTransaction[]): number {
   if (!r.totalAmount || r.amount <= 0) return 0;
+  // Phase 2.6.3b: a soft-deleted confirming transaction no longer counts --
+  // same reasoning as isCycleConfirmed above.
   const confirmedSum = transactions
-    .filter((t) => t.recurringId === r.id)
+    .filter((t) => t.deletedAt == null && t.recurringId === r.id)
     .reduce((s, t) => s + t.amount, 0);
   return Math.min(r.totalAmount, confirmedSum);
 }
@@ -1178,6 +1180,12 @@ export function dueCycles(r: StoredRecurring, from: Date, to: Date): Date[] {
 export function isCycleConfirmed(r: StoredRecurring, dueDate: Date, transactions: StoredTransaction[]): boolean {
   const dueISO = dueDate.toISOString().slice(0, 10);
   return transactions.some((t) => {
+    // Phase 2.6.3b: a soft-deleted transaction never counts as confirming --
+    // deleting it un-pays the cycle, with no special-case code needed
+    // anywhere that calls this (isCycleOverdue, nextConfirmTarget,
+    // pendingBackfillCycles all inherit this for free, since none of them
+    // reads `transactions` any other way).
+    if (t.deletedAt != null) return false;
     if (t.recurringId !== r.id) return false;
     if (t.cycleDate === null) return false;
     return (t.cycleDate ?? t.date) === dueISO;
@@ -1382,4 +1390,17 @@ export function derivedDebtBalance(debt: StoredDebt, transactions: StoredTransac
     .filter((t) => t.debtId === debt.id && t.deletedAt == null)
     .reduce((s, t) => s + t.amount, 0);
   return roundMoney(Math.max(0, debt.openingBalance - paid));
+}
+
+/**
+ * Phase 2.6.3b -- the transaction ledger with soft-deleted rows excluded.
+ * What every normal read (spend totals, lists, category/currency/goal
+ * aggregation, recurring-confirm status) is meant to see. The only
+ * legitimate readers of the full array (deletedAt included) are the
+ * "Recently deleted" recovery view itself and the delete/restore actions
+ * that flip the field -- everything else should read through this instead
+ * of re-deriving its own `t.deletedAt == null` filter inline.
+ */
+export function activeTransactions(transactions: StoredTransaction[]): StoredTransaction[] {
+  return transactions.filter((t) => t.deletedAt == null);
 }

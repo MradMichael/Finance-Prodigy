@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, StoredRecurring } from "../../lib/localData";
-import { fmtDate, historizedRecurringContribution, toUSD as toUSDShared, categoryLabel as categoryLabelShared, categoryIcon as categoryIconShared, todayISO, DEFAULT_LBP_RATE } from "../../lib/localData";
+import { fmtDate, historizedRecurringContribution, toUSD as toUSDShared, categoryLabel as categoryLabelShared, categoryIcon as categoryIconShared, todayISO, activeTransactions, DEFAULT_LBP_RATE } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money } from "./shared";
 import Donut from "../charts/Donut";
@@ -58,16 +58,35 @@ function recurringForMonth(recurring: StoredRecurring[], ym: string, currentYm: 
   return out;
 }
 
-export default function TransactionsScreen({ financials }: { financials: LocalFinancials }) {
+export default function TransactionsScreen({ financials, onChange }: { financials: LocalFinancials; onChange: (f: LocalFinancials) => void }) {
   const T = useTheme();
   const [filter, setFilter] = useState("all");
   const [query,  setQuery]  = useState("");
   const [donutView, setDonutView] = useState<"type" | "category">("type");
+  // Phase 2.6.3b: "Recently deleted" -- always-visible entry point (the pill
+  // renders even at 0), so the recovery path is discoverable by anyone
+  // looking at this screen, not just someone who already knows it exists.
+  const [showDeleted, setShowDeleted] = useState(false);
 
   const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
   const toUSD   = (n: number, cur?: string) => toUSDShared(n, cur as "USD" | "LBP" | undefined, lbpRate);
 
-  const allTx  = [...financials.transactions].sort((a, b) => b.date.localeCompare(a.date));
+  // Every normal read on this screen (totals, search, trends, the month
+  // list) is meant to see only active transactions -- a soft-deleted one
+  // must vanish from here exactly the way the old hard-delete made it
+  // vanish. The deleted-only view below reads financials.transactions
+  // directly instead.
+  const allTx  = activeTransactions(financials.transactions).sort((a, b) => b.date.localeCompare(a.date));
+  const deletedTx = financials.transactions
+    .filter((t) => t.deletedAt != null)
+    .sort((a, b) => (b.deletedAt as string).localeCompare(a.deletedAt as string));
+
+  function restoreTransaction(txId: string) {
+    onChange({
+      ...financials,
+      transactions: financials.transactions.map((t) => t.id !== txId ? t : { ...t, deletedAt: undefined }),
+    });
+  }
   const recurring = financials.recurring ?? [];
   const currentYm = todayISO().slice(0, 7);
   // Months where at least one recurring item was active, independent of the
@@ -246,7 +265,7 @@ export default function TransactionsScreen({ financials }: { financials: LocalFi
             <p className="text-[10px] uppercase tracking-widest" style={{ color: T.mute }}>ESSA</p>
             <h1 className="text-3xl mt-1" style={SERIF}>Transactions</h1>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center flex-wrap">
             <input
               type="text"
               value={query}
@@ -264,9 +283,67 @@ export default function TransactionsScreen({ financials }: { financials: LocalFi
               <option value="all">All time</option>
               {months.map((m) => <option key={m} value={m}>{fmtMo(m)}</option>)}
             </select>
+            {/* Always visible, even with nothing deleted -- the point is to
+                prove the recovery path exists, not just to surface it once
+                there's something to recover. */}
+            <button
+              onClick={() => setShowDeleted((v) => !v)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all"
+              style={{
+                background: showDeleted ? T.brass + "22" : T.panel,
+                border: `1px solid ${showDeleted ? T.brass : T.line}`,
+                color: showDeleted ? T.brass : T.mute,
+              }}
+            >
+              🗑 Recently deleted
+              {deletedTx.length > 0 && (
+                <span
+                  className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+                  style={{ background: T.brass + "30", color: T.brass }}
+                >
+                  {deletedTx.length}
+                </span>
+              )}
+            </button>
           </div>
         </div>
 
+        {showDeleted ? (
+          <div className="rounded-2xl overflow-hidden" style={{ border: `1px solid ${T.line}` }}>
+            {deletedTx.length === 0 ? (
+              <div className="text-center py-20">
+                <p className="text-sm" style={{ color: T.mute }}>Nothing deleted.</p>
+              </div>
+            ) : (
+              deletedTx.map((t, i) => (
+                <div
+                  key={t.id}
+                  className="flex items-center gap-3 px-4 py-3"
+                  style={{ background: T.panel, borderTop: i > 0 ? `1px solid ${T.line}` : undefined, opacity: 0.75 }}
+                >
+                  <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: BC[t.bucket] }} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm truncate" style={{ color: T.text }}>{t.description}</p>
+                    <p className="text-[10px]" style={{ color: T.mute }}>
+                      {fmtDate(t.date)} · {BL[t.bucket]} · deleted {fmtDate(t.deletedAt)}
+                    </p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-sm font-medium tabular-nums" style={{ color: BC[t.bucket] }}>{money(toUSD(t.amount, t.currency), 2)}</p>
+                  </div>
+                  <button
+                    onClick={() => restoreTransaction(t.id)}
+                    className="text-xs px-2.5 py-1.5 rounded-lg font-medium transition-all hover:opacity-90 flex-shrink-0"
+                    style={{ background: T.jade, color: T.ink }}
+                  >
+                    Restore
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        ) : (
+        <>
         {/* Bucket summary */}
         <div className="grid grid-cols-3 gap-3">
           {bucketBreakdown.map(({ bucket: b, value }) => {
@@ -474,6 +551,8 @@ export default function TransactionsScreen({ financials }: { financials: LocalFi
               {allTx.length === 0 ? "No transactions yet. Add them in My Finances." : "No transactions match your search."}
             </p>
           </div>
+        )}
+        </>
         )}
       </div>
     </main>

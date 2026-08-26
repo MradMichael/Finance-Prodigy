@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, CategoryRule } from "../../lib/localData";
-import { CATEGORIES, allCategories, categoryLabel, categoryIcon, matchCategoryRule, historizedRecurringContribution, toUSD as toUSDShared, uid, todayISO, moneyEquals, DEFAULT_LBP_RATE } from "../../lib/localData";
+import { CATEGORIES, allCategories, categoryLabel, categoryIcon, matchCategoryRule, historizedRecurringContribution, toUSD as toUSDShared, uid, todayISO, moneyEquals, activeTransactions, DEFAULT_LBP_RATE } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money } from "./shared";
 import { Label, FocusInput, PrimaryBtn } from "../form/Primitives";
@@ -116,7 +116,10 @@ export default function CategoriesScreen({
   // (summing a recurring item across all of history is a different, fuzzier
   // question than "what did this month cost").
   const currentYm = todayISO().slice(0, 7);
-  const txInScope = scope === "month" ? financials.transactions.filter((t) => t.date.startsWith(currentYm)) : financials.transactions;
+  // Phase 2.6.3b: excludes soft-deleted transactions from the category
+  // breakdown, same as every other total.
+  const activeTx = activeTransactions(financials.transactions);
+  const txInScope = scope === "month" ? activeTx.filter((t) => t.date.startsWith(currentYm)) : activeTx;
   const totals = new Map<string, number>();
   const bump = (key: string, amt: number) => totals.set(key, (totals.get(key) ?? 0) + amt);
   for (const t of txInScope) {

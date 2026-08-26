@@ -1,13 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import type {
   LocalFinancials, StoredTransaction, StoredGoal, StoredDebt,
   StoredRecurring, StoredCard, RecurringFrequency, Currency, PaymentMethod, BudgetRuleKey, TrackedBalance,
 } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, recurringPaidSoFar, pendingBackfillCycles, toUSD as toUSDShared, withRate, buildGoalContributionTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney, derivedDebtBalance, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
+import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, recurringPaidSoFar, pendingBackfillCycles, toUSD as toUSDShared, withRate, buildGoalContributionTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney, derivedDebtBalance, activeTransactions, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY } from "./form/Primitives";
@@ -95,6 +95,14 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   const [newCardType, setNewCardType] = useState<StoredCard["type"]>("Visa");
   const [newCardLast4, setNewCardLast4] = useState("");
   const [showImport, setShowImport] = useState(false);
+  // Phase 2.6.3b: brief confirmation after a soft-delete, telling the user
+  // recovery exists at the exact moment it becomes relevant -- see
+  // TransactionsScreen's "Recently deleted" view, the persistent, always-
+  // visible entry point for later. No expiry is stated: retention is
+  // undecided, and promising one that doesn't exist would either be a lie
+  // or make someone think a real window is closing.
+  const [deletedMsg, setDeletedMsg] = useState<string | null>(null);
+  const deletedMsgTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Replaces native confirm() for the "LBP amount looks like a typo'd USD
   // entry" guard below -- OK/Cancel semantics don't map cleanly onto "save
   // it anyway" vs "let me fix the currency", so this stores enough to
@@ -573,6 +581,18 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     setEditTxId(null);
   }
 
+  // Phase 2.6.3b: soft-delete -- stamps deletedAt instead of removing the
+  // row, so it's recoverable from TransactionsScreen's "Recently deleted"
+  // view rather than gone the moment "Delete transaction" is confirmed.
+  function softDeleteTransaction(txId: string) {
+    update({
+      transactions: financials.transactions.map((t) => t.id !== txId ? t : { ...t, deletedAt: new Date().toISOString() }),
+    });
+    setDeletedMsg("Deleted — recoverable in Transactions");
+    if (deletedMsgTimer.current) clearTimeout(deletedMsgTimer.current);
+    deletedMsgTimer.current = setTimeout(() => setDeletedMsg(null), 4000);
+  }
+
   // ── tab state ─────────────────────────────────────────────────── //
   const [activeTab, setActiveTab] = useState<"daily" | "setup">("daily");
 
@@ -583,7 +603,11 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   // ── derived ───────────────────────────────────────────────────── //
 
   const prefix   = todayISO().slice(0, 7);
-  const monthTx  = financials.transactions.filter((t) => t.date.startsWith(prefix));
+  // Phase 2.6.3b: a soft-deleted transaction must not keep counting toward
+  // this month's totals or appear in "This month"'s list -- deleting is
+  // meant to behave exactly like the old hard-delete from here on.
+  const activeTx = activeTransactions(financials.transactions);
+  const monthTx  = activeTx.filter((t) => t.date.startsWith(prefix));
   const now      = new Date();
   // nextConfirmTarget requires a UTC-midnight-anchored asOf, same contract as isCycleOverdue/dueCycles.
   const todayMidnight = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
@@ -835,7 +859,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
               placeholder={txBucket === "INCOME" ? "Bonus, freelance gig, gift…" : "Rent, groceries, gym…"}
               onKeyDown={(e) => e.key === "Enter" && addTransaction()}
             />
-            {txBucket !== "INCOME" && looksRecurring(txDesc, txDate, financials.transactions, financials.recurring ?? []) && (
+            {txBucket !== "INCOME" && looksRecurring(txDesc, txDate, activeTx, financials.recurring ?? []) && (
               <div className="mt-2 rounded-xl px-3 py-2.5 flex items-center justify-between gap-2" style={{ background: T.brass + "14", border: `1px solid ${T.brass}30` }}>
                 <p className="text-[11px]" style={{ color: T.brass }}>You&apos;ve logged this before in another month. Looks recurring.</p>
                 <button
@@ -1024,7 +1048,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                           <div>
                             <Label htmlFor="edit-tx-desc">Description</Label>
                             <FocusInput id="edit-tx-desc" value={editTxDesc} onChange={(e) => setEditTxDesc(e.target.value)} />
-                            {editTxBucket !== "INCOME" && looksRecurring(editTxDesc, editTxDate, financials.transactions.filter((t) => t.id !== tx.id), financials.recurring ?? []) && (
+                            {editTxBucket !== "INCOME" && looksRecurring(editTxDesc, editTxDate, activeTx.filter((t) => t.id !== tx.id), financials.recurring ?? []) && (
                               <div className="mt-2 rounded-xl px-3 py-2.5 flex items-center justify-between gap-2" style={{ background: T.brass + "14", border: `1px solid ${T.brass}30` }}>
                                 <p className="text-[11px]" style={{ color: T.brass }}>You&apos;ve logged this before in another month. Looks recurring.</p>
                                 <button
@@ -1145,7 +1169,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                               style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
                             >✎</button>
                             <button
-                              onClick={() => { if (confirm("Delete this transaction?")) update({ transactions: financials.transactions.filter((t) => t.id !== tx.id) }); }}
+                              onClick={() => { if (confirm("Delete this transaction?")) softDeleteTransaction(tx.id); }}
                               aria-label="Delete transaction"
                               className="opacity-70 md:opacity-0 md:group-hover:opacity-100 hover:!opacity-100 transition-opacity text-xs px-1"
                               style={{ color: T.coral }}
@@ -1194,7 +1218,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
 
         {/* History — past months */}
         {(() => {
-          const pastTx = financials.transactions.filter((t) => !t.date.startsWith(prefix));
+          const pastTx = activeTx.filter((t) => !t.date.startsWith(prefix));
           if (pastTx.length === 0) return null;
           const byMonth: Record<string, StoredTransaction[]> = {};
           pastTx.forEach((t) => {
@@ -1331,7 +1355,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                                       style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
                                     >✎</button>
                                     <button
-                                      onClick={() => { if (confirm("Delete this transaction?")) update({ transactions: financials.transactions.filter((t) => t.id !== tx.id) }); }}
+                                      onClick={() => { if (confirm("Delete this transaction?")) softDeleteTransaction(tx.id); }}
                                       aria-label="Delete transaction"
                                       className="opacity-70 md:opacity-0 md:group-hover:opacity-100 hover:!opacity-100 transition-opacity text-[10px] px-1"
                                       style={{ color: T.coral }}
@@ -2420,6 +2444,15 @@ export default function InputPanel({ financials, dashData, onChange, session, on
             </button>
           </div>
         </div>
+      </div>
+    )}
+
+    {deletedMsg && (
+      <div
+        className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl text-xs font-medium shadow-lg"
+        style={{ background: T.panel, border: `1px solid ${T.jade}50`, color: T.text }}
+      >
+        <span style={{ color: T.jade }}>✓</span> {deletedMsg}
       </div>
     )}
     </>

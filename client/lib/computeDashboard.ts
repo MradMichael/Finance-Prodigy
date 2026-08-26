@@ -1,5 +1,5 @@
 import type { LocalFinancials, BudgetRuleKey, StoredDebt, StoredTransaction, Currency } from "./localData";
-import { historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, valueForMonth, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, DEFAULT_LBP_RATE, derivedEfBalance, derivedDebtBalance } from "./localData";
+import { historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, valueForMonth, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, DEFAULT_LBP_RATE, derivedEfBalance, derivedDebtBalance, activeTransactions } from "./localData";
 import { simulateDebtPayoff, type DebtInput } from "./debtEngine";
 
 interface Projection {
@@ -148,10 +148,17 @@ export function computeHoldingsByCurrency(data: LocalFinancials, lbpRate: number
 }
 
 export function computeDashboard(data: LocalFinancials): DashboardPayload {
-  // Normalize arrays so partial objects from sync/patch never crash
+  // Normalize arrays so partial objects from sync/patch never crash.
+  // Phase 2.6.3b: also drops soft-deleted transactions here, once, so every
+  // read below (spend totals, trend, rollover, streaks, balance checks,
+  // recurring-confirm status, ledger derivation) sees a clean ledger without
+  // each site needing its own deletedAt filter. The only legitimate reader
+  // of the full array (deletedAt included) is the "Recently deleted" view
+  // itself, which reads financials.transactions directly, never through
+  // computeDashboard.
   data = {
     ...data,
-    transactions:     data.transactions     ?? [],
+    transactions:     activeTransactions(data.transactions ?? []),
     goals:            data.goals            ?? [],
     debts:            data.debts            ?? [],
     recurring:        data.recurring        ?? [],
