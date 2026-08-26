@@ -84,7 +84,7 @@ export default function TransactionsScreen({ financials, onChange }: { financial
   function restoreTransaction(txId: string) {
     onChange({
       ...financials,
-      transactions: financials.transactions.map((t) => t.id !== txId ? t : { ...t, deletedAt: undefined }),
+      transactions: financials.transactions.map((t) => t.id !== txId ? t : { ...t, deletedAt: undefined, updatedAt: new Date().toISOString() }),
     });
   }
   const recurring = financials.recurring ?? [];

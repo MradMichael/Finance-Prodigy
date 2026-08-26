@@ -10,6 +10,7 @@ import {
   dueCycles, isCycleConfirmed, isCycleOverdue, buildRecurringConfirmLog,
   nextConfirmTarget, historizedRecurringContribution, pendingBackfillCycles,
   derivedEfBalance, derivedDebtBalance, activeTransactions,
+  buildDebtPaymentTx, buildEfAdjustmentTx,
 } from "./localData";
 
 // UTC midnight of a given local calendar date -- matches nextOccurrence's
@@ -773,6 +774,62 @@ describe("buildGoalContributionTx", () => {
     const a = buildGoalContributionTx(goal, 50, 89500);
     const b = buildGoalContributionTx(goal, 50, 89500);
     expect(a.id).not.toBe(b.id);
+  });
+});
+
+describe("Phase 2.6.3c -- buildDebtPaymentTx and buildEfAdjustmentTx (tests-first per Standing Rule 4)", () => {
+  describe("buildDebtPaymentTx", () => {
+    const debt: StoredDebt = { id: "d1", name: "Dad", balance: 2000, apr: 0, minPayment: 0, currency: "USD", createdAt: "2026-01-01T00:00:00.000Z", openingBalance: 2000 };
+
+    it("links debtId and carries the picked bucket -- no silent default (owner's explicit instruction)", () => {
+      const tx = buildDebtPaymentTx(debt, 325, "SAVINGS", 89500);
+      expect(tx.debtId).toBe("d1");
+      expect(tx.bucket).toBe("SAVINGS");
+      expect(tx.amount).toBe(325);
+      expect(tx.currency).toBe("USD");
+      expect(tx.lbpRateAtEntry).toBeUndefined();
+    });
+
+    it("a payment on an LBP debt is LBP, with the current rate captured", () => {
+      const lbpDebt: StoredDebt = { ...debt, currency: "LBP" };
+      const tx = buildDebtPaymentTx(lbpDebt, 29_100_000, "NEEDS", 89500);
+      expect(tx.currency).toBe("LBP");
+      expect(tx.amount).toBe(29_100_000);
+      expect(tx.lbpRateAtEntry).toBe(89500);
+    });
+
+    it("stamps createdAt and updatedAt", () => {
+      const tx = buildDebtPaymentTx(debt, 100, "NEEDS", 89500);
+      expect(tx.createdAt).toBeTruthy();
+      expect(tx.updatedAt).toBe(tx.createdAt);
+    });
+
+    it("feeds derivedDebtBalance correctly -- a real payment reduces the debt by its own amount, matching the exact 2.4.27 scenario", () => {
+      const tx = buildDebtPaymentTx(debt, 325, "NEEDS", 89500);
+      expect(derivedDebtBalance(debt, [tx])).toBe(1675);
+    });
+  });
+
+  describe("buildEfAdjustmentTx", () => {
+    it("carries the delta as efAmount, with amount 0 -- a correction is not real spend or income and must not move any budget total", () => {
+      const tx = buildEfAdjustmentTx(150);
+      expect(tx.efAmount).toBe(150);
+      expect(tx.amount).toBe(0);
+      expect(tx.currency).toBe("USD");
+      expect(tx.bucket).toBe("SAVINGS");
+    });
+
+    it("supports a negative delta (correcting the balance downward)", () => {
+      const tx = buildEfAdjustmentTx(-75);
+      expect(tx.efAmount).toBe(-75);
+    });
+
+    it("feeds derivedEfBalance correctly -- brings a stale opening balance to match a corrected current-balance figure", () => {
+      const data = { ...DEFAULT_DATA, emergencyFundOpeningBalance: 900, transactions: [] as StoredTransaction[] };
+      const delta = 1200 - derivedEfBalance(data); // owner says real balance is $1,200
+      const tx = buildEfAdjustmentTx(delta);
+      expect(derivedEfBalance({ ...data, transactions: [tx] })).toBe(1200);
+    });
   });
 });
 

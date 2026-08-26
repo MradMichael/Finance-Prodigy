@@ -1,7 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import type { LocalFinancials, BudgetRuleKey } from "../../lib/localData";
-import { BUDGET_RULES, MIN_SPLIT_PCT, floorCustomSplit, DEFAULT_LBP_RATE } from "../../lib/localData";
+import { BUDGET_RULES, MIN_SPLIT_PCT, floorCustomSplit, buildEfAdjustmentTx, roundMoney, DEFAULT_LBP_RATE } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF } from "./shared";
@@ -43,6 +44,23 @@ export default function SetupScreen({
   // too high), and it ignored any one-off INCOME transaction logged this
   // month, which computeDashboard.ts folds into effective income.
   const efTarget = dashData.emergencyFund.targetAmount;
+  const efBalance = dashData.emergencyFund.balance;
+
+  // Phase 2.6.3c: this field no longer edits emergencyFundOpeningBalance
+  // directly -- it reads as "your real current balance." Local state only
+  // while actively editing (null = show the live derived value); committing
+  // on blur, not per keystroke, so typing "1200" doesn't create three
+  // separate correction transactions along the way. A delta of 0 (clicked
+  // in, clicked out, nothing changed) creates nothing.
+  const [efBalanceInput, setEfBalanceInput] = useState<string | null>(null);
+  function commitEfBalance(raw: string) {
+    const entered = Math.max(0, parseFloat(raw) || 0);
+    const delta = roundMoney(entered - efBalance);
+    if (delta !== 0) {
+      update({ transactions: [buildEfAdjustmentTx(delta), ...financials.transactions] });
+    }
+    setEfBalanceInput(null);
+  }
 
   // Proof, not just a promise, that a raise/job change doesn't rewrite past
   // months -- incomeHistory (snapshotted per calendar month by app/page.tsx
@@ -189,8 +207,9 @@ export default function SetupScreen({
                 className="w-full rounded-xl px-4 py-2.5 text-sm tabular-nums"
                 style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
                 type="number" min="0" step="100"
-                value={financials.emergencyFundBalance || ""}
-                onChange={(e) => update({ emergencyFundBalance: Math.max(0, parseFloat(e.target.value) || 0) })}
+                value={efBalanceInput ?? (efBalance || "")}
+                onChange={(e) => setEfBalanceInput(e.target.value)}
+                onBlur={(e) => commitEfBalance(e.target.value)}
                 placeholder="0"
               />
             </div>

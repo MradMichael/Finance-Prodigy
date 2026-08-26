@@ -162,6 +162,7 @@ export default function ImportStatement({
 
     // Hardcoded USD, no rate needed -- statement import doesn't support an
     // LBP source today, so there's no currency to capture a rate against.
+    const importedAt = new Date().toISOString();
     const newTransactions: StoredTransaction[] = rows
       .filter((r) => r.include && isRowValid(r))
       .map((r) => ({
@@ -174,6 +175,7 @@ export default function ImportStatement({
         paymentMethod: "card" as const,
         cardId: card.id,
         cardLabel: card.label,
+        createdAt: importedAt, updatedAt: importedAt,
         ...(r.category ? { category: r.category } : {}),
       }));
 
