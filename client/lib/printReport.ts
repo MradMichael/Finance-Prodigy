@@ -1,5 +1,5 @@
 import type { LocalFinancials } from "./localData";
-import { BUDGET_RULES, nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, toUSD as toUSDShared, categoryLabel, DEFAULT_LBP_RATE } from "./localData";
+import { BUDGET_RULES, nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, toUSD as toUSDShared, categoryLabel, derivedDebtBalance, DEFAULT_LBP_RATE } from "./localData";
 import type { computeDashboard } from "./computeDashboard";
 
 type DashboardPayload = ReturnType<typeof computeDashboard>;
@@ -60,7 +60,7 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
   const debtRows = data.debts.map((d) => `
     <tr>
       <td>${escapeHtml(d.name)}${d.paidOffAt ? ' <span class="tag">paid off</span>' : ""}</td>
-      <td class="num">${money(toUSD(d.balance, d.currency))}</td>
+      <td class="num">${money(toUSD(derivedDebtBalance(d, data.transactions), d.currency))}</td>
       <td class="num">${d.apr}%</td>
       <td class="num">${money(toUSD(d.minPayment, d.currency))}/mo</td>
     </tr>`).join("");

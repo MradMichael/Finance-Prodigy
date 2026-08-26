@@ -7,7 +7,7 @@ import type {
 } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, recurringPaidSoFar, pendingBackfillCycles, toUSD as toUSDShared, withRate, buildGoalContributionTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
+import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, recurringPaidSoFar, pendingBackfillCycles, toUSD as toUSDShared, withRate, buildGoalContributionTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney, derivedDebtBalance, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY } from "./form/Primitives";
@@ -162,7 +162,6 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   // ── edit state ──────────────────────────────────────────────── //
   const [editDebtId,       setEditDebtId]       = useState<string | null>(null);
   const [editDName,        setEditDName]        = useState("");
-  const [editDBalance,     setEditDBalance]     = useState("");
   const [editDApr,         setEditDApr]         = useState("");
   const [editDMin,         setEditDMin]         = useState("");
   const [editDOpened,      setEditDOpened]      = useState("");
@@ -450,24 +449,23 @@ export default function InputPanel({ financials, dashData, onChange, session, on
 
   function startEditDebt(d: StoredDebt) {
     setEditDebtId(d.id); setEditDName(d.name);
-    setEditDBalance(String(d.balance)); setEditDApr(String(d.apr));
+    setEditDApr(String(d.apr));
     setEditDMin(String(d.minPayment)); setEditDOpened(d.openedDate ?? "");
     setPayingDebtId(null);
   }
+  // Phase 2.6.3a: no longer touches balance/paidOffAt -- the balance is
+  // derived from openingBalance + the transaction ledger now, and there's no
+  // ledger-editing UI yet (that's 2.6.3(c)). Editing name/APR/min payment/
+  // opened date is still safe to do directly; correcting a balance is not,
+  // until (c) gives it a real, linked way to happen.
   function saveEditDebt(debtId: string) {
-    const bal = parseFloat(editDBalance.replace(/,/g, ""));
-    if (!editDName.trim() || isNaN(bal)) return;
+    if (!editDName.trim()) return;
     update({
       debts: financials.debts.map((d) => d.id !== debtId ? d : {
-        ...d, name: editDName.trim(), balance: bal,
+        ...d, name: editDName.trim(),
         apr: Math.max(0, parseFloat(editDApr) || 0),
         minPayment: parseFloat(editDMin.replace(/,/g, "")) || 0,
         openedDate: editDOpened || undefined,
-        // Clear paidOffAt when the edited balance goes back above 0 (e.g.
-        // correcting a mistake, or a new charge) — otherwise a live debt
-        // keeps showing the "Paid off" badge and gets excluded from the
-        // active-debt count indefinitely.
-        paidOffAt: bal <= 0 ? (d.paidOffAt ?? new Date().toISOString()) : undefined,
       }),
     });
     setEditDebtId(null);
@@ -1989,6 +1987,10 @@ export default function InputPanel({ financials, dashData, onChange, session, on
           {financials.debts.map((d) => {
             const isPaying  = payingDebtId === d.id;
             const isEditing = editDebtId === d.id;
+            // Phase 2.6.3a: derived once per row from openingBalance + the
+            // linked transaction ledger, not read from the stored `balance`
+            // field.
+            const balance = derivedDebtBalance(d, financials.transactions);
             return (
               <div key={d.id}>
                 {isEditing ? (
@@ -1999,7 +2001,14 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                       <FocusInput id="edit-debt-name" value={editDName} onChange={(e) => setEditDName(e.target.value)} />
                     </div>
                     <div className="grid grid-cols-3 gap-2">
-                      <div><Label htmlFor="edit-debt-balance">Balance ({d.currency === "LBP" ? "L£" : "$"})</Label><MoneyInput id="edit-debt-balance" value={editDBalance} onChange={setEditDBalance} placeholder="0" /></div>
+                      <div>
+                        <Label htmlFor="edit-debt-balance">Balance ({d.currency === "LBP" ? "L£" : "$"})</Label>
+                        {/* Phase 2.6.3a: read-only -- balance is derived from
+                            openingBalance + the transaction ledger now.
+                            Correcting it directly is deferred to 2.6.3(c),
+                            which gives it a real, linked way to happen. */}
+                        <p id="edit-debt-balance" className="text-sm tabular-nums px-3 py-2 rounded-lg" style={{ background: T.ink, color: T.mute, border: `1px solid ${T.line}` }}>{fmtCur(balance, d.currency)}</p>
+                      </div>
                       <div><Label htmlFor="edit-debt-apr">APR (%)</Label><FocusInput id="edit-debt-apr" type="number" min="0" step="0.1" value={editDApr} onChange={(e) => setEditDApr(e.target.value)} placeholder="0" /></div>
                       <div><Label htmlFor="edit-debt-min">Min/mo</Label><MoneyInput id="edit-debt-min" value={editDMin} onChange={setEditDMin} placeholder="0" /></div>
                     </div>
@@ -2030,7 +2039,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                           )}
                         </p>
                         <p className="text-[10px] tabular-nums mt-0.5" style={{ color: T.mute }}>
-                          {fmtCur(d.balance, d.currency)} · {d.apr}% APR · min {fmtCur(d.minPayment, d.currency)}/mo
+                          {fmtCur(balance, d.currency)} · {d.apr}% APR · min {fmtCur(d.minPayment, d.currency)}/mo
                         </p>
                         {(d.openedDate || d.createdAt || d.paidOffAt) && (
                           <p className="text-[9px] mt-1" style={{ color: T.mute }}>
@@ -2081,8 +2090,8 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                           >Apply</button>
                         </div>
                         <p className="text-[10px]" style={{ color: T.mute }}>
-                          Balance after: {fmtCur(Math.max(0, d.balance - (parseFloat(debtPayAmt.replace(/,/g, "")) || 0)), d.currency)}
-                          {parseFloat(debtPayAmt.replace(/,/g, "")) >= d.balance && (
+                          Balance after: {fmtCur(Math.max(0, balance - (parseFloat(debtPayAmt.replace(/,/g, "")) || 0)), d.currency)}
+                          {parseFloat(debtPayAmt.replace(/,/g, "")) >= balance && (
                             <span style={{ color: T.jade }}>, fully paid off 🏁</span>
                           )}
                         </p>

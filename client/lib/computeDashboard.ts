@@ -1,5 +1,5 @@
-import type { LocalFinancials, BudgetRuleKey, StoredDebt, Currency } from "./localData";
-import { historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, valueForMonth, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, DEFAULT_LBP_RATE } from "./localData";
+import type { LocalFinancials, BudgetRuleKey, StoredDebt, StoredTransaction, Currency } from "./localData";
+import { historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, valueForMonth, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, DEFAULT_LBP_RATE, derivedEfBalance, derivedDebtBalance } from "./localData";
 import { simulateDebtPayoff, type DebtInput } from "./debtEngine";
 
 interface Projection {
@@ -109,14 +109,21 @@ export function dateFmt(d: Date) {
  * gets aggregated (DebtsScreen's activeDebts, totalMinPayments above) --
  * harmless either way since simulateDebtPayoff re-filters internally, but
  * one behavior, not two slightly different ones.
+ *
+ * Phase 2.6.3a: balance comes from derivedDebtBalance(d, transactions), not
+ * d.balance -- the stored field stops being read anywhere debt payoff math
+ * happens.
  */
-export function toDebtInputs(debts: StoredDebt[], lbpRate: number): DebtInput[] {
-  return debts.filter((d) => d.balance > 0).map((d) => ({
-    id: d.id, name: d.name,
-    balance: toUSDShared(d.balance, d.currency, lbpRate),
-    aprPct: d.apr,
-    minimumPayment: toUSDShared(d.minPayment, d.currency, lbpRate),
-  }));
+export function toDebtInputs(debts: StoredDebt[], lbpRate: number, transactions: StoredTransaction[]): DebtInput[] {
+  return debts
+    .map((d) => ({ d, balance: derivedDebtBalance(d, transactions) }))
+    .filter(({ balance }) => balance > 0)
+    .map(({ d, balance }) => ({
+      id: d.id, name: d.name,
+      balance: toUSDShared(balance, d.currency, lbpRate),
+      aprPct: d.apr,
+      minimumPayment: toUSDShared(d.minPayment, d.currency, lbpRate),
+    }));
 }
 
 /**
@@ -251,16 +258,26 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   // logic only when there's no income yet to budget against.
   const efMonthlyBase = income > 0 ? income * targetNeedsPct : (needsSpend || income * 0.5);
   const efTarget  = data.emergencyFundTargetMonths * efMonthlyBase;
-  const efBalance = data.emergencyFundBalance;
+  // Phase 2.6.3a: derived from emergencyFundOpeningBalance + every linked,
+  // non-deleted transaction's efAmount, not read from the stored (and
+  // previously directly-mutated) emergencyFundBalance field.
+  const efBalance = derivedEfBalance(data);
   const efPct     = efTarget > 0 ? Math.min(100, (efBalance / efTarget) * 100) : 0;
   const efScore   = efPct;
 
-  // Paid-off debts stay in the array (balance 0, paidOffAt set) for history —
-  // their minPayment isn't cleared, so summing over all debts unfiltered
-  // would keep counting a payment obligation that no longer exists.
+  // Phase 2.6.3a: each debt's balance is derived once here (openingBalance
+  // minus every linked, non-deleted transaction), not read from the stored
+  // `balance` field -- shared by every site below that needs a per-debt
+  // balance, so it isn't recomputed once per site per debt.
+  const debtBalances = new Map(data.debts.map((d) => [d.id, derivedDebtBalance(d, data.transactions)]));
+
+  // Paid-off debts stay in the array for history -- their minPayment isn't
+  // cleared, so summing over all debts unfiltered would keep counting a
+  // payment obligation that no longer exists. A debt is "paid off" once its
+  // derived balance reaches 0, not via a separate stored flag.
   // Converted per-debt before summing (Phase 1.4) -- debts can now be LBP,
   // and this feeds debtPressurePct, a ratio against USD income.
-  const totalMinPayments = data.debts.filter((d) => d.balance > 0).reduce((s, d) => s + toUSD(d.minPayment, d.currency), 0);
+  const totalMinPayments = data.debts.filter((d) => (debtBalances.get(d.id) ?? 0) > 0).reduce((s, d) => s + toUSD(d.minPayment, d.currency), 0);
   const debtPressurePct  = totalMinPayments / incomeSafe;
   const debtScore = Math.max(0, 100 - debtPressurePct * 400);
 
@@ -336,14 +353,14 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
 
   // ── Debt plan (real per-debt amortization, not an average-APR estimate) ──
   // Converted per-debt (Phase 1.4) -- feeds nwLiabilities and debt.totalBalance,
-  // both USD-scale figures.
-  const totalDebtBalance = data.debts.reduce((s, d) => s + toUSD(d.balance, d.currency), 0);
+  // both USD-scale figures. Phase 2.6.3a: reads the derived balance, not d.balance.
+  const totalDebtBalance = data.debts.reduce((s, d) => s + toUSD(debtBalances.get(d.id) ?? 0, d.currency), 0);
   let debtPlan = null;
   let debtComparison: DashboardPayload["debt"]["comparison"] = null;
   if (data.debts.length > 0 && totalDebtBalance > 0) {
     const extra = Math.max(0, netCashFlow * 0.3);
     const monthlyPayment = totalMinPayments + extra;
-    const debtInputs: DebtInput[] = toDebtInputs(data.debts, lbpRate);
+    const debtInputs: DebtInput[] = toDebtInputs(data.debts, lbpRate, data.transactions);
     if (monthlyPayment > 0) {
       const chosen = simulateDebtPayoff(debtInputs, extra, "AVALANCHE", now);
       debtPlan = {
@@ -398,7 +415,10 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   });
 
   // ── Net worth ─────────────────────────────────────────────────────
-  const nwAssets      = data.emergencyFundBalance
+  // Phase 2.6.3a: reuses the same derived efBalance computed above, not a
+  // second direct read of data.emergencyFundBalance -- one number, not two
+  // that happen to currently agree.
+  const nwAssets       = efBalance
     // Was toUSD(g.currentAmount, undefined) -- always a no-op conversion
     // (undefined reads as USD), harmless only because every goal has been
     // USD until Phase 1.4 added a currency picker. Passing g.currency here
@@ -869,7 +889,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
       pctFunded: Math.round(efPct),
       remaining: Math.max(0, Math.round(efTarget - efBalance)),
     },
-    debt: { totalBalance: totalDebtBalance, count: data.debts.filter((d) => d.balance > 0).length, plan: debtPlan, comparison: debtComparison },
+    debt: { totalBalance: totalDebtBalance, count: data.debts.filter((d) => (debtBalances.get(d.id) ?? 0) > 0).length, plan: debtPlan, comparison: debtComparison },
     goals,
     sixMonthTrend,
     netWorthTrend,

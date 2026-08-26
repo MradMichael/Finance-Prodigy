@@ -147,7 +147,9 @@ The new model: a recurring item's due date prompts the user to confirm payment. 
 
 ## Phase 2.6 — Emergency fund and debt balances become ledger-derived
 
-**Status:** in progress (updated 2026-08-25) · **Depends on:** Phase 2.5 · **Blocks:** Phase 2 (cohort launch) — recommended, see below. **2.6.1 (data model + migration) merged, live. 2.6.2 (`derivedEfBalance`/`derivedDebtBalance`, pure logic, shipped unwired) built, held for review, verified against the owner's real numbers. 2.6.3 (the flip) not started.**
+**Status:** in progress (updated 2026-08-26) · **Depends on:** Phase 2.5 · **Blocks:** Phase 2 (cohort launch) — recommended, see below. **2.6.1 (data model + migration) merged, live. 2.6.2 (`derivedEfBalance`/`derivedDebtBalance`, pure logic, shipped unwired) merged, live, still unwired. 2.6.3(a) (the flip — every reader of `emergencyFundBalance`/`debt.balance` switches to the derived functions) built, verified against the owner's real export (numerically invisible — no change to any figure), branch `fix/ledger-flip-2.6.3a` held for review. 2.6.3(b) (soft delete) and 2.6.3(c) (edit-transaction UI, EF checkboxes/`recordDebtPayment` become transaction-creating) not started.**
+>
+> **Deployment note, decided 2026-08-26:** flipping every *reader* to derived in (a), while the two existing *writers* that still mutate the raw fields directly (`InputPanel.tsx`'s EF add/subtract checkboxes and `recordDebtPayment`) don't yet create linked transactions, makes both writers silently invisible once (a) alone is live — a user checks "add to EF" or records a debt payment and no number they can see moves. Owner's call: hold (a), (b), and (c) off production (reviewed separately, as three commits, but not merged to `main` individually) until all three are ready, then deploy together so no live account ever sits in the gap. `SetupScreen.tsx`'s manual EF field has the identical issue (found after the decision, same resolution applies) and is deferred to (c) along with the other two.
 
 ### Context
 
@@ -354,7 +356,7 @@ Not scheduled. Each requires an explicit decision to activate.
 Phase 0  Loose ends            — now
 Phase 1  Dual-currency         — last Launch Blocker
 Phase 2.5  Recurring confirm-on-due  — built, merged, 🟡 pending owner's live check
-Phase 2.6  EF/debt ledger-derived    — not started, design only, cohort-blocking (2.4.27)
+Phase 2.6  EF/debt ledger-derived    — 2.6.1/2.6.2 merged, 2.6.3(a) built+held, (b)/(c) not started, cohort-blocking (2.4.27)
 Phase 2  COHORT LAUNCH         — ordering below becomes provisional
 Phase 3  Recurring end dates
 Phase 4  Goal feasibility      — flagship

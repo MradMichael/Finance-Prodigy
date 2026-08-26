@@ -3,7 +3,23 @@ import { computeDashboard, computeHoldingsByCurrency } from "./computeDashboard"
 import { DEFAULT_DATA, type LocalFinancials, type BudgetRuleKey } from "./localData";
 
 function makeData(overrides: Partial<LocalFinancials> = {}): LocalFinancials {
-  return { ...DEFAULT_DATA, ...overrides };
+  return {
+    ...DEFAULT_DATA,
+    // Phase 2.6.3a: keep emergencyFundOpeningBalance in sync with
+    // emergencyFundBalance by default when a test only ever sets the
+    // latter -- otherwise every pre-2.6 test that sets emergencyFundBalance
+    // alone would silently exercise derivedEfBalance's "opening balance 0,
+    // no linked transactions" case instead of the value the test actually
+    // intended, since DEFAULT_DATA's own emergencyFundOpeningBalance (0)
+    // would otherwise win. Debts don't need the equivalent treatment --
+    // StoredDebt.openingBalance is a required field, so every existing
+    // debt fixture in this file already sets it (TS enforced this back
+    // when 2.6.1 landed), already matching each debt's own `balance`.
+    ...(overrides.emergencyFundBalance !== undefined && overrides.emergencyFundOpeningBalance === undefined
+      ? { emergencyFundOpeningBalance: overrides.emergencyFundBalance }
+      : {}),
+    ...overrides,
+  };
 }
 
 // Pinned mid-month so daysElapsed(15) clears MIN_DAYS_FOR_PROJECTION(10) and
@@ -270,6 +286,75 @@ describe("debt plan", () => {
     expect(result.debt.comparison).not.toBeNull();
     expect(result.debt.comparison!.avalanche.totalInterest).toBeLessThanOrEqual(result.debt.comparison!.snowball.totalInterest);
     expect(result.debt.comparison!.avalancheSavesVsSnowball).toBeGreaterThanOrEqual(0);
+  });
+});
+
+// Phase 2.6.3a: proves computeDashboard actually reads derivedEfBalance/
+// derivedDebtBalance, not the legacy emergencyFundBalance/debt.balance
+// fields, by constructing fixtures where the two disagree (a deliberately
+// stale stored field alongside a real, linked transaction) and asserting the
+// output matches the LEDGER-derived number. If computeDashboard silently
+// kept reading the raw fields, these would fail against the stale value.
+describe("Phase 2.6.3a — computeDashboard reads ledger-derived EF/debt balances, not the stale stored fields", () => {
+  it("emergencyFund.balance and netWorth.assets reflect opening balance + linked efAmount, ignoring a stale emergencyFundBalance", () => {
+    const data = makeData({
+      income: 3000,
+      emergencyFundBalance: 999999, // stale -- must NOT leak into the output
+      emergencyFundOpeningBalance: 1000,
+      emergencyFundTargetMonths: 1,
+      transactions: [{ id: "t1", amount: 500, currency: "USD", bucket: "SAVINGS", description: "EF top-up", date: "2026-07-01", efAmount: 500 }],
+    });
+    const result = computeDashboard(data);
+    // 1000 opening + 500 linked efAmount = 1500 -- not the stale 999999.
+    expect(result.emergencyFund.balance).toBe(1500);
+    expect(result.netWorth.assets).toBe(1500);
+  });
+
+  it("a soft-deleted efAmount transaction no longer counts toward the derived EF balance", () => {
+    const data = makeData({
+      emergencyFundOpeningBalance: 1000,
+      transactions: [{ id: "t1", amount: 500, currency: "USD", bucket: "SAVINGS", description: "EF top-up", date: "2026-07-01", efAmount: 500, deletedAt: "2026-07-02T00:00:00.000Z" }],
+    });
+    const result = computeDashboard(data);
+    expect(result.emergencyFund.balance).toBe(1000);
+  });
+
+  it("debt.totalBalance and debt.count reflect opening balance minus linked payments, ignoring a stale balance field", () => {
+    const data = makeData({
+      income: 3000,
+      debts: [{ id: "d1", name: "Card", balance: 999999, apr: 10, minPayment: 50, currency: "USD", createdAt: NOW.toISOString(), openingBalance: 1000 }],
+      transactions: [{ id: "t1", amount: 1000, currency: "USD", bucket: "NEEDS", description: "Payoff", date: "2026-07-01", debtId: "d1" }],
+    });
+    const result = computeDashboard(data);
+    // 1000 opening - 1000 paid = 0 -- fully paid off via the ledger, even
+    // though the stale `balance` field still says 999999.
+    expect(result.debt.totalBalance).toBe(0);
+    expect(result.debt.count).toBe(0);
+    expect(result.debt.plan).toBeNull();
+  });
+
+  it("debt payoff plan (toDebtInputs) amortizes against the derived balance, not the stale stored one", () => {
+    const data = makeData({
+      income: 3000,
+      debts: [{ id: "d1", name: "Card", balance: 50, apr: 24, minPayment: 20, currency: "USD", createdAt: NOW.toISOString(), openingBalance: 2000 }],
+      transactions: [{ id: "t1", amount: 500, currency: "USD", bucket: "NEEDS", description: "Payment", date: "2026-07-01", debtId: "d1" }],
+    });
+    const result = computeDashboard(data);
+    // 2000 opening - 500 paid = 1500 -- not the stale stored 50, which would
+    // have made this debt read as nearly paid off.
+    expect(result.debt.totalBalance).toBe(1500);
+    expect(result.debt.plan?.feasible).toBe(true);
+  });
+
+  it("a soft-deleted debtId transaction no longer counts toward the derived debt balance", () => {
+    const data = makeData({
+      income: 3000,
+      debts: [{ id: "d1", name: "Card", balance: 50, apr: 10, minPayment: 20, currency: "USD", createdAt: NOW.toISOString(), openingBalance: 1000 }],
+      transactions: [{ id: "t1", amount: 1000, currency: "USD", bucket: "NEEDS", description: "Payoff", date: "2026-07-01", debtId: "d1", deletedAt: "2026-07-02T00:00:00.000Z" }],
+    });
+    const result = computeDashboard(data);
+    expect(result.debt.totalBalance).toBe(1000);
+    expect(result.debt.count).toBe(1);
   });
 });
 
@@ -641,6 +726,12 @@ describe("paid-off debts don't inflate ongoing debt pressure", () => {
         { id: "d1", name: "Active loan", balance: 500, apr: 10, minPayment: 100, currency: "USD", createdAt: "2026-01-01T00:00:00.000Z", openingBalance: 500 },
         { id: "d2", name: "Paid off card", balance: 0, apr: 20, minPayment: 200, currency: "USD", createdAt: "2026-01-01T00:00:00.000Z", paidOffAt: "2026-06-01T00:00:00.000Z", openingBalance: 300 },
       ],
+      // Phase 2.6.3a: under the ledger-derived model, "paid off" is a
+      // consequence of linked transactions reaching openingBalance, not the
+      // legacy `balance: 0` field alone (nothing links to it otherwise, so
+      // derivedDebtBalance would read the full $300 back and this fixture
+      // would silently stop testing what it claims to).
+      transactions: [{ id: "t1", amount: 300, currency: "USD", bucket: "NEEDS", description: "Final payoff", date: "2026-06-01", debtId: "d2" }],
     });
     const result = computeDashboard(withPaidOffDebt);
     const debtComponent = result.health.components.find((c) => c.key === "debt")!;

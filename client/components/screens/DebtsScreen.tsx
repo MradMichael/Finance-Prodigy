@@ -1,7 +1,7 @@
 "use client";
 
 import type { LocalFinancials } from "../../lib/localData";
-import { fmtDate, toUSD as toUSDShared, DEFAULT_LBP_RATE } from "../../lib/localData";
+import { fmtDate, toUSD as toUSDShared, derivedDebtBalance, DEFAULT_LBP_RATE } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money, fmtCur } from "./shared";
@@ -9,18 +9,22 @@ import { SERIF, NUMS, money, fmtCur } from "./shared";
 export default function DebtsScreen({ financials, dashData }: { financials: LocalFinancials; dashData: ReturnType<typeof computeDashboard> }) {
   const T = useTheme();
   const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
-  // Paid-off debts stay in the array for history (balance 0, paidOffAt set)
-  // -- their minPayment is never cleared, so summing over every debt
-  // unfiltered keeps counting a payment obligation that no longer exists,
-  // and never triggers the debt-free state once the last active debt is
-  // paid. computeDashboard.ts already filters the same way for the health
-  // score and payoff plan; matching it here keeps this screen's own
-  // numbers from disagreeing with those.
-  const activeDebts = financials.debts.filter((d) => d.balance > 0);
+  // Phase 2.6.3a: each debt's balance is derived once here (openingBalance
+  // minus every linked, non-deleted transaction), not read from the stored
+  // `balance` field -- same computation computeDashboard.ts does for the
+  // health score and payoff plan, so this screen's own numbers can't
+  // disagree with those.
+  const debtBalances = new Map(financials.debts.map((d) => [d.id, derivedDebtBalance(d, financials.transactions)]));
+  // Paid-off debts stay in the array for history -- their minPayment is
+  // never cleared, so summing over every debt unfiltered keeps counting a
+  // payment obligation that no longer exists, and never triggers the
+  // debt-free state once the last active debt is paid. A debt is "paid off"
+  // once its derived balance reaches 0, not via a separate stored flag.
+  const activeDebts = financials.debts.filter((d) => (debtBalances.get(d.id) ?? 0) > 0);
   // Summed across debts that may carry different currencies -- USD is the
   // only sensible display for a combined figure (same reasoning as every
   // other cross-record aggregation in Phase 1.4).
-  const totalBal  = activeDebts.reduce((s, d) => s + toUSDShared(d.balance, d.currency, lbpRate), 0);
+  const totalBal  = activeDebts.reduce((s, d) => s + toUSDShared(debtBalances.get(d.id) ?? 0, d.currency, lbpRate), 0);
   const totalMin  = activeDebts.reduce((s, d) => s + toUSDShared(d.minPayment, d.currency, lbpRate), 0);
   const plan      = dashData.debt.plan;
 
@@ -93,7 +97,8 @@ export default function DebtsScreen({ financials, dashData }: { financials: Loca
             {/* Individual debts */}
             <div className="space-y-3">
               {financials.debts.map((d) => {
-                const monthlyInt = (d.apr / 100 / 12) * d.balance;
+                const balance = debtBalances.get(d.id) ?? 0;
+                const monthlyInt = (d.apr / 100 / 12) * balance;
                 return (
                   <div key={d.id} className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}`, opacity: d.paidOffAt ? 0.65 : 1 }}>
                     <div className="flex justify-between items-start gap-2 mb-3">
@@ -103,7 +108,7 @@ export default function DebtsScreen({ financials, dashData }: { financials: Loca
                           <span className="ml-1.5 text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full" style={{ background: T.jade + "22", color: T.jade }}>Paid off</span>
                         )}
                       </p>
-                      <p className="text-xl font-semibold tabular-nums flex-shrink-0" style={{ ...SERIF, color: d.paidOffAt ? T.jade : T.coral }}>{fmtCur(d.balance, d.currency)}</p>
+                      <p className="text-xl font-semibold tabular-nums flex-shrink-0" style={{ ...SERIF, color: d.paidOffAt ? T.jade : T.coral }}>{fmtCur(balance, d.currency)}</p>
                     </div>
                     <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs" style={{ color: T.mute }}>
                       <span>APR <span style={{ color: T.text }}>{d.apr}%</span></span>

@@ -57,7 +57,7 @@ export default function ProjectionsScreen({
   const hasIncome = month.income > 0;
   const efRemaining = Math.max(0, emergencyFund.remaining);
   const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
-  const liveDebts: DebtInput[] = toDebtInputs(financials.debts, lbpRate);
+  const liveDebts: DebtInput[] = toDebtInputs(financials.debts, lbpRate, financials.transactions);
   const openGoals = goals.filter((g) => g.projection.pctComplete < 100 && !g.paused);
   const totalGoalsRemaining = openGoals.reduce((s, g) => {
     const remaining = Math.max(0, g.targetAmount - g.currentAmount);
