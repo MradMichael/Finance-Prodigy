@@ -10,7 +10,7 @@ import type { computeDashboard } from "../lib/computeDashboard";
 import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, recurringPaidSoFar, pendingBackfillCycles, toUSD as toUSDShared, withRate, buildGoalContributionTx, buildDebtPaymentTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney, derivedDebtBalance, activeTransactions, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
-import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY } from "./form/Primitives";
+import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES } from "./form/Primitives";
 import { fmtCur } from "./screens/shared";
 import ImportStatement from "./ImportStatement";
 
@@ -19,14 +19,8 @@ type Bucket = "NEEDS" | "WANTS" | "SAVINGS";
 // see StoredTransaction's doc comment in localData.ts for why recurring stays
 // 3-way.
 type TxBucket = Bucket | "INCOME";
-
-const PM_OPTIONS: { value: PaymentMethod; label: string; icon: string }[] = [
-  { value: "cash",  label: "Cash",  icon: "💵" },
-  { value: "card",  label: "Card",  icon: "💳" },
-  { value: "other", label: "Other", icon: "🔗" },
-];
-
-const CARD_TYPES: StoredCard["type"][] = ["Visa", "Mastercard", "Amex", "Other"];
+// PM_OPTIONS/CARD_TYPES now live in ./form/Primitives (Phase 2.6.4), shared
+// with the new PaymentMethodPicker -- imported above, not redeclared here.
 
 /**
  * Data-driven "this might be recurring" signal: the same description has
@@ -242,16 +236,17 @@ export default function InputPanel({ financials, dashData, onChange, session, on
 
   const cards = financials.cards ?? [];
 
-  function saveCard(): StoredCard | null {
-    if (newCardLast4.length !== 4 || !/^\d{4}$/.test(newCardLast4)) return null;
-    const card: StoredCard = {
-      id: uid(),
-      type: newCardType,
-      last4: newCardLast4,
-      label: `${newCardType} •••• ${newCardLast4}`,
-    };
+  // Phase 2.6.4: parameterized (was reading module-level newCardType/
+  // newCardLast4 directly) so the new shared PaymentMethodPicker can call
+  // this without its own copy of the persistence logic -- this function's
+  // only job now is "persist a card, hand it back," not managing any
+  // particular form's own typing/panel-open state. Callers do their own
+  // cleanup (clearing their own newCardLast4/showAddCard-equivalent) on
+  // success, same as they already had to.
+  function saveCard(type: StoredCard["type"], last4: string): StoredCard | null {
+    if (last4.length !== 4 || !/^\d{4}$/.test(last4)) return null;
+    const card: StoredCard = { id: uid(), type, last4, label: `${type} •••• ${last4}` };
     update({ cards: [...cards, card] });
-    setNewCardLast4(""); setShowAddCard(false);
     return card;
   }
 
@@ -272,8 +267,8 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     let cardLabel: string | undefined;
     if (txPayMethod === "card") {
       if (showAddCard) {
-        const saved = saveCard();
-        if (saved) { cardId = saved.id; cardLabel = saved.label; }
+        const saved = saveCard(newCardType, newCardLast4);
+        if (saved) { cardId = saved.id; cardLabel = saved.label; setNewCardLast4(""); setShowAddCard(false); }
       } else if (txCardId) {
         const card = cards.find((c) => c.id === txCardId);
         if (card) { cardId = card.id; cardLabel = card.label; }
@@ -1043,8 +1038,8 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                     <div className="flex gap-2">
                       <button
                         onClick={() => {
-                          const saved = saveCard();
-                          if (saved) setTxCardId(saved.id);
+                          const saved = saveCard(newCardType, newCardLast4);
+                          if (saved) { setTxCardId(saved.id); setNewCardLast4(""); setShowAddCard(false); }
                         }}
                         className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
                         style={{ background: T.jade, color: T.ink }}
