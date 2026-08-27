@@ -206,6 +206,68 @@ A debt payment sourced partly from EF is recordable as one real transaction, vis
 
 ---
 
+## Phase 2.6.4 — Debt/goal payment forms close the gaps 2.6.3(c) left at the point of use
+
+**Status:** design approved 2026-08-27, not started · **Depends on:** Phase 2.6.3(a)/(b)/(c) (merged, live) · **Blocks:** nothing declared yet — real, rated High (2.4.41), but not unilaterally added as a Phase 2 precondition; owner to decide separately.
+
+### Context
+
+Found live during the Phase 2.6 post-deploy check, two related gaps in the same two forms:
+
+- **2.4.41 (High):** `buildDebtPaymentTx` and `buildGoalContributionTx` both hardcode `paymentMethod: "other"`. `"other"` never matches a Cash or Card tracked balance's grouping key (`computeDashboard.ts:775`), so a debt payment or goal contribution can never reduce a tracked balance's `expected` figure, no matter which real account the money actually left. Before 2.6.3(c), a debt payment was invisible to balance reconciliation because it created no transaction at all; after (c), it's invisible because the transaction it now creates is mistagged. Phase 2.6's own new code reproducing the exact class of defect Phase 2.6 exists to eliminate.
+- **The debt-payment form still can't represent 2.4.27's own original case.** (c) gave the main transaction form a partial EF-amount field ("$300 of this $325 came from EF"), but `recordDebtPayment`'s own form has no EF field at all — the case that started Phase 2.6 still isn't enterable at the one point of use where it actually happens (paying a debt from savings).
+- **No category on a debt payment**, unlike every other transaction-creating form.
+- **Edit Debt's Balance field is still read-only**, with no correction mechanism — flagged as a known gap when 2.6.3(c) shipped, not decided then.
+
+Also found while designing this: `GoalsScreen.tsx` has its **own, second, independent** goal-contribution form (`pay()`) beside `InputPanel.tsx`'s inline one — both feed `buildGoalContributionTx`, so any fix has to reach both or repeat the exact "one screen fixed, the other silently still wrong" gap this project has already been burned by once (the Phase 1.4 survey missed this same site before).
+
+### Data model
+
+One new field: **`StoredTransaction.debtAdjustment?: number | null`** — a debt-total correction, independent of `amount`, mirroring `efAmount`'s relationship to EF exactly (so a correction can carry `amount: 0` and move nothing in any spend total, only the debt balance). No schema version bump — additive optional field, same class as `updatedAt`.
+
+**Sentinel semantics, decided now, matching `efAmount`/`cycleDate` exactly (owner's explicit instruction — three carrier fields behave identically):**
+- `undefined` — this transaction has never carried a debt-total correction. The default/absent state for every transaction that isn't specifically a correction.
+- explicit `null` — a correction *was* attached and has been deliberately detached (mirrors `efAmount`'s null, not `cycleDate`'s — see below for why the edit-form UI treats both `undefined` and `null` as "show the same 'not attached' prompt," same as `efAmount` already does).
+- a real number, including `0` — a correction of that magnitude is attached. Zero is legitimate (e.g. confirming a balance is already exactly right, same reasoning `efAmount: 0` is legitimate).
+
+**Only meaningful paired with `debtId`** — same dependency `cycleDate` has on `recurringId`. The edit-transaction form's "Debt correction" section is only offered once a debt is linked via the existing "Linked debt" dropdown; clearing that dropdown also resets `debtAdjustment` to `undefined` rather than leaving a correction pointed at nothing.
+
+`derivedDebtBalance`'s formula gains one term: `paid = Σ (t.amount + (t.debtAdjustment ?? 0))` over every non-deleted, `debtId`-matched transaction. `undefined` and `null` both contribute `0` to the sum — identical arithmetic either way, exactly like `efAmount`'s absent-vs-detached distinction never changes `derivedEfBalance`'s math either. The distinction is for the edit-form's own state and mental model, not the calculation.
+
+**By construction, a `debtAdjustment`-carrying transaction is generically editable through the same edit-transaction form as any other** — no special-casing based on whether `buildDebtAdjustmentTx` or a later manual edit created it, the same way an `efAmount`-carrying transaction is uniformly editable regardless of whether the main form's checkbox or `buildEfAdjustmentTx` (via SetupScreen) originally set it.
+
+### Builder signature changes
+
+- **`buildDebtPaymentTx(debt, amount, bucket, lbpRate, opts?: { category?: string; efAmount?: number; paymentMethod?: PaymentMethod; cardId?: string; cardLabel?: string })`** — closes 2.4.27-at-point-of-use (partial EF), the category gap, and half of 2.4.41.
+- **`buildGoalContributionTx(goal, amount, lbpRate, opts?: { paymentMethod?: PaymentMethod; cardId?: string; cardLabel?: string; paymentNote?: string })`** — closes the other half of 2.4.41, for both call sites.
+- **New `buildDebtAdjustmentTx(debt, delta)`** — structurally identical to `buildEfAdjustmentTx`: `amount: 0`, `debtId: debt.id`, `debtAdjustment: delta`.
+
+### UI — shared component, not six copies
+
+Payment-method-plus-card is already duplicated three times (main entry, edit "This month", edit "History" — `InputPanel.tsx:950-1063`, `:1157`, `:1389`). Adding it inline to the debt-payment form and both goal-contribution forms would make six near-identical ~70-line copies — the same pattern that already produced the `achievedAt` discrepancy, the duplicate `DebtInput` construction, the duplicate goal-contribution logic, and `fmtCur` existing twice (owner's own list, all real prior incidents in this codebase).
+
+**Extract `PaymentMethodPicker`** — owns its own add-card-panel state internally (not lifted to each parent), takes `cards`/`onSaveCard` as props. `saveCard()` gets parameterized (`saveCard(type, last4)` instead of reading module-level `newCardType`/`newCardLast4`) so the component calls it directly without its own copy of the persistence logic. The 3 *existing* copies are left alone — migrating those is a separate decision, not bundled here.
+
+**Per-form:**
+- **Debt-payment form** (`InputPanel.tsx:2222-2258`): gains an EF toggle (pay-from-EF only — a debt payment only ever draws from EF, never contributes to it, unlike the main form's two-way checkbox), same blank-means-full-amount partial pattern (c) already built; a category `<select>`, same options as every other form; `PaymentMethodPicker`.
+- **Goal-contribution forms** (`InputPanel.tsx:1609-1627` and `GoalsScreen.tsx`'s `pay()`): both gain `PaymentMethodPicker` only — no EF/category fields, not asked for and goals aren't debts.
+- **Edit Debt form** (`InputPanel.tsx:2145-2168`): the read-only Balance line becomes an editable "your real current balance" field, the same pattern `SetupScreen.tsx` already uses for EF — commit computes `delta = entered − derivedDebtBalance(...)` and calls `buildDebtAdjustmentTx` if non-zero.
+- **Edit-transaction form** (`InputPanel.tsx`, both "This month" and "History" blocks): gains a fourth optional section, "Debt correction" — Link/Detach + amount, mirroring the existing `efAmount` section exactly, shown only when a debt is linked via the existing dropdown.
+
+### Build order (owner's instruction — each committed and reported before the next; held for review, nothing merged until all of it is ready)
+
+1. `PaymentMethodPicker` extraction (+ `saveCard` parameterization), adopted by no new call sites yet — provably inert if nothing else lands, same "ships unwired first" discipline as 2.6.2.
+2. The three form adoptions (debt-payment form's EF/category/payment-method fields; both goal-contribution forms' payment-method field) — closes 2.4.41 and the point-of-use EF gap.
+3. (d): `debtAdjustment` field, `buildDebtAdjustmentTx`, `derivedDebtBalance` formula update, Edit Debt's editable-balance field, and the edit-transaction form's new "Debt correction" section.
+
+### Acceptance
+
+A debt payment can be tagged with a real payment method (and card, where relevant), a category, and a partial EF-sourced amount, all in the one form where the payment is actually recorded. A goal contribution, from either of its two entry points, can be tagged with a real payment method. Balance Check's `expected` correctly reflects a cash- or card-sourced debt payment or goal contribution going forward. Correcting a debt's total produces one real, inspectable transaction — never a silently-edited scalar with nothing behind it — and that transaction is editable/detachable through the same generic edit-transaction form as any other, no special-casing by origin.
+
+**SAFE STOP** after step 1 and after step 2 — each sub-step leaves `main` behaviorally consistent (either the picker exists unused, or the three forms work with `debtAdjustment` still not implemented, matching today's read-only Edit Debt behavior exactly). Step 3 completes the phase.
+
+---
+
 ## Phase 2.7 — Sync merge for transactions
 
 **Status:** not started, design approved 2026-08-26 · **Depends on:** Phase 2.6 (all of 2.6.3, including (c)) · **Blocks:** Phase 2 (cohort launch).
@@ -396,6 +458,7 @@ Phase 0  Loose ends            — now
 Phase 1  Dual-currency         — last Launch Blocker
 Phase 2.5  Recurring confirm-on-due  — built, merged, 🟡 pending owner's live check
 Phase 2.6  EF/debt ledger-derived    — 2.6.1/2.6.2 merged, 2.6.3(a)/(b)/(c) all approved+built+held, ready for combined deploy, cohort-blocking (2.4.27)
+Phase 2.6.4  Debt/goal payment-form gaps  — design approved, not started, depends on 2.6.3(c), blocking status undecided (2.4.41)
 Phase 2.7  Sync merge (transactions) — design approved, not started, depends on 2.6.3(c), cohort-blocking
 Phase 2  COHORT LAUNCH         — ordering below becomes provisional
 Phase 3  Recurring end dates
