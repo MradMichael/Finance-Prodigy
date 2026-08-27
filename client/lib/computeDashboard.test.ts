@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { computeDashboard, computeHoldingsByCurrency } from "./computeDashboard";
-import { DEFAULT_DATA, type LocalFinancials, type BudgetRuleKey } from "./localData";
+import { DEFAULT_DATA, buildDebtPaymentTx, type LocalFinancials, type BudgetRuleKey, type StoredDebt } from "./localData";
 
 function makeData(overrides: Partial<LocalFinancials> = {}): LocalFinancials {
   return {
@@ -548,6 +548,23 @@ describe("balance checks", () => {
     const result = computeDashboard(data);
     expect(result.balanceChecks).toHaveLength(1);
     expect(result.balanceChecks[0].expected).toBe(80); // 100 - 20 cash only
+  });
+
+  // Phase 2.6.4 -- closes 2.4.41: buildDebtPaymentTx used to hardcode
+  // paymentMethod "other", so a debt payment could never reduce a tracked
+  // balance's expected figure no matter which real account funded it. Once
+  // the debt-payment form passes a real payment method through, the same
+  // formula every other transaction already used should just work.
+  it("a debt payment tagged with a real payment method correctly reduces the tracked balance it was actually paid from (closes 2.4.41)", () => {
+    const debt: StoredDebt = { id: "d1", name: "Card", balance: 500, apr: 0, minPayment: 0, currency: "USD", createdAt: NOW.toISOString(), openingBalance: 500 };
+    const tx = buildDebtPaymentTx(debt, 30, "NEEDS", 89500, { paymentMethod: "cash" });
+    const data = makeData({
+      trackedBalances: [{ id: "b1", name: "Cash", paymentMethod: "cash", startingBalance: 100, startingDate: "2026-07-01", currency: "USD" }],
+      debts: [debt],
+      transactions: [tx],
+    });
+    const result = computeDashboard(data);
+    expect(result.balanceChecks[0].expected).toBe(70); // 100 - 30, not 100 (the old, mistagged behavior)
   });
 
   it("matches card transactions only for the same cardId", () => {

@@ -102,6 +102,22 @@ export interface StoredTransaction {
   // this field, and never backfilled -- there's no real value to recover
   // for one that already existed, matching createdAt's own precedent.
   updatedAt?: string;
+  // Added in Phase 2.6.4 (step 3) -- a debt-total correction, independent
+  // of `amount`, for derivedDebtBalance. Same undefined/null/number
+  // discipline as `efAmount` (owner's explicit instruction: all three
+  // carrier fields -- cycleDate, efAmount, debtAdjustment -- behave
+  // identically): undefined = this transaction has never carried a
+  // correction (the default/absent state for every transaction that isn't
+  // specifically one); explicit null = a correction WAS attached and has
+  // been deliberately detached; a real number, including 0, = a correction
+  // of that magnitude is attached (0 is legitimate -- e.g. confirming a
+  // balance is already exactly right, same reasoning efAmount: 0 is
+  // legitimate). Only meaningful paired with `debtId`, same dependency
+  // cycleDate has on recurringId. Unlike efAmount, NOT converted to USD --
+  // it's in the debt's own currency, matching how derivedDebtBalance
+  // already treats `amount` for a debt-linked transaction (no conversion,
+  // assumed to already be in the debt's own terms).
+  debtAdjustment?: number | null;
 }
 
 export interface StoredGoal {
@@ -1336,13 +1352,24 @@ export function historizedRecurringContribution(r: StoredRecurring, ym: string, 
  * NOT convertible to a different currency than the goal itself in this
  * phase -- see docs/ROADMAP.md Phase 1.4's own scope note.
  */
-export function buildGoalContributionTx(goal: StoredGoal, amount: number, lbpRate: number): StoredTransaction {
+export function buildGoalContributionTx(
+  goal: StoredGoal, amount: number, lbpRate: number,
+  opts: { paymentMethod?: PaymentMethod; cardId?: string; cardLabel?: string; paymentNote?: string } = {},
+): StoredTransaction {
   const now = new Date().toISOString();
   return {
     id: uid(), amount, currency: goal.currency, bucket: "SAVINGS",
-    description: `Goal: ${goal.name}`, date: todayISO(), paymentMethod: "other",
+    description: `Goal: ${goal.name}`, date: todayISO(),
+    // Phase 2.6.4: defaults to "other" when the caller doesn't say -- was
+    // ALWAYS "other", unconditionally, until now (2.4.41: this made a goal
+    // contribution permanently invisible to balance reconciliation no
+    // matter which real account funded it). Backward compatible: every
+    // pre-2.6.4 call site that doesn't pass opts gets the exact old value.
+    paymentMethod: opts.paymentMethod ?? "other",
     createdAt: now, updatedAt: now,
     ...withRate(goal.currency, lbpRate),
+    ...(opts.cardId ? { cardId: opts.cardId, cardLabel: opts.cardLabel } : {}),
+    ...(opts.paymentMethod === "other" && opts.paymentNote ? { paymentNote: opts.paymentNote } : {}),
   };
 }
 
@@ -1354,13 +1381,30 @@ export function buildGoalContributionTx(goal: StoredGoal, amount: number, lbpRat
  * miscategorizes real spend and skews budget pace (owner's explicit
  * instruction).
  */
-export function buildDebtPaymentTx(debt: StoredDebt, amount: number, bucket: "NEEDS" | "WANTS" | "SAVINGS", lbpRate: number): StoredTransaction {
+export function buildDebtPaymentTx(
+  debt: StoredDebt, amount: number, bucket: "NEEDS" | "WANTS" | "SAVINGS", lbpRate: number,
+  // Phase 2.6.4: category and efAmount close 2.4.27 at its actual point of
+  // use -- a debt payment can now carry a category like any other
+  // transaction, and a partial EF-sourced amount ("$300 of this $325 came
+  // from EF," 2.4.27's own real case, previously only enterable on the
+  // main transaction form, never here where the payment is actually
+  // recorded). paymentMethod/cardId/cardLabel close 2.4.41 (a debt payment
+  // used to be permanently invisible to balance reconciliation regardless
+  // of which real account it left). Backward compatible: every pre-2.6.4
+  // call site that doesn't pass opts gets the exact old values.
+  opts: { category?: string; efAmount?: number; paymentMethod?: PaymentMethod; cardId?: string; cardLabel?: string; paymentNote?: string } = {},
+): StoredTransaction {
   const now = new Date().toISOString();
   return {
     id: uid(), amount, currency: debt.currency, bucket,
-    description: `Debt payment: ${debt.name}`, date: todayISO(), paymentMethod: "other",
+    description: `Debt payment: ${debt.name}`, date: todayISO(),
+    paymentMethod: opts.paymentMethod ?? "other",
     debtId: debt.id, createdAt: now, updatedAt: now,
     ...withRate(debt.currency, lbpRate),
+    ...(opts.category ? { category: opts.category } : {}),
+    ...(opts.efAmount != null ? { efAmount: opts.efAmount } : {}),
+    ...(opts.cardId ? { cardId: opts.cardId, cardLabel: opts.cardLabel } : {}),
+    ...(opts.paymentMethod === "other" && opts.paymentNote ? { paymentNote: opts.paymentNote } : {}),
   };
 }
 
@@ -1384,6 +1428,26 @@ export function buildEfAdjustmentTx(delta: number): StoredTransaction {
     id: uid(), amount: 0, currency: "USD", bucket: "SAVINGS",
     description: "Emergency fund balance correction", date: todayISO(), paymentMethod: "other",
     efAmount: roundMoney(delta), createdAt: now, updatedAt: now,
+  };
+}
+
+/**
+ * Phase 2.6.4 (step 3) -- structurally identical to buildEfAdjustmentTx
+ * above, for the same reason: Edit Debt's Balance field reads as "your real
+ * current balance," and saving computes `delta = entered -
+ * derivedDebtBalance(debt, transactions)` and builds this one transaction to
+ * carry it. `amount: 0` is deliberate -- a correction is not a real payment
+ * and must not move any budget total; only `debtAdjustment` (independent of
+ * `amount`, see StoredTransaction's own comment) should move the balance.
+ * Unlike buildEfAdjustmentTx, this carries the DEBT's own currency, not USD
+ * unconditionally -- debts (unlike EF) have always supported LBP.
+ */
+export function buildDebtAdjustmentTx(debt: StoredDebt, delta: number): StoredTransaction {
+  const now = new Date().toISOString();
+  return {
+    id: uid(), amount: 0, currency: debt.currency, bucket: "SAVINGS",
+    description: `Debt correction: ${debt.name}`, date: todayISO(), paymentMethod: "other",
+    debtId: debt.id, debtAdjustment: roundMoney(delta), createdAt: now, updatedAt: now,
   };
 }
 
@@ -1440,11 +1504,21 @@ export function derivedEfBalance(data: LocalFinancials): number {
  *
  * Soft-deleted transactions are excluded, same reasoning as
  * derivedEfBalance above.
+ *
+ * Phase 2.6.4 (step 3): `paid` gains a second term, `debtAdjustment`
+ * (independent of `amount`, see StoredTransaction's own comment) -- what
+ * lets a correction transaction (`amount: 0, debtAdjustment: delta`, from
+ * buildDebtAdjustmentTx) move this balance without being counted as a real
+ * payment anywhere else, the same trick buildEfAdjustmentTx already uses
+ * for derivedEfBalance. `?? 0` means undefined and explicit null both
+ * contribute nothing -- identical arithmetic either way; the
+ * undefined-vs-null distinction is for the edit form's own state, not this
+ * calculation (mirrors efAmount's own comment on derivedEfBalance).
  */
 export function derivedDebtBalance(debt: StoredDebt, transactions: StoredTransaction[]): number {
   const paid = transactions
     .filter((t) => t.debtId === debt.id && t.deletedAt == null)
-    .reduce((s, t) => s + t.amount, 0);
+    .reduce((s, t) => s + t.amount + (t.debtAdjustment ?? 0), 0);
   return roundMoney(Math.max(0, debt.openingBalance - paid));
 }
 

@@ -7,10 +7,10 @@ import type {
 } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, recurringPaidSoFar, pendingBackfillCycles, toUSD as toUSDShared, withRate, buildGoalContributionTx, buildDebtPaymentTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney, derivedDebtBalance, activeTransactions, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
+import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, recurringPaidSoFar, pendingBackfillCycles, toUSD as toUSDShared, withRate, buildGoalContributionTx, buildDebtPaymentTx, buildDebtAdjustmentTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney, derivedDebtBalance, activeTransactions, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
-import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY } from "./form/Primitives";
+import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker } from "./form/Primitives";
 import { fmtCur } from "./screens/shared";
 import ImportStatement from "./ImportStatement";
 
@@ -19,14 +19,8 @@ type Bucket = "NEEDS" | "WANTS" | "SAVINGS";
 // see StoredTransaction's doc comment in localData.ts for why recurring stays
 // 3-way.
 type TxBucket = Bucket | "INCOME";
-
-const PM_OPTIONS: { value: PaymentMethod; label: string; icon: string }[] = [
-  { value: "cash",  label: "Cash",  icon: "💵" },
-  { value: "card",  label: "Card",  icon: "💳" },
-  { value: "other", label: "Other", icon: "🔗" },
-];
-
-const CARD_TYPES: StoredCard["type"][] = ["Visa", "Mastercard", "Amex", "Other"];
+// PM_OPTIONS/CARD_TYPES now live in ./form/Primitives (Phase 2.6.4), shared
+// with the new PaymentMethodPicker -- imported above, not redeclared here.
 
 /**
  * Data-driven "this might be recurring" signal: the same description has
@@ -137,6 +131,17 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   // default it silently (a minimum payment is a Need, a voluntary
   // overpayment is closer to Savings, and guessing wrong skews budget pace).
   const [debtPayBucket, setDebtPayBucket] = useState<Bucket>("NEEDS");
+  // Phase 2.6.4: category, like every other transaction form.
+  const [debtPayCategory, setDebtPayCategory] = useState("");
+  // Pay-from-EF only -- a debt payment only ever draws from the safety net,
+  // never contributes to it, unlike the main transaction form's two-way
+  // checkbox. Blank debtPayEfAmt means "the full payment amount," same
+  // partial-amount convention (c) already established.
+  const [debtPayFromEF, setDebtPayFromEF] = useState(false);
+  const [debtPayEfAmt,  setDebtPayEfAmt]  = useState("");
+  const [debtPayMethod, setDebtPayMethod] = useState<PaymentMethod>("cash");
+  const [debtPayCardId, setDebtPayCardId] = useState<string | null>(null);
+  const [debtPayOtherNote, setDebtPayOtherNote] = useState("");
 
   // Asset form
   const [aName,     setAName]     = useState("");
@@ -177,6 +182,11 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   // Goal contribution state
   const [contributeGoalId,  setContributeGoalId]  = useState<string | null>(null);
   const [contributeGoalAmt, setContributeGoalAmt] = useState("");
+  // Phase 2.6.4: closes half of 2.4.41 -- buildGoalContributionTx used to
+  // hardcode paymentMethod "other" unconditionally.
+  const [contributeMethod, setContributeMethod] = useState<PaymentMethod>("cash");
+  const [contributeCardId, setContributeCardId] = useState<string | null>(null);
+  const [contributeOtherNote, setContributeOtherNote] = useState("");
 
   // ── edit state ──────────────────────────────────────────────── //
   const [editDebtId,       setEditDebtId]       = useState<string | null>(null);
@@ -184,6 +194,11 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   const [editDApr,         setEditDApr]         = useState("");
   const [editDMin,         setEditDMin]         = useState("");
   const [editDOpened,      setEditDOpened]      = useState("");
+  // Phase 2.6.4 step 3: SetupScreen's ef-balance field pattern, applied to
+  // debt -- null = show the live derived value; committing on blur (not per
+  // keystroke) so typing "1500" doesn't create three separate correction
+  // transactions along the way.
+  const [editDBalanceInput, setEditDBalanceInput] = useState<string | null>(null);
   const [dOpenedDate,      setDOpenedDate]      = useState("");
 
   const [editGoalId,       setEditGoalId]       = useState<string | null>(null);
@@ -237,21 +252,29 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   // Owner's explicit confirmation: don't add a sentinel carrying no
   // information.
   const [editTxDebtId,     setEditTxDebtId]     = useState<string | undefined>(undefined);
+  // Phase 2.6.4 step 3: same tri-state shape as editTxEfAmount above --
+  // undefined = never carried a debt correction (nothing to show), a string
+  // = a correction of that magnitude is attached, null = deliberately
+  // detached. Unlike efAmount, NOT converted between currencies at commit --
+  // debtAdjustment is in the debt's own currency, matching how `amount`
+  // itself is already treated for a debt-linked transaction.
+  const [editTxDebtAdjustment, setEditTxDebtAdjustment] = useState<string | null | undefined>(undefined);
 
   // ── helpers ────────────────────────────────────────────────────── //
 
   const cards = financials.cards ?? [];
 
-  function saveCard(): StoredCard | null {
-    if (newCardLast4.length !== 4 || !/^\d{4}$/.test(newCardLast4)) return null;
-    const card: StoredCard = {
-      id: uid(),
-      type: newCardType,
-      last4: newCardLast4,
-      label: `${newCardType} •••• ${newCardLast4}`,
-    };
+  // Phase 2.6.4: parameterized (was reading module-level newCardType/
+  // newCardLast4 directly) so the new shared PaymentMethodPicker can call
+  // this without its own copy of the persistence logic -- this function's
+  // only job now is "persist a card, hand it back," not managing any
+  // particular form's own typing/panel-open state. Callers do their own
+  // cleanup (clearing their own newCardLast4/showAddCard-equivalent) on
+  // success, same as they already had to.
+  function saveCard(type: StoredCard["type"], last4: string): StoredCard | null {
+    if (last4.length !== 4 || !/^\d{4}$/.test(last4)) return null;
+    const card: StoredCard = { id: uid(), type, last4, label: `${type} •••• ${last4}` };
     update({ cards: [...cards, card] });
-    setNewCardLast4(""); setShowAddCard(false);
     return card;
   }
 
@@ -272,8 +295,8 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     let cardLabel: string | undefined;
     if (txPayMethod === "card") {
       if (showAddCard) {
-        const saved = saveCard();
-        if (saved) { cardId = saved.id; cardLabel = saved.label; }
+        const saved = saveCard(newCardType, newCardLast4);
+        if (saved) { cardId = saved.id; cardLabel = saved.label; setNewCardLast4(""); setShowAddCard(false); }
       } else if (txCardId) {
         const card = cards.find((c) => c.id === txCardId);
         if (card) { cardId = card.id; cardLabel = card.label; }
@@ -416,14 +439,36 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     if (!amt || amt <= 0) return;
     const debt = financials.debts.find((d) => d.id === debtId);
     if (!debt) return;
-    const tx = buildDebtPaymentTx(debt, amt, debtPayBucket, financials.lbpRate ?? DEFAULT_LBP_RATE);
+    const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
+    let cardId: string | undefined;
+    let cardLabel: string | undefined;
+    if (debtPayMethod === "card" && debtPayCardId) {
+      const card = cards.find((c) => c.id === debtPayCardId);
+      if (card) { cardId = card.id; cardLabel = card.label; }
+    }
+    // Phase 2.6.4: blank debtPayEfAmt means "the full payment amount," same
+    // partial-amount convention as the main transaction form's own EF
+    // field -- entered in the debt's own currency (this form has no
+    // separate currency toggle), converted to USD like efAmount always is.
+    // A debt payment only ever DRAWS from EF, never contributes to it.
+    const efAmtRaw = debtPayFromEF ? (debtPayEfAmt.trim() ? parseFloat(debtPayEfAmt.replace(/,/g, "")) : amt) : null;
+    const efAmountUSD = efAmtRaw != null ? roundMoney(-(debt.currency === "LBP" ? efAmtRaw / lbpRate : efAmtRaw)) : undefined;
+    const tx = buildDebtPaymentTx(debt, amt, debtPayBucket, lbpRate, {
+      category: debtPayCategory || undefined,
+      efAmount: efAmountUSD,
+      paymentMethod: debtPayMethod,
+      cardId, cardLabel,
+      paymentNote: debtPayMethod === "other" && debtPayOtherNote.trim() ? debtPayOtherNote.trim() : undefined,
+    });
     const newTransactions = [tx, ...financials.transactions];
     const newBal = derivedDebtBalance(debt, newTransactions);
     const updatedDebts = financials.debts.map((d) => d.id !== debtId ? d : {
       ...d, paidOffAt: moneyEquals(newBal, 0) ? (d.paidOffAt ?? new Date().toISOString()) : d.paidOffAt,
     });
     update({ transactions: newTransactions, debts: updatedDebts });
-    setPayingDebtId(null); setDebtPayAmt("");
+    setPayingDebtId(null); setDebtPayAmt(""); setDebtPayCategory("");
+    setDebtPayFromEF(false); setDebtPayEfAmt("");
+    setDebtPayMethod("cash"); setDebtPayCardId(null); setDebtPayOtherNote("");
   }
 
   function addRecurring() {
@@ -462,9 +507,19 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     const goals = financials.goals.map((g) =>
       g.id === goalId ? { ...g, currentAmount: roundMoney(g.currentAmount + amt) } : g
     );
-    const tx = buildGoalContributionTx(goal, amt, financials.lbpRate ?? DEFAULT_LBP_RATE);
+    let cardId: string | undefined;
+    let cardLabel: string | undefined;
+    if (contributeMethod === "card" && contributeCardId) {
+      const card = cards.find((c) => c.id === contributeCardId);
+      if (card) { cardId = card.id; cardLabel = card.label; }
+    }
+    const tx = buildGoalContributionTx(goal, amt, financials.lbpRate ?? DEFAULT_LBP_RATE, {
+      paymentMethod: contributeMethod, cardId, cardLabel,
+      paymentNote: contributeMethod === "other" && contributeOtherNote.trim() ? contributeOtherNote.trim() : undefined,
+    });
     update({ goals, transactions: [tx, ...financials.transactions] });
     setContributeGoalId(null); setContributeGoalAmt("");
+    setContributeMethod("cash"); setContributeCardId(null); setContributeOtherNote("");
   }
 
   function logExtraPayment(rec: StoredRecurring) {
@@ -491,13 +546,15 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     setEditDebtId(d.id); setEditDName(d.name);
     setEditDApr(String(d.apr));
     setEditDMin(String(d.minPayment)); setEditDOpened(d.openedDate ?? "");
+    setEditDBalanceInput(null);
     setPayingDebtId(null);
   }
   // Phase 2.6.3a: no longer touches balance/paidOffAt -- the balance is
-  // derived from openingBalance + the transaction ledger now, and there's no
-  // ledger-editing UI yet (that's 2.6.3(c)). Editing name/APR/min payment/
-  // opened date is still safe to do directly; correcting a balance is not,
-  // until (c) gives it a real, linked way to happen.
+  // derived from openingBalance + the transaction ledger now. Editing
+  // name/APR/min payment/opened date is still safe to do directly;
+  // correcting a balance goes through commitDebtBalance below instead
+  // (Phase 2.6.4 step 3), same reasoning as buildEfAdjustmentTx: a real,
+  // inspectable transaction, not a silently-edited scalar.
   function saveEditDebt(debtId: string) {
     if (!editDName.trim()) return;
     update({
@@ -509,6 +566,22 @@ export default function InputPanel({ financials, dashData, onChange, session, on
       }),
     });
     setEditDebtId(null);
+  }
+  // Phase 2.6.4 step 3 -- SetupScreen's commitEfBalance, mirrored, but with
+  // the OPPOSITE sign: derivedDebtBalance SUBTRACTS `paid` from
+  // openingBalance (derivedEfBalance ADDS contributions), so a balance
+  // correction here is `current - entered`, not `entered - current`.
+  // Caught by localData.test.ts's own tests-first coverage before this was
+  // written -- copying EF's delta formula verbatim would have landed every
+  // correction on the wrong sign.
+  function commitDebtBalance(debt: StoredDebt, raw: string) {
+    const entered = Math.max(0, parseFloat(raw.replace(/,/g, "")) || 0);
+    const current = derivedDebtBalance(debt, financials.transactions);
+    const delta = roundMoney(current - entered);
+    if (delta !== 0) {
+      update({ transactions: [buildDebtAdjustmentTx(debt, delta), ...financials.transactions] });
+    }
+    setEditDBalanceInput(null);
   }
 
   function startEditGoal(g: StoredGoal) {
@@ -584,6 +657,9 @@ export default function InputPanel({ financials, dashData, onChange, session, on
       tx.currency === "LBP" ? roundMoney(tx.efAmount * (financials.lbpRate ?? DEFAULT_LBP_RATE)) : tx.efAmount
     ));
     setEditTxDebtId(tx.debtId);
+    // Phase 2.6.4 step 3: raw string, no currency conversion -- unlike
+    // efAmount, debtAdjustment is already in the debt's own currency.
+    setEditTxDebtAdjustment(tx.debtAdjustment == null ? tx.debtAdjustment : String(tx.debtAdjustment));
   }
   function saveEditTx(txId: string) {
     const amt = parseFloat(editTxAmt.replace(/,/g, ""));
@@ -613,6 +689,12 @@ export default function InputPanel({ financials, dashData, onChange, session, on
         ? (parseFloat(editTxEfAmount.replace(/,/g, "")) || 0) / (financials.lbpRate ?? DEFAULT_LBP_RATE)
         : (parseFloat(editTxEfAmount.replace(/,/g, "")) || 0)
     );
+    // Phase 2.6.4 step 3: unlike efAmount, no currency conversion --
+    // debtAdjustment is in the debt's own currency, same as `amount` itself
+    // for a debt-linked transaction (derivedDebtBalance assumes no
+    // conversion, matching its own comment).
+    const debtAdjustment = editTxDebtAdjustment == null ? editTxDebtAdjustment
+      : roundMoney(parseFloat(editTxDebtAdjustment.replace(/,/g, "")) || 0);
     update({
       transactions: financials.transactions.map((t) => t.id !== txId ? t : {
         ...t, amount: amt, description: editTxDesc.trim(),
@@ -627,6 +709,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
         cycleDate: editTxCycleDate,
         efAmount,
         debtId: editTxDebtId,
+        debtAdjustment,
         updatedAt: new Date().toISOString(),
       }),
     });
@@ -1043,8 +1126,8 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                     <div className="flex gap-2">
                       <button
                         onClick={() => {
-                          const saved = saveCard();
-                          if (saved) setTxCardId(saved.id);
+                          const saved = saveCard(newCardType, newCardLast4);
+                          if (saved) { setTxCardId(saved.id); setNewCardLast4(""); setShowAddCard(false); }
                         }}
                         className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
                         style={{ background: T.jade, color: T.ink }}
@@ -1210,7 +1293,14 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                             <select
                               id="edit-tx-debt"
                               value={editTxDebtId ?? ""}
-                              onChange={(e) => setEditTxDebtId(e.target.value || undefined)}
+                              onChange={(e) => {
+                                const id = e.target.value || undefined;
+                                setEditTxDebtId(id);
+                                // Phase 2.6.4 step 3: clearing the link also
+                                // resets debtAdjustment -- a correction
+                                // pointed at nothing is meaningless.
+                                if (!id) setEditTxDebtAdjustment(undefined);
+                              }}
                               className="w-full rounded-lg px-2 py-1.5 text-[10px]"
                               style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
                             >
@@ -1220,6 +1310,20 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                               ))}
                             </select>
                           </div>
+                          {editTxDebtId && (
+                            editTxDebtAdjustment != null ? (
+                              <div className="rounded-lg px-2.5 py-2 space-y-1.5" style={{ background: T.ink, border: `1px solid ${T.line}` }}>
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="text-[10px]" style={{ color: T.mute }}>Debt correction</p>
+                                  <button type="button" onClick={() => setEditTxDebtAdjustment(null)} aria-label="Detach this debt correction" className="text-[10px] font-semibold px-2 py-1 rounded-lg transition-all hover:opacity-80 flex-shrink-0" style={{ color: T.coral, border: `1px solid ${T.coral}40` }}>Detach</button>
+                                </div>
+                                <MoneyInput value={editTxDebtAdjustment} onChange={setEditTxDebtAdjustment} placeholder="0" />
+                                <p className="text-[9px]" style={{ color: T.mute }}>Positive increases the debt, negative reduces it further.</p>
+                              </div>
+                            ) : (
+                              <button type="button" onClick={() => setEditTxDebtAdjustment("0")} className="text-[10px] font-medium px-2.5 py-1.5 rounded-lg transition-all hover:opacity-80" style={{ color: T.jade, border: `1px solid ${T.jade}40` }}>+ Add debt correction</button>
+                            )
+                          )}
                           <div className="flex gap-2">
                             <button onClick={() => saveEditTx(tx.id)} className="px-3 py-1.5 rounded-xl text-xs font-semibold hover:opacity-90" style={{ background: T.jade, color: T.ink }}>Save</button>
                             <button onClick={() => setEditTxId(null)} className="px-3 py-1.5 rounded-xl text-xs hover:opacity-70" style={{ color: T.mute }}>Cancel</button>
@@ -1442,7 +1546,11 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                                     <select
                                       id="edit-tx-debt-2"
                                       value={editTxDebtId ?? ""}
-                                      onChange={(e) => setEditTxDebtId(e.target.value || undefined)}
+                                      onChange={(e) => {
+                                        const id = e.target.value || undefined;
+                                        setEditTxDebtId(id);
+                                        if (!id) setEditTxDebtAdjustment(undefined);
+                                      }}
                                       className="w-full rounded-lg px-2 py-1.5 text-[10px]"
                                       style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
                                     >
@@ -1452,6 +1560,20 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                                       ))}
                                     </select>
                                   </div>
+                                  {editTxDebtId && (
+                                    editTxDebtAdjustment != null ? (
+                                      <div className="rounded-lg px-2.5 py-2 space-y-1.5" style={{ background: T.ink, border: `1px solid ${T.line}` }}>
+                                        <div className="flex items-center justify-between gap-2">
+                                          <p className="text-[10px]" style={{ color: T.mute }}>Debt correction</p>
+                                          <button type="button" onClick={() => setEditTxDebtAdjustment(null)} aria-label="Detach this debt correction" className="text-[10px] font-semibold px-2 py-1 rounded-lg transition-all hover:opacity-80 flex-shrink-0" style={{ color: T.coral, border: `1px solid ${T.coral}40` }}>Detach</button>
+                                        </div>
+                                        <MoneyInput value={editTxDebtAdjustment} onChange={setEditTxDebtAdjustment} placeholder="0" />
+                                        <p className="text-[9px]" style={{ color: T.mute }}>Positive increases the debt, negative reduces it further.</p>
+                                      </div>
+                                    ) : (
+                                      <button type="button" onClick={() => setEditTxDebtAdjustment("0")} className="text-[10px] font-medium px-2.5 py-1.5 rounded-lg transition-all hover:opacity-80" style={{ color: T.jade, border: `1px solid ${T.jade}40` }}>+ Add debt correction</button>
+                                    )
+                                  )}
                                   <div className="flex gap-2">
                                     <button onClick={() => saveEditTx(tx.id)} className="px-3 py-1.5 rounded-lg text-xs font-semibold hover:opacity-90" style={{ background: T.jade, color: T.ink }}>Save</button>
                                     <button onClick={() => setEditTxId(null)} className="px-3 py-1.5 rounded-lg text-xs hover:opacity-70" style={{ color: T.mute }}>Cancel</button>
@@ -1622,6 +1744,16 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                       >Save</button>
                       <button onClick={() => setContributeGoalId(null)} aria-label="Cancel contribution" className="px-2 py-1.5 rounded-xl text-xs" style={{ color: T.mute }}>✕</button>
                     </div>
+                    <PaymentMethodPicker
+                      value={contributeMethod}
+                      onChange={setContributeMethod}
+                      cardId={contributeCardId}
+                      onCardIdChange={setContributeCardId}
+                      otherNote={contributeOtherNote}
+                      onOtherNoteChange={setContributeOtherNote}
+                      cards={cards}
+                      onSaveCard={saveCard}
+                    />
                     <p className="text-[10px]" style={{ color: T.mute }}>Logged as a Savings transaction today.</p>
                   </div>
                 )}
@@ -2149,11 +2281,20 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                     <div className="grid grid-cols-3 gap-2">
                       <div>
                         <Label htmlFor="edit-debt-balance">Balance ({d.currency === "LBP" ? "L£" : "$"})</Label>
-                        {/* Phase 2.6.3a: read-only -- balance is derived from
-                            openingBalance + the transaction ledger now.
-                            Correcting it directly is deferred to 2.6.3(c),
-                            which gives it a real, linked way to happen. */}
-                        <p id="edit-debt-balance" className="text-sm tabular-nums px-3 py-2 rounded-lg" style={{ background: T.ink, color: T.mute, border: `1px solid ${T.line}` }}>{fmtCur(balance, d.currency)}</p>
+                        {/* Phase 2.6.4 step 3: "your real current balance,"
+                            same pattern as SetupScreen's ef-balance field --
+                            committing on blur builds one buildDebtAdjustmentTx
+                            transaction instead of silently editing a scalar. */}
+                        <input
+                          id="edit-debt-balance"
+                          type="number" min="0" step="1"
+                          className="w-full rounded-lg px-3 py-2 text-sm tabular-nums"
+                          style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
+                          value={editDBalanceInput ?? (balance || "")}
+                          onChange={(e) => setEditDBalanceInput(e.target.value)}
+                          onBlur={(e) => commitDebtBalance(d, e.target.value)}
+                          placeholder="0"
+                        />
                       </div>
                       <div><Label htmlFor="edit-debt-apr">APR (%)</Label><FocusInput id="edit-debt-apr" type="number" min="0" step="0.1" value={editDApr} onChange={(e) => setEditDApr(e.target.value)} placeholder="0" /></div>
                       <div><Label htmlFor="edit-debt-min">Min/mo</Label><MoneyInput id="edit-debt-min" value={editDMin} onChange={setEditDMin} placeholder="0" /></div>
@@ -2249,6 +2390,50 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                             </button>
                           ))}
                         </div>
+                        <select
+                          value={debtPayCategory}
+                          onChange={(e) => setDebtPayCategory(e.target.value)}
+                          aria-label="Category"
+                          className="w-full rounded-lg px-2 py-1.5 text-[10px]"
+                          style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
+                        >
+                          <option value="">No category</option>
+                          {allCategories(financials.customCategories).map((c) => (
+                            <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
+                          ))}
+                        </select>
+                        {/* Pay-from-EF only -- a debt payment only ever draws
+                            from the safety net, never contributes to it. */}
+                        {dashData.emergencyFund.balance > 0 && (
+                          <>
+                            <button
+                              onClick={() => setDebtPayFromEF((v) => !v)}
+                              className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-left transition-all"
+                              style={{
+                                background: debtPayFromEF ? T.coral + "18" : T.panelSoft,
+                                border: `1px solid ${debtPayFromEF ? T.coral : T.line}`,
+                              }}
+                            >
+                              <p className="text-[10px] font-medium" style={{ color: debtPayFromEF ? T.coral : T.text }}>
+                                Pay this from Safety net
+                              </p>
+                              <span className="text-sm">{debtPayFromEF ? "✓" : "○"}</span>
+                            </button>
+                            {debtPayFromEF && (
+                              <MoneyInput value={debtPayEfAmt} onChange={setDebtPayEfAmt} placeholder={`Full amount (${debtPayAmt || "0"})`} />
+                            )}
+                          </>
+                        )}
+                        <PaymentMethodPicker
+                          value={debtPayMethod}
+                          onChange={setDebtPayMethod}
+                          cardId={debtPayCardId}
+                          onCardIdChange={setDebtPayCardId}
+                          otherNote={debtPayOtherNote}
+                          onOtherNoteChange={setDebtPayOtherNote}
+                          cards={cards}
+                          onSaveCard={saveCard}
+                        />
                         <p className="text-[10px]" style={{ color: T.mute }}>
                           Balance after: {fmtCur(Math.max(0, balance - (parseFloat(debtPayAmt.replace(/,/g, "")) || 0)), d.currency)}
                           {parseFloat(debtPayAmt.replace(/,/g, "")) >= balance && (
@@ -2356,8 +2541,8 @@ export default function InputPanel({ financials, dashData, onChange, session, on
           <p className="text-xs" style={{ color: T.mute }}>
             Set a starting balance for your cash or a card. ESSA subtracts every transaction logged on that payment
             method since then to tell you what you <em>should</em> have. Compare it to what you actually see, and a
-            gap usually means a payment never got logged. (Debt payments and recurring charges without an &quot;+extra&quot;
-            log won&apos;t show up here: a known limit, not a bug.)
+            gap usually means a payment never got logged. (A recurring bill that hasn&apos;t been confirmed yet
+            won&apos;t show up here — a known limit, not a bug.)
           </p>
           {(financials.trackedBalances ?? []).length > 0 && (
             <div className="space-y-2">

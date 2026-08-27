@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import type { LocalFinancials } from "../../lib/localData";
-import { todayISO, roundMoney, buildGoalContributionTx, toUSD as toUSDShared, activeTransactions, DEFAULT_LBP_RATE } from "../../lib/localData";
+import type { LocalFinancials, PaymentMethod, StoredCard } from "../../lib/localData";
+import { uid, todayISO, roundMoney, buildGoalContributionTx, toUSD as toUSDShared, activeTransactions, DEFAULT_LBP_RATE } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
+import { PaymentMethodPicker } from "../form/Primitives";
 
 export default function GoalsScreen({
   dashData,
@@ -22,6 +23,13 @@ export default function GoalsScreen({
   const [payGoalId,  setPayGoalId]  = useState<number | null>(null);
   const [payAmt,     setPayAmt]     = useState("");
   const [paySuccess, setPaySuccess] = useState<number | null>(null);
+  // Phase 2.6.4: this screen's own, separate goal-contribution form (2.4.41
+  // -- buildGoalContributionTx used to hardcode paymentMethod "other" here
+  // too, found while designing the fix: InputPanel.tsx's inline
+  // contributeToGoal is NOT the only entry point for this same builder).
+  const [payMethod,    setPayMethod]    = useState<PaymentMethod>("cash");
+  const [payCardId,    setPayCardId]    = useState<string | null>(null);
+  const [payOtherNote, setPayOtherNote] = useState("");
 
   const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
   const prefix = todayISO().slice(0, 7);
@@ -32,6 +40,18 @@ export default function GoalsScreen({
   // in its own goal's currency (see buildGoalContributionTx), so this sum
   // is mixed-currency the moment any goal is LBP, not just a display nit.
   const totalPaidThisMonth = goalTxThisMonth.reduce((s, t) => s + toUSDShared(t.amount, t.currency, lbpRate), 0);
+
+  // Parameterized like InputPanel.tsx's own saveCard (Phase 2.6.4) -- this
+  // screen owns financials.cards/onChange independently, so it needs its
+  // own persistence call, but the same shape lets it share
+  // PaymentMethodPicker without that component needing to know which
+  // screen it's rendering in.
+  function saveCard(type: StoredCard["type"], last4: string): StoredCard | null {
+    if (last4.length !== 4 || !/^\d{4}$/.test(last4)) return null;
+    const card: StoredCard = { id: uid(), type, last4, label: `${type} •••• ${last4}` };
+    onChange({ ...financials, cards: [...financials.cards, card] });
+    return card;
+  }
 
   function pay(dashGoalId: number) {
     const amt = parseFloat(payAmt.replace(/,/g, ""));
@@ -51,11 +71,21 @@ export default function GoalsScreen({
           : g.achievedAt,
       };
     });
-    const tx = buildGoalContributionTx(rawGoal, amt, lbpRate);
+    let cardId: string | undefined;
+    let cardLabel: string | undefined;
+    if (payMethod === "card" && payCardId) {
+      const card = financials.cards.find((c) => c.id === payCardId);
+      if (card) { cardId = card.id; cardLabel = card.label; }
+    }
+    const tx = buildGoalContributionTx(rawGoal, amt, lbpRate, {
+      paymentMethod: payMethod, cardId, cardLabel,
+      paymentNote: payMethod === "other" && payOtherNote.trim() ? payOtherNote.trim() : undefined,
+    });
     onChange({ ...financials, goals: updated, transactions: [tx, ...(financials.transactions ?? [])] });
     setPaySuccess(dashGoalId);
     setPayGoalId(null);
     setPayAmt("");
+    setPayMethod("cash"); setPayCardId(null); setPayOtherNote("");
     setTimeout(() => setPaySuccess(null), 3000);
   }
 
@@ -298,6 +328,16 @@ export default function GoalsScreen({
                               ✕
                             </button>
                           </div>
+                          <PaymentMethodPicker
+                            value={payMethod}
+                            onChange={setPayMethod}
+                            cardId={payCardId}
+                            onCardIdChange={setPayCardId}
+                            otherNote={payOtherNote}
+                            onOtherNoteChange={setPayOtherNote}
+                            cards={financials.cards}
+                            onSaveCard={saveCard}
+                          />
                           <p className="text-[10px]" style={{ color: T.mute }}>
                             Logged as a Savings transaction · boosts your financial health score
                           </p>
