@@ -10,7 +10,7 @@ import {
   dueCycles, isCycleConfirmed, isCycleOverdue, buildRecurringConfirmLog,
   nextConfirmTarget, historizedRecurringContribution, pendingBackfillCycles,
   derivedEfBalance, derivedDebtBalance, activeTransactions,
-  buildDebtPaymentTx, buildEfAdjustmentTx,
+  buildDebtPaymentTx, buildEfAdjustmentTx, buildDebtAdjustmentTx,
 } from "./localData";
 
 // UTC midnight of a given local calendar date -- matches nextOccurrence's
@@ -888,6 +888,55 @@ describe("Phase 2.6.3c -- buildDebtPaymentTx and buildEfAdjustmentTx (tests-firs
       expect(derivedEfBalance({ ...data, transactions: [tx] })).toBe(1200);
     });
   });
+
+  describe("buildDebtAdjustmentTx (Phase 2.6.4 step 3)", () => {
+    const debt: StoredDebt = { id: "d1", name: "Dad", balance: 2000, apr: 0, minPayment: 0, currency: "USD", createdAt: "2026-01-01T00:00:00.000Z", openingBalance: 2000 };
+
+    it("carries the delta as debtAdjustment, with amount 0 -- a correction is not a real payment and must not move any budget total", () => {
+      const tx = buildDebtAdjustmentTx(debt, 150);
+      expect(tx.debtAdjustment).toBe(150);
+      expect(tx.amount).toBe(0);
+      expect(tx.debtId).toBe("d1");
+      expect(tx.currency).toBe("USD");
+    });
+
+    it("carries the debt's own currency, not USD unconditionally -- unlike buildEfAdjustmentTx, a debt correction is in the debt's own terms", () => {
+      const lbpDebt: StoredDebt = { ...debt, currency: "LBP" };
+      const tx = buildDebtAdjustmentTx(lbpDebt, 5_000_000);
+      expect(tx.currency).toBe("LBP");
+      expect(tx.debtAdjustment).toBe(5_000_000);
+    });
+
+    it("supports a negative delta (correcting the balance downward)", () => {
+      const tx = buildDebtAdjustmentTx(debt, -75);
+      expect(tx.debtAdjustment).toBe(-75);
+    });
+
+    it("feeds derivedDebtBalance correctly -- brings a stale opening balance to match a corrected current-balance figure", () => {
+      // Sign is the OPPOSITE of buildEfAdjustmentTx's own delta (current -
+      // entered, not entered - current): derivedDebtBalance SUBTRACTS `paid`
+      // (amount + debtAdjustment) from openingBalance, while derivedEfBalance
+      // ADDS contributions to its opening balance -- the two balances move
+      // in opposite directions relative to their carrier field, so the same
+      // delta formula would land on the wrong sign here.
+      const delta = derivedDebtBalance(debt, []) - 1500; // owner says the real balance is $1,500
+      const tx = buildDebtAdjustmentTx(debt, delta);
+      expect(derivedDebtBalance(debt, [tx])).toBe(1500);
+    });
+
+    it("a debt correction moving the balance UP (e.g. missed interest) uses a negative debtAdjustment", () => {
+      const delta = derivedDebtBalance(debt, []) - 2200; // owner says the real balance is actually $2,200, higher than the $2,000 shown
+      const tx = buildDebtAdjustmentTx(debt, delta);
+      expect(tx.debtAdjustment).toBe(-200);
+      expect(derivedDebtBalance(debt, [tx])).toBe(2200);
+    });
+
+    it("stamps createdAt and updatedAt", () => {
+      const tx = buildDebtAdjustmentTx(debt, 100);
+      expect(tx.createdAt).toBeTruthy();
+      expect(tx.updatedAt).toBe(tx.createdAt);
+    });
+  });
 });
 
 describe("valueForMonth", () => {
@@ -1590,6 +1639,41 @@ describe("migrateFinancials", () => {
       it("rounds the final result to the cent", () => {
         const txs = Array.from({ length: 3 }, (_, i) => makeTx({ id: `t${i}`, debtId: "d1", amount: 0.1 }));
         expect(derivedDebtBalance(makeDebt({ openingBalance: 1 }), txs)).toBe(0.7); // 1 - 0.3, not float dust
+      });
+
+      // Phase 2.6.4 step 3 -- debtAdjustment is an independent carrier field,
+      // same relationship to `amount` that efAmount already has to EF: paid
+      // = amount + (debtAdjustment ?? 0), so a correction transaction
+      // (amount: 0, debtAdjustment: delta) moves the debt balance without
+      // being counted as a real payment anywhere else.
+      it("adds a positive debtAdjustment on top of amount", () => {
+        const txs = [makeTx({ debtId: "d1", amount: 325, debtAdjustment: 50 })];
+        expect(derivedDebtBalance(makeDebt(), txs)).toBe(1625); // 2000 - 325 - 50
+      });
+
+      it("a negative debtAdjustment reduces the amount paid down, increasing the remaining balance", () => {
+        const txs = [makeTx({ debtId: "d1", amount: 325, debtAdjustment: -50 })];
+        expect(derivedDebtBalance(makeDebt(), txs)).toBe(1725); // 2000 - 325 + 50
+      });
+
+      it("a correction transaction (amount 0, debtAdjustment set) moves the balance on its own", () => {
+        const txs = [makeTx({ debtId: "d1", amount: 0, debtAdjustment: -300 })];
+        expect(derivedDebtBalance(makeDebt(), txs)).toBe(2300); // 2000 - 0 - (-300)
+      });
+
+      it("treats undefined debtAdjustment as contributing 0 -- the ordinary, non-correction case", () => {
+        const txs = [makeTx({ debtId: "d1", amount: 325 })];
+        expect(derivedDebtBalance(makeDebt(), txs)).toBe(1675); // unchanged from the plain-amount test above
+      });
+
+      it("treats explicit null debtAdjustment as contributing 0 -- a deliberately detached correction, same as undefined", () => {
+        const txs = [makeTx({ debtId: "d1", amount: 325, debtAdjustment: null })];
+        expect(derivedDebtBalance(makeDebt(), txs)).toBe(1675);
+      });
+
+      it("excludes debtAdjustment from a soft-deleted linked transaction, same as amount", () => {
+        const txs = [makeTx({ id: "t1", debtId: "d1", amount: 325, debtAdjustment: -300, deletedAt: "2026-08-20T00:00:00.000Z" })];
+        expect(derivedDebtBalance(makeDebt(), txs)).toBe(2000); // fully excluded, not just amount
       });
     });
   });

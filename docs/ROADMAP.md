@@ -208,7 +208,7 @@ A debt payment sourced partly from EF is recordable as one real transaction, vis
 
 ## Phase 2.6.4 — Debt/goal payment forms close the gaps 2.6.3(c) left at the point of use
 
-**Status:** design approved 2026-08-27, not started · **Depends on:** Phase 2.6.3(a)/(b)/(c) (merged, live) · **Blocks:** nothing declared yet — real, rated High (2.4.41), but not unilaterally added as a Phase 2 precondition; owner to decide separately.
+**Status:** all three steps built 2026-08-27 on `fix/payment-method-picker-2.6.4`, 421/421 tests, tsc clean, both builds clean, held for review, not merged · **Depends on:** Phase 2.6.3(a)/(b)/(c) (merged, live) · **Blocks:** nothing declared yet — real, rated High (2.4.41), but not unilaterally added as a Phase 2 precondition; owner to decide separately.
 
 ### Context
 
@@ -251,14 +251,14 @@ Payment-method-plus-card is already duplicated three times (main entry, edit "Th
 **Per-form:**
 - **Debt-payment form** (`InputPanel.tsx:2222-2258`): gains an EF toggle (pay-from-EF only — a debt payment only ever draws from EF, never contributes to it, unlike the main form's two-way checkbox), same blank-means-full-amount partial pattern (c) already built; a category `<select>`, same options as every other form; `PaymentMethodPicker`.
 - **Goal-contribution forms** (`InputPanel.tsx:1609-1627` and `GoalsScreen.tsx`'s `pay()`): both gain `PaymentMethodPicker` only — no EF/category fields, not asked for and goals aren't debts.
-- **Edit Debt form** (`InputPanel.tsx:2145-2168`): the read-only Balance line becomes an editable "your real current balance" field, the same pattern `SetupScreen.tsx` already uses for EF — commit computes `delta = entered − derivedDebtBalance(...)` and calls `buildDebtAdjustmentTx` if non-zero.
+- **Edit Debt form** (`InputPanel.tsx:2145-2168`): the read-only Balance line becomes an editable "your real current balance" field, the same pattern `SetupScreen.tsx` already uses for EF — commit computes `delta = derivedDebtBalance(...) − entered` (note the sign: opposite of `commitEfBalance`'s `entered − efBalance`, since `derivedDebtBalance` subtracts `paid` from `openingBalance` while `derivedEfBalance` adds contributions to it) and calls `buildDebtAdjustmentTx` if non-zero.
 - **Edit-transaction form** (`InputPanel.tsx`, both "This month" and "History" blocks): gains a fourth optional section, "Debt correction" — Link/Detach + amount, mirroring the existing `efAmount` section exactly, shown only when a debt is linked via the existing dropdown.
 
 ### Build order (owner's instruction — each committed and reported before the next; held for review, nothing merged until all of it is ready)
 
-1. `PaymentMethodPicker` extraction (+ `saveCard` parameterization), adopted by no new call sites yet — provably inert if nothing else lands, same "ships unwired first" discipline as 2.6.2.
-2. The three form adoptions (debt-payment form's EF/category/payment-method fields; both goal-contribution forms' payment-method field) — closes 2.4.41 and the point-of-use EF gap.
-3. (d): `debtAdjustment` field, `buildDebtAdjustmentTx`, `derivedDebtBalance` formula update, Edit Debt's editable-balance field, and the edit-transaction form's new "Debt correction" section.
+1. `PaymentMethodPicker` extraction (+ `saveCard` parameterization), adopted by no new call sites yet — provably inert if nothing else lands, same "ships unwired first" discipline as 2.6.2. **BUILT 2026-08-27.**
+2. The three form adoptions (debt-payment form's EF/category/payment-method fields; both goal-contribution forms' payment-method field) — closes 2.4.41 and the point-of-use EF gap. **BUILT 2026-08-27.**
+3. (d): `debtAdjustment` field, `buildDebtAdjustmentTx`, `derivedDebtBalance` formula update, Edit Debt's editable-balance field, and the edit-transaction form's new "Debt correction" section. **BUILT 2026-08-27** — one correction to this section's own design during implementation: the delta formula below was specified as `entered − derivedDebtBalance(...)`, copying `buildEfAdjustmentTx`'s formula verbatim; caught by tests-first before any UI landed that this is backwards for debt (`derivedDebtBalance` subtracts `paid` from `openingBalance`, `derivedEfBalance` adds contributions to it — opposite directions relative to the carrier field). The correct, implemented formula is `delta = derivedDebtBalance(...) − entered`. See 2.4.41's `docs/AUDIT_2026-08.md` entry for the full live-verification writeup.
 
 ### Acceptance
 
@@ -458,7 +458,7 @@ Phase 0  Loose ends            — now
 Phase 1  Dual-currency         — last Launch Blocker
 Phase 2.5  Recurring confirm-on-due  — built, merged, 🟡 pending owner's live check
 Phase 2.6  EF/debt ledger-derived    — 2.6.1/2.6.2 merged, 2.6.3(a)/(b)/(c) all approved+built+held, ready for combined deploy, cohort-blocking (2.4.27)
-Phase 2.6.4  Debt/goal payment-form gaps  — design approved, not started, depends on 2.6.3(c), blocking status undecided (2.4.41)
+Phase 2.6.4  Debt/goal payment-form gaps  — all 3 steps built 2026-08-27, held for review, not merged, blocking status undecided (2.4.41)
 Phase 2.7  Sync merge (transactions) — design approved, not started, depends on 2.6.3(c), cohort-blocking
 Phase 2  COHORT LAUNCH         — ordering below becomes provisional
 Phase 3  Recurring end dates

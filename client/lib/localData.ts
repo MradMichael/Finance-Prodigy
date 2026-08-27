@@ -102,6 +102,22 @@ export interface StoredTransaction {
   // this field, and never backfilled -- there's no real value to recover
   // for one that already existed, matching createdAt's own precedent.
   updatedAt?: string;
+  // Added in Phase 2.6.4 (step 3) -- a debt-total correction, independent
+  // of `amount`, for derivedDebtBalance. Same undefined/null/number
+  // discipline as `efAmount` (owner's explicit instruction: all three
+  // carrier fields -- cycleDate, efAmount, debtAdjustment -- behave
+  // identically): undefined = this transaction has never carried a
+  // correction (the default/absent state for every transaction that isn't
+  // specifically one); explicit null = a correction WAS attached and has
+  // been deliberately detached; a real number, including 0, = a correction
+  // of that magnitude is attached (0 is legitimate -- e.g. confirming a
+  // balance is already exactly right, same reasoning efAmount: 0 is
+  // legitimate). Only meaningful paired with `debtId`, same dependency
+  // cycleDate has on recurringId. Unlike efAmount, NOT converted to USD --
+  // it's in the debt's own currency, matching how derivedDebtBalance
+  // already treats `amount` for a debt-linked transaction (no conversion,
+  // assumed to already be in the debt's own terms).
+  debtAdjustment?: number | null;
 }
 
 export interface StoredGoal {
@@ -1415,6 +1431,26 @@ export function buildEfAdjustmentTx(delta: number): StoredTransaction {
   };
 }
 
+/**
+ * Phase 2.6.4 (step 3) -- structurally identical to buildEfAdjustmentTx
+ * above, for the same reason: Edit Debt's Balance field reads as "your real
+ * current balance," and saving computes `delta = entered -
+ * derivedDebtBalance(debt, transactions)` and builds this one transaction to
+ * carry it. `amount: 0` is deliberate -- a correction is not a real payment
+ * and must not move any budget total; only `debtAdjustment` (independent of
+ * `amount`, see StoredTransaction's own comment) should move the balance.
+ * Unlike buildEfAdjustmentTx, this carries the DEBT's own currency, not USD
+ * unconditionally -- debts (unlike EF) have always supported LBP.
+ */
+export function buildDebtAdjustmentTx(debt: StoredDebt, delta: number): StoredTransaction {
+  const now = new Date().toISOString();
+  return {
+    id: uid(), amount: 0, currency: debt.currency, bucket: "SAVINGS",
+    description: `Debt correction: ${debt.name}`, date: todayISO(), paymentMethod: "other",
+    debtId: debt.id, debtAdjustment: roundMoney(delta), createdAt: now, updatedAt: now,
+  };
+}
+
 // ── Phase 2.6.2 -- ledger-derived EF/debt balances (pure logic, shipped
 // completely unwired; see docs/ROADMAP.md Phase 2.6). No caller anywhere
 // in the app uses these yet -- `emergencyFundBalance`/`debt.balance`
@@ -1468,11 +1504,21 @@ export function derivedEfBalance(data: LocalFinancials): number {
  *
  * Soft-deleted transactions are excluded, same reasoning as
  * derivedEfBalance above.
+ *
+ * Phase 2.6.4 (step 3): `paid` gains a second term, `debtAdjustment`
+ * (independent of `amount`, see StoredTransaction's own comment) -- what
+ * lets a correction transaction (`amount: 0, debtAdjustment: delta`, from
+ * buildDebtAdjustmentTx) move this balance without being counted as a real
+ * payment anywhere else, the same trick buildEfAdjustmentTx already uses
+ * for derivedEfBalance. `?? 0` means undefined and explicit null both
+ * contribute nothing -- identical arithmetic either way; the
+ * undefined-vs-null distinction is for the edit form's own state, not this
+ * calculation (mirrors efAmount's own comment on derivedEfBalance).
  */
 export function derivedDebtBalance(debt: StoredDebt, transactions: StoredTransaction[]): number {
   const paid = transactions
     .filter((t) => t.debtId === debt.id && t.deletedAt == null)
-    .reduce((s, t) => s + t.amount, 0);
+    .reduce((s, t) => s + t.amount + (t.debtAdjustment ?? 0), 0);
   return roundMoney(Math.max(0, debt.openingBalance - paid));
 }
 
