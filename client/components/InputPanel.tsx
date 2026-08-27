@@ -513,9 +513,22 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     if (!amt || amt <= 0) return;
     const goal = financials.goals.find((g) => g.id === goalId);
     if (!goal) return; // required by buildGoalContributionTx needing the goal's own currency -- also just more correct than the old silent "savings" fallback
-    const goals = financials.goals.map((g) =>
-      g.id === goalId ? { ...g, currentAmount: roundMoney(g.currentAmount + amt) } : g
-    );
+    // 2.4.16c: this call site never set achievedAt even when a contribution
+    // completed the goal, disagreeing with GoalsScreen.tsx's own pay() (the
+    // other contribution surface) and InputPanel's saveEditGoal, both of
+    // which do. Same pattern as GoalsScreen.pay(): only ever set once
+    // (`g.achievedAt ?? ...`), never cleared here -- a contribution only
+    // ever increases currentAmount, so there's no "un-achieving" case to
+    // handle the way the full edit form's saveEditGoal has to.
+    const goals = financials.goals.map((g) => {
+      if (g.id !== goalId) return g;
+      const newAmount = roundMoney(g.currentAmount + amt);
+      return {
+        ...g,
+        currentAmount: newAmount,
+        achievedAt: newAmount >= g.targetAmount ? (g.achievedAt ?? new Date().toISOString().slice(0, 10)) : g.achievedAt,
+      };
+    });
     let cardId: string | undefined;
     let cardLabel: string | undefined;
     if (contributeMethod === "card" && contributeCardId) {
