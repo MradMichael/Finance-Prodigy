@@ -159,7 +159,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
 
   // Recurring form
   const [rName,        setRName]        = useState("");
-  const [rEmoji,       setREmoji]       = useState("🔄");
+  const [rEmoji,       setREmoji]       = useState("🔁");
   const [rAmount,      setRAmount]      = useState("");
   const [rCurrency,    setRCurrency]    = useState<Currency>("USD");
   const [rFreq,        setRFreq]        = useState<RecurringFrequency>("monthly");
@@ -483,7 +483,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   function addRecurring() {
     if (!rName.trim() || !rAmount || !rStart) return;
     const rec: StoredRecurring = {
-      id: uid(), name: rName.trim(), emoji: rEmoji || "🔄",
+      id: uid(), name: rName.trim(), emoji: rEmoji || "🔁",
       amount: parseFloat(rAmount.replace(/,/g, "")), currency: rCurrency, frequency: rFreq,
       bucket: rBucket, ...(rCategory ? { category: rCategory } : {}), startDate: rStart,
       endDate:     rEndType === "date"   ? (rEnd.trim() || null) : null,
@@ -491,7 +491,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
       createdAt: new Date().toISOString(),
     };
     update({ recurring: [...(financials.recurring ?? []), rec] });
-    setRName(""); setRAmount(""); setREmoji("🔄"); setRCategory(""); setRStart(todayISO()); setREnd(""); setRTotalAmount(""); setREndType("infinite");
+    setRName(""); setRAmount(""); setREmoji("🔁"); setRCategory(""); setRStart(todayISO()); setREnd(""); setRTotalAmount(""); setREndType("infinite");
   }
 
   /** Quick-add a Recurring item from a transaction that looksRecurring flagged — starts today, monthly, editable further in the Recurring screen. Past transactions are left untouched; this only affects future months. */
@@ -499,7 +499,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     const amt = parseFloat(amount.replace(/,/g, ""));
     if (!name.trim() || !amt) return;
     const rec: StoredRecurring = {
-      id: uid(), name: name.trim(), emoji: "🔄",
+      id: uid(), name: name.trim(), emoji: "🔁",
       amount: amt, currency, frequency: "monthly", bucket,
       ...(category ? { category } : {}),
       startDate: todayISO(), endDate: null, totalAmount: null,
@@ -655,7 +655,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     if (!editRName.trim() || isNaN(amt) || !editRStart) return;
     update({
       recurring: (financials.recurring ?? []).map((r) => r.id !== recId ? r : {
-        ...r, name: editRName.trim(), emoji: editREmoji || "🔄",
+        ...r, name: editRName.trim(), emoji: editREmoji || "🔁",
         amount: amt, currency: editRCurrency, frequency: editRFreq,
         bucket: editRBucket, category: editRCategory || undefined, startDate: editRStart,
         endDate:     editREndType === "date"   ? (editREnd.trim() || null) : null,
@@ -1825,7 +1825,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
         </Section>
 
         {/* Recurring Payments */}
-        <Section title="Recurring Payments" icon="🔄" badge={(financials.recurring ?? []).length} defaultOpen={false}>
+        <Section title="Recurring Payments" icon="🔁" badge={(financials.recurring ?? []).length} defaultOpen={false}>
           {(() => {
             const recs = financials.recurring ?? [];
             const now  = new Date();
@@ -2155,7 +2155,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                     className="rounded-xl px-4 py-6 text-center mb-2"
                     style={{ background: T.panelSoft, border: `1px dashed ${T.line}` }}
                   >
-                    <p className="text-2xl mb-1">🔄</p>
+                    <p className="text-2xl mb-1">🔁</p>
                     <p className="text-xs" style={{ color: T.mute }}>Rent, subscriptions, loan payments…</p>
                   </div>
                 )}
@@ -2167,7 +2167,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                   <div className="flex gap-2">
                     <div style={{ width: 68 }}>
                       <Label htmlFor="new-rec-emoji">Icon</Label>
-                      <FocusInput id="new-rec-emoji" value={rEmoji} onChange={(e) => setREmoji(e.target.value)} placeholder="🔄" />
+                      <FocusInput id="new-rec-emoji" value={rEmoji} onChange={(e) => setREmoji(e.target.value)} placeholder="🔁" />
                     </div>
                     <div className="flex-1">
                       <Label htmlFor="new-rec-name">Name</Label>
