@@ -1,5 +1,5 @@
 import type { LocalFinancials } from "./localData";
-import { BUDGET_RULES, nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, toUSD as toUSDShared, categoryLabel, derivedDebtBalance, activeTransactions, DEFAULT_LBP_RATE } from "./localData";
+import { BUDGET_RULES, nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, toUSD as toUSDShared, categoryLabel, derivedDebtBalance, activeTransactions, DEFAULT_LBP_RATE, valueForMonth } from "./localData";
 import type { computeDashboard } from "./computeDashboard";
 
 type DashboardPayload = ReturnType<typeof computeDashboard>;
@@ -25,6 +25,15 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
   const ruleLabel = BUDGET_RULES[dash.budgetRule]?.label ?? dash.budgetRule;
   const lbpRate = data.lbpRate ?? DEFAULT_LBP_RATE;
   const toUSD = (n: number, cur?: string) => toUSDShared(n, cur as "USD" | "LBP" | undefined, lbpRate);
+  // 2.4.22: the ledger lists real, dated, past transactions -- unlike the
+  // summary cards above (deliberately "as of now," per this function's own
+  // header comment), each row needs the rate that was actually in effect in
+  // ITS OWN month, the same toUSDForMonth pattern computeDashboard.ts
+  // already uses everywhere else, or a rate change since the transaction
+  // was logged silently reprices history and disagrees with Overview/
+  // Statistics for the exact same transaction.
+  const toUSDForMonth = (n: number, cur: string | undefined, ym: string) =>
+    cur === "LBP" ? n / valueForMonth(data.lbpRateHistory, ym, lbpRate) : n;
   const BL = { NEEDS: "Needs", WANTS: "Wants", SAVINGS: "Savings", INCOME: "Income" } as const;
 
   const ledgerTx = options.detailed
@@ -37,14 +46,14 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
   // Excludes INCOME, matching what "Spent" means in the summary card above
   // (dash.month.totalSpend) -- otherwise a range containing a logged INCOME
   // transaction shows two different, contradicting totals in the same report.
-  const ledgerTotal = ledgerTx.filter((t) => t.bucket !== "INCOME").reduce((s, t) => s + toUSD(t.amount, t.currency), 0);
+  const ledgerTotal = ledgerTx.filter((t) => t.bucket !== "INCOME").reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, t.date.slice(0, 7)), 0);
   const ledgerRows = ledgerTx.map((t) => `
     <tr>
       <td>${t.date.split("-").reverse().join("/")}</td>
       <td>${escapeHtml(t.description)}</td>
       <td>${BL[t.bucket]}</td>
       <td>${t.category ? escapeHtml(categoryLabel(t.category, data.customCategories)) : "—"}</td>
-      <td class="num">${money(toUSD(t.amount, t.currency))}</td>
+      <td class="num">${money(toUSDForMonth(t.amount, t.currency, t.date.slice(0, 7)))}</td>
     </tr>`).join("");
   const rangeLabel = options.dateFrom || options.dateTo
     ? `${options.dateFrom ? options.dateFrom.split("-").reverse().join("/") : "the start"} to ${options.dateTo ? options.dateTo.split("-").reverse().join("/") : "today"}`
