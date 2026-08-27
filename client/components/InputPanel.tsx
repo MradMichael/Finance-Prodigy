@@ -409,6 +409,15 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     const raw = actualInputs[id];
     const amt = parseFloat((raw ?? "").replace(/,/g, ""));
     if (isNaN(amt)) return;
+    // 2.4.42: this replaces the previous check in place, with no history
+    // kept -- a mistyped figure silently destroys the last real snapshot.
+    // Only worth confirming when there's actually a prior check to lose;
+    // the very first "what you actually have now" entry for a tracked
+    // balance has nothing behind it yet.
+    const tb = (financials.trackedBalances ?? []).find((t) => t.id === id);
+    if (tb?.actualBalance != null && !confirm(`Replace your last check (${fmtCur(tb.actualBalance, tb.currency)} on ${fmtDate(tb.actualBalanceDate ?? "")}) with this new figure? The old one won't be recoverable.`)) {
+      return;
+    }
     // Snapshot the live expected total (from dashData, already computed as
     // of right now) at the exact moment of confirming -- see
     // computeDashboard.ts's balanceChecks for why this can't be
