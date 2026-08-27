@@ -1336,13 +1336,24 @@ export function historizedRecurringContribution(r: StoredRecurring, ym: string, 
  * NOT convertible to a different currency than the goal itself in this
  * phase -- see docs/ROADMAP.md Phase 1.4's own scope note.
  */
-export function buildGoalContributionTx(goal: StoredGoal, amount: number, lbpRate: number): StoredTransaction {
+export function buildGoalContributionTx(
+  goal: StoredGoal, amount: number, lbpRate: number,
+  opts: { paymentMethod?: PaymentMethod; cardId?: string; cardLabel?: string; paymentNote?: string } = {},
+): StoredTransaction {
   const now = new Date().toISOString();
   return {
     id: uid(), amount, currency: goal.currency, bucket: "SAVINGS",
-    description: `Goal: ${goal.name}`, date: todayISO(), paymentMethod: "other",
+    description: `Goal: ${goal.name}`, date: todayISO(),
+    // Phase 2.6.4: defaults to "other" when the caller doesn't say -- was
+    // ALWAYS "other", unconditionally, until now (2.4.41: this made a goal
+    // contribution permanently invisible to balance reconciliation no
+    // matter which real account funded it). Backward compatible: every
+    // pre-2.6.4 call site that doesn't pass opts gets the exact old value.
+    paymentMethod: opts.paymentMethod ?? "other",
     createdAt: now, updatedAt: now,
     ...withRate(goal.currency, lbpRate),
+    ...(opts.cardId ? { cardId: opts.cardId, cardLabel: opts.cardLabel } : {}),
+    ...(opts.paymentMethod === "other" && opts.paymentNote ? { paymentNote: opts.paymentNote } : {}),
   };
 }
 
@@ -1354,13 +1365,30 @@ export function buildGoalContributionTx(goal: StoredGoal, amount: number, lbpRat
  * miscategorizes real spend and skews budget pace (owner's explicit
  * instruction).
  */
-export function buildDebtPaymentTx(debt: StoredDebt, amount: number, bucket: "NEEDS" | "WANTS" | "SAVINGS", lbpRate: number): StoredTransaction {
+export function buildDebtPaymentTx(
+  debt: StoredDebt, amount: number, bucket: "NEEDS" | "WANTS" | "SAVINGS", lbpRate: number,
+  // Phase 2.6.4: category and efAmount close 2.4.27 at its actual point of
+  // use -- a debt payment can now carry a category like any other
+  // transaction, and a partial EF-sourced amount ("$300 of this $325 came
+  // from EF," 2.4.27's own real case, previously only enterable on the
+  // main transaction form, never here where the payment is actually
+  // recorded). paymentMethod/cardId/cardLabel close 2.4.41 (a debt payment
+  // used to be permanently invisible to balance reconciliation regardless
+  // of which real account it left). Backward compatible: every pre-2.6.4
+  // call site that doesn't pass opts gets the exact old values.
+  opts: { category?: string; efAmount?: number; paymentMethod?: PaymentMethod; cardId?: string; cardLabel?: string; paymentNote?: string } = {},
+): StoredTransaction {
   const now = new Date().toISOString();
   return {
     id: uid(), amount, currency: debt.currency, bucket,
-    description: `Debt payment: ${debt.name}`, date: todayISO(), paymentMethod: "other",
+    description: `Debt payment: ${debt.name}`, date: todayISO(),
+    paymentMethod: opts.paymentMethod ?? "other",
     debtId: debt.id, createdAt: now, updatedAt: now,
     ...withRate(debt.currency, lbpRate),
+    ...(opts.category ? { category: opts.category } : {}),
+    ...(opts.efAmount != null ? { efAmount: opts.efAmount } : {}),
+    ...(opts.cardId ? { cardId: opts.cardId, cardLabel: opts.cardLabel } : {}),
+    ...(opts.paymentMethod === "other" && opts.paymentNote ? { paymentNote: opts.paymentNote } : {}),
   };
 }
 

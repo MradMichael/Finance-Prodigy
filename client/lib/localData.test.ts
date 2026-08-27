@@ -775,6 +775,32 @@ describe("buildGoalContributionTx", () => {
     const b = buildGoalContributionTx(goal, 50, 89500);
     expect(a.id).not.toBe(b.id);
   });
+
+  // Phase 2.6.4 -- closes half of 2.4.41 (buildGoalContributionTx hardcoded
+  // paymentMethod "other", so a contribution could never reduce a tracked
+  // balance's expected figure no matter which real account funded it).
+  it("defaults to paymentMethod 'other' when no opts are given -- backward compatible with every existing call site until they're updated", () => {
+    const tx = buildGoalContributionTx(goal, 50, 89500);
+    expect(tx.paymentMethod).toBe("other");
+    expect(tx.cardId).toBeUndefined();
+  });
+
+  it("carries a real payment method when given one", () => {
+    const tx = buildGoalContributionTx(goal, 50, 89500, { paymentMethod: "cash" });
+    expect(tx.paymentMethod).toBe("cash");
+  });
+
+  it("carries card + cardLabel when paid by card", () => {
+    const tx = buildGoalContributionTx(goal, 50, 89500, { paymentMethod: "card", cardId: "c1", cardLabel: "Visa •••• 4242" });
+    expect(tx.paymentMethod).toBe("card");
+    expect(tx.cardId).toBe("c1");
+    expect(tx.cardLabel).toBe("Visa •••• 4242");
+  });
+
+  it("carries a payment note only when paymentMethod is 'other'", () => {
+    const tx = buildGoalContributionTx(goal, 50, 89500, { paymentMethod: "other", paymentNote: "Dad chipped in" });
+    expect(tx.paymentNote).toBe("Dad chipped in");
+  });
 });
 
 describe("Phase 2.6.3c -- buildDebtPaymentTx and buildEfAdjustmentTx (tests-first per Standing Rule 4)", () => {
@@ -807,6 +833,37 @@ describe("Phase 2.6.3c -- buildDebtPaymentTx and buildEfAdjustmentTx (tests-firs
     it("feeds derivedDebtBalance correctly -- a real payment reduces the debt by its own amount, matching the exact 2.4.27 scenario", () => {
       const tx = buildDebtPaymentTx(debt, 325, "NEEDS", 89500);
       expect(derivedDebtBalance(debt, [tx])).toBe(1675);
+    });
+
+    // Phase 2.6.4 -- closes 2.4.27 at its actual point of use (a partial
+    // EF-sourced debt payment was enterable on the main transaction form
+    // since (c), but never on the debt-payment form itself) plus the other
+    // half of 2.4.41.
+    it("defaults to paymentMethod 'other', no category, no efAmount, when no opts are given -- backward compatible", () => {
+      const tx = buildDebtPaymentTx(debt, 100, "NEEDS", 89500);
+      expect(tx.paymentMethod).toBe("other");
+      expect(tx.category).toBeUndefined();
+      expect(tx.efAmount).toBeUndefined();
+    });
+
+    it("carries a category when given one", () => {
+      const tx = buildDebtPaymentTx(debt, 100, "NEEDS", 89500, { category: "debt-payoff" });
+      expect(tx.category).toBe("debt-payoff");
+    });
+
+    it("carries a partial EF-sourced amount, the exact real 2.4.27 case -- $300 of a $325 payment came from EF", () => {
+      const tx = buildDebtPaymentTx(debt, 325, "NEEDS", 89500, { efAmount: -300 });
+      expect(tx.efAmount).toBe(-300);
+      expect(derivedDebtBalance(debt, [tx])).toBe(1675);
+      const data = { ...DEFAULT_DATA, emergencyFundOpeningBalance: 900, transactions: [tx] };
+      expect(derivedEfBalance(data)).toBe(600); // 900 - 300, not the full 900 - 325
+    });
+
+    it("carries a real payment method and card when paid by card", () => {
+      const tx = buildDebtPaymentTx(debt, 100, "NEEDS", 89500, { paymentMethod: "card", cardId: "c1", cardLabel: "Visa •••• 4242" });
+      expect(tx.paymentMethod).toBe("card");
+      expect(tx.cardId).toBe("c1");
+      expect(tx.cardLabel).toBe("Visa •••• 4242");
     });
   });
 

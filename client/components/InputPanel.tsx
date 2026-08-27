@@ -10,7 +10,7 @@ import type { computeDashboard } from "../lib/computeDashboard";
 import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, recurringPaidSoFar, pendingBackfillCycles, toUSD as toUSDShared, withRate, buildGoalContributionTx, buildDebtPaymentTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney, derivedDebtBalance, activeTransactions, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
-import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES } from "./form/Primitives";
+import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker } from "./form/Primitives";
 import { fmtCur } from "./screens/shared";
 import ImportStatement from "./ImportStatement";
 
@@ -131,6 +131,17 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   // default it silently (a minimum payment is a Need, a voluntary
   // overpayment is closer to Savings, and guessing wrong skews budget pace).
   const [debtPayBucket, setDebtPayBucket] = useState<Bucket>("NEEDS");
+  // Phase 2.6.4: category, like every other transaction form.
+  const [debtPayCategory, setDebtPayCategory] = useState("");
+  // Pay-from-EF only -- a debt payment only ever draws from the safety net,
+  // never contributes to it, unlike the main transaction form's two-way
+  // checkbox. Blank debtPayEfAmt means "the full payment amount," same
+  // partial-amount convention (c) already established.
+  const [debtPayFromEF, setDebtPayFromEF] = useState(false);
+  const [debtPayEfAmt,  setDebtPayEfAmt]  = useState("");
+  const [debtPayMethod, setDebtPayMethod] = useState<PaymentMethod>("cash");
+  const [debtPayCardId, setDebtPayCardId] = useState<string | null>(null);
+  const [debtPayOtherNote, setDebtPayOtherNote] = useState("");
 
   // Asset form
   const [aName,     setAName]     = useState("");
@@ -171,6 +182,11 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   // Goal contribution state
   const [contributeGoalId,  setContributeGoalId]  = useState<string | null>(null);
   const [contributeGoalAmt, setContributeGoalAmt] = useState("");
+  // Phase 2.6.4: closes half of 2.4.41 -- buildGoalContributionTx used to
+  // hardcode paymentMethod "other" unconditionally.
+  const [contributeMethod, setContributeMethod] = useState<PaymentMethod>("cash");
+  const [contributeCardId, setContributeCardId] = useState<string | null>(null);
+  const [contributeOtherNote, setContributeOtherNote] = useState("");
 
   // ── edit state ──────────────────────────────────────────────── //
   const [editDebtId,       setEditDebtId]       = useState<string | null>(null);
@@ -411,14 +427,36 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     if (!amt || amt <= 0) return;
     const debt = financials.debts.find((d) => d.id === debtId);
     if (!debt) return;
-    const tx = buildDebtPaymentTx(debt, amt, debtPayBucket, financials.lbpRate ?? DEFAULT_LBP_RATE);
+    const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
+    let cardId: string | undefined;
+    let cardLabel: string | undefined;
+    if (debtPayMethod === "card" && debtPayCardId) {
+      const card = cards.find((c) => c.id === debtPayCardId);
+      if (card) { cardId = card.id; cardLabel = card.label; }
+    }
+    // Phase 2.6.4: blank debtPayEfAmt means "the full payment amount," same
+    // partial-amount convention as the main transaction form's own EF
+    // field -- entered in the debt's own currency (this form has no
+    // separate currency toggle), converted to USD like efAmount always is.
+    // A debt payment only ever DRAWS from EF, never contributes to it.
+    const efAmtRaw = debtPayFromEF ? (debtPayEfAmt.trim() ? parseFloat(debtPayEfAmt.replace(/,/g, "")) : amt) : null;
+    const efAmountUSD = efAmtRaw != null ? roundMoney(-(debt.currency === "LBP" ? efAmtRaw / lbpRate : efAmtRaw)) : undefined;
+    const tx = buildDebtPaymentTx(debt, amt, debtPayBucket, lbpRate, {
+      category: debtPayCategory || undefined,
+      efAmount: efAmountUSD,
+      paymentMethod: debtPayMethod,
+      cardId, cardLabel,
+      paymentNote: debtPayMethod === "other" && debtPayOtherNote.trim() ? debtPayOtherNote.trim() : undefined,
+    });
     const newTransactions = [tx, ...financials.transactions];
     const newBal = derivedDebtBalance(debt, newTransactions);
     const updatedDebts = financials.debts.map((d) => d.id !== debtId ? d : {
       ...d, paidOffAt: moneyEquals(newBal, 0) ? (d.paidOffAt ?? new Date().toISOString()) : d.paidOffAt,
     });
     update({ transactions: newTransactions, debts: updatedDebts });
-    setPayingDebtId(null); setDebtPayAmt("");
+    setPayingDebtId(null); setDebtPayAmt(""); setDebtPayCategory("");
+    setDebtPayFromEF(false); setDebtPayEfAmt("");
+    setDebtPayMethod("cash"); setDebtPayCardId(null); setDebtPayOtherNote("");
   }
 
   function addRecurring() {
@@ -457,9 +495,19 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     const goals = financials.goals.map((g) =>
       g.id === goalId ? { ...g, currentAmount: roundMoney(g.currentAmount + amt) } : g
     );
-    const tx = buildGoalContributionTx(goal, amt, financials.lbpRate ?? DEFAULT_LBP_RATE);
+    let cardId: string | undefined;
+    let cardLabel: string | undefined;
+    if (contributeMethod === "card" && contributeCardId) {
+      const card = cards.find((c) => c.id === contributeCardId);
+      if (card) { cardId = card.id; cardLabel = card.label; }
+    }
+    const tx = buildGoalContributionTx(goal, amt, financials.lbpRate ?? DEFAULT_LBP_RATE, {
+      paymentMethod: contributeMethod, cardId, cardLabel,
+      paymentNote: contributeMethod === "other" && contributeOtherNote.trim() ? contributeOtherNote.trim() : undefined,
+    });
     update({ goals, transactions: [tx, ...financials.transactions] });
     setContributeGoalId(null); setContributeGoalAmt("");
+    setContributeMethod("cash"); setContributeCardId(null); setContributeOtherNote("");
   }
 
   function logExtraPayment(rec: StoredRecurring) {
@@ -1617,6 +1665,16 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                       >Save</button>
                       <button onClick={() => setContributeGoalId(null)} aria-label="Cancel contribution" className="px-2 py-1.5 rounded-xl text-xs" style={{ color: T.mute }}>✕</button>
                     </div>
+                    <PaymentMethodPicker
+                      value={contributeMethod}
+                      onChange={setContributeMethod}
+                      cardId={contributeCardId}
+                      onCardIdChange={setContributeCardId}
+                      otherNote={contributeOtherNote}
+                      onOtherNoteChange={setContributeOtherNote}
+                      cards={cards}
+                      onSaveCard={saveCard}
+                    />
                     <p className="text-[10px]" style={{ color: T.mute }}>Logged as a Savings transaction today.</p>
                   </div>
                 )}
@@ -2244,6 +2302,50 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                             </button>
                           ))}
                         </div>
+                        <select
+                          value={debtPayCategory}
+                          onChange={(e) => setDebtPayCategory(e.target.value)}
+                          aria-label="Category"
+                          className="w-full rounded-lg px-2 py-1.5 text-[10px]"
+                          style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
+                        >
+                          <option value="">No category</option>
+                          {allCategories(financials.customCategories).map((c) => (
+                            <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
+                          ))}
+                        </select>
+                        {/* Pay-from-EF only -- a debt payment only ever draws
+                            from the safety net, never contributes to it. */}
+                        {dashData.emergencyFund.balance > 0 && (
+                          <>
+                            <button
+                              onClick={() => setDebtPayFromEF((v) => !v)}
+                              className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-left transition-all"
+                              style={{
+                                background: debtPayFromEF ? T.coral + "18" : T.panelSoft,
+                                border: `1px solid ${debtPayFromEF ? T.coral : T.line}`,
+                              }}
+                            >
+                              <p className="text-[10px] font-medium" style={{ color: debtPayFromEF ? T.coral : T.text }}>
+                                Pay this from Safety net
+                              </p>
+                              <span className="text-sm">{debtPayFromEF ? "✓" : "○"}</span>
+                            </button>
+                            {debtPayFromEF && (
+                              <MoneyInput value={debtPayEfAmt} onChange={setDebtPayEfAmt} placeholder={`Full amount (${debtPayAmt || "0"})`} />
+                            )}
+                          </>
+                        )}
+                        <PaymentMethodPicker
+                          value={debtPayMethod}
+                          onChange={setDebtPayMethod}
+                          cardId={debtPayCardId}
+                          onCardIdChange={setDebtPayCardId}
+                          otherNote={debtPayOtherNote}
+                          onOtherNoteChange={setDebtPayOtherNote}
+                          cards={cards}
+                          onSaveCard={saveCard}
+                        />
                         <p className="text-[10px]" style={{ color: T.mute }}>
                           Balance after: {fmtCur(Math.max(0, balance - (parseFloat(debtPayAmt.replace(/,/g, "")) || 0)), d.currency)}
                           {parseFloat(debtPayAmt.replace(/,/g, "")) >= balance && (
@@ -2351,8 +2453,8 @@ export default function InputPanel({ financials, dashData, onChange, session, on
           <p className="text-xs" style={{ color: T.mute }}>
             Set a starting balance for your cash or a card. ESSA subtracts every transaction logged on that payment
             method since then to tell you what you <em>should</em> have. Compare it to what you actually see, and a
-            gap usually means a payment never got logged. (Debt payments and recurring charges without an &quot;+extra&quot;
-            log won&apos;t show up here: a known limit, not a bug.)
+            gap usually means a payment never got logged. (A recurring bill that hasn&apos;t been confirmed yet
+            won&apos;t show up here — a known limit, not a bug.)
           </p>
           {(financials.trackedBalances ?? []).length > 0 && (
             <div className="space-y-2">
