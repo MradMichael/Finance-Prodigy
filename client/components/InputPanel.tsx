@@ -2045,7 +2045,21 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                                     </button>
                                   )}
                                   <button
-                                    onClick={() => { if (confirm("Delete this recurring payment?")) update({ recurring: recs.filter((x) => x.id !== r.id) }); }}
+                                    onClick={() => {
+                                      if (!confirm("Delete this recurring payment?")) return;
+                                      // 2.4.35: every transaction confirmed against this item would
+                                      // otherwise keep a permanently dangling recurringId/cycleDate --
+                                      // detach both, same as the edit-transaction form's own Detach
+                                      // button does deliberately (cycleDate: null, recurringId has no
+                                      // sentinel need per its own comment, so undefined). The
+                                      // transaction itself is real spend/income and stays.
+                                      update({
+                                        recurring: recs.filter((x) => x.id !== r.id),
+                                        transactions: financials.transactions.map((t) =>
+                                          t.recurringId !== r.id ? t : { ...t, recurringId: undefined, cycleDate: null, updatedAt: new Date().toISOString() }
+                                        ),
+                                      });
+                                    }}
                                     aria-label="Delete recurring payment"
                                     className="text-xs"
                                     style={{ color: T.coral }}
