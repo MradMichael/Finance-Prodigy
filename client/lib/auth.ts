@@ -548,24 +548,31 @@ export function updateProfile(userId: string, name: string): void {
   if (s?.userId === userId) localStorage.setItem(SESSION_KEY, JSON.stringify({ ...s, name }));
 }
 
-export function deleteAccount(userId: string): void {
+// 2.2.18: used to be fire-and-forget -- a server-cleanup failure (offline,
+// server down) was never surfaced anywhere, so the user saw "account
+// deleted" succeed locally with no way to know a copy might still be
+// sitting on the server. Local deletion above is still what actually
+// matters and is NOT gated on this -- it's already done, synchronously,
+// by the time the (bounded-timeout, via deleteFromServer's own
+// AbortSignal.timeout) server call even starts. This only reports whether
+// that server half also succeeded, so the caller can tell the user rather
+// than silently losing that information.
+export async function deleteAccount(userId: string): Promise<{ serverCleanupOk: boolean }> {
   const user = getUsers().find((u) => u.id === userId);
   putUsers(getUsers().filter((u) => u.id !== userId));
   localStorage.removeItem(SESSION_KEY);
   localStorage.removeItem(`essa_data_${userId}`);
 
-  // Best-effort — local deletion above is what actually matters and is
-  // already done. If this account ever synced, also try to remove that
-  // backup rather than leaving it on the server indefinitely (see the
-  // Privacy Policy's note on this). A failure here (offline, server down)
-  // isn't surfaced — the user already got what "delete account" promises
-  // locally; this is cleanup, not something to block or retry on.
-  if (user) {
-    import("./crypto").then(({ getSyncToken }) => {
-      const token = getSyncToken();
-      if (!token) return;
-      import("./syncService").then(({ deleteFromServer }) => deleteFromServer(user.email, token));
-    }).catch(() => {});
+  if (!user) return { serverCleanupOk: true }; // nothing local to have synced in the first place
+  try {
+    const { getSyncToken } = await import("./crypto");
+    const token = getSyncToken();
+    if (!token) return { serverCleanupOk: true }; // never synced -- nothing on the server to remove
+    const { deleteFromServer } = await import("./syncService");
+    const result = await deleteFromServer(user.email, token);
+    return { serverCleanupOk: result.ok };
+  } catch {
+    return { serverCleanupOk: false };
   }
 }
 

@@ -122,10 +122,19 @@ export default function ProfilePage() {
     setTimeout(() => setSaveMsg(""), 2000);
   }
 
-  function handleDelete() {
+  async function handleDelete() {
     if (!session) return;
     if (deleteConfirm.toLowerCase() !== "delete") return;
-    deleteAccount(session.userId);
+    const { serverCleanupOk } = await deleteAccount(session.userId);
+    // 2.2.18: local deletion has already happened by this point regardless
+    // -- this only decides whether to also warn about the server half, not
+    // whether to proceed. alert() (not a styled inline message) because
+    // this page navigates away immediately after; a message left in
+    // component state would never be seen once unmounted, and this file
+    // already uses the same native-dialog pattern elsewhere.
+    if (!serverCleanupOk) {
+      alert("Your local data has been deleted. We couldn't confirm your server backup was also removed -- this doesn't affect your device, but a copy may still exist on the server.");
+    }
     router.push("/sign-in");
   }
 

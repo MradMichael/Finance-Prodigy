@@ -74,9 +74,15 @@ export default function ProjectionsScreen({
   const sliderMax = Math.max(200, testAmount * 2, surplus * 2);
   // The number input had no upper bound at all, so a mis-typed or
   // exploratory entry (e.g. an extra digit or two) could land on something
-  // like $789,200,024/mo with nothing to catch it -- a monthly test amount
-  // has no legitimate reason to ever need more than 7 figures.
-  const MAX_TEST_AMOUNT = 1_000_000;
+  // like $789,200,024/mo with nothing to catch it. A flat $1,000,000 cap
+  // caught that, but is meaningless as a guard for an account with a real
+  // income nowhere near that scale -- 2.4.43: income-relative instead (2x
+  // monthly income is already a generous "what if I saved double" ceiling
+  // for testing), floored at $200 so a very small income doesn't produce a
+  // degenerately tight cap. Falls back to the old flat figure only when no
+  // income is set yet at all (a fresh account, before Setup) -- income*2
+  // would be $0 there, which would block every test amount outright.
+  const MAX_TEST_AMOUNT = hasIncome ? Math.max(200, Math.round(month.income * 2)) : 1_000_000;
 
   // What order the plan tackles things in — user-controlled, not hardcoded.
   // A dollar can only be spent once: this is what makes the plan below a

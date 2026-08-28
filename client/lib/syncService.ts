@@ -165,8 +165,15 @@ export async function pullFromServer(email: string): Promise<{ ok: true; data: L
       headers: { Authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
     });
-    if (res.status === 404) return { ok: false, error: "No data on server yet. Push first." };
     const json = await parseJsonSafe(res);
+    // 2.4.22: a bare 404 status alone isn't enough to conclude "no account
+    // for this email" -- that's also what a platform-level 404 (routing
+    // misconfiguration, proxy error page, unmigrated deploy) looks like from
+    // here. Only trust it when the body actually carries the API's own
+    // error-shaped response, matching what /pull's real 404 branch returns.
+    if (res.status === 404 && json && typeof json.error === "string") {
+      return { ok: false, error: "No data on server yet. Push first." };
+    }
     if (!res.ok) return { ok: false, error: json?.error ?? `Pull failed (HTTP ${res.status}).` };
     if (json === null || typeof json.syncedAt !== "string" || !("data" in json)) {
       return { ok: false, error: "Server responded, but the response was malformed. Try again." };

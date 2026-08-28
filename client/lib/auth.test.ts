@@ -1,12 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { signUp, signIn, recoverAccount, getSession, hasValidSession, signOut, isAdmin, listUsers, getRecoveryTokenForSync, type StoredUser } from "./auth";
-import { pullFromServer, relinkSync, confirmOverwriteIfNeeded } from "./syncService";
+import { signUp, signIn, recoverAccount, deleteAccount, getSession, hasValidSession, signOut, isAdmin, listUsers, getRecoveryTokenForSync, type StoredUser } from "./auth";
+import { pullFromServer, relinkSync, confirmOverwriteIfNeeded, deleteFromServer } from "./syncService";
+import { initSyncToken } from "./crypto";
 
 vi.mock("./syncService", () => ({
   pullFromServer: vi.fn(),
   relinkSync: vi.fn(),
   getRecoveryTokenForSync: vi.fn(),
   confirmOverwriteIfNeeded: vi.fn(),
+  deleteFromServer: vi.fn(),
 }));
 
 const USERS_KEY = "essa_users_v1";
@@ -17,6 +19,7 @@ beforeEach(() => {
   vi.mocked(pullFromServer).mockReset();
   vi.mocked(relinkSync).mockReset();
   vi.mocked(confirmOverwriteIfNeeded).mockReset();
+  vi.mocked(deleteFromServer).mockReset();
   // Default: no synced data anywhere — matches signIn's "no local account,
   // and nothing to pull either" case unless a test overrides this.
   vi.mocked(pullFromServer).mockResolvedValue({ ok: false, error: "No data on server yet. Push first." });
@@ -548,5 +551,45 @@ describe("session and admin helpers", () => {
     if (!reg.ok) throw new Error("setup failed");
     const users = listUsers();
     expect(isAdmin(users[0].id)).toBe(true);
+  });
+});
+
+describe("deleteAccount (2.2.18 -- server-cleanup result is reported, not swallowed)", () => {
+  it("deletes the account locally and reports serverCleanupOk: true when there's no sync token (never synced)", async () => {
+    const reg = await signUp("a@test.com", "Alice", "password12345");
+    if (!reg.ok) throw new Error("setup failed");
+    const userId = listUsers()[0].id;
+
+    const result = await deleteAccount(userId);
+
+    expect(result).toEqual({ serverCleanupOk: true });
+    expect(listUsers()).toEqual([]);
+    expect(deleteFromServer).not.toHaveBeenCalled();
+  });
+
+  it("reports serverCleanupOk: true when the server delete succeeds", async () => {
+    const reg = await signUp("a@test.com", "Alice", "password12345");
+    if (!reg.ok) throw new Error("setup failed");
+    const userId = listUsers()[0].id;
+    await initSyncToken("password12345", "a@test.com");
+    vi.mocked(deleteFromServer).mockResolvedValue({ ok: true });
+
+    const result = await deleteAccount(userId);
+
+    expect(result).toEqual({ serverCleanupOk: true });
+    expect(deleteFromServer).toHaveBeenCalledWith("a@test.com", expect.any(String));
+  });
+
+  it("still deletes locally but reports serverCleanupOk: false when the server delete fails -- this used to be swallowed entirely", async () => {
+    const reg = await signUp("a@test.com", "Alice", "password12345");
+    if (!reg.ok) throw new Error("setup failed");
+    const userId = listUsers()[0].id;
+    await initSyncToken("password12345", "a@test.com");
+    vi.mocked(deleteFromServer).mockResolvedValue({ ok: false, error: "Could not reach server." });
+
+    const result = await deleteAccount(userId);
+
+    expect(result).toEqual({ serverCleanupOk: false });
+    expect(listUsers()).toEqual([]); // local deletion isn't gated on the server result
   });
 });

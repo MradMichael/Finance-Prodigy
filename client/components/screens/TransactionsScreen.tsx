@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { LocalFinancials, StoredRecurring } from "../../lib/localData";
 import { fmtDate, historizedRecurringContribution, toUSD as toUSDShared, categoryLabel as categoryLabelShared, categoryIcon as categoryIconShared, todayISO, activeTransactions, DEFAULT_LBP_RATE } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
-import { SERIF, NUMS, money } from "./shared";
+import { SERIF, NUMS, money, fmtCur } from "./shared";
 import Donut from "../charts/Donut";
 
 type TrendPeriod = "monthly" | "quarterly" | "yearly";
@@ -517,7 +517,7 @@ export default function TransactionsScreen({ financials, onChange }: { financial
                     <div className="text-right flex-shrink-0">
                       <p className="text-sm font-medium tabular-nums" style={{ color: BC[t.bucket] }}>{money(toUSD(t.amount, t.currency), 2)}</p>
                       {t.currency === "LBP" && (
-                        <p className="text-[10px]" style={{ color: T.mute }}>LBP {t.amount.toLocaleString()}</p>
+                        <p className="text-[10px]" style={{ color: T.mute }}>{fmtCur(t.amount, t.currency)}</p>
                       )}
                     </div>
                   </div>

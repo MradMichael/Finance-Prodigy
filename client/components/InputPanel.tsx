@@ -159,7 +159,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
 
   // Recurring form
   const [rName,        setRName]        = useState("");
-  const [rEmoji,       setREmoji]       = useState("🔄");
+  const [rEmoji,       setREmoji]       = useState("🔁");
   const [rAmount,      setRAmount]      = useState("");
   const [rCurrency,    setRCurrency]    = useState<Currency>("USD");
   const [rFreq,        setRFreq]        = useState<RecurringFrequency>("monthly");
@@ -409,6 +409,15 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     const raw = actualInputs[id];
     const amt = parseFloat((raw ?? "").replace(/,/g, ""));
     if (isNaN(amt)) return;
+    // 2.4.42: this replaces the previous check in place, with no history
+    // kept -- a mistyped figure silently destroys the last real snapshot.
+    // Only worth confirming when there's actually a prior check to lose;
+    // the very first "what you actually have now" entry for a tracked
+    // balance has nothing behind it yet.
+    const tb = (financials.trackedBalances ?? []).find((t) => t.id === id);
+    if (tb?.actualBalance != null && !confirm(`Replace your last check (${fmtCur(tb.actualBalance, tb.currency)} on ${fmtDate(tb.actualBalanceDate ?? "")}) with this new figure? The old one won't be recoverable.`)) {
+      return;
+    }
     // Snapshot the live expected total (from dashData, already computed as
     // of right now) at the exact moment of confirming -- see
     // computeDashboard.ts's balanceChecks for why this can't be
@@ -474,7 +483,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   function addRecurring() {
     if (!rName.trim() || !rAmount || !rStart) return;
     const rec: StoredRecurring = {
-      id: uid(), name: rName.trim(), emoji: rEmoji || "🔄",
+      id: uid(), name: rName.trim(), emoji: rEmoji || "🔁",
       amount: parseFloat(rAmount.replace(/,/g, "")), currency: rCurrency, frequency: rFreq,
       bucket: rBucket, ...(rCategory ? { category: rCategory } : {}), startDate: rStart,
       endDate:     rEndType === "date"   ? (rEnd.trim() || null) : null,
@@ -482,7 +491,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
       createdAt: new Date().toISOString(),
     };
     update({ recurring: [...(financials.recurring ?? []), rec] });
-    setRName(""); setRAmount(""); setREmoji("🔄"); setRCategory(""); setRStart(todayISO()); setREnd(""); setRTotalAmount(""); setREndType("infinite");
+    setRName(""); setRAmount(""); setREmoji("🔁"); setRCategory(""); setRStart(todayISO()); setREnd(""); setRTotalAmount(""); setREndType("infinite");
   }
 
   /** Quick-add a Recurring item from a transaction that looksRecurring flagged — starts today, monthly, editable further in the Recurring screen. Past transactions are left untouched; this only affects future months. */
@@ -490,7 +499,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     const amt = parseFloat(amount.replace(/,/g, ""));
     if (!name.trim() || !amt) return;
     const rec: StoredRecurring = {
-      id: uid(), name: name.trim(), emoji: "🔄",
+      id: uid(), name: name.trim(), emoji: "🔁",
       amount: amt, currency, frequency: "monthly", bucket,
       ...(category ? { category } : {}),
       startDate: todayISO(), endDate: null, totalAmount: null,
@@ -504,9 +513,22 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     if (!amt || amt <= 0) return;
     const goal = financials.goals.find((g) => g.id === goalId);
     if (!goal) return; // required by buildGoalContributionTx needing the goal's own currency -- also just more correct than the old silent "savings" fallback
-    const goals = financials.goals.map((g) =>
-      g.id === goalId ? { ...g, currentAmount: roundMoney(g.currentAmount + amt) } : g
-    );
+    // 2.4.16c: this call site never set achievedAt even when a contribution
+    // completed the goal, disagreeing with GoalsScreen.tsx's own pay() (the
+    // other contribution surface) and InputPanel's saveEditGoal, both of
+    // which do. Same pattern as GoalsScreen.pay(): only ever set once
+    // (`g.achievedAt ?? ...`), never cleared here -- a contribution only
+    // ever increases currentAmount, so there's no "un-achieving" case to
+    // handle the way the full edit form's saveEditGoal has to.
+    const goals = financials.goals.map((g) => {
+      if (g.id !== goalId) return g;
+      const newAmount = roundMoney(g.currentAmount + amt);
+      return {
+        ...g,
+        currentAmount: newAmount,
+        achievedAt: newAmount >= g.targetAmount ? (g.achievedAt ?? new Date().toISOString().slice(0, 10)) : g.achievedAt,
+      };
+    });
     let cardId: string | undefined;
     let cardLabel: string | undefined;
     if (contributeMethod === "card" && contributeCardId) {
@@ -633,7 +655,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     if (!editRName.trim() || isNaN(amt) || !editRStart) return;
     update({
       recurring: (financials.recurring ?? []).map((r) => r.id !== recId ? r : {
-        ...r, name: editRName.trim(), emoji: editREmoji || "🔄",
+        ...r, name: editRName.trim(), emoji: editREmoji || "🔁",
         amount: amt, currency: editRCurrency, frequency: editRFreq,
         bucket: editRBucket, category: editRCategory || undefined, startDate: editRStart,
         endDate:     editREndType === "date"   ? (editREnd.trim() || null) : null,
@@ -1803,7 +1825,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
         </Section>
 
         {/* Recurring Payments */}
-        <Section title="Recurring Payments" icon="🔄" badge={(financials.recurring ?? []).length} defaultOpen={false}>
+        <Section title="Recurring Payments" icon="🔁" badge={(financials.recurring ?? []).length} defaultOpen={false}>
           {(() => {
             const recs = financials.recurring ?? [];
             const now  = new Date();
@@ -2023,7 +2045,21 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                                     </button>
                                   )}
                                   <button
-                                    onClick={() => { if (confirm("Delete this recurring payment?")) update({ recurring: recs.filter((x) => x.id !== r.id) }); }}
+                                    onClick={() => {
+                                      if (!confirm("Delete this recurring payment?")) return;
+                                      // 2.4.35: every transaction confirmed against this item would
+                                      // otherwise keep a permanently dangling recurringId/cycleDate --
+                                      // detach both, same as the edit-transaction form's own Detach
+                                      // button does deliberately (cycleDate: null, recurringId has no
+                                      // sentinel need per its own comment, so undefined). The
+                                      // transaction itself is real spend/income and stays.
+                                      update({
+                                        recurring: recs.filter((x) => x.id !== r.id),
+                                        transactions: financials.transactions.map((t) =>
+                                          t.recurringId !== r.id ? t : { ...t, recurringId: undefined, cycleDate: null, updatedAt: new Date().toISOString() }
+                                        ),
+                                      });
+                                    }}
                                     aria-label="Delete recurring payment"
                                     className="text-xs"
                                     style={{ color: T.coral }}
@@ -2119,7 +2155,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                     className="rounded-xl px-4 py-6 text-center mb-2"
                     style={{ background: T.panelSoft, border: `1px dashed ${T.line}` }}
                   >
-                    <p className="text-2xl mb-1">🔄</p>
+                    <p className="text-2xl mb-1">🔁</p>
                     <p className="text-xs" style={{ color: T.mute }}>Rent, subscriptions, loan payments…</p>
                   </div>
                 )}
@@ -2131,7 +2167,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                   <div className="flex gap-2">
                     <div style={{ width: 68 }}>
                       <Label htmlFor="new-rec-emoji">Icon</Label>
-                      <FocusInput id="new-rec-emoji" value={rEmoji} onChange={(e) => setREmoji(e.target.value)} placeholder="🔄" />
+                      <FocusInput id="new-rec-emoji" value={rEmoji} onChange={(e) => setREmoji(e.target.value)} placeholder="🔁" />
                     </div>
                     <div className="flex-1">
                       <Label htmlFor="new-rec-name">Name</Label>

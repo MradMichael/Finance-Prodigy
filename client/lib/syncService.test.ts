@@ -165,6 +165,27 @@ describe("pullFromServer", () => {
     expect(result).toEqual({ ok: false, error: "No data on server yet. Push first." });
   });
 
+  // 2.4.22 -- a bare HTTP 404 status used to be trusted on its own as "no
+  // account for this email," conflating the API's own genuine "no sync
+  // data" response with any unrelated platform-level 404 (a routing
+  // misconfiguration, a proxy error page, an unmigrated deploy) that
+  // happens to also carry a 404 status but not the API's own JSON shape.
+  it("does NOT treat a 404 with no parseable error body as 'no account' -- only the API's own shaped response counts", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: false, status: 404, json: async () => { throw new Error("not JSON"); },
+    }));
+    const result = await pullFromServer("a@test.com");
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error).not.toBe("No data on server yet. Push first.");
+  });
+
+  it("does NOT treat a 404 with a body missing the expected error field as 'no account'", async () => {
+    mockFetchOnce(404, { unexpected: "shape" });
+    const result = await pullFromServer("a@test.com");
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error).not.toBe("No data on server yet. Push first.");
+  });
+
   it("rejects a wrong-password pull with the server's own 401 message", async () => {
     mockFetchOnce(401, { error: "Invalid sync credentials for this account." });
     const result = await pullFromServer("a@test.com");
