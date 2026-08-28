@@ -13,6 +13,7 @@ export default function CurrencyScreen({ financials }: { financials: LocalFinanc
   const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
   const toUSD = (n: number, cur?: string) => toUSDShared(n, cur as "USD" | "LBP" | undefined, lbpRate);
   const [stressRate, setStressRate] = useState(lbpRate);
+  const [showAllRateHistory, setShowAllRateHistory] = useState(false);
 
   // ── Spend by currency: this month's transactions + active recurring,
   // native currency (not converted) so this actually measures which
@@ -39,6 +40,18 @@ export default function CurrencyScreen({ financials }: { financials: LocalFinanc
   // page is comparing the two, not just converting everything to USD and
   // hiding which currency the money is actually held/spent in.
   const toLBP = (usd: number) => Math.round(usd * lbpRate);
+
+  // 2.4.45: lbpRateHistory is already correctly maintained (page.tsx's own
+  // snapshot() keeps the current month's entry in sync with the live rate
+  // on every update) but nothing anywhere displayed it -- a user had no way
+  // to see when or how the reference rate moved. Reverse-chronological;
+  // % change is against the entry immediately BEFORE this one in time (the
+  // next-older entry in this already-newest-first array, i.e. index i+1).
+  const rateHistoryDesc = [...(financials.lbpRateHistory ?? [])].sort((a, b) => b.ym.localeCompare(a.ym));
+  const monthLabel = (ym: string) => {
+    const [y, m] = ym.split("-");
+    return `${["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][+m]} ${y}`;
+  };
 
   return (
     <main className="min-h-screen px-4 py-8 md:px-10" style={{ background: T.ink }}>
@@ -175,6 +188,45 @@ export default function CurrencyScreen({ financials }: { financials: LocalFinanc
               <p className="text-xs mt-3" style={{ color: T.coral }}>
                 A loss of {money(stressLossUSD)} in USD terms, with no change in your LBP balance itself.
               </p>
+            )}
+          </div>
+        )}
+
+        {/* Rate history (2.4.45) */}
+        {rateHistoryDesc.length > 0 && (
+          <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
+            <p className="text-xs uppercase tracking-widest mb-3" style={{ color: T.mute }}>Rate history</p>
+            <div className="space-y-1.5">
+              {rateHistoryDesc.slice(0, showAllRateHistory ? rateHistoryDesc.length : 12).map((entry, i, arr) => {
+                const prior = arr[i + 1]; // next-older entry -- this array is newest-first
+                const pctChange = prior && prior.value > 0 ? ((entry.value - prior.value) / prior.value) * 100 : null;
+                return (
+                  <div key={entry.ym} className="flex items-center justify-between text-xs">
+                    <span style={{ color: T.mute }}>{monthLabel(entry.ym)}</span>
+                    <span className="tabular-nums">
+                      <span style={{ color: T.text }}>L£ {entry.value.toLocaleString()}</span>
+                      {pctChange != null && Math.abs(pctChange) >= 0.05 && (
+                        // Coral = the LBP weakened (more L£ per $1, a rate increase);
+                        // jade = it strengthened -- matches this app's own convention
+                        // (coral for what erodes value, jade for what protects it),
+                        // not a generic red/green up-down.
+                        <span className="ml-2" style={{ color: pctChange > 0 ? T.coral : T.jade }}>
+                          {pctChange > 0 ? "+" : ""}{pctChange.toFixed(1)}%
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            {rateHistoryDesc.length > 12 && !showAllRateHistory && (
+              <button
+                onClick={() => setShowAllRateHistory(true)}
+                className="text-[11px] mt-3 px-2.5 py-1.5 rounded-lg transition-all hover:opacity-80"
+                style={{ background: T.panelSoft, color: T.brass, border: `1px solid ${T.line}` }}
+              >
+                Show more
+              </button>
             )}
           </div>
         )}

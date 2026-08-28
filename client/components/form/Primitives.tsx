@@ -404,15 +404,19 @@ export const CARD_TYPES: StoredCard["type"][] = ["Visa", "Mastercard", "Amex", "
  * StoredCard or null (same validation contract InputPanel.tsx's own
  * `saveCard` already has).
  */
-export function PaymentMethodPicker({
-  value, onChange, cardId, onCardIdChange, otherNote, onOtherNoteChange, cards, onSaveCard,
+/**
+ * 2.4.40 -- extracted out of PaymentMethodPicker so a form that only needs
+ * "which card" (not the full cash/card/other choice) can get the same
+ * inline "+ New card" affordance instead of a 4th hand-rolled copy. Two
+ * forms had this exact gap: "Track a new balance" showed a static "No
+ * saved cards yet" message with no action, and the edit-transaction form's
+ * card picker had no `else` branch at all when the list was empty.
+ */
+export function CardPicker({
+  cardId, onCardIdChange, cards, onSaveCard,
 }: {
-  value: PaymentMethod;
-  onChange: (pm: PaymentMethod) => void;
   cardId: string | null;
   onCardIdChange: (id: string | null) => void;
-  otherNote: string;
-  onOtherNoteChange: (note: string) => void;
   cards: StoredCard[];
   onSaveCard: (type: StoredCard["type"], last4: string) => StoredCard | null;
 }) {
@@ -430,6 +434,102 @@ export function PaymentMethodPicker({
   }
 
   return (
+    <div className="space-y-2">
+      {cards.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {cards.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => { onCardIdChange(c.id); setShowAddCard(false); }}
+              className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-all"
+              style={{
+                background: cardId === c.id ? T.jade + "22" : T.panelSoft,
+                border: `1px solid ${cardId === c.id ? T.jade : T.line}`,
+                color: cardId === c.id ? T.jade : T.mute,
+              }}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {!showAddCard ? (
+        <button
+          type="button"
+          onClick={() => { setShowAddCard(true); onCardIdChange(null); }}
+          className="text-[11px] px-2.5 py-1.5 rounded-lg transition-all hover:opacity-80"
+          style={{ background: T.panelSoft, color: T.brass, border: `1px solid ${T.line}` }}
+        >
+          + New card
+        </button>
+      ) : (
+        <div className="rounded-xl p-3 space-y-2" style={{ background: T.ink, border: `1px solid ${T.line}` }}>
+          <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.brass }}>Add card</p>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label>Type</Label>
+              <select
+                value={newCardType}
+                onChange={(e) => setNewCardType(e.target.value as StoredCard["type"])}
+                className="w-full rounded-xl px-3 py-2 text-xs"
+                style={{ background: T.panelSoft, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
+              >
+                {CARD_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <Label htmlFor="card-picker-new-last4">Last 4 digits</Label>
+              <FocusInput
+                id="card-picker-new-last4"
+                type="text"
+                inputMode="numeric"
+                maxLength={4}
+                value={newCardLast4}
+                onChange={(e) => setNewCardLast4(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                placeholder="1234"
+              />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handleSaveCard}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
+              style={{ background: T.jade, color: T.ink }}
+            >
+              Save & use
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowAddCard(false)}
+              className="px-3 py-1.5 rounded-lg text-xs transition-all hover:opacity-70"
+              style={{ color: T.mute }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function PaymentMethodPicker({
+  value, onChange, cardId, onCardIdChange, otherNote, onOtherNoteChange, cards, onSaveCard,
+}: {
+  value: PaymentMethod;
+  onChange: (pm: PaymentMethod) => void;
+  cardId: string | null;
+  onCardIdChange: (id: string | null) => void;
+  otherNote: string;
+  onOtherNoteChange: (note: string) => void;
+  cards: StoredCard[];
+  onSaveCard: (type: StoredCard["type"], last4: string) => StoredCard | null;
+}) {
+  const T = useTheme();
+
+  return (
     <div>
       <Label>Payment method</Label>
       <div className="grid grid-cols-3 gap-2 mb-2">
@@ -437,7 +537,7 @@ export function PaymentMethodPicker({
           <button
             key={p.value}
             type="button"
-            onClick={() => { onChange(p.value); onCardIdChange(null); setShowAddCard(false); }}
+            onClick={() => { onChange(p.value); onCardIdChange(null); }}
             aria-pressed={value === p.value}
             className="flex flex-col items-center gap-1 py-2 rounded-xl text-xs font-medium transition-all"
             style={{
@@ -466,84 +566,7 @@ export function PaymentMethodPicker({
       )}
 
       {value === "card" && (
-        <div className="space-y-2">
-          {cards.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {cards.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  onClick={() => { onCardIdChange(c.id); setShowAddCard(false); }}
-                  className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-all"
-                  style={{
-                    background: cardId === c.id ? T.jade + "22" : T.panelSoft,
-                    border: `1px solid ${cardId === c.id ? T.jade : T.line}`,
-                    color: cardId === c.id ? T.jade : T.mute,
-                  }}
-                >
-                  {c.label}
-                </button>
-              ))}
-            </div>
-          )}
-          {!showAddCard ? (
-            <button
-              type="button"
-              onClick={() => { setShowAddCard(true); onCardIdChange(null); }}
-              className="text-[11px] px-2.5 py-1.5 rounded-lg transition-all hover:opacity-80"
-              style={{ background: T.panelSoft, color: T.brass, border: `1px solid ${T.line}` }}
-            >
-              + New card
-            </button>
-          ) : (
-            <div className="rounded-xl p-3 space-y-2" style={{ background: T.ink, border: `1px solid ${T.line}` }}>
-              <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.brass }}>Add card</p>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <Label>Type</Label>
-                  <select
-                    value={newCardType}
-                    onChange={(e) => setNewCardType(e.target.value as StoredCard["type"])}
-                    className="w-full rounded-xl px-3 py-2 text-xs"
-                    style={{ background: T.panelSoft, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
-                  >
-                    {CARD_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <Label htmlFor="pmp-new-card-last4">Last 4 digits</Label>
-                  <FocusInput
-                    id="pmp-new-card-last4"
-                    type="text"
-                    inputMode="numeric"
-                    maxLength={4}
-                    value={newCardLast4}
-                    onChange={(e) => setNewCardLast4(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                    placeholder="1234"
-                  />
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={handleSaveCard}
-                  className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
-                  style={{ background: T.jade, color: T.ink }}
-                >
-                  Save & use
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowAddCard(false)}
-                  className="px-3 py-1.5 rounded-lg text-xs transition-all hover:opacity-70"
-                  style={{ color: T.mute }}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+        <CardPicker cardId={cardId} onCardIdChange={onCardIdChange} cards={cards} onSaveCard={onSaveCard} />
       )}
     </div>
   );

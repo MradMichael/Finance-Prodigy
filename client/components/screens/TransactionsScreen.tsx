@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, StoredRecurring } from "../../lib/localData";
-import { fmtDate, historizedRecurringContribution, toUSD as toUSDShared, categoryLabel as categoryLabelShared, categoryIcon as categoryIconShared, todayISO, activeTransactions, DEFAULT_LBP_RATE } from "../../lib/localData";
+import { fmtDate, historizedRecurringContribution, toUSD as toUSDShared, categoryLabel as categoryLabelShared, categoryIcon as categoryIconShared, todayISO, activeTransactions, cycleMonthDivergence, DEFAULT_LBP_RATE } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money, fmtCur } from "./shared";
 import Donut from "../charts/Donut";
@@ -501,7 +501,10 @@ export default function TransactionsScreen({ financials, onChange }: { financial
                   >
                     <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: BC[t.bucket] }} />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm truncate" style={{ color: T.text }}>{t.description}</p>
+                      <p className="text-sm truncate" style={{ color: T.text }}>
+                        {t.description}
+                        {cycleMonthDivergence(t, recurring) && <span title={cycleMonthDivergence(t, recurring)!} style={{ color: T.brass }}> ⚠</span>}
+                      </p>
                       <p className="text-[10px]" style={{ color: T.mute }}>
                         {fmtDate(t.date)} · {BL[t.bucket]}
                         {t.category && ` · ${categoryIcon(t.category)} ${categoryLabel(t.category)}`}

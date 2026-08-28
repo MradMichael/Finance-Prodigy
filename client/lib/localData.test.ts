@@ -7,7 +7,7 @@ import {
   matchCategoryRule, type CategoryRule,
   roundMoney, moneyEquals, isEmptyFinancials, type LocalFinancials,
   migrateFinancials, schemaVersionOf, withRate, CURRENT_SCHEMA_VERSION, todayISO,
-  dueCycles, isCycleConfirmed, isCycleOverdue, buildRecurringConfirmLog,
+  dueCycles, isCycleConfirmed, isCycleOverdue, buildRecurringConfirmLog, cycleMonthDivergence,
   nextConfirmTarget, historizedRecurringContribution, pendingBackfillCycles,
   derivedEfBalance, derivedDebtBalance, activeTransactions,
   buildDebtPaymentTx, buildEfAdjustmentTx, buildDebtAdjustmentTx,
@@ -488,6 +488,35 @@ describe("isCycleConfirmed", () => {
   });
 });
 
+describe("cycleMonthDivergence (2.4.36)", () => {
+  const recurring = [makeRecurring({ id: "r1", name: "Uni" })];
+
+  it("null when there's no cycleDate at all -- nothing to compare, not a divergence", () => {
+    const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Uni", date: "2026-08-01", recurringId: "r1" };
+    expect(cycleMonthDivergence(tx, recurring)).toBeNull();
+  });
+
+  it("null when cycleDate is explicitly detached (null) -- matches isCycleConfirmed's own null handling, nothing to compare against", () => {
+    const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Uni", date: "2026-08-01", cycleDate: null, recurringId: "r1" };
+    expect(cycleMonthDivergence(tx, recurring)).toBeNull();
+  });
+
+  it("null when cycleDate and date fall in the SAME month, even if the exact day differs", () => {
+    const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Uni", date: "2026-08-05", cycleDate: "2026-08-01", recurringId: "r1" };
+    expect(cycleMonthDivergence(tx, recurring)).toBeNull();
+  });
+
+  it("a label naming the settled month and the recurring item's name when the months genuinely differ -- the owner's exact live case (date Aug 1, cycleDate Sep 1)", () => {
+    const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Uni", date: "2026-08-01", cycleDate: "2026-09-01", recurringId: "r1" };
+    expect(cycleMonthDivergence(tx, recurring)).toBe("Settles Sep 2026 — Uni");
+  });
+
+  it("falls back to 'a deleted recurring item' when recurringId no longer resolves -- same fallback the edit form's own Settles line already uses (2.4.32)", () => {
+    const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Uni", date: "2026-08-01", cycleDate: "2026-09-01", recurringId: "gone" };
+    expect(cycleMonthDivergence(tx, recurring)).toBe("Settles Sep 2026 — a deleted recurring item");
+  });
+});
+
 describe("pendingBackfillCycles", () => {
   it("returns nothing for an item with no confirmCutoverDate -- nothing to backfill for a v3-native item", () => {
     const r = makeRecurring({ id: "r1", amount: 750, totalAmount: 6750, startDate: "2026-01-01" }); // no cutover
@@ -801,6 +830,18 @@ describe("buildGoalContributionTx", () => {
     const tx = buildGoalContributionTx(goal, 50, 89500, { paymentMethod: "other", paymentNote: "Dad chipped in" });
     expect(tx.paymentNote).toBe("Dad chipped in");
   });
+
+  // 2.4.47: neither goal-contribution form had a date field at all -- a
+  // contribution made a few days ago could only ever be logged as today.
+  it("defaults to today when no date is given -- backward compatible", () => {
+    const tx = buildGoalContributionTx(goal, 50, 89500);
+    expect(tx.date).toBe(todayISO());
+  });
+
+  it("carries a real, past date when one is given", () => {
+    const tx = buildGoalContributionTx(goal, 50, 89500, { date: "2026-08-20" });
+    expect(tx.date).toBe("2026-08-20");
+  });
 });
 
 describe("Phase 2.6.3c -- buildDebtPaymentTx and buildEfAdjustmentTx (tests-first per Standing Rule 4)", () => {
@@ -864,6 +905,18 @@ describe("Phase 2.6.3c -- buildDebtPaymentTx and buildEfAdjustmentTx (tests-firs
       expect(tx.paymentMethod).toBe("card");
       expect(tx.cardId).toBe("c1");
       expect(tx.cardLabel).toBe("Visa •••• 4242");
+    });
+
+    // 2.4.47: the debt-payment form had no date field at all -- a payment
+    // made a few days ago could only ever be logged as today.
+    it("defaults to today when no date is given -- backward compatible", () => {
+      const tx = buildDebtPaymentTx(debt, 100, "NEEDS", 89500);
+      expect(tx.date).toBe(todayISO());
+    });
+
+    it("carries a real, past date when one is given", () => {
+      const tx = buildDebtPaymentTx(debt, 100, "NEEDS", 89500, { date: "2026-08-20" });
+      expect(tx.date).toBe("2026-08-20");
     });
   });
 

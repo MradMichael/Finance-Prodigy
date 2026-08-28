@@ -1220,6 +1220,30 @@ export function isCycleConfirmed(r: StoredRecurring, dueDate: Date, transactions
 }
 
 /**
+ * Phase 2.6.4/2.4.36 -- a confirmed transaction's `date` (paid date) can
+ * land a month away from `cycleDate` (the cycle it settles), with nothing
+ * surfacing the mismatch anywhere a transaction row renders. Shared by all
+ * three surfaces that show one (InputPanel's "This month"/"History" lists,
+ * TransactionsScreen's own list) so the marker can't drift between them the
+ * way this codebase's currency formatters once did (2.4.22).
+ *
+ * Returns null when there's nothing to show: no cycleDate at all
+ * (undefined), a deliberately detached one (explicit null, same state
+ * isCycleConfirmed itself never falls back from), or a cycleDate whose
+ * month matches `date`'s month exactly (the ordinary, expected case --
+ * paid a few days early/late within the same month is not a divergence).
+ */
+export function cycleMonthDivergence(tx: StoredTransaction, recurring: StoredRecurring[]): string | null {
+  if (tx.cycleDate == null) return null;
+  const cycleYm = tx.cycleDate.slice(0, 7);
+  if (cycleYm === tx.date.slice(0, 7)) return null;
+  const [y, m] = cycleYm.split("-");
+  const monthLabel = `${["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][+m]} ${y}`;
+  const name = recurring.find((r) => r.id === tx.recurringId)?.name ?? "a deleted recurring item";
+  return `Settles ${monthLabel} — ${name}`;
+}
+
+/**
  * Whether this specific cycle should read OVERDUE right now: due, not yet
  * confirmed, and not grandfathered by the item's own confirmCutoverDate
  * (see StoredRecurring's own comment). Never true for a cycle due before
@@ -1354,12 +1378,14 @@ export function historizedRecurringContribution(r: StoredRecurring, ym: string, 
  */
 export function buildGoalContributionTx(
   goal: StoredGoal, amount: number, lbpRate: number,
-  opts: { paymentMethod?: PaymentMethod; cardId?: string; cardLabel?: string; paymentNote?: string } = {},
+  // 2.4.47: date closes the same friction gap as the debt-payment form --
+  // a contribution made a few days ago could only ever be logged as today.
+  opts: { paymentMethod?: PaymentMethod; cardId?: string; cardLabel?: string; paymentNote?: string; date?: string } = {},
 ): StoredTransaction {
   const now = new Date().toISOString();
   return {
     id: uid(), amount, currency: goal.currency, bucket: "SAVINGS",
-    description: `Goal: ${goal.name}`, date: todayISO(),
+    description: `Goal: ${goal.name}`, date: opts.date || todayISO(),
     // Phase 2.6.4: defaults to "other" when the caller doesn't say -- was
     // ALWAYS "other", unconditionally, until now (2.4.41: this made a goal
     // contribution permanently invisible to balance reconciliation no
@@ -1392,12 +1418,14 @@ export function buildDebtPaymentTx(
   // used to be permanently invisible to balance reconciliation regardless
   // of which real account it left). Backward compatible: every pre-2.6.4
   // call site that doesn't pass opts gets the exact old values.
-  opts: { category?: string; efAmount?: number; paymentMethod?: PaymentMethod; cardId?: string; cardLabel?: string; paymentNote?: string } = {},
+  // 2.4.47: date -- a payment made a few days ago could only ever be
+  // logged as today; same gap as the goal-contribution forms.
+  opts: { category?: string; efAmount?: number; paymentMethod?: PaymentMethod; cardId?: string; cardLabel?: string; paymentNote?: string; date?: string } = {},
 ): StoredTransaction {
   const now = new Date().toISOString();
   return {
     id: uid(), amount, currency: debt.currency, bucket,
-    description: `Debt payment: ${debt.name}`, date: todayISO(),
+    description: `Debt payment: ${debt.name}`, date: opts.date || todayISO(),
     paymentMethod: opts.paymentMethod ?? "other",
     debtId: debt.id, createdAt: now, updatedAt: now,
     ...withRate(debt.currency, lbpRate),
