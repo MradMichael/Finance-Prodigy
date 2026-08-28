@@ -58,7 +58,7 @@ const MOCK: DashboardPayload = {
       { key: "needs", label: "Needs discipline", score: 88, weight: 20, detail: "Essentials take 47% of income (target ≤50%)" },
       { key: "ef", label: "Safety net", score: 52, weight: 25, detail: "Safety net 52% funded" },
       { key: "debt", label: "Debt pressure", score: 61, weight: 20, detail: "Debt payments are 19% of income" },
-      { key: "goals", label: "Goal momentum", score: 81, weight: 10, detail: "Average pace across active goals" },
+      { key: "goals", label: "Goal momentum", score: 81, weight: 10, detail: "Paced against your total Savings, shared across active goals" },
     ],
   },
   encouragements: [

@@ -882,7 +882,14 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
         { key: "needs",   label: "Needs discipline", score: Math.round(needsScore), weight: 20, detail: `Essentials take ${Math.round(needsPct * 100)}% of income (target ≤${budgetTargetPct.needs}%)` },
         { key: "ef",      label: "Safety net", score: Math.round(efScore), weight: 25, detail: `Safety net ${Math.round(efPct)}% funded` },
         { key: "debt",    label: "Debt pressure", score: Math.round(debtScore), weight: 20, detail: `Debt payments are ${Math.round(debtPressurePct * 100)}% of income` },
-        { key: "goals",   label: "Goal momentum", score: Math.round(goalScore), weight: 10, detail: `Average pace across ${goalScores.length} active goal${goalScores.length !== 1 ? "s" : ""}` },
+        // 2.4.44: honest-copy fix, not a formula fix (that's tracked
+        // separately) -- goalPace compares the account's WHOLE Savings
+        // contribution against each goal's own requirement independently,
+        // not a per-goal split. The old copy ("Average pace across N active
+        // goals") reads as if each goal earns its own credit, which is
+        // exactly the case the owner found confusing once Savings is split
+        // across purposes. Says plainly what the number actually measures.
+        { key: "goals",   label: "Goal momentum", score: Math.round(goalScore), weight: 10, detail: `Paced against your total Savings, shared across ${goalScores.length} active goal${goalScores.length !== 1 ? "s" : ""}` },
       ],
     },
     encouragements: enc,
