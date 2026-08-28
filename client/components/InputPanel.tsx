@@ -7,7 +7,7 @@ import type {
 } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, recurringPaidSoFar, pendingBackfillCycles, toUSD as toUSDShared, withRate, buildGoalContributionTx, buildDebtPaymentTx, buildDebtAdjustmentTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney, derivedDebtBalance, activeTransactions, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
+import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, pendingBackfillCycles, toUSD as toUSDShared, withRate, buildGoalContributionTx, buildDebtPaymentTx, buildDebtAdjustmentTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney, derivedDebtBalance, activeTransactions, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker } from "./form/Primitives";
@@ -1203,6 +1203,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                 {monthTx.map((tx) => {
                   const b = TX_BUCKETS.find((b) => b.value === tx.bucket)!;
                   const isEditingTx = editTxId === tx.id;
+                  const divergence = cycleMonthDivergence(tx, financials.recurring ?? []);
                   return (
                     <div key={tx.id}>
                       {isEditingTx ? (
@@ -1359,7 +1360,10 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                           <div className="flex items-center gap-2 min-w-0">
                             <span className="text-sm">{b.icon}</span>
                             <div className="min-w-0">
-                              <span className="text-xs truncate block" style={{ color: T.text }}>{tx.description}</span>
+                              <span className="text-xs truncate block" style={{ color: T.text }}>
+                                {tx.description}
+                                {divergence && <span title={divergence} style={{ color: T.brass }}> ⚠</span>}
+                              </span>
                               {(tx.paymentMethod || tx.category) && (
                                 <span className="text-[9px]" style={{ color: T.mute }}>
                                   {tx.paymentMethod && (
@@ -1469,6 +1473,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                         {txs.sort((a, b) => b.date.localeCompare(a.date)).map((tx) => {
                           const b = TX_BUCKETS.find((b) => b.value === tx.bucket)!;
                           const isEditingTx = editTxId === tx.id;
+                          const divergence = cycleMonthDivergence(tx, financials.recurring ?? []);
                           return (
                             <div key={tx.id}>
                               {isEditingTx ? (
@@ -1607,7 +1612,10 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                                   style={{ background: T.panelSoft, borderLeft: `2px solid ${b.color}` }}
                                 >
                                   <div className="min-w-0 flex-1">
-                                    <p className="text-xs truncate" style={{ color: T.text }}>{tx.description}</p>
+                                    <p className="text-xs truncate" style={{ color: T.text }}>
+                                      {tx.description}
+                                      {divergence && <span title={divergence} style={{ color: T.brass }}> ⚠</span>}
+                                    </p>
                                     <p className="text-[9px]" style={{ color: T.mute }}>
                                       {fmtDate(tx.date)}{tx.category && ` · ${categoryIcon(tx.category, financials.customCategories)} ${categoryLabel(tx.category, financials.customCategories)}`}
                                     </p>
@@ -2128,9 +2136,25 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                                     style={{ color: T.mute }}
                                   >✕</button>
                                 </div>
-                                <p className="text-[10px]" style={{ color: T.mute }}>
-                                  Due {fmtDate(target.dueDate.toISOString().slice(0, 10))} · defaults to the due date if left as-is.
-                                </p>
+                                {(() => {
+                                  // 2.4.36: a confirmed transaction's date can land a month away
+                                  // from the cycle it settles with nothing surfacing the mismatch
+                                  // until the edit form is opened -- warn live, here, at the one
+                                  // point where it's still easy to fix. Warns, doesn't block: a
+                                  // genuinely late/early payment across a month boundary stays
+                                  // fully legitimate.
+                                  const dueYm = target.dueDate.toISOString().slice(0, 7);
+                                  const diverges = !!confirmDate && confirmDate.slice(0, 7) !== dueYm;
+                                  const [dueY, dueM] = dueYm.split("-");
+                                  const dueMonthLabel = `${["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][+dueM]} ${dueY}`;
+                                  return (
+                                    <p className="text-[10px]" style={{ color: diverges ? T.brass : T.mute }}>
+                                      {diverges
+                                        ? `⚠ This settles the ${dueMonthLabel} cycle, but you're dating it a different month.`
+                                        : `Due ${fmtDate(target.dueDate.toISOString().slice(0, 10))} · defaults to the due date if left as-is.`}
+                                    </p>
+                                  );
+                                })()}
                               </div>
                             )}
                           </div>

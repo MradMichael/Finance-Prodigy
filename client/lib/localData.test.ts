@@ -7,7 +7,7 @@ import {
   matchCategoryRule, type CategoryRule,
   roundMoney, moneyEquals, isEmptyFinancials, type LocalFinancials,
   migrateFinancials, schemaVersionOf, withRate, CURRENT_SCHEMA_VERSION, todayISO,
-  dueCycles, isCycleConfirmed, isCycleOverdue, buildRecurringConfirmLog,
+  dueCycles, isCycleConfirmed, isCycleOverdue, buildRecurringConfirmLog, cycleMonthDivergence,
   nextConfirmTarget, historizedRecurringContribution, pendingBackfillCycles,
   derivedEfBalance, derivedDebtBalance, activeTransactions,
   buildDebtPaymentTx, buildEfAdjustmentTx, buildDebtAdjustmentTx,
@@ -485,6 +485,35 @@ describe("isCycleConfirmed", () => {
   it("Phase 2.6.3b: a soft-deleted transaction never counts as confirming, even though every other field matches exactly", () => {
     const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-08-01", recurringId: "r1", deletedAt: "2026-08-20T00:00:00.000Z" };
     expect(isCycleConfirmed(r, due, [tx])).toBe(false);
+  });
+});
+
+describe("cycleMonthDivergence (2.4.36)", () => {
+  const recurring = [makeRecurring({ id: "r1", name: "Uni" })];
+
+  it("null when there's no cycleDate at all -- nothing to compare, not a divergence", () => {
+    const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Uni", date: "2026-08-01", recurringId: "r1" };
+    expect(cycleMonthDivergence(tx, recurring)).toBeNull();
+  });
+
+  it("null when cycleDate is explicitly detached (null) -- matches isCycleConfirmed's own null handling, nothing to compare against", () => {
+    const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Uni", date: "2026-08-01", cycleDate: null, recurringId: "r1" };
+    expect(cycleMonthDivergence(tx, recurring)).toBeNull();
+  });
+
+  it("null when cycleDate and date fall in the SAME month, even if the exact day differs", () => {
+    const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Uni", date: "2026-08-05", cycleDate: "2026-08-01", recurringId: "r1" };
+    expect(cycleMonthDivergence(tx, recurring)).toBeNull();
+  });
+
+  it("a label naming the settled month and the recurring item's name when the months genuinely differ -- the owner's exact live case (date Aug 1, cycleDate Sep 1)", () => {
+    const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Uni", date: "2026-08-01", cycleDate: "2026-09-01", recurringId: "r1" };
+    expect(cycleMonthDivergence(tx, recurring)).toBe("Settles Sep 2026 — Uni");
+  });
+
+  it("falls back to 'a deleted recurring item' when recurringId no longer resolves -- same fallback the edit form's own Settles line already uses (2.4.32)", () => {
+    const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Uni", date: "2026-08-01", cycleDate: "2026-09-01", recurringId: "gone" };
+    expect(cycleMonthDivergence(tx, recurring)).toBe("Settles Sep 2026 — a deleted recurring item");
   });
 });
 

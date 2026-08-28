@@ -1220,6 +1220,30 @@ export function isCycleConfirmed(r: StoredRecurring, dueDate: Date, transactions
 }
 
 /**
+ * Phase 2.6.4/2.4.36 -- a confirmed transaction's `date` (paid date) can
+ * land a month away from `cycleDate` (the cycle it settles), with nothing
+ * surfacing the mismatch anywhere a transaction row renders. Shared by all
+ * three surfaces that show one (InputPanel's "This month"/"History" lists,
+ * TransactionsScreen's own list) so the marker can't drift between them the
+ * way this codebase's currency formatters once did (2.4.22).
+ *
+ * Returns null when there's nothing to show: no cycleDate at all
+ * (undefined), a deliberately detached one (explicit null, same state
+ * isCycleConfirmed itself never falls back from), or a cycleDate whose
+ * month matches `date`'s month exactly (the ordinary, expected case --
+ * paid a few days early/late within the same month is not a divergence).
+ */
+export function cycleMonthDivergence(tx: StoredTransaction, recurring: StoredRecurring[]): string | null {
+  if (tx.cycleDate == null) return null;
+  const cycleYm = tx.cycleDate.slice(0, 7);
+  if (cycleYm === tx.date.slice(0, 7)) return null;
+  const [y, m] = cycleYm.split("-");
+  const monthLabel = `${["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][+m]} ${y}`;
+  const name = recurring.find((r) => r.id === tx.recurringId)?.name ?? "a deleted recurring item";
+  return `Settles ${monthLabel} — ${name}`;
+}
+
+/**
  * Whether this specific cycle should read OVERDUE right now: due, not yet
  * confirmed, and not grandfathered by the item's own confirmCutoverDate
  * (see StoredRecurring's own comment). Never true for a cycle due before
