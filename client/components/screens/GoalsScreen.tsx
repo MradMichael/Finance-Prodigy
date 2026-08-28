@@ -6,7 +6,7 @@ import { uid, todayISO, roundMoney, buildGoalContributionTx, toUSD as toUSDShare
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
-import { PaymentMethodPicker } from "../form/Primitives";
+import { PaymentMethodPicker, Label, DateFieldDMY } from "../form/Primitives";
 
 export default function GoalsScreen({
   dashData,
@@ -30,6 +30,11 @@ export default function GoalsScreen({
   const [payMethod,    setPayMethod]    = useState<PaymentMethod>("cash");
   const [payCardId,    setPayCardId]    = useState<string | null>(null);
   const [payOtherNote, setPayOtherNote] = useState("");
+  // 2.4.47: date defaults to today but is editable -- same gap InputPanel's
+  // own contribution form and the debt-payment form shared. This form
+  // already had a success confirmation (paySuccess below); only the date
+  // field was missing here.
+  const [payDate,      setPayDate]      = useState(todayISO());
 
   const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
   const prefix = todayISO().slice(0, 7);
@@ -80,12 +85,14 @@ export default function GoalsScreen({
     const tx = buildGoalContributionTx(rawGoal, amt, lbpRate, {
       paymentMethod: payMethod, cardId, cardLabel,
       paymentNote: payMethod === "other" && payOtherNote.trim() ? payOtherNote.trim() : undefined,
+      date: payDate || todayISO(),
     });
     onChange({ ...financials, goals: updated, transactions: [tx, ...(financials.transactions ?? [])] });
     setPaySuccess(dashGoalId);
     setPayGoalId(null);
     setPayAmt("");
     setPayMethod("cash"); setPayCardId(null); setPayOtherNote("");
+    setPayDate(todayISO());
     setTimeout(() => setPaySuccess(null), 3000);
   }
 
@@ -259,7 +266,7 @@ export default function GoalsScreen({
                         </div>
                       ) : !isPaying ? (
                         <button
-                          onClick={() => { setPayGoalId(g.id); setPayAmt(""); }}
+                          onClick={() => { setPayGoalId(g.id); setPayAmt(""); setPayDate(todayISO()); }}
                           className="w-full px-5 py-3 text-xs font-semibold text-left flex items-center gap-2 transition-all hover:opacity-80"
                           style={{ color: T.jade }}
                         >
@@ -327,6 +334,10 @@ export default function GoalsScreen({
                             >
                               ✕
                             </button>
+                          </div>
+                          <div>
+                            <Label htmlFor={`goals-pay-date-${g.id}`}>Date paid</Label>
+                            <DateFieldDMY id={`goals-pay-date-${g.id}`} value={payDate} onChange={setPayDate} />
                           </div>
                           <PaymentMethodPicker
                             value={payMethod}

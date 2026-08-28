@@ -1378,12 +1378,14 @@ export function historizedRecurringContribution(r: StoredRecurring, ym: string, 
  */
 export function buildGoalContributionTx(
   goal: StoredGoal, amount: number, lbpRate: number,
-  opts: { paymentMethod?: PaymentMethod; cardId?: string; cardLabel?: string; paymentNote?: string } = {},
+  // 2.4.47: date closes the same friction gap as the debt-payment form --
+  // a contribution made a few days ago could only ever be logged as today.
+  opts: { paymentMethod?: PaymentMethod; cardId?: string; cardLabel?: string; paymentNote?: string; date?: string } = {},
 ): StoredTransaction {
   const now = new Date().toISOString();
   return {
     id: uid(), amount, currency: goal.currency, bucket: "SAVINGS",
-    description: `Goal: ${goal.name}`, date: todayISO(),
+    description: `Goal: ${goal.name}`, date: opts.date || todayISO(),
     // Phase 2.6.4: defaults to "other" when the caller doesn't say -- was
     // ALWAYS "other", unconditionally, until now (2.4.41: this made a goal
     // contribution permanently invisible to balance reconciliation no
@@ -1416,12 +1418,14 @@ export function buildDebtPaymentTx(
   // used to be permanently invisible to balance reconciliation regardless
   // of which real account it left). Backward compatible: every pre-2.6.4
   // call site that doesn't pass opts gets the exact old values.
-  opts: { category?: string; efAmount?: number; paymentMethod?: PaymentMethod; cardId?: string; cardLabel?: string; paymentNote?: string } = {},
+  // 2.4.47: date -- a payment made a few days ago could only ever be
+  // logged as today; same gap as the goal-contribution forms.
+  opts: { category?: string; efAmount?: number; paymentMethod?: PaymentMethod; cardId?: string; cardLabel?: string; paymentNote?: string; date?: string } = {},
 ): StoredTransaction {
   const now = new Date().toISOString();
   return {
     id: uid(), amount, currency: debt.currency, bucket,
-    description: `Debt payment: ${debt.name}`, date: todayISO(),
+    description: `Debt payment: ${debt.name}`, date: opts.date || todayISO(),
     paymentMethod: opts.paymentMethod ?? "other",
     debtId: debt.id, createdAt: now, updatedAt: now,
     ...withRate(debt.currency, lbpRate),

@@ -830,6 +830,18 @@ describe("buildGoalContributionTx", () => {
     const tx = buildGoalContributionTx(goal, 50, 89500, { paymentMethod: "other", paymentNote: "Dad chipped in" });
     expect(tx.paymentNote).toBe("Dad chipped in");
   });
+
+  // 2.4.47: neither goal-contribution form had a date field at all -- a
+  // contribution made a few days ago could only ever be logged as today.
+  it("defaults to today when no date is given -- backward compatible", () => {
+    const tx = buildGoalContributionTx(goal, 50, 89500);
+    expect(tx.date).toBe(todayISO());
+  });
+
+  it("carries a real, past date when one is given", () => {
+    const tx = buildGoalContributionTx(goal, 50, 89500, { date: "2026-08-20" });
+    expect(tx.date).toBe("2026-08-20");
+  });
 });
 
 describe("Phase 2.6.3c -- buildDebtPaymentTx and buildEfAdjustmentTx (tests-first per Standing Rule 4)", () => {
@@ -893,6 +905,18 @@ describe("Phase 2.6.3c -- buildDebtPaymentTx and buildEfAdjustmentTx (tests-firs
       expect(tx.paymentMethod).toBe("card");
       expect(tx.cardId).toBe("c1");
       expect(tx.cardLabel).toBe("Visa •••• 4242");
+    });
+
+    // 2.4.47: the debt-payment form had no date field at all -- a payment
+    // made a few days ago could only ever be logged as today.
+    it("defaults to today when no date is given -- backward compatible", () => {
+      const tx = buildDebtPaymentTx(debt, 100, "NEEDS", 89500);
+      expect(tx.date).toBe(todayISO());
+    });
+
+    it("carries a real, past date when one is given", () => {
+      const tx = buildDebtPaymentTx(debt, 100, "NEEDS", 89500, { date: "2026-08-20" });
+      expect(tx.date).toBe("2026-08-20");
     });
   });
 

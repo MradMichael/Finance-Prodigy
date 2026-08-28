@@ -101,8 +101,16 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   // visible entry point for later. No expiry is stated: retention is
   // undecided, and promising one that doesn't exist would either be a lie
   // or make someone think a real window is closing.
-  const [deletedMsg, setDeletedMsg] = useState<string | null>(null);
-  const deletedMsgTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 2.4.47: renamed from deletedMsg/deletedMsgTimer -- was delete-only,
+  // now the one shared success toast (debt payment, goal contribution,
+  // still delete too) instead of a 4th near-identical message+timer pair.
+  const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const actionMsgTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function showToast(msg: string) {
+    setActionMsg(msg);
+    if (actionMsgTimer.current) clearTimeout(actionMsgTimer.current);
+    actionMsgTimer.current = setTimeout(() => setActionMsg(null), 4000);
+  }
   // Replaces native confirm() for the "LBP amount looks like a typo'd USD
   // entry" guard below -- OK/Cancel semantics don't map cleanly onto "save
   // it anyway" vs "let me fix the currency", so this stores enough to
@@ -142,6 +150,9 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   const [debtPayMethod, setDebtPayMethod] = useState<PaymentMethod>("cash");
   const [debtPayCardId, setDebtPayCardId] = useState<string | null>(null);
   const [debtPayOtherNote, setDebtPayOtherNote] = useState("");
+  // 2.4.47: date defaults to today but is editable -- a payment made a few
+  // days ago no longer has to be misdated.
+  const [debtPayDate,   setDebtPayDate]   = useState(todayISO());
 
   // Asset form
   const [aName,     setAName]     = useState("");
@@ -187,6 +198,9 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   const [contributeMethod, setContributeMethod] = useState<PaymentMethod>("cash");
   const [contributeCardId, setContributeCardId] = useState<string | null>(null);
   const [contributeOtherNote, setContributeOtherNote] = useState("");
+  // 2.4.47: date defaults to today but is editable, same gap as the
+  // debt-payment form.
+  const [contributeDate, setContributeDate] = useState(todayISO());
 
   // ── edit state ──────────────────────────────────────────────── //
   const [editDebtId,       setEditDebtId]       = useState<string | null>(null);
@@ -468,6 +482,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
       paymentMethod: debtPayMethod,
       cardId, cardLabel,
       paymentNote: debtPayMethod === "other" && debtPayOtherNote.trim() ? debtPayOtherNote.trim() : undefined,
+      date: debtPayDate || todayISO(),
     });
     const newTransactions = [tx, ...financials.transactions];
     const newBal = derivedDebtBalance(debt, newTransactions);
@@ -478,6 +493,8 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     setPayingDebtId(null); setDebtPayAmt(""); setDebtPayCategory("");
     setDebtPayFromEF(false); setDebtPayEfAmt("");
     setDebtPayMethod("cash"); setDebtPayCardId(null); setDebtPayOtherNote("");
+    setDebtPayDate(todayISO());
+    showToast(`Payment recorded for ${debt.name}`);
   }
 
   function addRecurring() {
@@ -538,10 +555,13 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     const tx = buildGoalContributionTx(goal, amt, financials.lbpRate ?? DEFAULT_LBP_RATE, {
       paymentMethod: contributeMethod, cardId, cardLabel,
       paymentNote: contributeMethod === "other" && contributeOtherNote.trim() ? contributeOtherNote.trim() : undefined,
+      date: contributeDate || todayISO(),
     });
     update({ goals, transactions: [tx, ...financials.transactions] });
     setContributeGoalId(null); setContributeGoalAmt("");
     setContributeMethod("cash"); setContributeCardId(null); setContributeOtherNote("");
+    setContributeDate(todayISO());
+    showToast(`Contribution added to ${goal.name}`);
   }
 
   function logExtraPayment(rec: StoredRecurring) {
@@ -746,9 +766,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     update({
       transactions: financials.transactions.map((t) => t.id !== txId ? t : { ...t, deletedAt: now, updatedAt: now }),
     });
-    setDeletedMsg("Deleted — recoverable in Transactions");
-    if (deletedMsgTimer.current) clearTimeout(deletedMsgTimer.current);
-    deletedMsgTimer.current = setTimeout(() => setDeletedMsg(null), 4000);
+    showToast("Deleted — recoverable in Transactions");
   }
 
   // ── tab state ─────────────────────────────────────────────────── //
@@ -1725,7 +1743,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                           style={{ color: g.pausedAt ? T.jade : T.mute, border: `1px solid ${g.pausedAt ? T.jade : T.mute}40` }}
                         >{g.pausedAt ? "▶" : "⏸"}</button>
                         <button
-                          onClick={() => { setContributeGoalId(isContrib ? null : g.id); setContributeGoalAmt(""); }}
+                          onClick={() => { setContributeGoalId(isContrib ? null : g.id); setContributeGoalAmt(""); setContributeDate(todayISO()); }}
                           aria-label="Add to this goal"
                           className="text-[10px] px-1.5 py-0.5 rounded transition-all hover:opacity-80"
                           style={{ color: T.jade, border: `1px solid ${T.jade}40` }}
@@ -1763,6 +1781,10 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                       >Save</button>
                       <button onClick={() => setContributeGoalId(null)} aria-label="Cancel contribution" className="px-2 py-1.5 rounded-xl text-xs" style={{ color: T.mute }}>✕</button>
                     </div>
+                    <div>
+                      <Label htmlFor={`contribute-date-${g.id}`}>Date paid</Label>
+                      <DateFieldDMY id={`contribute-date-${g.id}`} value={contributeDate} onChange={setContributeDate} />
+                    </div>
                     <PaymentMethodPicker
                       value={contributeMethod}
                       onChange={setContributeMethod}
@@ -1773,7 +1795,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                       cards={cards}
                       onSaveCard={saveCard}
                     />
-                    <p className="text-[10px]" style={{ color: T.mute }}>Logged as a Savings transaction today.</p>
+                    <p className="text-[10px]" style={{ color: T.mute }}>Logged as a Savings transaction.</p>
                   </div>
                 )}
               </div>
@@ -2395,7 +2417,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                         >✎</button>
                         {!d.paidOffAt && (
                           <button
-                            onClick={() => { setPayingDebtId(isPaying ? null : d.id); setDebtPayAmt(""); }}
+                            onClick={() => { setPayingDebtId(isPaying ? null : d.id); setDebtPayAmt(""); setDebtPayDate(todayISO()); }}
                             aria-label={isPaying ? "Cancel payment" : "Record a payment"}
                             className="text-[10px] px-1.5 py-0.5 rounded transition-all hover:opacity-80"
                             style={{ color: T.jade, border: `1px solid ${T.jade}40` }}
@@ -2424,6 +2446,10 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                             className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all hover:opacity-90"
                             style={{ background: T.jade, color: T.ink }}
                           >Apply</button>
+                        </div>
+                        <div>
+                          <Label htmlFor="debt-pay-date">Date paid</Label>
+                          <DateFieldDMY id="debt-pay-date" value={debtPayDate} onChange={setDebtPayDate} />
                         </div>
                         {/* Owner's explicit instruction: never default this --
                             a minimum payment is a Need, a voluntary
@@ -2809,12 +2835,12 @@ export default function InputPanel({ financials, dashData, onChange, session, on
       </div>
     )}
 
-    {deletedMsg && (
+    {actionMsg && (
       <div
         className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl text-xs font-medium shadow-lg"
         style={{ background: T.panel, border: `1px solid ${T.jade}50`, color: T.text }}
       >
-        <span style={{ color: T.jade }}>✓</span> {deletedMsg}
+        <span style={{ color: T.jade }}>✓</span> {actionMsg}
       </div>
     )}
     </>
