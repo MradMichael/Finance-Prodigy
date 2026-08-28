@@ -10,7 +10,7 @@ import type { computeDashboard } from "../lib/computeDashboard";
 import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, pendingBackfillCycles, toUSD as toUSDShared, withRate, buildGoalContributionTx, buildDebtPaymentTx, buildDebtAdjustmentTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney, derivedDebtBalance, activeTransactions, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
-import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker } from "./form/Primitives";
+import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker, CardPicker } from "./form/Primitives";
 import { fmtCur } from "./screens/shared";
 import ImportStatement from "./ImportStatement";
 
@@ -1268,16 +1268,13 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                                 >{p.icon} {p.label}</button>
                               ))}
                             </div>
-                            {editTxPayMethod === "card" && cards.length > 0 && (
-                              <div className="flex flex-wrap gap-1.5">
-                                {cards.map((c) => (
-                                  <button key={c.id} type="button"
-                                    onClick={() => setEditTxCardId(c.id)}
-                                    className="px-2 py-1 rounded-lg text-[10px] font-medium transition-all"
-                                    style={{ background: editTxCardId === c.id ? T.jade + "22" : T.panelSoft, border: `1px solid ${editTxCardId === c.id ? T.jade : T.line}`, color: editTxCardId === c.id ? T.jade : T.mute }}
-                                  >{c.label}</button>
-                                ))}
-                              </div>
+                            {editTxPayMethod === "card" && (
+                              // 2.4.40: previously guarded by cards.length > 0 with no
+                              // else at all -- zero cards meant this section rendered
+                              // nothing, no explanation, no way to add one. CardPicker
+                              // handles the empty case itself (just the "+ New card"
+                              // affordance, no chips).
+                              <CardPicker cardId={editTxCardId} onCardIdChange={setEditTxCardId} cards={cards} onSaveCard={saveCard} />
                             )}
                             {editTxPayMethod === "other" && (
                               <FocusInput value={editTxPayNote} onChange={(e) => setEditTxPayNote(e.target.value)} placeholder="Who paid or how?" />
@@ -1525,16 +1522,8 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                                         >{p.icon} {p.label}</button>
                                       ))}
                                     </div>
-                                    {editTxPayMethod === "card" && cards.length > 0 && (
-                                      <div className="flex flex-wrap gap-1.5">
-                                        {cards.map((c) => (
-                                          <button key={c.id} type="button"
-                                            onClick={() => setEditTxCardId(c.id)}
-                                            className="px-2 py-1 rounded-lg text-[10px] font-medium transition-all"
-                                            style={{ background: editTxCardId === c.id ? T.jade + "22" : T.panelSoft, border: `1px solid ${editTxCardId === c.id ? T.jade : T.line}`, color: editTxCardId === c.id ? T.jade : T.mute }}
-                                          >{c.label}</button>
-                                        ))}
-                                      </div>
+                                    {editTxPayMethod === "card" && (
+                                      <CardPicker cardId={editTxCardId} onCardIdChange={setEditTxCardId} cards={cards} onSaveCard={saveCard} />
                                     )}
                                     {editTxPayMethod === "other" && (
                                       <FocusInput value={editTxPayNote} onChange={(e) => setEditTxPayNote(e.target.value)} placeholder="Who paid or how?" />
@@ -2689,21 +2678,13 @@ export default function InputPanel({ financials, dashData, onChange, session, on
             </div>
             {tbMethod === "card" && (
               <div>
-                <Label htmlFor="new-tb-card">Which card</Label>
-                {financials.cards.length === 0 ? (
-                  <p className="text-xs" style={{ color: T.coral }}>No saved cards yet. Add one when logging a transaction first.</p>
-                ) : (
-                  <select
-                    id="new-tb-card"
-                    value={tbCardId}
-                    onChange={(e) => setTbCardId(e.target.value)}
-                    className="w-full rounded-xl px-3 py-2.5 text-sm"
-                    style={{ background: T.panelSoft, border: `1px solid ${T.line}`, color: T.text }}
-                  >
-                    <option value="">Select a card…</option>
-                    {financials.cards.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
-                  </select>
-                )}
+                <Label>Which card</Label>
+                {/* 2.4.40: was a static "No saved cards yet" message with no
+                    action -- CardPicker gives this form the same inline
+                    "+ New card" affordance the main transaction form has
+                    always had, instead of forcing a trip to a different
+                    screen and losing whatever was already typed here. */}
+                <CardPicker cardId={tbCardId || null} onCardIdChange={(id) => setTbCardId(id ?? "")} cards={cards} onSaveCard={saveCard} />
               </div>
             )}
             <div className="grid grid-cols-2 gap-2">
