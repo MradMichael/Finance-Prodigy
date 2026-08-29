@@ -430,6 +430,8 @@ Phase 1 (1.1–1.5, the dual-currency work already built) took multiple sub-phas
 
 **Acceptance (sketch, not final — design this properly when scheduled):** a user can pick any supported currency as their "second currency" at setup; every screen that today hardcodes LBP behaves identically for the chosen currency; historized past-month figures for an account that switches its second currency mid-history don't retroactively rewrite what was already shown.
 
+**Reaffirmed deferred, 2026-08-29, owner's explicit decision (usability/capability backlog planning pass).** Weighed directly against the dual-currency-single-transaction backlog item (Deferred backlog, below): that item is a ~1-day fix serving a need the owner has already personally hit (a real $10 + L£200,000 bill); this phase is Phase-1-sized effort serving a currency nobody in the launch cohort (a WhatsApp group of people the owner knows directly) currently needs. Building this first would repeat the sequencing problem that prompted the whole planning pass — large, speculative-value work displacing small, certain-value work. Revisit if/when an actual non-LBP-second-currency user is expected.
+
 **SAFE STOP.**
 
 ---
