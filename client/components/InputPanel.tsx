@@ -7,7 +7,7 @@ import type {
 } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, pendingBackfillCycles, toUSD as toUSDShared, withRate, applyGoalContribution, buildDebtPaymentTx, buildDebtAdjustmentTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney, derivedDebtBalance, activeTransactions, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
+import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, pendingBackfillCycles, toUSD as toUSDShared, withRate, applyGoalContribution, buildDebtPaymentTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney, derivedDebtBalance, activeTransactions, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker, CardPicker } from "./form/Primitives";
@@ -55,9 +55,11 @@ interface Props {
   onBackfillRecurring?: (recurringId: string, dueDate: Date) => void;
   /** `${recurringId}:${dueISO}` keys whose backfill write is currently in flight. */
   backfillingIds?: Set<string>;
+  /** Opens the shared edit surface (page.tsx) for the given entity -- one implementation per kind, shared with each entity's own standalone screen. */
+  onEdit: (kind: "transaction" | "debt" | "recurring" | "goal", id: string) => void;
 }
 
-export default function InputPanel({ financials, dashData, onChange, session, onConfirmRecurring, loggingRecurringIds, justConfirmedIds, onBackfillRecurring, backfillingIds }: Props) {
+export default function InputPanel({ financials, dashData, onChange, session, onConfirmRecurring, loggingRecurringIds, justConfirmedIds, onBackfillRecurring, backfillingIds, onEdit }: Props) {
   const T = useTheme();
   const BUCKETS: { value: Bucket; label: string; icon: string; color: string }[] = [
     { value: "NEEDS",   label: "Needs",   icon: "🏠", color: T.sky   },
@@ -203,16 +205,9 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   const [contributeDate, setContributeDate] = useState(todayISO());
 
   // ── edit state ──────────────────────────────────────────────── //
-  const [editDebtId,       setEditDebtId]       = useState<string | null>(null);
-  const [editDName,        setEditDName]        = useState("");
-  const [editDApr,         setEditDApr]         = useState("");
-  const [editDMin,         setEditDMin]         = useState("");
-  const [editDOpened,      setEditDOpened]      = useState("");
-  // Phase 2.6.4 step 3: SetupScreen's ef-balance field pattern, applied to
-  // debt -- null = show the live derived value; committing on blur (not per
-  // keystroke) so typing "1500" doesn't create three separate correction
-  // transactions along the way.
-  const [editDBalanceInput, setEditDBalanceInput] = useState<string | null>(null);
+  // Debt editing itself now lives in the shared EditDebtSheet (page.tsx) --
+  // see the "usability backlog" comment there. dOpenedDate below is the New
+  // Debt form's own field, unrelated to editing an existing one.
   const [dOpenedDate,      setDOpenedDate]      = useState("");
 
   const [editGoalId,       setEditGoalId]       = useState<string | null>(null);
@@ -572,48 +567,6 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   }
 
   // ── edit helpers ───────────────────────────────────────────── //
-
-  function startEditDebt(d: StoredDebt) {
-    setEditDebtId(d.id); setEditDName(d.name);
-    setEditDApr(String(d.apr));
-    setEditDMin(String(d.minPayment)); setEditDOpened(d.openedDate ?? "");
-    setEditDBalanceInput(null);
-    setPayingDebtId(null);
-  }
-  // Phase 2.6.3a: no longer touches balance/paidOffAt -- the balance is
-  // derived from openingBalance + the transaction ledger now. Editing
-  // name/APR/min payment/opened date is still safe to do directly;
-  // correcting a balance goes through commitDebtBalance below instead
-  // (Phase 2.6.4 step 3), same reasoning as buildEfAdjustmentTx: a real,
-  // inspectable transaction, not a silently-edited scalar.
-  function saveEditDebt(debtId: string) {
-    if (!editDName.trim()) return;
-    update({
-      debts: financials.debts.map((d) => d.id !== debtId ? d : {
-        ...d, name: editDName.trim(),
-        apr: Math.max(0, parseFloat(editDApr) || 0),
-        minPayment: parseFloat(editDMin.replace(/,/g, "")) || 0,
-        openedDate: editDOpened || undefined,
-      }),
-    });
-    setEditDebtId(null);
-  }
-  // Phase 2.6.4 step 3 -- SetupScreen's commitEfBalance, mirrored, but with
-  // the OPPOSITE sign: derivedDebtBalance SUBTRACTS `paid` from
-  // openingBalance (derivedEfBalance ADDS contributions), so a balance
-  // correction here is `current - entered`, not `entered - current`.
-  // Caught by localData.test.ts's own tests-first coverage before this was
-  // written -- copying EF's delta formula verbatim would have landed every
-  // correction on the wrong sign.
-  function commitDebtBalance(debt: StoredDebt, raw: string) {
-    const entered = Math.max(0, parseFloat(raw.replace(/,/g, "")) || 0);
-    const current = derivedDebtBalance(debt, financials.transactions);
-    const delta = roundMoney(current - entered);
-    if (delta !== 0) {
-      update({ transactions: [buildDebtAdjustmentTx(debt, delta), ...financials.transactions] });
-    }
-    setEditDBalanceInput(null);
-  }
 
   function startEditGoal(g: StoredGoal) {
     setEditGoalId(g.id); setEditGName(g.name); setEditGEmoji(g.emoji);
@@ -2324,59 +2277,20 @@ export default function InputPanel({ financials, dashData, onChange, session, on
         <Section title="Debts" icon="💳" badge={financials.debts.filter((d) => !d.paidOffAt).length} defaultOpen={false}>
           {financials.debts.map((d) => {
             const isPaying  = payingDebtId === d.id;
-            const isEditing = editDebtId === d.id;
             // Phase 2.6.3a: derived once per row from openingBalance + the
             // linked transaction ledger, not read from the stored `balance`
             // field.
             const balance = derivedDebtBalance(d, financials.transactions);
             return (
               <div key={d.id}>
-                {isEditing ? (
-                  <div className="rounded-xl p-3 space-y-2.5" style={{ background: T.panelSoft, border: `1px solid ${T.jade}50` }}>
-                    <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.jade }}>Edit debt</p>
-                    <div>
-                      <Label htmlFor="edit-debt-name">Name</Label>
-                      <FocusInput id="edit-debt-name" value={editDName} onChange={(e) => setEditDName(e.target.value)} />
-                    </div>
-                    <div className="grid grid-cols-3 gap-2">
-                      <div>
-                        <Label htmlFor="edit-debt-balance">Balance ({d.currency === "LBP" ? "L£" : "$"})</Label>
-                        {/* Phase 2.6.4 step 3: "your real current balance,"
-                            same pattern as SetupScreen's ef-balance field --
-                            committing on blur builds one buildDebtAdjustmentTx
-                            transaction instead of silently editing a scalar. */}
-                        <input
-                          id="edit-debt-balance"
-                          type="number" min="0" step="1"
-                          className="w-full rounded-lg px-3 py-2 text-sm tabular-nums"
-                          style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
-                          value={editDBalanceInput ?? (balance || "")}
-                          onChange={(e) => setEditDBalanceInput(e.target.value)}
-                          onBlur={(e) => commitDebtBalance(d, e.target.value)}
-                          placeholder="0"
-                        />
-                      </div>
-                      <div><Label htmlFor="edit-debt-apr">APR (%)</Label><FocusInput id="edit-debt-apr" type="number" min="0" step="0.1" value={editDApr} onChange={(e) => setEditDApr(e.target.value)} placeholder="0" /></div>
-                      <div><Label htmlFor="edit-debt-min">Min/mo</Label><MoneyInput id="edit-debt-min" value={editDMin} onChange={setEditDMin} placeholder="0" /></div>
-                    </div>
-                    <div>
-                      <Label htmlFor="edit-debt-opened">Opened date (when this debt started)</Label>
-                      <DateFieldDMY id="edit-debt-opened" value={editDOpened} onChange={setEditDOpened} />
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => saveEditDebt(d.id)} className="px-3 py-1.5 rounded-xl text-xs font-semibold hover:opacity-90" style={{ background: T.jade, color: T.ink }}>Save</button>
-                      <button onClick={() => setEditDebtId(null)} className="px-3 py-1.5 rounded-xl text-xs hover:opacity-70" style={{ color: T.mute }}>Cancel</button>
-                    </div>
-                  </div>
-                ) : (
-                  <div
-                    className="rounded-xl px-3 py-2.5 group"
-                    style={{
-                      background: T.panelSoft,
-                      borderLeft: `3px solid ${d.paidOffAt ? T.jade : T.coral}`,
-                      opacity: d.paidOffAt ? 0.65 : 1,
-                    }}
-                  >
+                <div
+                  className="rounded-xl px-3 py-2.5 group"
+                  style={{
+                    background: T.panelSoft,
+                    borderLeft: `3px solid ${d.paidOffAt ? T.jade : T.coral}`,
+                    opacity: d.paidOffAt ? 0.65 : 1,
+                  }}
+                >
                     <div className="flex items-start justify-between">
                       <div className="min-w-0 flex-1">
                         <p className="text-sm flex items-center gap-1.5 min-w-0" style={{ color: T.text }}>
@@ -2399,7 +2313,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                       </div>
                       <div className="flex items-center gap-1.5 opacity-70 md:opacity-0 md:group-hover:opacity-100 transition-opacity flex-shrink-0 ml-2">
                         <button
-                          onClick={() => startEditDebt(d)}
+                          onClick={() => onEdit("debt", d.id)}
                           aria-label="Edit debt"
                           className="text-[10px] px-1.5 py-0.5 rounded transition-all hover:opacity-80"
                           style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
@@ -2507,7 +2421,6 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                       </div>
                     )}
                   </div>
-                )}
               </div>
             );
           })}
