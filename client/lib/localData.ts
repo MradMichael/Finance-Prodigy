@@ -1513,6 +1513,44 @@ export function buildDebtAdjustmentTx(debt: StoredDebt, delta: number): StoredTr
   };
 }
 
+/**
+ * Data-driven "this might be recurring" signal: the same description has
+ * already been logged in a DIFFERENT calendar month (e.g. "Claude
+ * subscription" showing up every month), and isn't already tracked as a
+ * Recurring item. Deliberately not a hardcoded list of known subscription
+ * names -- that would miss anything not on the list and go stale; this
+ * catches whatever the user's own history actually repeats. Shared by the
+ * main entry form and the edit-transaction sheet alike (usability backlog,
+ * 2026-08-29) -- previously duplicated as a private helper in InputPanel.tsx.
+ */
+export function looksRecurring(description: string, date: string, transactions: StoredTransaction[], recurring: StoredRecurring[]): boolean {
+  const norm = description.trim().toLowerCase();
+  if (!norm) return false;
+  if (recurring.some((r) => r.name.trim().toLowerCase() === norm)) return false;
+  const thisMonth = date.slice(0, 7);
+  return transactions.some((t) => t.description.trim().toLowerCase() === norm && t.date.slice(0, 7) !== thisMonth);
+}
+
+/**
+ * Quick-add a Recurring item from a transaction looksRecurring flagged --
+ * starts today, monthly, editable further in the Recurring screen. Past
+ * transactions are left untouched; this only affects future months. Shared
+ * by the main entry form and the edit-transaction sheet (same reasoning as
+ * looksRecurring above) -- caller still does its own
+ * `update({ recurring: [...] })`, matching every other builder here.
+ */
+export function buildQuickRecurring(name: string, amount: string, currency: Currency, bucket: "NEEDS" | "WANTS" | "SAVINGS", category: string): StoredRecurring | null {
+  const amt = parseFloat(amount.replace(/,/g, ""));
+  if (!name.trim() || !amt) return null;
+  return {
+    id: uid(), name: name.trim(), emoji: "🔁",
+    amount: amt, currency, frequency: "monthly", bucket,
+    ...(category ? { category } : {}),
+    startDate: todayISO(), endDate: null, totalAmount: null,
+    createdAt: new Date().toISOString(),
+  };
+}
+
 // ── Phase 2.6.2 -- ledger-derived EF/debt balances (pure logic, shipped
 // completely unwired; see docs/ROADMAP.md Phase 2.6). No caller anywhere
 // in the app uses these yet -- `emergencyFundBalance`/`debt.balance`

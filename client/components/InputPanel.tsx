@@ -7,7 +7,7 @@ import type {
 } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, toUSD as toUSDShared, withRate, applyGoalContribution, buildDebtPaymentTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney, derivedDebtBalance, activeTransactions, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
+import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, toUSD as toUSDShared, withRate, applyGoalContribution, buildDebtPaymentTx, looksRecurring, buildQuickRecurring, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney, derivedDebtBalance, activeTransactions, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker, CardPicker } from "./form/Primitives";
@@ -21,22 +21,6 @@ type Bucket = "NEEDS" | "WANTS" | "SAVINGS";
 type TxBucket = Bucket | "INCOME";
 // PM_OPTIONS/CARD_TYPES now live in ./form/Primitives (Phase 2.6.4), shared
 // with the new PaymentMethodPicker -- imported above, not redeclared here.
-
-/**
- * Data-driven "this might be recurring" signal: the same description has
- * already been logged in a DIFFERENT calendar month (e.g. "Claude
- * subscription" showing up every month), and isn't already tracked as a
- * Recurring item. Deliberately not a hardcoded list of known subscription
- * names — that would miss anything not on the list and go stale; this
- * catches whatever the user's own history actually repeats.
- */
-function looksRecurring(description: string, date: string, transactions: StoredTransaction[], recurring: StoredRecurring[]): boolean {
-  const norm = description.trim().toLowerCase();
-  if (!norm) return false;
-  if (recurring.some((r) => r.name.trim().toLowerCase() === norm)) return false;
-  const thisMonth = date.slice(0, 7);
-  return transactions.some((t) => t.description.trim().toLowerCase() === norm && t.date.slice(0, 7) !== thisMonth);
-}
 
 // ── main panel ──────────────────────────────────────────────────── //
 
@@ -212,45 +196,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
 
   // Goal editing lives in the shared EditGoalSheet (page.tsx).
   // Recurring editing lives in the shared EditRecurringSheet (page.tsx).
-
-  const [editTxId,         setEditTxId]         = useState<string | null>(null);
-  const [editTxAmt,        setEditTxAmt]        = useState("");
-  const [editTxDesc,       setEditTxDesc]       = useState("");
-  const [editTxDate,       setEditTxDate]       = useState("");
-  const [editTxBucket,     setEditTxBucket]     = useState<TxBucket>("NEEDS");
-  const [editTxCategory,   setEditTxCategory]   = useState<string>("");
-  const [editTxCurrency,   setEditTxCurrency]   = useState<Currency>("USD");
-  const [editTxPayMethod,  setEditTxPayMethod]  = useState<PaymentMethod>("cash");
-  const [editTxPayNote,    setEditTxPayNote]    = useState("");
-  const [editTxCardId,     setEditTxCardId]     = useState<string | null>(null);
-  // 2.4.32, finding 4c: undefined = never had a cycleDate (legacy or not
-  // recurring-sourced) -- nothing to show. A real string = still settles
-  // that cycle -- show it, offer Detach. null = already detached (this
-  // session's edit, or a previous one) -- nothing to show, matches
-  // undefined's UI treatment but is a distinct state isCycleConfirmed cares
-  // about (see its own comment).
-  const [editTxCycleDate,  setEditTxCycleDate]  = useState<string | null | undefined>(undefined);
-  // Phase 2.6.3c: same tri-state shape as editTxCycleDate above -- undefined
-  // = never linked to the emergency fund (nothing to show), a string = linked
-  // with that raw amount (in the transaction's own currency, mirroring
-  // editTxAmt -- converted to USD at commit), null = deliberately detached
-  // (owner's instruction: mirror cycleDate's undefined-vs-null distinction
-  // for efAmount specifically, since 0 is a legitimate amount someone might
-  // genuinely mean and can't double as "not linked").
-  const [editTxEfAmount,   setEditTxEfAmount]   = useState<string | null | undefined>(undefined);
-  // debtId has no equivalent null-sentinel need -- it's a bare id reference
-  // with no fallback behavior that would make undefined vs. a deliberate
-  // "detached" state ambiguous the way cycleDate's fallback-to-date does.
-  // Owner's explicit confirmation: don't add a sentinel carrying no
-  // information.
-  const [editTxDebtId,     setEditTxDebtId]     = useState<string | undefined>(undefined);
-  // Phase 2.6.4 step 3: same tri-state shape as editTxEfAmount above --
-  // undefined = never carried a debt correction (nothing to show), a string
-  // = a correction of that magnitude is attached, null = deliberately
-  // detached. Unlike efAmount, NOT converted between currencies at commit --
-  // debtAdjustment is in the debt's own currency, matching how `amount`
-  // itself is already treated for a debt-linked transaction.
-  const [editTxDebtAdjustment, setEditTxDebtAdjustment] = useState<string | null | undefined>(undefined);
+  // Transaction editing lives in the shared EditTransactionSheet (page.tsx).
 
   // ── helpers ────────────────────────────────────────────────────── //
 
@@ -491,15 +437,8 @@ export default function InputPanel({ financials, dashData, onChange, session, on
 
   /** Quick-add a Recurring item from a transaction that looksRecurring flagged — starts today, monthly, editable further in the Recurring screen. Past transactions are left untouched; this only affects future months. */
   function convertToRecurring(name: string, amount: string, currency: Currency, bucket: Bucket, category: string) {
-    const amt = parseFloat(amount.replace(/,/g, ""));
-    if (!name.trim() || !amt) return;
-    const rec: StoredRecurring = {
-      id: uid(), name: name.trim(), emoji: "🔁",
-      amount: amt, currency, frequency: "monthly", bucket,
-      ...(category ? { category } : {}),
-      startDate: todayISO(), endDate: null, totalAmount: null,
-      createdAt: new Date().toISOString(),
-    };
+    const rec = buildQuickRecurring(name, amount, currency, bucket, category);
+    if (!rec) return;
     update({ recurring: [...(financials.recurring ?? []), rec] });
   }
 
@@ -562,79 +501,6 @@ export default function InputPanel({ financials, dashData, onChange, session, on
         ...g, pausedAt: g.pausedAt ? undefined : new Date().toISOString(),
       }),
     });
-  }
-
-  function startEditTx(tx: StoredTransaction) {
-    setEditTxId(tx.id); setEditTxAmt(String(tx.amount));
-    setEditTxDesc(tx.description); setEditTxDate(tx.date);
-    setEditTxBucket(tx.bucket); setEditTxCategory(tx.category ?? ""); setEditTxCurrency(tx.currency ?? "USD");
-    setEditTxPayMethod(tx.paymentMethod ?? "cash"); setEditTxPayNote(tx.paymentNote ?? ""); setEditTxCardId(tx.cardId ?? null);
-    setEditTxCycleDate(tx.cycleDate);
-    // Phase 2.6.3c: efAmount seeded as a raw string (in the transaction's
-    // own currency, converted back from the stored USD-terms value) so the
-    // amount field behaves like editTxAmt itself; undefined/null pass through
-    // unchanged, matching editTxCycleDate's own tri-state seeding.
-    setEditTxEfAmount(tx.efAmount == null ? tx.efAmount : String(
-      tx.currency === "LBP" ? roundMoney(tx.efAmount * (financials.lbpRate ?? DEFAULT_LBP_RATE)) : tx.efAmount
-    ));
-    setEditTxDebtId(tx.debtId);
-    // Phase 2.6.4 step 3: raw string, no currency conversion -- unlike
-    // efAmount, debtAdjustment is already in the debt's own currency.
-    setEditTxDebtAdjustment(tx.debtAdjustment == null ? tx.debtAdjustment : String(tx.debtAdjustment));
-  }
-  function saveEditTx(txId: string) {
-    const amt = parseFloat(editTxAmt.replace(/,/g, ""));
-    if (!editTxDesc.trim() || isNaN(amt) || !editTxDate) return;
-    if (editTxCurrency === "LBP" && amt < 500) {
-      setLbpConfirm({ amount: amt, proceed: () => commitEditTx(txId) });
-      return;
-    }
-    commitEditTx(txId);
-  }
-
-  function commitEditTx(txId: string) {
-    const amt = parseFloat(editTxAmt.replace(/,/g, ""));
-    if (!editTxDesc.trim() || isNaN(amt) || !editTxDate) return;
-    let cardId: string | undefined;
-    let cardLabel: string | undefined;
-    if (editTxPayMethod === "card" && editTxCardId) {
-      const card = cards.find((c) => c.id === editTxCardId);
-      if (card) { cardId = card.id; cardLabel = card.label; }
-    }
-    // Phase 2.6.3c: editTxEfAmount is a raw string in editTxCurrency (like
-    // editTxAmt), converted to the USD-terms value derivedEfBalance expects.
-    // null/undefined pass through unchanged -- see editTxCycleDate's own
-    // comment on why that's what makes Detach actually write `null`.
-    const efAmount = editTxEfAmount == null ? editTxEfAmount : roundMoney(
-      editTxCurrency === "LBP"
-        ? (parseFloat(editTxEfAmount.replace(/,/g, "")) || 0) / (financials.lbpRate ?? DEFAULT_LBP_RATE)
-        : (parseFloat(editTxEfAmount.replace(/,/g, "")) || 0)
-    );
-    // Phase 2.6.4 step 3: unlike efAmount, no currency conversion --
-    // debtAdjustment is in the debt's own currency, same as `amount` itself
-    // for a debt-linked transaction (derivedDebtBalance assumes no
-    // conversion, matching its own comment).
-    const debtAdjustment = editTxDebtAdjustment == null ? editTxDebtAdjustment
-      : roundMoney(parseFloat(editTxDebtAdjustment.replace(/,/g, "")) || 0);
-    update({
-      transactions: financials.transactions.map((t) => t.id !== txId ? t : {
-        ...t, amount: amt, description: editTxDesc.trim(),
-        date: editTxDate, bucket: editTxBucket, category: editTxCategory || undefined, currency: editTxCurrency,
-        paymentMethod: editTxPayMethod,
-        paymentNote: editTxPayMethod === "other" && editTxPayNote.trim() ? editTxPayNote.trim() : undefined,
-        cardId, cardLabel,
-        // Explicit, not implicitly preserved by the spread above -- this is
-        // what lets the Detach button (2.4.32, finding 4c) actually write
-        // `null`. Unchanged for every edit that doesn't touch it, since
-        // editTxCycleDate is seeded from tx.cycleDate in startEditTx.
-        cycleDate: editTxCycleDate,
-        efAmount,
-        debtId: editTxDebtId,
-        debtAdjustment,
-        updatedAt: new Date().toISOString(),
-      }),
-    });
-    setEditTxId(null);
   }
 
   // Phase 2.6.3b: soft-delete -- stamps deletedAt instead of removing the
@@ -1099,154 +965,9 @@ export default function InputPanel({ financials, dashData, onChange, session, on
               <div className="space-y-2 max-h-72 overflow-y-auto pr-0.5">
                 {monthTx.map((tx) => {
                   const b = TX_BUCKETS.find((b) => b.value === tx.bucket)!;
-                  const isEditingTx = editTxId === tx.id;
                   const divergence = cycleMonthDivergence(tx, financials.recurring ?? []);
                   return (
                     <div key={tx.id}>
-                      {isEditingTx ? (
-                        <div className="rounded-xl p-3 space-y-2" style={{ background: T.panelSoft, border: `1px solid ${T.jade}50` }}>
-                          <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.jade }}>Edit entry</p>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <Label htmlFor="edit-tx-amount">Amount</Label>
-                              <MoneyInput id="edit-tx-amount" value={editTxAmt} onChange={setEditTxAmt} placeholder="0" />
-                            </div>
-                            <div>
-                              <Label htmlFor="edit-tx-date">Date</Label>
-                              <DateFieldDMY id="edit-tx-date" value={editTxDate} onChange={setEditTxDate} />
-                            </div>
-                          </div>
-                          <div>
-                            <Label htmlFor="edit-tx-desc">Description</Label>
-                            <FocusInput id="edit-tx-desc" value={editTxDesc} onChange={(e) => setEditTxDesc(e.target.value)} />
-                            {editTxBucket !== "INCOME" && looksRecurring(editTxDesc, editTxDate, activeTx.filter((t) => t.id !== tx.id), financials.recurring ?? []) && (
-                              <div className="mt-2 rounded-xl px-3 py-2.5 flex items-center justify-between gap-2" style={{ background: T.brass + "14", border: `1px solid ${T.brass}30` }}>
-                                <p className="text-[11px]" style={{ color: T.brass }}>You&apos;ve logged this before in another month. Looks recurring.</p>
-                                <button
-                                  type="button"
-                                  onClick={() => convertToRecurring(editTxDesc, editTxAmt, editTxCurrency, editTxBucket, editTxCategory)}
-                                  className="text-[11px] font-semibold px-2.5 py-1 rounded-lg flex-shrink-0 hover:opacity-80 transition-opacity"
-                                  style={{ background: T.brass + "22", color: T.brass }}
-                                >
-                                  Add to Recurring
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                          <div className="grid grid-cols-2 gap-1.5">
-                            {TX_BUCKETS.map((bkt) => (
-                              <button key={bkt.value} onClick={() => setEditTxBucket(bkt.value)}
-                                className="py-1.5 rounded-lg text-[10px] font-medium transition-all"
-                                style={{ background: editTxBucket === bkt.value ? bkt.color + "22" : T.ink, border: `1px solid ${editTxBucket === bkt.value ? bkt.color : T.line}`, color: editTxBucket === bkt.value ? bkt.color : T.mute }}>
-                                {bkt.icon} {bkt.label}
-                              </button>
-                            ))}
-                          </div>
-                          <select
-                            value={editTxCategory}
-                            onChange={(e) => setEditTxCategory(e.target.value)}
-                            aria-label="Category"
-                            className="w-full rounded-lg px-2 py-1.5 text-[10px]"
-                            style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
-                          >
-                            <option value="">No category</option>
-                            {allCategories(financials.customCategories).map((c) => (
-                              <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
-                            ))}
-                          </select>
-                          <CurrencyToggle value={editTxCurrency} onChange={setEditTxCurrency} />
-                          <div>
-                            <div className="grid grid-cols-3 gap-1.5 mb-1.5">
-                              {PM_OPTIONS.map((p) => (
-                                <button key={p.value} type="button"
-                                  onClick={() => { setEditTxPayMethod(p.value); setEditTxCardId(null); }}
-                                  className="py-1.5 rounded-lg text-[10px] font-medium transition-all"
-                                  style={{ background: editTxPayMethod === p.value ? T.jade + "22" : T.ink, border: `1px solid ${editTxPayMethod === p.value ? T.jade : T.line}`, color: editTxPayMethod === p.value ? T.jade : T.mute }}
-                                >{p.icon} {p.label}</button>
-                              ))}
-                            </div>
-                            {editTxPayMethod === "card" && (
-                              // 2.4.40: previously guarded by cards.length > 0 with no
-                              // else at all -- zero cards meant this section rendered
-                              // nothing, no explanation, no way to add one. CardPicker
-                              // handles the empty case itself (just the "+ New card"
-                              // affordance, no chips).
-                              <CardPicker cardId={editTxCardId} onCardIdChange={setEditTxCardId} cards={cards} onSaveCard={saveCard} />
-                            )}
-                            {editTxPayMethod === "other" && (
-                              <FocusInput value={editTxPayNote} onChange={(e) => setEditTxPayNote(e.target.value)} placeholder="Who paid or how?" />
-                            )}
-                          </div>
-                          {editTxCycleDate && (
-                            <div className="rounded-lg px-2.5 py-2 flex items-center justify-between gap-2" style={{ background: T.ink, border: `1px solid ${T.line}` }}>
-                              <p className="text-[10px]" style={{ color: T.mute }}>
-                                Settles: <span style={{ color: T.text }}>{financials.recurring?.find((r) => r.id === tx.recurringId)?.name ?? "a deleted recurring item"}</span> · {fmtDate(editTxCycleDate)}
-                              </p>
-                              <button
-                                type="button"
-                                onClick={() => setEditTxCycleDate(null)}
-                                aria-label="Detach this transaction from its recurring cycle"
-                                className="text-[10px] font-semibold px-2 py-1 rounded-lg transition-all hover:opacity-80 flex-shrink-0"
-                                style={{ color: T.coral, border: `1px solid ${T.coral}40` }}
-                              >
-                                Detach
-                              </button>
-                            </div>
-                          )}
-                          {editTxEfAmount != null ? (
-                            <div className="rounded-lg px-2.5 py-2 space-y-1.5" style={{ background: T.ink, border: `1px solid ${T.line}` }}>
-                              <div className="flex items-center justify-between gap-2">
-                                <p className="text-[10px]" style={{ color: T.mute }}>Emergency fund</p>
-                                <button type="button" onClick={() => setEditTxEfAmount(null)} aria-label="Detach this transaction from the emergency fund" className="text-[10px] font-semibold px-2 py-1 rounded-lg transition-all hover:opacity-80 flex-shrink-0" style={{ color: T.coral, border: `1px solid ${T.coral}40` }}>Detach</button>
-                              </div>
-                              <MoneyInput value={editTxEfAmount} onChange={setEditTxEfAmount} placeholder="0" />
-                              <p className="text-[9px]" style={{ color: T.mute }}>Positive adds to it, negative draws from it.</p>
-                            </div>
-                          ) : (
-                            <button type="button" onClick={() => setEditTxEfAmount(editTxAmt)} className="text-[10px] font-medium px-2.5 py-1.5 rounded-lg transition-all hover:opacity-80" style={{ color: T.jade, border: `1px solid ${T.jade}40` }}>+ Link to Emergency fund</button>
-                          )}
-                          <div>
-                            <Label htmlFor="edit-tx-debt">Linked debt</Label>
-                            <select
-                              id="edit-tx-debt"
-                              value={editTxDebtId ?? ""}
-                              onChange={(e) => {
-                                const id = e.target.value || undefined;
-                                setEditTxDebtId(id);
-                                // Phase 2.6.4 step 3: clearing the link also
-                                // resets debtAdjustment -- a correction
-                                // pointed at nothing is meaningless.
-                                if (!id) setEditTxDebtAdjustment(undefined);
-                              }}
-                              className="w-full rounded-lg px-2 py-1.5 text-[10px]"
-                              style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
-                            >
-                              <option value="">Not linked</option>
-                              {financials.debts.map((d) => (
-                                <option key={d.id} value={d.id}>{d.name}</option>
-                              ))}
-                            </select>
-                          </div>
-                          {editTxDebtId && (
-                            editTxDebtAdjustment != null ? (
-                              <div className="rounded-lg px-2.5 py-2 space-y-1.5" style={{ background: T.ink, border: `1px solid ${T.line}` }}>
-                                <div className="flex items-center justify-between gap-2">
-                                  <p className="text-[10px]" style={{ color: T.mute }}>Debt correction</p>
-                                  <button type="button" onClick={() => setEditTxDebtAdjustment(null)} aria-label="Detach this debt correction" className="text-[10px] font-semibold px-2 py-1 rounded-lg transition-all hover:opacity-80 flex-shrink-0" style={{ color: T.coral, border: `1px solid ${T.coral}40` }}>Detach</button>
-                                </div>
-                                <MoneyInput value={editTxDebtAdjustment} onChange={setEditTxDebtAdjustment} placeholder="0" />
-                                <p className="text-[9px]" style={{ color: T.mute }}>Positive increases the debt, negative reduces it further.</p>
-                              </div>
-                            ) : (
-                              <button type="button" onClick={() => setEditTxDebtAdjustment("0")} className="text-[10px] font-medium px-2.5 py-1.5 rounded-lg transition-all hover:opacity-80" style={{ color: T.jade, border: `1px solid ${T.jade}40` }}>+ Add debt correction</button>
-                            )
-                          )}
-                          <div className="flex gap-2">
-                            <button onClick={() => saveEditTx(tx.id)} className="px-3 py-1.5 rounded-xl text-xs font-semibold hover:opacity-90" style={{ background: T.jade, color: T.ink }}>Save</button>
-                            <button onClick={() => setEditTxId(null)} className="px-3 py-1.5 rounded-xl text-xs hover:opacity-70" style={{ color: T.mute }}>Cancel</button>
-                          </div>
-                        </div>
-                      ) : (
                         <div
                           className="flex items-center justify-between rounded-xl px-3 py-2.5 group"
                           style={{ background: T.panelSoft, borderLeft: `3px solid ${b.color}` }}
@@ -1282,7 +1003,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                               {fmtCur(tx.amount, tx.currency ?? "USD")}
                             </span>
                             <button
-                              onClick={() => startEditTx(tx)}
+                              onClick={() => onEdit("transaction", tx.id)}
                               aria-label="Edit transaction"
                               className="opacity-70 md:opacity-0 md:group-hover:opacity-100 hover:!opacity-100 transition-opacity text-[10px] px-1.5 py-0.5 rounded"
                               style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
@@ -1295,7 +1016,6 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                             >✕</button>
                           </div>
                         </div>
-                      )}
                     </div>
                   );
                 })}
@@ -1366,133 +1086,9 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                       <div className="space-y-1.5">
                         {txs.sort((a, b) => b.date.localeCompare(a.date)).map((tx) => {
                           const b = TX_BUCKETS.find((b) => b.value === tx.bucket)!;
-                          const isEditingTx = editTxId === tx.id;
                           const divergence = cycleMonthDivergence(tx, financials.recurring ?? []);
                           return (
                             <div key={tx.id}>
-                              {isEditingTx ? (
-                                <div className="rounded-lg p-3 space-y-2" style={{ background: T.panelSoft, border: `1px solid ${T.jade}50` }}>
-                                  <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.jade }}>Edit entry</p>
-                                  <div className="grid grid-cols-2 gap-2">
-                                    <div>
-                                      <Label htmlFor="edit-tx-amount">Amount</Label>
-                                      <MoneyInput id="edit-tx-amount" value={editTxAmt} onChange={setEditTxAmt} placeholder="0" />
-                                    </div>
-                                    <div>
-                                      <Label htmlFor="edit-tx-date">Date</Label>
-                                      <DateFieldDMY id="edit-tx-date" value={editTxDate} onChange={setEditTxDate} />
-                                    </div>
-                                  </div>
-                                  <div>
-                                    <Label htmlFor="edit-tx-desc">Description</Label>
-                                    <FocusInput id="edit-tx-desc" value={editTxDesc} onChange={(e) => setEditTxDesc(e.target.value)} />
-                                  </div>
-                                  <div className="grid grid-cols-2 gap-1.5">
-                                    {TX_BUCKETS.map((bkt) => (
-                                      <button key={bkt.value} onClick={() => setEditTxBucket(bkt.value)}
-                                        className="py-1.5 rounded-lg text-[10px] font-medium transition-all"
-                                        style={{ background: editTxBucket === bkt.value ? bkt.color + "22" : T.ink, border: `1px solid ${editTxBucket === bkt.value ? bkt.color : T.line}`, color: editTxBucket === bkt.value ? bkt.color : T.mute }}>
-                                        {bkt.icon} {bkt.label}
-                                      </button>
-                                    ))}
-                                  </div>
-                                  <select
-                                    value={editTxCategory}
-                                    onChange={(e) => setEditTxCategory(e.target.value)}
-                                    aria-label="Category"
-                                    className="w-full rounded-lg px-2 py-1.5 text-[10px]"
-                                    style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
-                                  >
-                                    <option value="">No category</option>
-                                    {allCategories(financials.customCategories).map((c) => (
-                                      <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
-                                    ))}
-                                  </select>
-                                  <CurrencyToggle value={editTxCurrency} onChange={setEditTxCurrency} />
-                                  <div>
-                                    <div className="grid grid-cols-3 gap-1.5 mb-1.5">
-                                      {PM_OPTIONS.map((p) => (
-                                        <button key={p.value} type="button"
-                                          onClick={() => { setEditTxPayMethod(p.value); setEditTxCardId(null); }}
-                                          className="py-1.5 rounded-lg text-[10px] font-medium transition-all"
-                                          style={{ background: editTxPayMethod === p.value ? T.jade + "22" : T.ink, border: `1px solid ${editTxPayMethod === p.value ? T.jade : T.line}`, color: editTxPayMethod === p.value ? T.jade : T.mute }}
-                                        >{p.icon} {p.label}</button>
-                                      ))}
-                                    </div>
-                                    {editTxPayMethod === "card" && (
-                                      <CardPicker cardId={editTxCardId} onCardIdChange={setEditTxCardId} cards={cards} onSaveCard={saveCard} />
-                                    )}
-                                    {editTxPayMethod === "other" && (
-                                      <FocusInput value={editTxPayNote} onChange={(e) => setEditTxPayNote(e.target.value)} placeholder="Who paid or how?" />
-                                    )}
-                                  </div>
-                                  {editTxCycleDate && (
-                                    <div className="rounded-lg px-2.5 py-2 flex items-center justify-between gap-2" style={{ background: T.ink, border: `1px solid ${T.line}` }}>
-                                      <p className="text-[10px]" style={{ color: T.mute }}>
-                                        Settles: <span style={{ color: T.text }}>{financials.recurring?.find((r) => r.id === tx.recurringId)?.name ?? "a deleted recurring item"}</span> · {fmtDate(editTxCycleDate)}
-                                      </p>
-                                      <button
-                                        type="button"
-                                        onClick={() => setEditTxCycleDate(null)}
-                                        aria-label="Detach this transaction from its recurring cycle"
-                                        className="text-[10px] font-semibold px-2 py-1 rounded-lg transition-all hover:opacity-80 flex-shrink-0"
-                                        style={{ color: T.coral, border: `1px solid ${T.coral}40` }}
-                                      >
-                                        Detach
-                                      </button>
-                                    </div>
-                                  )}
-                                  {editTxEfAmount != null ? (
-                                    <div className="rounded-lg px-2.5 py-2 space-y-1.5" style={{ background: T.ink, border: `1px solid ${T.line}` }}>
-                                      <div className="flex items-center justify-between gap-2">
-                                        <p className="text-[10px]" style={{ color: T.mute }}>Emergency fund</p>
-                                        <button type="button" onClick={() => setEditTxEfAmount(null)} aria-label="Detach this transaction from the emergency fund" className="text-[10px] font-semibold px-2 py-1 rounded-lg transition-all hover:opacity-80 flex-shrink-0" style={{ color: T.coral, border: `1px solid ${T.coral}40` }}>Detach</button>
-                                      </div>
-                                      <MoneyInput value={editTxEfAmount} onChange={setEditTxEfAmount} placeholder="0" />
-                                      <p className="text-[9px]" style={{ color: T.mute }}>Positive adds to it, negative draws from it.</p>
-                                    </div>
-                                  ) : (
-                                    <button type="button" onClick={() => setEditTxEfAmount(editTxAmt)} className="text-[10px] font-medium px-2.5 py-1.5 rounded-lg transition-all hover:opacity-80" style={{ color: T.jade, border: `1px solid ${T.jade}40` }}>+ Link to Emergency fund</button>
-                                  )}
-                                  <div>
-                                    <Label htmlFor="edit-tx-debt-2">Linked debt</Label>
-                                    <select
-                                      id="edit-tx-debt-2"
-                                      value={editTxDebtId ?? ""}
-                                      onChange={(e) => {
-                                        const id = e.target.value || undefined;
-                                        setEditTxDebtId(id);
-                                        if (!id) setEditTxDebtAdjustment(undefined);
-                                      }}
-                                      className="w-full rounded-lg px-2 py-1.5 text-[10px]"
-                                      style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
-                                    >
-                                      <option value="">Not linked</option>
-                                      {financials.debts.map((d) => (
-                                        <option key={d.id} value={d.id}>{d.name}</option>
-                                      ))}
-                                    </select>
-                                  </div>
-                                  {editTxDebtId && (
-                                    editTxDebtAdjustment != null ? (
-                                      <div className="rounded-lg px-2.5 py-2 space-y-1.5" style={{ background: T.ink, border: `1px solid ${T.line}` }}>
-                                        <div className="flex items-center justify-between gap-2">
-                                          <p className="text-[10px]" style={{ color: T.mute }}>Debt correction</p>
-                                          <button type="button" onClick={() => setEditTxDebtAdjustment(null)} aria-label="Detach this debt correction" className="text-[10px] font-semibold px-2 py-1 rounded-lg transition-all hover:opacity-80 flex-shrink-0" style={{ color: T.coral, border: `1px solid ${T.coral}40` }}>Detach</button>
-                                        </div>
-                                        <MoneyInput value={editTxDebtAdjustment} onChange={setEditTxDebtAdjustment} placeholder="0" />
-                                        <p className="text-[9px]" style={{ color: T.mute }}>Positive increases the debt, negative reduces it further.</p>
-                                      </div>
-                                    ) : (
-                                      <button type="button" onClick={() => setEditTxDebtAdjustment("0")} className="text-[10px] font-medium px-2.5 py-1.5 rounded-lg transition-all hover:opacity-80" style={{ color: T.jade, border: `1px solid ${T.jade}40` }}>+ Add debt correction</button>
-                                    )
-                                  )}
-                                  <div className="flex gap-2">
-                                    <button onClick={() => saveEditTx(tx.id)} className="px-3 py-1.5 rounded-lg text-xs font-semibold hover:opacity-90" style={{ background: T.jade, color: T.ink }}>Save</button>
-                                    <button onClick={() => setEditTxId(null)} className="px-3 py-1.5 rounded-lg text-xs hover:opacity-70" style={{ color: T.mute }}>Cancel</button>
-                                  </div>
-                                </div>
-                              ) : (
                                 <div
                                   className="flex items-center justify-between rounded-lg px-2.5 py-2 group"
                                   style={{ background: T.panelSoft, borderLeft: `2px solid ${b.color}` }}
@@ -1509,7 +1105,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                                   <div className="flex items-center gap-1.5 flex-shrink-0">
                                     <span className="text-xs tabular-nums font-medium" style={{ color: b.color }}>{fmtCur(tx.amount, tx.currency ?? "USD")}</span>
                                     <button
-                                      onClick={() => startEditTx(tx)}
+                                      onClick={() => onEdit("transaction", tx.id)}
                                       aria-label="Edit transaction"
                                       className="opacity-70 md:opacity-0 md:group-hover:opacity-100 hover:!opacity-100 transition-opacity text-[10px] px-1.5 py-0.5 rounded"
                                       style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
@@ -1522,7 +1118,6 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                                     >✕</button>
                                   </div>
                                 </div>
-                              )}
                             </div>
                           );
                         })}
