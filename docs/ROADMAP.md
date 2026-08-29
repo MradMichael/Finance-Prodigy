@@ -392,7 +392,7 @@ Users are on inconsistent Lebanese mobile networks.
 
 - Installable to a phone home screen.
 - Offline read of previously loaded data; queued write syncing on reconnection.
-- Deferred loading to reduce initial bundle. Current: 87.7 kB shared, 258 kB first load, all 14 screens in one non-route-split bundle.
+- Deferred loading to reduce initial bundle. Current (re-confirmed 2026-08-29, VER-02): 87.7 kB shared, 266 kB first load, all 14 screens in one non-route-split bundle.
 
 **Conflict warning.** Queued offline writes interact with sync conflict resolution. Report the interaction before implementing.
 
