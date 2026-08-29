@@ -1,4 +1,4 @@
-import type { LocalFinancials, BudgetRuleKey, StoredDebt, StoredTransaction, StoredRecurring, Currency } from "./localData";
+import type { LocalFinancials, BudgetRuleKey, StoredDebt, StoredTransaction, StoredRecurring, TrackedBalance, Currency } from "./localData";
 import { historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, valueForMonth, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, DEFAULT_LBP_RATE, derivedEfBalance, derivedDebtBalance, activeTransactions, parseLocalDate, isRecurringActive } from "./localData";
 import { simulateDebtPayoff, type DebtInput } from "./debtEngine";
 
@@ -117,6 +117,56 @@ export function dateFmt(d: Date) {
 function historizedRecurAsOf(r: StoredRecurring, monthStart: Date): Date {
   if (isRecurringActive(r, monthStart)) return monthStart;
   return new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0); // last day of monthStart's month
+}
+
+/**
+ * The core "expected" arithmetic balanceChecks below already computed
+ * inline: starting balance minus every relevant transaction (already
+ * gathered and date-filtered by the caller) since. Extracted so it has
+ * exactly one implementation, callable from a pre-grouped `relevantTx`
+ * list (this function, used by computeDashboard's own hot loop, which
+ * groups all tracked balances' transactions once via a Map to stay O(n)
+ * total) or from scratch (trackedBalanceExpected below, for a one-off
+ * caller with no grouping to reuse).
+ */
+function expectedFromRelevantTx(
+  tb: Pick<TrackedBalance, "startingBalance" | "startingDate" | "currency">,
+  relevantTx: StoredTransaction[],
+  toUSDForMonth: (amount: number, currency: string | undefined, ym: string) => number,
+): number {
+  // INCOME transactions received on this same payment method put money IN,
+  // so they subtract from "spent" (raising the expected balance) instead
+  // of adding to it like every other bucket does.
+  const spentOf = relevantTx.reduce((s, t) => s + (t.bucket === "INCOME" ? -1 : 1) * toUSDForMonth(t.amount, t.currency, t.date.slice(0, 7)), 0);
+  const startingUSD = toUSDForMonth(tb.startingBalance, tb.currency, tb.startingDate.slice(0, 7));
+  return Math.round((startingUSD - spentOf) * 100) / 100;
+}
+
+/**
+ * AUD-02 (external audit, 2026-08-28): a single tracked balance's live
+ * "expected" figure, computed standalone from a full LocalFinancials --
+ * for a one-off caller outside computeDashboard's own hot loop.
+ * ImportStatement.tsx's commit() uses this to compute a real
+ * expectedAtCheckUSD from the transactions actually being imported,
+ * instead of trusting the bank statement's raw closing balance
+ * unconditionally -- correct only if every statement row was imported,
+ * not true the moment a "possible duplicate" row is left unchecked. Same
+ * formula computeDashboard's own balanceChecks uses (expectedFromRelevantTx
+ * above), so the two can't independently drift.
+ */
+export function trackedBalanceExpected(
+  tb: Pick<TrackedBalance, "paymentMethod" | "cardId" | "startingBalance" | "startingDate" | "currency">,
+  data: LocalFinancials,
+): number {
+  const lbpRate = data.lbpRate ?? DEFAULT_LBP_RATE;
+  const toUSDForMonth = (amount: number, currency: string | undefined, ym: string) =>
+    currency === "LBP" ? amount / valueForMonth(data.lbpRateHistory, ym, lbpRate) : amount;
+  const key = `${tb.paymentMethod}|${tb.paymentMethod === "card" ? (tb.cardId ?? "") : ""}`;
+  const relevantTx = activeTransactions(data.transactions ?? []).filter((t) => {
+    const tKey = `${t.paymentMethod ?? ""}|${t.paymentMethod === "card" ? (t.cardId ?? "") : ""}`;
+    return tKey === key && t.date >= tb.startingDate;
+  });
+  return expectedFromRelevantTx(tb, relevantTx, toUSDForMonth);
 }
 
 /**
@@ -807,12 +857,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   const balanceChecks: DashboardPayload["balanceChecks"] = data.trackedBalances.map((tb) => {
     const key = `${tb.paymentMethod}|${tb.paymentMethod === "card" ? (tb.cardId ?? "") : ""}`;
     const relevantTx = (txByPaymentKey.get(key) ?? []).filter((t) => t.date >= tb.startingDate);
-    // INCOME transactions received on this same payment method put money
-    // IN, so they subtract from "spent" (raising the expected balance)
-    // instead of adding to it like every other bucket does.
-    const spentOf = (txs: typeof relevantTx) => txs.reduce((s, t) => s + (t.bucket === "INCOME" ? -1 : 1) * toUSDForMonth(t.amount, t.currency, t.date.slice(0, 7)), 0);
-    const startingUSD = toUSDForMonth(tb.startingBalance, tb.currency, tb.startingDate.slice(0, 7));
-    const expected = Math.round((startingUSD - spentOf(relevantTx)) * 100) / 100;
+    const expected = expectedFromRelevantTx(tb, relevantTx, toUSDForMonth);
     const actual = tb.actualBalance != null
       ? toUSDForMonth(tb.actualBalance, tb.currency, (tb.actualBalanceDate ?? tb.startingDate).slice(0, 7))
       : null;

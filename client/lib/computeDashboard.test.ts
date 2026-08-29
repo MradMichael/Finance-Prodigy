@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { computeDashboard, computeHoldingsByCurrency } from "./computeDashboard";
-import { DEFAULT_DATA, buildDebtPaymentTx, type LocalFinancials, type BudgetRuleKey, type StoredDebt } from "./localData";
+import { computeDashboard, computeHoldingsByCurrency, trackedBalanceExpected } from "./computeDashboard";
+import { DEFAULT_DATA, buildDebtPaymentTx, type LocalFinancials, type BudgetRuleKey, type StoredDebt, type StoredTransaction } from "./localData";
 
 function makeData(overrides: Partial<LocalFinancials> = {}): LocalFinancials {
   return {
@@ -648,6 +648,56 @@ describe("balance checks", () => {
     expect(check.discrepancy).toBe(0);
     expect(check.changeSinceCheck).toBe(-15);
     expect(check.expected).toBe(65);
+  });
+});
+
+// AUD-02 (external audit, 2026-08-28): trackedBalanceExpected is the SAME
+// formula balanceChecks above already computes inline -- extracted so a
+// second caller (ImportStatement.tsx's commit()) can compute a real
+// expectedAtCheckUSD from the actual resulting ledger instead of trusting
+// the bank's raw closing balance unconditionally, which is only correct if
+// every statement row actually got imported (not true the moment a
+// "possible duplicate" row is left unchecked). These tests both prove the
+// extracted function matches balanceChecks' own live `expected` figure
+// exactly (same formula, single source of truth) and exercise it directly
+// the way ImportStatement.tsx will.
+describe("trackedBalanceExpected (AUD-02)", () => {
+  it("matches balanceChecks' own live expected figure for the same inputs -- same formula, not a second independent one", () => {
+    const data = makeData({
+      trackedBalances: [{ id: "b1", name: "Wallet", paymentMethod: "cash", startingBalance: 100, startingDate: "2026-07-01", currency: "USD" }],
+      transactions: [{ id: "t1", amount: 20, currency: "USD", bucket: "WANTS", description: "Coffee", date: "2026-07-05", paymentMethod: "cash" }],
+    });
+    const result = computeDashboard(data);
+    expect(trackedBalanceExpected(data.trackedBalances[0], data)).toBe(result.balanceChecks[0].expected);
+    expect(trackedBalanceExpected(data.trackedBalances[0], data)).toBe(80);
+  });
+
+  it("excludes a soft-deleted transaction, same as balanceChecks", () => {
+    const data = makeData({
+      trackedBalances: [{ id: "b1", name: "Wallet", paymentMethod: "cash", startingBalance: 100, startingDate: "2026-07-01", currency: "USD" }],
+      transactions: [{ id: "t1", amount: 20, currency: "USD", bucket: "WANTS", description: "Coffee", date: "2026-07-05", paymentMethod: "cash", deletedAt: "2026-07-06T00:00:00.000Z" }],
+    });
+    expect(trackedBalanceExpected(data.trackedBalances[0], data)).toBe(100); // deleted tx has no effect
+  });
+
+  it("the exact AUD-02 case: a row excluded from import correctly produces a lower expected than the bank's raw closing balance", () => {
+    // Simulates ImportStatement.tsx's commit(): the bank's statement closed
+    // at $500, but the user left one $50 "possible duplicate" row
+    // unchecked, so only $450 of transactions actually made it into the
+    // ledger. The OLD behavior set expectedAtCheckUSD to the bank's raw
+    // $500 unconditionally -- always a clean match, regardless of what was
+    // actually imported. The fix: expectedAtCheckUSD should be computed
+    // from what was ACTUALLY imported, correctly landing below $500.
+    const existingTB = { id: "b1", name: "Visa", paymentMethod: "card" as const, cardId: "c1", startingBalance: 1000, startingDate: "2026-06-01", currency: "USD" as const };
+    const importedRows: StoredTransaction[] = [
+      { id: "t1", amount: 450, currency: "USD", bucket: "WANTS", description: "Included rows", date: "2026-07-10", paymentMethod: "card", cardId: "c1" },
+      // The $50 "possible duplicate" row the user left unchecked is
+      // deliberately NOT in this array -- it never made it into the ledger.
+    ];
+    const data = makeData({ trackedBalances: [existingTB], transactions: importedRows });
+    const realExpected = trackedBalanceExpected(existingTB, data);
+    expect(realExpected).toBe(550); // 1000 - 450, NOT the bank's raw $500-spent closing claim
+    expect(realExpected).not.toBe(1000 - 500); // the bank's own implied total, which the old code trusted unconditionally
   });
 });
 
