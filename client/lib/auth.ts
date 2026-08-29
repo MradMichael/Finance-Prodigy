@@ -255,7 +255,10 @@ export async function signIn(
     // password to actually decrypt this account's real stored data before
     // trusting it (verifyLegacyPassword returns null only when there's no
     // stored data yet to check against — the one case with nothing at stake).
-    const quickCheck = legacyHashPw(password) === user.pwHash;
+    // AUD-16 (external audit, 2026-08-28): plain === short-circuits at the
+    // first mismatched character; constantTimeEqual is what every other
+    // secret comparison in this file already uses.
+    const quickCheck = constantTimeEqual(legacyHashPw(password), user.pwHash);
     if (!quickCheck) return { ok: false, error: "Incorrect password." };
     const { verifyLegacyPassword } = await import("./crypto");
     const verified = await verifyLegacyPassword(password, user.id);

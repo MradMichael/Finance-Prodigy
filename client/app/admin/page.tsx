@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { getSession, ensureFirstUserIsAdmin, listUsers } from "../../lib/auth";
+import { getSession, ensureFirstUserIsAdmin, isAdmin, listUsers } from "../../lib/auth";
 import { getLastSyncTime } from "../../lib/syncService";
 import { useTheme } from "../../contexts/ThemeContext";
 import { Signet } from "../../components/EssaBrand";
@@ -120,8 +120,9 @@ function Row({ label, value, mono = false, sensitive = false, copyable = false }
   );
 }
 
-// Reachable by any signed-in user -- not gated to one specific account.
-// Nothing below is cross-user data or a real credential: "Registered
+// Reachable only by a signed-in user whose OWN account is marked isAdmin
+// (2026-08-29 fix -- audit finding AUD-01). Nothing below is cross-user
+// data or a real credential in the sense of a global leak: "Registered
 // users" only lists accounts signed up on THIS browser (local
 // getUsers(), never a server-side user table); this page never reads a
 // real DB connection string either (see the removed NEXT_PUBLIC_DB_URL
@@ -129,13 +130,19 @@ function Row({ label, value, mono = false, sensitive = false, copyable = false }
 // only, since any NEXT_PUBLIC_ var is inlined as a literal into this
 // same public bundle at build time regardless); and everything else
 // (health check, rate limits, PBKDF2 iteration count, theme names) is
-// operational trivia. A per-account email gate here protected against
-// nothing a signed-in user couldn't already see for their own browser
-// via devtools, while adding a client-side-only check that ships to the
-// public bundle regardless (a runtime check can't be proven false at
-// build time, so it can't be dead-code-eliminated) and a real deploy
-// dependency (a misconfigured admin-email env var). Removed 2026-08-18
-// -- see docs/AUDIT_2026-08.md, "admin gating" in Amendment 3.
+// operational trivia, not a secret. A hardcoded-admin-email gate was
+// correctly removed 2026-08-18 -- it protected nothing a signed-in user
+// couldn't already see for their own account via devtools, while adding
+// a real deploy dependency (a misconfigured env var) and PII in config.
+// But this app's own architecture explicitly supports several distinct
+// people sharing one browser (isAdmin/listUsers exist BECAUSE of that),
+// and removing the bad gate left NO gate at all -- any signed-in
+// co-user, admin or not, could see every other co-user's email/signup
+// date/hasData on that shared device. isAdmin already exists and was
+// already being read here (for the badge below) without being enforced
+// as an access check. Gating on it closes that gap using a mechanism
+// this codebase already trusts, without reintroducing the hardcoded-
+// email problem the 2026-08-18 fix correctly removed.
 export default function AdminPage() {
   return <AdminPageContent />;
 }
@@ -152,9 +159,11 @@ function AdminPageContent() {
   useEffect(() => {
     const s = getSession();
     if (!s) { router.replace("/"); return; }
-    // Unrelated to the signed-in check above -- kept only to back the
-    // per-row "Admin" badge in the Registered users list below.
+    // First-run migration for accounts created before isAdmin existed --
+    // must run before the isAdmin check below, so a legitimate first-ever
+    // user isn't locked out of their own admin page on first visit.
     ensureFirstUserIsAdmin();
+    if (!isAdmin(s.userId)) { router.replace("/"); return; }
 
     // Build user rows. essa_last_sync is a single browser-wide key, not
     // namespaced per account — attaching it to every row would misleadingly

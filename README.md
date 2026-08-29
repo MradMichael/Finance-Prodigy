@@ -30,15 +30,22 @@ Finance-Prodigy/
 │   │   ├── recover/                   # Forgot-password flow (recovery code, see Security model)
 │   │   ├── profile/                   # Account settings, theme picker, sync push/pull, data export, analytics opt-in
 │   │   ├── about/, terms/, privacy/, security/  # FAQ, Terms of Service, Privacy Policy, Trust & Security
-│   │   └── admin/                     # Diagnostics: API health, registered users, sync status — gated out of production builds
+│   │   └── admin/                     # Diagnostics: API health, registered users, sync status — gated to admin accounts only (see Security model)
 │   ├── lib/
 │   │   ├── auth.ts                    # Sign-up/in/out, password hashing, recovery, sync-relink token
 │   │   ├── crypto.ts                  # AES-GCM encryption + the DEK-wrapping scheme behind recovery codes
 │   │   ├── localData.ts               # Data types + encrypted localStorage load/save
 │   │   ├── computeDashboard.ts        # Pure function: your data → everything the dashboard shows
 │   │   ├── syncService.ts             # Push/pull/relink to the Express API (relative /api/* paths)
-│   │   └── analytics.ts               # Opt-in, first-party-only product analytics (off by default)
-│   ├── components/                    # FinancialDashboard, InputPanel, OnboardingChecklist, EssaBrand, ThemeContext
+│   │   ├── analytics.ts               # Opt-in, first-party-only product analytics (off by default)
+│   │   └── statementImport/           # Bank-statement PDF import: text extraction, one bank's parser, category guessing
+│   ├── components/
+│   │   ├── screens/                   # One component per screen (Budget, Goals, Debts, Transactions, Statistics, Currency, Wishlist, …)
+│   │   ├── shell/                     # TopBar, Sidebar, BottomNav, SyncDot — the app chrome around each screen
+│   │   ├── charts/                    # Donut and other chart primitives
+│   │   └── FinancialDashboard.tsx, InputPanel.tsx, OnboardingChecklist.tsx, EssaBrand.tsx, …
+│   ├── contexts/
+│   │   └── ThemeContext.tsx           # The 6-theme system (light/dark-aware, per-account persisted)
 │   ├── public/                        # manifest.webmanifest, sw.js, icons — PWA/installable support
 │   └── next.config.js                 # Proxies /api/* to the Express server (see API_URL below)
 ├── server/                        # Express API — sync + analytics warehouse only
@@ -113,7 +120,7 @@ On Neon specifically: both URLs come from the same project's Connect panel — `
 
 ## Deployment
 
-**Code-side readiness (everything that doesn't require an external account) is done:** input validation, rate limiting, security headers, structured logging, client-side error boundaries, an admin page that's compiled out of production entirely, Terms of Service + Privacy Policy + a Trust & Security page, PWA installability, and a full green run of `tsc --noEmit` + the test suite + production builds for both client and server (Postgres migrations included) against a live Neon database. See [`client/app/security/page.tsx`](client/app/security/page.tsx) for the plain-language version of what is and isn't protected.
+**Code-side readiness (everything that doesn't require an external account) is done:** input validation, rate limiting, security headers, structured logging, client-side error boundaries, an admin diagnostics page gated to admin accounts only, Terms of Service + Privacy Policy + a Trust & Security page, PWA installability, and a full green run of `tsc --noEmit` + the test suite + production builds for both client and server (Postgres migrations included) against a live Neon database. See [`client/app/security/page.tsx`](client/app/security/page.tsx) for the plain-language version of what is and isn't protected.
 
 **Verified against a real cloud database (Neon):**
 - `cd server && npm install && npm run build` (`prisma generate && tsc`) builds clean standalone.
@@ -121,7 +128,7 @@ On Neon specifically: both URLs come from the same project's Connect panel — `
 - `npm run dev` against Neon's pooled connection, then real `/api/sync/push`, `/pull`, `/relink`, and `DELETE` round trips against it (verified with throwaway test records, cleaned up after).
 - `cd client && npm run build && API_URL=http://localhost:4000 npm start` — the **production** build (not `next dev`) serves correctly and `next.config.js`'s `/api/*` rewrite honors `API_URL` as documented.
 - CORS: the server always responds with the configured `CLIENT_ORIGIN` value in `Access-Control-Allow-Origin`, regardless of the request's actual `Origin` header — this is what makes a browser reject responses to any page that isn't running at `CLIENT_ORIGIN`, even though a non-browser client like `curl` won't visibly enforce that itself.
-- `/admin` returns a genuine 404 with no database/host strings anywhere in the response when built with `NODE_ENV=production`, confirmed by actually running `next build && next start` and requesting it.
+- `/admin` redirects any signed-in user whose account isn't marked `isAdmin` (and any signed-out visitor) back to `/`, confirmed against a real production build (`next build && next start`) with a non-admin session.
 
 **Not yet verified — requires an actual account/host, so this is deliberately scoped out until you want to commit to one:**
 - Deploying the client to Vercel (or similar) and the server to Railway/Render (or similar) so the API itself is reachable from another device, not just `localhost`. The database side of that is already solved by Neon (or any Postgres host) being reachable over the internet — this remaining gap is purely about hosting the Express process itself.
@@ -139,7 +146,7 @@ On Neon specifically: both URLs come from the same project's Connect panel — `
 - **Sync auth:** push/pull require a bearer token derived from your password (PBKDF2, independent of the encryption key). The server stores only a hash of it — never the token, never your password. The first push for an email registers the hash (trust-on-first-use); every push/pull after that must match.
 - **Password reset re-links sync automatically.** Resetting your password (`/recover`) changes the sync token, which used to leave the server stuck expecting the old one until the `user_sync` row was cleared by hand. A second, independent token derived from your recovery code (`POST /api/sync/relink`) now proves ownership across the reset instead — the old recovery code is exactly what `/recover` already required you to type in. This only works if the account had synced (pushed) at least once before the reset, since that's the only point a recovery token gets registered server-side in the first place; accounts that had never synced simply register fresh on their next push, same as a brand-new account.
 - **Deleting your account also purges the server-side copy.** `DELETE /api/sync` (called automatically from Profile → Delete account) removes the `user_sync` backup row and everything derived from it in the analytics warehouse, not just your local browser data.
-- **API hardening:** every request body is validated with zod (malformed requests get a 422, not a crash); `/api/sync/*` and `/api/auth/*` are rate-limited; security headers are set via `helmet`; the admin diagnostics page is compiled out of production builds entirely (`notFound()` when `NODE_ENV === "production"`) rather than just being link-hidden.
+- **API hardening:** every request body is validated with zod (malformed requests get a 422, not a crash); `/api/sync/*` and `/api/auth/*` are rate-limited; security headers are set via `helmet`; the admin diagnostics page redirects any signed-in user whose own account isn't marked `isAdmin` (and any signed-out visitor) rather than just being link-hidden.
 - **Cross-device signup collisions:** there's no real server-side user registry (see Roadmap below), so `GET /api/auth/check-email` is an interim, narrower check — it can only tell you "this email has synced before," which is enough to warn someone signing up with an email that already has data elsewhere before they invest in an account that'll conflict with it.
 
 ---
@@ -159,7 +166,7 @@ npm run test:watch    # watch mode
 npm run test:coverage # with coverage report
 ```
 
-Vitest, covering the money-math engines and security-critical code: `computeDashboard.ts` (health score, budget pace/rollover, debt plan, net worth, balance reconciliation), `debtEngine.ts` (Snowball/Avalanche simulation), `localData.ts`'s date-math helpers, and `crypto.ts`/`auth.ts` (envelope encryption, password hashing, sign-up/in/recovery flows). No tests on the server side — see [`server/src/lib/normalizeSync.ts`](server/src/lib/normalizeSync.ts)'s fire-and-forget, DB-coupled nature for why that's a deliberate choice, not an oversight.
+Vitest, covering the money-math engines and security-critical code: `computeDashboard.ts` (health score, budget pace/rollover, debt plan, net worth, balance reconciliation — plus a timezone-isolated companion, `computeDashboard.tz.test.ts`, see below), `debtEngine.ts` (Snowball/Avalanche simulation, likewise split into a `.tz.test.ts` companion), `localData.ts`'s date-math helpers, `printReport.ts` and `statementImport/neoBankAudiParser.ts` (PDF report generation and bank-statement parsing), `crypto.ts`/`auth.ts`/`syncService.ts` (envelope encryption, password hashing, sign-up/in/recovery flows, push/pull), and — via `@testing-library/react` — real component-level tests (`app/admin/page.test.tsx`, `components/screens/StatisticsScreen.test.tsx`) for logic that can't be expressed as a pure function. A `.tz.test.ts` file exists specifically where a test needs `process.env.TZ` changed to reproduce a bug at all: V8/Node caches the resolved timezone per-process and doesn't reliably re-read the env var afterward, so those cases are isolated into their own file (Vitest's default per-file worker) rather than risk corrupting every other date-dependent test in a shared one. No tests on the server side — see [`server/src/lib/normalizeSync.ts`](server/src/lib/normalizeSync.ts)'s fire-and-forget, DB-coupled nature for why that's been the case so far; revisiting whether its pure transform functions specifically are worth testing is an open question, not settled here.
 
 `tsc --noEmit` and `npm run build` remain the other correctness checks.
 

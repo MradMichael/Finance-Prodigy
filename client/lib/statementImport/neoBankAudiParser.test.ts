@@ -128,6 +128,33 @@ describe("parseNeoStatement — unmatched refund", () => {
   });
 });
 
+// AUD-10 (external audit, 2026-08-28): a "REV..." row with the amount in
+// MONEY OUT instead of MONEY IN (a reversed refund -- money actually left
+// the account again) used to be silently dropped: isRefund(desc) matched,
+// then the code unconditionally `continue`d regardless of which column
+// actually held the amount, so this row never became a transaction, an
+// unmatched refund, or even counted toward unparsedAmountCount.
+describe("parseNeoStatement — reversed refund (moneyOut instead of moneyIn)", () => {
+  it("is accounted for as a real transaction, not silently dropped", () => {
+    const items = [
+      it_("DATE", X.DATE), it_("TRANSACTIONS", X.DESC), it_("MONEY OUT", X.OUT), it_("MONEY IN", X.IN), it_("BALANCE", X.BAL),
+      ...row("05/07/2026", ["REV Refund reversal MOULIN DOR"], "5.95", "-", "12.00"),
+    ];
+    const result = parseNeoStatement(items);
+    const total = result.transactions.length + result.unmatchedRefunds.length + result.unparsedAmountCount;
+    expect(total).toBeGreaterThan(0);
+    expect(result.transactions).toHaveLength(1);
+    expect(result.transactions[0].amount).toBe(5.95);
+    expect(result.unmatchedRefunds).toHaveLength(0); // it's a real charge, not a refund to net
+  });
+
+  it("a normal, correctly-formed REV refund (amount in moneyIn) still nets against a matching purchase as before", () => {
+    const result = parseNeoStatement(buildFixture());
+    expect(result.unmatchedRefunds).toHaveLength(0);
+    expect(result.transactions).toHaveLength(17); // unchanged from the existing describe block above
+  });
+});
+
 describe("parseStatementRows — DATE-column fallback", () => {
   it("merges a stray non-date item landing in the DATE column's x-range into the description instead of dropping it", () => {
     const items = [

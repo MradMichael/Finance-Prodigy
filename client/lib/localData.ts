@@ -910,7 +910,7 @@ export function fmtDate(iso: string | undefined | null): string {
 // compared as plain local dates. (nextOccurrence deliberately keeps the UTC
 // parse -- it extracts UTC day/month/year from `start` for DST-safe
 // month-increment arithmetic, not local comparison, so this fix doesn't apply there.)
-function parseLocalDate(iso: string): Date {
+export function parseLocalDate(iso: string): Date {
   return new Date(`${iso}T00:00:00`);
 }
 
@@ -1397,6 +1397,40 @@ export function buildGoalContributionTx(
     ...(opts.cardId ? { cardId: opts.cardId, cardLabel: opts.cardLabel } : {}),
     ...(opts.paymentMethod === "other" && opts.paymentNote ? { paymentNote: opts.paymentNote } : {}),
   };
+}
+
+/**
+ * AUD-05 (external audit, 2026-08-28) -- the ONE implementation of "what
+ * happens when you contribute to a goal": bumps currentAmount, sets
+ * achievedAt once (and only once) a contribution crosses the target (never
+ * cleared here -- a contribution only ever increases currentAmount, so
+ * there's no "un-achieving" case the way a full edit form's save has to
+ * handle), and builds the corresponding transaction via
+ * buildGoalContributionTx above. GoalsScreen.tsx's pay() and
+ * InputPanel.tsx's contributeToGoal() each independently reimplemented
+ * this -- the exact duplication class that already caused a real shipped
+ * bug (2334ea9: one of the two forgot to set achievedAt at all). Callers
+ * still own their own local form state (amount input, payment-method
+ * selection, success/reset UI) -- that genuinely differs per screen and
+ * isn't part of this function's job.
+ */
+export function applyGoalContribution(
+  goals: StoredGoal[], goalId: string, amount: number, lbpRate: number,
+  opts: { paymentMethod?: PaymentMethod; cardId?: string; cardLabel?: string; paymentNote?: string; date?: string } = {},
+): { goals: StoredGoal[]; transaction: StoredTransaction } | null {
+  const goal = goals.find((g) => g.id === goalId);
+  if (!goal) return null;
+  const updatedGoals = goals.map((g) => {
+    if (g.id !== goalId) return g;
+    const newAmount = roundMoney(g.currentAmount + amount);
+    return {
+      ...g,
+      currentAmount: newAmount,
+      achievedAt: newAmount >= g.targetAmount ? (g.achievedAt ?? new Date().toISOString().slice(0, 10)) : g.achievedAt,
+    };
+  });
+  const transaction = buildGoalContributionTx(goal, amount, lbpRate, opts);
+  return { goals: updatedGoals, transaction };
 }
 
 /**

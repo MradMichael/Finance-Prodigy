@@ -256,11 +256,17 @@ export function parseNeoStatement(items: PositionedTextItem[]): ParseResult {
     if (isRefund(desc)) {
       if (row.moneyIn !== null) {
         refunds.push({ date: row.date, description: desc, amount: row.moneyIn, normDesc: normalizeDescription(desc.replace(/^rev\s*/i, "")) });
+        continue;
       }
-      continue;
-    }
-
-    if (isTransfer(desc)) {
+      // AUD-10 (external audit, 2026-08-28): a "REV..." row with the
+      // amount in MONEY OUT instead of MONEY IN is a reversed refund --
+      // money actually left the account again, same direction as any
+      // other charge. Deliberately NOT `continue`d here (unlike the
+      // moneyIn branch above) -- falls through to the ordinary purchase
+      // path below instead of being silently dropped, which is what an
+      // unconditional continue used to do regardless of which column
+      // actually held the amount.
+    } else if (isTransfer(desc)) {
       if (row.moneyIn !== null) skippedTransferCount++;
       continue;
     }

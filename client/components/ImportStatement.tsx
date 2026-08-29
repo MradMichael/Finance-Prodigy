@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import type { LocalFinancials, StoredCard, StoredTransaction, TrackedBalance } from "../lib/localData";
 import { uid, todayISO, allCategories, matchCategoryRule, activeTransactions } from "../lib/localData";
+import { trackedBalanceExpected } from "../lib/computeDashboard";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, DateFieldDMY } from "./form/Primitives";
 import { extractPositionedText, TooManyPagesError, CancelledError, LoadTimeoutError } from "../lib/statementImport/pdfText";
@@ -194,19 +195,30 @@ export default function ImportStatement({
       // transaction logged in between as "already reflected," producing a
       // false mismatch or masking a real one).
       const balanceDate = closingBalanceDate ?? todayISO();
-      // The closing balance IS the expected total as of that date, by
-      // definition -- it's the bank's own tally after every transaction on
-      // this same statement, so there's nothing to reconstruct here the
-      // way a manual confirmation needs to (see updateActualBalance).
       const existingTB = financials.trackedBalances.find((tb) => tb.cardId === card.id);
       // Same as the transactions above -- hardcoded USD, no rate needed.
-      const tbPatch: TrackedBalance = existingTB
-        ? { ...existingTB, actualBalance: closingBalance, actualBalanceDate: balanceDate, expectedAtCheckUSD: closingBalance }
+      const tbBase: TrackedBalance = existingTB
+        ? { ...existingTB, actualBalance: closingBalance, actualBalanceDate: balanceDate }
         : {
             id: uid(), name: card.label, paymentMethod: "card", cardId: card.id,
             startingBalance: closingBalance, startingDate: balanceDate, currency: "USD",
-            actualBalance: closingBalance, actualBalanceDate: balanceDate, expectedAtCheckUSD: closingBalance,
+            actualBalance: closingBalance, actualBalanceDate: balanceDate,
           };
+      // AUD-02 (external audit, 2026-08-28): expectedAtCheckUSD used to be
+      // set to the bank's raw closing balance unconditionally -- correct
+      // ONLY if every statement row actually got imported. A row left
+      // unchecked (e.g. trusting the "possible duplicate" auto-detection,
+      // which can be wrong) is silently excluded from newTransactions
+      // while expectedAtCheckUSD kept claiming the full closing balance
+      // was already accounted for -- Balance Check, the one feature built
+      // to catch exactly this kind of gap, would report a guaranteed clean
+      // match regardless of whether one actually existed. Computed instead
+      // from what was ACTUALLY imported (trackedBalanceExpected, the same
+      // formula computeDashboard.ts's own balanceChecks uses), against a
+      // patched view of financials that includes the new transactions --
+      // an excluded row now correctly produces a real, visible discrepancy.
+      const patchedFinancials: LocalFinancials = { ...financials, transactions: patch.transactions! };
+      const tbPatch: TrackedBalance = { ...tbBase, expectedAtCheckUSD: trackedBalanceExpected(tbBase, patchedFinancials) };
       patch.trackedBalances = existingTB
         ? financials.trackedBalances.map((tb) => (tb.id === existingTB.id ? tbPatch : tb))
         : [...financials.trackedBalances, tbPatch];

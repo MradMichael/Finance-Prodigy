@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { computeDashboard, computeHoldingsByCurrency } from "./computeDashboard";
-import { DEFAULT_DATA, buildDebtPaymentTx, type LocalFinancials, type BudgetRuleKey, type StoredDebt } from "./localData";
+import { computeDashboard, computeHoldingsByCurrency, trackedBalanceExpected } from "./computeDashboard";
+import { DEFAULT_DATA, buildDebtPaymentTx, type LocalFinancials, type BudgetRuleKey, type StoredDebt, type StoredTransaction } from "./localData";
 
 function makeData(overrides: Partial<LocalFinancials> = {}): LocalFinancials {
   return {
@@ -651,6 +651,56 @@ describe("balance checks", () => {
   });
 });
 
+// AUD-02 (external audit, 2026-08-28): trackedBalanceExpected is the SAME
+// formula balanceChecks above already computes inline -- extracted so a
+// second caller (ImportStatement.tsx's commit()) can compute a real
+// expectedAtCheckUSD from the actual resulting ledger instead of trusting
+// the bank's raw closing balance unconditionally, which is only correct if
+// every statement row actually got imported (not true the moment a
+// "possible duplicate" row is left unchecked). These tests both prove the
+// extracted function matches balanceChecks' own live `expected` figure
+// exactly (same formula, single source of truth) and exercise it directly
+// the way ImportStatement.tsx will.
+describe("trackedBalanceExpected (AUD-02)", () => {
+  it("matches balanceChecks' own live expected figure for the same inputs -- same formula, not a second independent one", () => {
+    const data = makeData({
+      trackedBalances: [{ id: "b1", name: "Wallet", paymentMethod: "cash", startingBalance: 100, startingDate: "2026-07-01", currency: "USD" }],
+      transactions: [{ id: "t1", amount: 20, currency: "USD", bucket: "WANTS", description: "Coffee", date: "2026-07-05", paymentMethod: "cash" }],
+    });
+    const result = computeDashboard(data);
+    expect(trackedBalanceExpected(data.trackedBalances[0], data)).toBe(result.balanceChecks[0].expected);
+    expect(trackedBalanceExpected(data.trackedBalances[0], data)).toBe(80);
+  });
+
+  it("excludes a soft-deleted transaction, same as balanceChecks", () => {
+    const data = makeData({
+      trackedBalances: [{ id: "b1", name: "Wallet", paymentMethod: "cash", startingBalance: 100, startingDate: "2026-07-01", currency: "USD" }],
+      transactions: [{ id: "t1", amount: 20, currency: "USD", bucket: "WANTS", description: "Coffee", date: "2026-07-05", paymentMethod: "cash", deletedAt: "2026-07-06T00:00:00.000Z" }],
+    });
+    expect(trackedBalanceExpected(data.trackedBalances[0], data)).toBe(100); // deleted tx has no effect
+  });
+
+  it("the exact AUD-02 case: a row excluded from import correctly produces a lower expected than the bank's raw closing balance", () => {
+    // Simulates ImportStatement.tsx's commit(): the bank's statement closed
+    // at $500, but the user left one $50 "possible duplicate" row
+    // unchecked, so only $450 of transactions actually made it into the
+    // ledger. The OLD behavior set expectedAtCheckUSD to the bank's raw
+    // $500 unconditionally -- always a clean match, regardless of what was
+    // actually imported. The fix: expectedAtCheckUSD should be computed
+    // from what was ACTUALLY imported, correctly landing below $500.
+    const existingTB = { id: "b1", name: "Visa", paymentMethod: "card" as const, cardId: "c1", startingBalance: 1000, startingDate: "2026-06-01", currency: "USD" as const };
+    const importedRows: StoredTransaction[] = [
+      { id: "t1", amount: 450, currency: "USD", bucket: "WANTS", description: "Included rows", date: "2026-07-10", paymentMethod: "card", cardId: "c1" },
+      // The $50 "possible duplicate" row the user left unchecked is
+      // deliberately NOT in this array -- it never made it into the ledger.
+    ];
+    const data = makeData({ trackedBalances: [existingTB], transactions: importedRows });
+    const realExpected = trackedBalanceExpected(existingTB, data);
+    expect(realExpected).toBe(550); // 1000 - 450, NOT the bank's raw $500-spent closing claim
+    expect(realExpected).not.toBe(1000 - 500); // the bank's own implied total, which the old code trusted unconditionally
+  });
+});
+
 describe("net worth trend", () => {
   it("merges today's value into history, replacing any existing entry for the current month", () => {
     const data = makeData({
@@ -806,6 +856,14 @@ describe("goal edge cases", () => {
     expect(result.goals[0].projection.pctComplete).toBe(100);
     expect(Number.isNaN(result.goals[0].projection.pctComplete)).toBe(false);
   });
+
+  // AUD-03 (external audit, 2026-08-28): see computeDashboard.tz.test.ts --
+  // this specific case needs process.env.TZ changed, which V8/Node caches
+  // internally per-process and does NOT reliably un-cache even after
+  // deleting the env var afterward (confirmed directly) -- corrupts every
+  // other date-dependent test that runs later in the same worker if kept
+  // in this shared file. Isolated into its own file instead, so any
+  // timezone-cache corruption is contained to that file's own worker.
 
   it("an overdue goal shows 0 months remaining, not a phantom 1 (the div-by-zero floor leaking into display)", () => {
     const data = makeData({
@@ -997,6 +1055,80 @@ describe("sixMonthTrend current-month recurring — evaluated as of today, match
     const currentMonthBar = result.sixMonthTrend.find((t) => t.ymKey === 202607)!;
     expect(currentMonthBar.spend).toBe(0);
     expect(result.month.totalSpend).toBe(0);
+  });
+});
+
+// AUD-04 (external audit, 2026-08-28): unlike the current month (which
+// always evaluates recurring activity as of `now`), a HISTORICAL month
+// used to evaluate every recurring item at that month's FIRST day only --
+// an item starting mid-month read as "not yet active" for that whole
+// month, undercounting a real historical cost in the trend chart, budget
+// rollover, and savings streak alike (same `recurAsOf`/`d` pattern at all
+// three sites).
+describe("historical month, grandfathered recurring item starting mid-month (AUD-04)", () => {
+  it("counts a mid-month-starting item's contribution in that PAST month's sixMonthTrend bar, not just the current month's", () => {
+    const data = makeData({
+      income: 1000,
+      recurring: [{
+        id: "r1", name: "New subscription", emoji: "💳", amount: 20, currency: "USD",
+        frequency: "monthly", bucket: "WANTS", startDate: "2026-04-10", // starts mid-April, a fully past month relative to NOW (July 15)
+        endDate: null, totalAmount: null, createdAt: "2026-04-10T00:00:00.000Z",
+        confirmCutoverDate: "2026-05-01", // grandfathers April -- old accrual applies
+      }],
+    });
+    const result = computeDashboard(data);
+    const april = result.sixMonthTrend.find((t) => t.ymKey === 202604)!;
+    expect(april.spend).toBeCloseTo(20, 5);
+  });
+
+  it("same fix applies to budgetRollover -- a mid-month-starting past-month item is no longer silently dropped from the rollover total", () => {
+    // confirmCutoverDate grandfathers ONLY April, so May/June contribute
+    // nothing either way (post-cutover, unconfirmed) -- the entire rollover
+    // total below is attributable to April alone. Without the fix, April's
+    // recurring item wrongly reads as inactive (day-1 check fails), so the
+    // month has neither a transaction nor active recurring activity and is
+    // skipped entirely as "blank" (`tx.length === 0 && !recurActive`) --
+    // rollover.wants stays at its initial 0. With the fix, April correctly
+    // counts as active, contributing (900 target - 20 spent) = 880.
+    const data = makeData({
+      income: 3000,
+      budgetRule: "50-30-20", // WANTS target = 30% of 3000 = 900/mo
+      recurring: [{
+        id: "r1", name: "New subscription", emoji: "💳", amount: 20, currency: "USD",
+        frequency: "monthly", bucket: "WANTS", startDate: "2026-04-10",
+        endDate: null, totalAmount: null, createdAt: "2026-04-10T00:00:00.000Z",
+        confirmCutoverDate: "2026-05-01",
+      }],
+    });
+    const withItem = computeDashboard(data).budgetRollover.wants;
+    expect(withItem).toBeCloseTo(880, 5);
+  });
+
+  it("same fix applies to the savings streak -- a mid-month-starting past-month SAVINGS item counts toward that month's contribution", () => {
+    // confirmCutoverDate pushed to August (grandfathers April/May/June all
+    // at once) rather than May -- the streak loop walks backward and BREAKS
+    // (not skips) on the first blank month, so if May/June were left
+    // post-cutover (unconfirmed, contributing 0) the loop would break before
+    // ever reaching April, masking the exact thing this test needs to
+    // isolate. May/June's own accrual is unaffected by this fix either way
+    // (isRecurringActive already correctly reads them as active at day 1,
+    // since the item started before either) -- only April's day-1 check
+    // was ever wrong.
+    const data = makeData({
+      income: 100, budgetRule: "50-30-20", // 20% savings target = $20/mo, exactly matching the item below
+      recurring: [{
+        id: "r1", name: "Auto-save", emoji: "💰", amount: 20, currency: "USD",
+        frequency: "monthly", bucket: "SAVINGS", startDate: "2026-04-10",
+        endDate: null, totalAmount: null, createdAt: "2026-04-10T00:00:00.000Z",
+        confirmCutoverDate: "2026-08-01",
+      }],
+    });
+    const result = computeDashboard(data);
+    const streak = result.streaks.find((s) => s.key === "savings-streak");
+    // Without the fix: June, May meet target (2) but April wrongly
+    // contributes $0 and breaks the walk there -- count tops out at 2.
+    // With the fix: April also meets target -- count reaches (at least) 3.
+    expect(streak?.count).toBeGreaterThanOrEqual(3);
   });
 });
 

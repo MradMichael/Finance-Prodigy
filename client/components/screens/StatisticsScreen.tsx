@@ -71,7 +71,11 @@ export default function StatisticsScreen({
     { label: "Needs", a: thisMonth.needs, b: lastMonth.needs },
     { label: "Wants", a: thisMonth.wants, b: lastMonth.wants },
     { label: "Savings", a: thisMonth.savings, b: lastMonth.savings },
-    { label: "Net", a: thisMonth.income - thisMonth.needs - thisMonth.wants, b: lastMonth.income - lastMonth.needs - lastMonth.wants },
+    // AUD-09 (external audit, 2026-08-28): omitted savings, overstating Net
+    // by exactly the savings amount and disagreeing with the canonical
+    // dashData.month.netCashFlow (income - needs - wants - savings) this
+    // same screen already shows in the Net worth forecast section below.
+    { label: "Net", a: thisMonth.income - thisMonth.needs - thisMonth.wants - thisMonth.savings, b: lastMonth.income - lastMonth.needs - lastMonth.wants - lastMonth.savings },
   ];
 
   // ── Planned payments timeline: next 30 days, every occurrence (not

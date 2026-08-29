@@ -7,6 +7,7 @@ import { useTheme } from "../../contexts/ThemeContext";
 import { Signet } from "../../components/EssaBrand";
 
 const SERIF = { fontFamily: "Spectral, Georgia, serif" };
+const OWNER_EMAIL = "mmrad1998@gmail.com";
 
 // ─── FAQ DATA ────────────────────────────────────────────────────────────────
 const FAQ: { q: string; a: string }[] = [
@@ -66,12 +67,27 @@ export default function AboutPage() {
   const [rating, setRating] = useState<number | null>(null);
   const [submitted, setSubmitted] = useState(false);
 
+  // Was writing to localStorage.getItem("essa_feedback") -- the SUBMITTING
+  // user's own browser storage, never transmitted anywhere. A form that
+  // confirms submission and sends nothing is worse than no form: it tells
+  // someone their feedback was received when it wasn't. Real server-side
+  // transmission would need a new endpoint (the existing /api/events is
+  // deliberately allow-list-only, by design, precisely so it can't become
+  // an arbitrary free-text sink) plus a real decision about where feedback
+  // actually lands so it's readable -- genuine feature work, not a small
+  // fix. Falls back to a pre-filled mailto: instead, reusing the same
+  // OWNER_EMAIL the Contact section above already uses: this actually
+  // reaches the owner today, with the small honest caveat that it opens
+  // the user's own email client rather than guaranteeing delivery (no
+  // configured mail client is a real, common failure mode) -- the
+  // fallback link in the success state below covers that case.
   function handleSubmitFeedback(e: React.FormEvent) {
     e.preventDefault();
     if (!suggestion.trim() && rating === null) return;
-    const stored = JSON.parse(localStorage.getItem("essa_feedback") ?? "[]");
-    stored.push({ rating, suggestion: suggestion.trim(), at: new Date().toISOString() });
-    localStorage.setItem("essa_feedback", JSON.stringify(stored));
+    const ratingLine = rating ? `Rating: ${"⭐".repeat(rating)} (${rating}/5)` : "Rating: (none given)";
+    const body = `${ratingLine}\n\n${suggestion.trim() || "(no comment)"}`;
+    const mailto = `mailto:${OWNER_EMAIL}?subject=${encodeURIComponent("ESSA feedback")}&body=${encodeURIComponent(body)}`;
+    window.location.href = mailto;
     setSubmitted(true);
     setSuggestion("");
     setRating(null);
@@ -183,11 +199,11 @@ export default function AboutPage() {
               ESSA is a personal project. For questions or support, reach out directly:
             </p>
             <a
-              href="mailto:mmrad1998@gmail.com"
+              href={`mailto:${OWNER_EMAIL}`}
               className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-80"
               style={{ background: T.brass + "20", color: T.brass, border: `1px solid ${T.brass}30` }}
             >
-              ✉ mmrad1998@gmail.com
+              ✉ {OWNER_EMAIL}
             </a>
             <p className="text-[11px]" style={{ color: T.mute }}>
               This app is offline-first and does not connect to any external servers unless you configure a local database.
@@ -208,7 +224,14 @@ export default function AboutPage() {
               <div className="text-center py-8">
                 <div className="text-4xl mb-3">🙏</div>
                 <p className="text-sm font-semibold" style={{ color: T.text }}>Thanks for your feedback!</p>
-                <p className="text-xs mt-1" style={{ color: T.mute }}>Your response is saved locally.</p>
+                <p className="text-xs mt-1" style={{ color: T.mute }}>
+                  Opening your email app to send this to {OWNER_EMAIL}. If nothing opened, your device may not have
+                  a default email app set — you can{" "}
+                  <a href={`mailto:${OWNER_EMAIL}`} className="underline" style={{ color: T.brass }}>
+                    email {OWNER_EMAIL} directly
+                  </a>{" "}
+                  instead.
+                </p>
                 <button
                   className="mt-4 text-xs underline"
                   style={{ color: T.jade }}

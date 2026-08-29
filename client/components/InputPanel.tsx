@@ -7,7 +7,7 @@ import type {
 } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, pendingBackfillCycles, toUSD as toUSDShared, withRate, buildGoalContributionTx, buildDebtPaymentTx, buildDebtAdjustmentTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney, derivedDebtBalance, activeTransactions, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
+import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, pendingBackfillCycles, toUSD as toUSDShared, withRate, applyGoalContribution, buildDebtPaymentTx, buildDebtAdjustmentTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney, derivedDebtBalance, activeTransactions, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker, CardPicker } from "./form/Primitives";
@@ -529,35 +529,24 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     const amt = parseFloat(contributeGoalAmt.replace(/,/g, ""));
     if (!amt || amt <= 0) return;
     const goal = financials.goals.find((g) => g.id === goalId);
-    if (!goal) return; // required by buildGoalContributionTx needing the goal's own currency -- also just more correct than the old silent "savings" fallback
-    // 2.4.16c: this call site never set achievedAt even when a contribution
-    // completed the goal, disagreeing with GoalsScreen.tsx's own pay() (the
-    // other contribution surface) and InputPanel's saveEditGoal, both of
-    // which do. Same pattern as GoalsScreen.pay(): only ever set once
-    // (`g.achievedAt ?? ...`), never cleared here -- a contribution only
-    // ever increases currentAmount, so there's no "un-achieving" case to
-    // handle the way the full edit form's saveEditGoal has to.
-    const goals = financials.goals.map((g) => {
-      if (g.id !== goalId) return g;
-      const newAmount = roundMoney(g.currentAmount + amt);
-      return {
-        ...g,
-        currentAmount: newAmount,
-        achievedAt: newAmount >= g.targetAmount ? (g.achievedAt ?? new Date().toISOString().slice(0, 10)) : g.achievedAt,
-      };
-    });
+    if (!goal) return; // needed for the toast message below; applyGoalContribution does its own lookup for the actual update
     let cardId: string | undefined;
     let cardLabel: string | undefined;
     if (contributeMethod === "card" && contributeCardId) {
       const card = cards.find((c) => c.id === contributeCardId);
       if (card) { cardId = card.id; cardLabel = card.label; }
     }
-    const tx = buildGoalContributionTx(goal, amt, financials.lbpRate ?? DEFAULT_LBP_RATE, {
+    // AUD-05: shared with GoalsScreen.tsx's pay() -- one implementation of
+    // "what happens when you contribute to a goal," not two independently
+    // maintained copies (2334ea9 already proved that split lets a real bug
+    // land on only one side).
+    const result = applyGoalContribution(financials.goals, goalId, amt, financials.lbpRate ?? DEFAULT_LBP_RATE, {
       paymentMethod: contributeMethod, cardId, cardLabel,
       paymentNote: contributeMethod === "other" && contributeOtherNote.trim() ? contributeOtherNote.trim() : undefined,
       date: contributeDate || todayISO(),
     });
-    update({ goals, transactions: [tx, ...financials.transactions] });
+    if (!result) return;
+    update({ goals: result.goals, transactions: [result.transaction, ...financials.transactions] });
     setContributeGoalId(null); setContributeGoalAmt("");
     setContributeMethod("cash"); setContributeCardId(null); setContributeOtherNote("");
     setContributeDate(todayISO());
