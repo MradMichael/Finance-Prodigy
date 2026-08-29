@@ -5,7 +5,7 @@ import { nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, FREQ_LAB
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
 
-export default function RecurringScreen({ financials }: { financials: LocalFinancials }) {
+export default function RecurringScreen({ financials, onEdit }: { financials: LocalFinancials; onEdit: (id: string) => void }) {
   const T    = useTheme();
   const now  = new Date();
   // nextConfirmTarget requires a UTC-midnight-anchored asOf, same contract as isCycleOverdue/dueCycles.
@@ -66,7 +66,7 @@ export default function RecurringScreen({ financials }: { financials: LocalFinan
                     return (
                       <div
                         key={r.id}
-                        className="flex items-center gap-3 px-4 py-3"
+                        className="flex items-center gap-3 px-4 py-3 group"
                         style={{ background: T.panel, borderTop: i > 0 ? `1px solid ${T.line}` : undefined }}
                       >
                         <span className="text-xl">{r.emoji}</span>
@@ -79,6 +79,12 @@ export default function RecurringScreen({ financials }: { financials: LocalFinan
                             {!overdue && paidThisCycle && (
                               <span className="text-[9px] uppercase tracking-wider" style={{ color: T.jade }}>✓ paid</span>
                             )}
+                            <button
+                              onClick={() => onEdit(r.id)}
+                              aria-label="Edit recurring payment"
+                              className="text-[10px] px-1.5 py-0.5 rounded transition-all opacity-70 hover:!opacity-100"
+                              style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
+                            >✎</button>
                           </p>
                           <p className="text-[10px]" style={{ color: T.mute }}>
                             {fmtCur(r.amount, r.currency)} · {FREQ_LABELS[r.frequency]}

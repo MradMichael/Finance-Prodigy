@@ -30,6 +30,7 @@ import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "../components/EssaBrand";
 import RecurringModelNoticeModal from "../components/RecurringModelNoticeModal";
 import EditDebtSheet from "../components/EditDebtSheet";
+import EditRecurringSheet from "../components/EditRecurringSheet";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HOME
@@ -354,7 +355,7 @@ export default function Home() {
           {screen === "categories"   && <CategoriesScreen financials={financials} onChange={handleChange} />}
           {screen === "goals"        && <GoalsScreen dashData={dashboardData} financials={financials} onChange={handleChange} />}
           {screen === "debts"        && <DebtsScreen financials={financials} dashData={dashboardData} onEdit={(id) => handleEdit("debt", id)} />}
-          {screen === "recurring"    && <RecurringScreen financials={financials} />}
+          {screen === "recurring"    && <RecurringScreen financials={financials} onEdit={(id) => handleEdit("recurring", id)} />}
           {screen === "projections"  && <ProjectionsScreen financials={financials} dashData={dashboardData} />}
           {screen === "journey"      && <JourneyScreen financials={financials} dashData={dashboardData} onNavigate={setScreen} />}
           {screen === "currency"     && <CurrencyScreen financials={financials} />}
@@ -381,6 +382,15 @@ export default function Home() {
         const debt = financials.debts.find((d) => d.id === editing.id);
         return debt ? (
           <EditDebtSheet debt={debt} financials={financials} onChange={handleChange} onClose={() => setEditing(null)} />
+        ) : null;
+      })()}
+      {editing?.kind === "recurring" && (() => {
+        const rec = financials.recurring.find((r) => r.id === editing.id);
+        return rec ? (
+          <EditRecurringSheet
+            recurring={rec} financials={financials} onChange={handleChange} onClose={() => setEditing(null)}
+            onBackfillRecurring={handleBackfillRecurringCycle} backfillingIds={backfillingIds}
+          />
         ) : null;
       })()}
     </div>

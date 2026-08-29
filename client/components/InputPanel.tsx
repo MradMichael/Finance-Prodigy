@@ -7,7 +7,7 @@ import type {
 } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, pendingBackfillCycles, toUSD as toUSDShared, withRate, applyGoalContribution, buildDebtPaymentTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney, derivedDebtBalance, activeTransactions, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
+import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, toUSD as toUSDShared, withRate, applyGoalContribution, buildDebtPaymentTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney, derivedDebtBalance, activeTransactions, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker, CardPicker } from "./form/Primitives";
@@ -217,18 +217,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   const [editGCurrent,     setEditGCurrent]     = useState("");
   const [editGDate,        setEditGDate]        = useState("");
 
-  const [editRecId,        setEditRecId]        = useState<string | null>(null);
-  const [editRName,        setEditRName]        = useState("");
-  const [editREmoji,       setEditREmoji]       = useState("");
-  const [editRAmount,      setEditRAmount]      = useState("");
-  const [editRCurrency,    setEditRCurrency]    = useState<Currency>("USD");
-  const [editRFreq,        setEditRFreq]        = useState<RecurringFrequency>("monthly");
-  const [editRBucket,      setEditRBucket]      = useState<Bucket>("NEEDS");
-  const [editRCategory,    setEditRCategory]    = useState<string>("");
-  const [editRStart,       setEditRStart]       = useState("");
-  const [editREndType,     setEditREndType]     = useState<"infinite" | "date" | "amount">("infinite");
-  const [editREnd,         setEditREnd]         = useState("");
-  const [editRTotalAmount, setEditRTotalAmount] = useState("");
+  // Recurring editing lives in the shared EditRecurringSheet (page.tsx).
 
   const [editTxId,         setEditTxId]         = useState<string | null>(null);
   const [editTxAmt,        setEditTxAmt]        = useState("");
@@ -601,30 +590,6 @@ export default function InputPanel({ financials, dashData, onChange, session, on
         ...g, pausedAt: g.pausedAt ? undefined : new Date().toISOString(),
       }),
     });
-  }
-
-  function startEditRec(r: StoredRecurring) {
-    setEditRecId(r.id); setEditRName(r.name); setEditREmoji(r.emoji);
-    setEditRAmount(String(r.amount)); setEditRCurrency(r.currency);
-    setEditRFreq(r.frequency); setEditRBucket(r.bucket); setEditRCategory(r.category ?? ""); setEditRStart(r.startDate);
-    if (r.endDate)       { setEditREndType("date");   setEditREnd(r.endDate); setEditRTotalAmount(""); }
-    else if (r.totalAmount) { setEditREndType("amount"); setEditRTotalAmount(String(r.totalAmount)); setEditREnd(""); }
-    else                 { setEditREndType("infinite"); setEditREnd(""); setEditRTotalAmount(""); }
-    setExtraRecId(null);
-  }
-  function saveEditRec(recId: string) {
-    const amt = parseFloat(editRAmount.replace(/,/g, ""));
-    if (!editRName.trim() || isNaN(amt) || !editRStart) return;
-    update({
-      recurring: (financials.recurring ?? []).map((r) => r.id !== recId ? r : {
-        ...r, name: editRName.trim(), emoji: editREmoji || "🔁",
-        amount: amt, currency: editRCurrency, frequency: editRFreq,
-        bucket: editRBucket, category: editRCategory || undefined, startDate: editRStart,
-        endDate:     editREndType === "date"   ? (editREnd.trim() || null) : null,
-        totalAmount: editREndType === "amount" ? (parseFloat(editRTotalAmount.replace(/,/g, "")) || null) : null,
-      }),
-    });
-    setEditRecId(null);
   }
 
   function startEditTx(tx: StoredTransaction) {
@@ -1811,128 +1776,12 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                       // Covers both "confirmed on time" and "confirmed early" (paid ahead of its due date) -- either way still shown as paid.
                       const paidThisCycle = target ? isCycleConfirmed(r, target.dueDate, financials.transactions) : false;
                       const paid   = r.totalAmount ? recurringPaidSoFar(r, financials.transactions) : null;
-                      const pendingBackfill = pendingBackfillCycles(r, financials.transactions);
                       const pct    = paid != null && r.totalAmount ? Math.min(100, (paid / r.totalAmount) * 100) : null;
                       const isAddingExtra = extraRecId === r.id;
-                      const isEditingRec  = editRecId === r.id;
                       const isConfirming  = confirmingRecId === r.id;
                       const justConfirmed = justConfirmedIds?.has(r.id);
                       return (
                         <div key={r.id}>
-                          {isEditingRec ? (
-                            <div className="rounded-xl p-3 space-y-2.5" style={{ background: T.panelSoft, border: `1px solid ${T.jade}50` }}>
-                              <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.jade }}>Edit recurring</p>
-                              <div className="flex gap-2">
-                                <div style={{ width: 68 }}>
-                                  <Label htmlFor="edit-rec-emoji">Icon</Label>
-                                  <FocusInput id="edit-rec-emoji" value={editREmoji} onChange={(e) => setEditREmoji(e.target.value)} />
-                                </div>
-                                <div className="flex-1">
-                                  <Label htmlFor="edit-rec-name">Name</Label>
-                                  <FocusInput id="edit-rec-name" value={editRName} onChange={(e) => setEditRName(e.target.value)} />
-                                </div>
-                              </div>
-                              <div className="grid grid-cols-2 gap-2">
-                                <div>
-                                  <Label htmlFor="edit-rec-amount">Amount</Label>
-                                  <MoneyInput id="edit-rec-amount" value={editRAmount} onChange={setEditRAmount} placeholder="0" />
-                                </div>
-                                <div>
-                                  <Label htmlFor="edit-rec-freq">Frequency</Label>
-                                  <select id="edit-rec-freq" value={editRFreq} onChange={(e) => setEditRFreq(e.target.value as RecurringFrequency)}
-                                    className="w-full rounded-xl px-3 py-2.5 text-sm"
-                                    style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}>
-                                    {(Object.keys(FREQ_LABELS) as RecurringFrequency[]).map((f) => (
-                                      <option key={f} value={f}>{FREQ_LABELS[f]}</option>
-                                    ))}
-                                  </select>
-                                </div>
-                              </div>
-                              <div>
-                                <Label>Currency</Label>
-                                <CurrencyToggle value={editRCurrency} onChange={setEditRCurrency} />
-                              </div>
-                              <div>
-                                <Label>Type</Label>
-                                <div className="grid grid-cols-3 gap-1.5">
-                                  {BUCKETS.map((bkt) => (
-                                    <button key={bkt.value} onClick={() => setEditRBucket(bkt.value)}
-                                      aria-label={bkt.label}
-                                      aria-pressed={editRBucket === bkt.value}
-                                      className="py-1.5 rounded-xl text-[10px] font-medium transition-all"
-                                      style={{ background: editRBucket === bkt.value ? bkt.color + "22" : T.ink, border: `1px solid ${editRBucket === bkt.value ? bkt.color : T.line}`, color: editRBucket === bkt.value ? bkt.color : T.mute }}>
-                                      {bkt.icon} {bkt.label}
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-                              <div>
-                                <Label htmlFor="edit-rec-category">Category</Label>
-                                <select
-                                  id="edit-rec-category"
-                                  value={editRCategory}
-                                  onChange={(e) => setEditRCategory(e.target.value)}
-                                  className="w-full rounded-xl px-3 py-2 text-xs"
-                                  style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
-                                >
-                                  <option value="">No category</option>
-                                  {allCategories(financials.customCategories).map((c) => (
-                                    <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
-                                  ))}
-                                </select>
-                              </div>
-                              <div>
-                                <Label htmlFor="edit-rec-start">Start date</Label>
-                                <DateFieldDMY id="edit-rec-start" value={editRStart} onChange={setEditRStart} />
-                              </div>
-                              <div>
-                                <Label>Ends</Label>
-                                <div className="grid grid-cols-3 gap-1.5 mb-2">
-                                  {(["infinite", "date", "amount"] as const).map((t) => (
-                                    <button key={t} onClick={() => setEditREndType(t)}
-                                      className="py-1.5 rounded-xl text-[10px] font-medium transition-all"
-                                      style={{ background: editREndType === t ? T.jade + "22" : T.ink, border: `1px solid ${editREndType === t ? T.jade : T.line}`, color: editREndType === t ? T.jade : T.mute }}>
-                                      {t === "infinite" ? "∞ Never" : t === "date" ? "📅 Date" : "💰 Amount"}
-                                    </button>
-                                  ))}
-                                </div>
-                                {editREndType === "date" && <DateFieldDMY value={editREnd} onChange={setEditREnd} />}
-                                {editREndType === "amount" && <MoneyInput value={editRTotalAmount} onChange={setEditRTotalAmount} placeholder="Total amount" />}
-                              </div>
-                              <div className="flex gap-2">
-                                <button onClick={() => saveEditRec(r.id)} className="px-3 py-1.5 rounded-xl text-xs font-semibold hover:opacity-90" style={{ background: T.jade, color: T.ink }}>Save</button>
-                                <button onClick={() => setEditRecId(null)} className="px-3 py-1.5 rounded-xl text-xs hover:opacity-70" style={{ color: T.mute }}>Cancel</button>
-                              </div>
-                              {pendingBackfill.length > 0 && onBackfillRecurring && (
-                                <div className="pt-2 space-y-1.5" style={{ borderTop: `1px solid ${T.line}` }}>
-                                  <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.brass }}>
-                                    Pre-migration cycles
-                                  </p>
-                                  <p className="text-[10px]" style={{ color: T.mute }}>
-                                    From before this item started requiring confirmation. Not assumed paid -- mark any you actually paid.
-                                  </p>
-                                  {pendingBackfill.map((cycleDate) => {
-                                    const cycleISO = cycleDate.toISOString().slice(0, 10);
-                                    const key = `${r.id}:${cycleISO}`;
-                                    const inFlight = backfillingIds?.has(key);
-                                    return (
-                                      <div key={cycleISO} className="flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5" style={{ background: T.ink }}>
-                                        <span className="text-[11px]" style={{ color: T.text }}>{fmtDate(cycleISO)}</span>
-                                        <button
-                                          onClick={() => onBackfillRecurring(r.id, cycleDate)}
-                                          disabled={inFlight}
-                                          className="text-[10px] font-semibold px-2 py-1 rounded-lg transition-all hover:opacity-80 disabled:opacity-40 disabled:hover:opacity-40"
-                                          style={{ background: T.jade + "22", color: T.jade }}
-                                        >
-                                          {inFlight ? "Confirming…" : "Confirm"}
-                                        </button>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                          ) : (
                           <div
                             className="rounded-xl px-3 py-2.5"
                             style={{
@@ -1979,7 +1828,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                                 </span>
                                 <div className="flex gap-1.5 opacity-70 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                                   <button
-                                    onClick={() => startEditRec(r)}
+                                    onClick={() => onEdit("recurring", r.id)}
                                     aria-label="Edit recurring payment"
                                     className="text-[10px] px-1.5 py-0.5 rounded transition-all hover:opacity-80"
                                     style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
@@ -2111,7 +1960,6 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                               </div>
                             )}
                           </div>
-                          )}
                         </div>
                       );
                     })}
