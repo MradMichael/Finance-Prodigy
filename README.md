@@ -30,15 +30,22 @@ Finance-Prodigy/
 │   │   ├── recover/                   # Forgot-password flow (recovery code, see Security model)
 │   │   ├── profile/                   # Account settings, theme picker, sync push/pull, data export, analytics opt-in
 │   │   ├── about/, terms/, privacy/, security/  # FAQ, Terms of Service, Privacy Policy, Trust & Security
-│   │   └── admin/                     # Diagnostics: API health, registered users, sync status — gated out of production builds
+│   │   └── admin/                     # Diagnostics: API health, registered users, sync status — gated to admin accounts only (see Security model)
 │   ├── lib/
 │   │   ├── auth.ts                    # Sign-up/in/out, password hashing, recovery, sync-relink token
 │   │   ├── crypto.ts                  # AES-GCM encryption + the DEK-wrapping scheme behind recovery codes
 │   │   ├── localData.ts               # Data types + encrypted localStorage load/save
 │   │   ├── computeDashboard.ts        # Pure function: your data → everything the dashboard shows
 │   │   ├── syncService.ts             # Push/pull/relink to the Express API (relative /api/* paths)
-│   │   └── analytics.ts               # Opt-in, first-party-only product analytics (off by default)
-│   ├── components/                    # FinancialDashboard, InputPanel, OnboardingChecklist, EssaBrand, ThemeContext
+│   │   ├── analytics.ts               # Opt-in, first-party-only product analytics (off by default)
+│   │   └── statementImport/           # Bank-statement PDF import: text extraction, one bank's parser, category guessing
+│   ├── components/
+│   │   ├── screens/                   # One component per screen (Budget, Goals, Debts, Transactions, Statistics, Currency, Wishlist, …)
+│   │   ├── shell/                     # TopBar, Sidebar, BottomNav, SyncDot — the app chrome around each screen
+│   │   ├── charts/                    # Donut and other chart primitives
+│   │   └── FinancialDashboard.tsx, InputPanel.tsx, OnboardingChecklist.tsx, EssaBrand.tsx, …
+│   ├── contexts/
+│   │   └── ThemeContext.tsx           # The 6-theme system (light/dark-aware, per-account persisted)
 │   ├── public/                        # manifest.webmanifest, sw.js, icons — PWA/installable support
 │   └── next.config.js                 # Proxies /api/* to the Express server (see API_URL below)
 ├── server/                        # Express API — sync + analytics warehouse only
@@ -159,7 +166,7 @@ npm run test:watch    # watch mode
 npm run test:coverage # with coverage report
 ```
 
-Vitest, covering the money-math engines and security-critical code: `computeDashboard.ts` (health score, budget pace/rollover, debt plan, net worth, balance reconciliation), `debtEngine.ts` (Snowball/Avalanche simulation), `localData.ts`'s date-math helpers, and `crypto.ts`/`auth.ts` (envelope encryption, password hashing, sign-up/in/recovery flows). No tests on the server side — see [`server/src/lib/normalizeSync.ts`](server/src/lib/normalizeSync.ts)'s fire-and-forget, DB-coupled nature for why that's a deliberate choice, not an oversight.
+Vitest, covering the money-math engines and security-critical code: `computeDashboard.ts` (health score, budget pace/rollover, debt plan, net worth, balance reconciliation — plus a timezone-isolated companion, `computeDashboard.tz.test.ts`, see below), `debtEngine.ts` (Snowball/Avalanche simulation, likewise split into a `.tz.test.ts` companion), `localData.ts`'s date-math helpers, `printReport.ts` and `statementImport/neoBankAudiParser.ts` (PDF report generation and bank-statement parsing), `crypto.ts`/`auth.ts`/`syncService.ts` (envelope encryption, password hashing, sign-up/in/recovery flows, push/pull), and — via `@testing-library/react` — real component-level tests (`app/admin/page.test.tsx`, `components/screens/StatisticsScreen.test.tsx`) for logic that can't be expressed as a pure function. A `.tz.test.ts` file exists specifically where a test needs `process.env.TZ` changed to reproduce a bug at all: V8/Node caches the resolved timezone per-process and doesn't reliably re-read the env var afterward, so those cases are isolated into their own file (Vitest's default per-file worker) rather than risk corrupting every other date-dependent test in a shared one. No tests on the server side — see [`server/src/lib/normalizeSync.ts`](server/src/lib/normalizeSync.ts)'s fire-and-forget, DB-coupled nature for why that's been the case so far; revisiting whether its pure transform functions specifically are worth testing is an open question, not settled here.
 
 `tsc --noEmit` and `npm run build` remain the other correctness checks.
 
