@@ -910,7 +910,7 @@ export function fmtDate(iso: string | undefined | null): string {
 // compared as plain local dates. (nextOccurrence deliberately keeps the UTC
 // parse -- it extracts UTC day/month/year from `start` for DST-safe
 // month-increment arithmetic, not local comparison, so this fix doesn't apply there.)
-function parseLocalDate(iso: string): Date {
+export function parseLocalDate(iso: string): Date {
   return new Date(`${iso}T00:00:00`);
 }
 
