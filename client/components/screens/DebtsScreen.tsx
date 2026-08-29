@@ -6,7 +6,7 @@ import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money, fmtCur } from "./shared";
 
-export default function DebtsScreen({ financials, dashData }: { financials: LocalFinancials; dashData: ReturnType<typeof computeDashboard> }) {
+export default function DebtsScreen({ financials, dashData, onEdit }: { financials: LocalFinancials; dashData: ReturnType<typeof computeDashboard>; onEdit: (id: string) => void }) {
   const T = useTheme();
   const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
   // Phase 2.6.3a: each debt's balance is derived once here (openingBalance
@@ -100,13 +100,19 @@ export default function DebtsScreen({ financials, dashData }: { financials: Loca
                 const balance = debtBalances.get(d.id) ?? 0;
                 const monthlyInt = (d.apr / 100 / 12) * balance;
                 return (
-                  <div key={d.id} className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}`, opacity: d.paidOffAt ? 0.65 : 1 }}>
+                  <div key={d.id} className="rounded-2xl p-5 group" style={{ background: T.panel, border: `1px solid ${T.line}`, opacity: d.paidOffAt ? 0.65 : 1 }}>
                     <div className="flex justify-between items-start gap-2 mb-3">
-                      <p className="font-medium" style={{ color: T.text }}>
-                        {d.name}
+                      <p className="font-medium flex items-center gap-1.5 min-w-0" style={{ color: T.text }}>
+                        <span className="truncate">{d.name}</span>
                         {d.paidOffAt && (
-                          <span className="ml-1.5 text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full" style={{ background: T.jade + "22", color: T.jade }}>Paid off</span>
+                          <span className="flex-shrink-0 text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full" style={{ background: T.jade + "22", color: T.jade }}>Paid off</span>
                         )}
+                        <button
+                          onClick={() => onEdit(d.id)}
+                          aria-label="Edit debt"
+                          className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded transition-all opacity-70 hover:!opacity-100"
+                          style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
+                        >✎</button>
                       </p>
                       <p className="text-xl font-semibold tabular-nums flex-shrink-0" style={{ ...SERIF, color: d.paidOffAt ? T.jade : T.coral }}>{fmtCur(balance, d.currency)}</p>
                     </div>

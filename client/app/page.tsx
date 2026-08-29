@@ -29,6 +29,10 @@ import { pushToServer, pullFromServer, hasAutoPulled, markAutoPulled } from "../
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "../components/EssaBrand";
 import RecurringModelNoticeModal from "../components/RecurringModelNoticeModal";
+import EditDebtSheet from "../components/EditDebtSheet";
+import EditRecurringSheet from "../components/EditRecurringSheet";
+import EditGoalSheet from "../components/EditGoalSheet";
+import EditTransactionSheet from "../components/EditTransactionSheet";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HOME
@@ -70,6 +74,14 @@ export default function Home() {
   // open at once, and confirming one must not disable the others.
   const backfillingRef = useRef<Set<string>>(new Set());
   const [backfillingIds, setBackfillingIds] = useState<Set<string>>(new Set());
+  // Shared edit surface (usability backlog, 2026-08-29): one implementation
+  // per entity, opened from wherever a user is looking at it (InputPanel's
+  // Manage tab, or the entity's own standalone screen), instead of a second,
+  // independently-written edit UI per screen -- the exact duplication shape
+  // that has already produced five real bugs in this codebase.
+  type EditTarget = { kind: "transaction" | "debt" | "recurring" | "goal"; id: string };
+  const [editing, setEditing] = useState<EditTarget | null>(null);
+  const handleEdit = (kind: EditTarget["kind"], id: string) => setEditing({ kind, id });
 
   // keep a stable ref so the debounce closure always sees the latest session
   useEffect(() => { sessionRef.current = session; }, [session]);
@@ -340,12 +352,12 @@ export default function Home() {
           {screen === "overview"     && <FinancialDashboard data={dashboardData} onNavigate={setScreen} onConfirmRecurring={handleConfirmRecurringPayment} loggingRecurringIds={loggingRecurringIds} justConfirmedIds={justConfirmedIds} />}
           {screen === "budget"       && <BudgetScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
           {screen === "setup"        && <SetupScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
-          {screen === "finances"     && <InputPanel financials={financials} dashData={dashboardData} onChange={handleChange} session={session} onConfirmRecurring={handleConfirmRecurringPayment} loggingRecurringIds={loggingRecurringIds} justConfirmedIds={justConfirmedIds} onBackfillRecurring={handleBackfillRecurringCycle} backfillingIds={backfillingIds} />}
-          {screen === "transactions" && <TransactionsScreen financials={financials} onChange={handleChange} />}
+          {screen === "finances"     && <InputPanel financials={financials} dashData={dashboardData} onChange={handleChange} session={session} onConfirmRecurring={handleConfirmRecurringPayment} loggingRecurringIds={loggingRecurringIds} justConfirmedIds={justConfirmedIds} onBackfillRecurring={handleBackfillRecurringCycle} backfillingIds={backfillingIds} onEdit={handleEdit} />}
+          {screen === "transactions" && <TransactionsScreen financials={financials} onChange={handleChange} onEdit={(id) => handleEdit("transaction", id)} />}
           {screen === "categories"   && <CategoriesScreen financials={financials} onChange={handleChange} />}
-          {screen === "goals"        && <GoalsScreen dashData={dashboardData} financials={financials} onChange={handleChange} />}
-          {screen === "debts"        && <DebtsScreen financials={financials} dashData={dashboardData} />}
-          {screen === "recurring"    && <RecurringScreen financials={financials} />}
+          {screen === "goals"        && <GoalsScreen dashData={dashboardData} financials={financials} onChange={handleChange} onEdit={(id) => handleEdit("goal", id)} />}
+          {screen === "debts"        && <DebtsScreen financials={financials} dashData={dashboardData} onEdit={(id) => handleEdit("debt", id)} />}
+          {screen === "recurring"    && <RecurringScreen financials={financials} onEdit={(id) => handleEdit("recurring", id)} />}
           {screen === "projections"  && <ProjectionsScreen financials={financials} dashData={dashboardData} />}
           {screen === "journey"      && <JourneyScreen financials={financials} dashData={dashboardData} onNavigate={setScreen} />}
           {screen === "currency"     && <CurrencyScreen financials={financials} />}
@@ -365,6 +377,36 @@ export default function Home() {
           onDismiss={handleDismissRecurringModelNotice}
         />
       )}
+
+      {/* Shared edit surface -- one sheet per entity kind, opened from
+          whichever screen the user was looking at (see EditTarget above). */}
+      {editing?.kind === "debt" && (() => {
+        const debt = financials.debts.find((d) => d.id === editing.id);
+        return debt ? (
+          <EditDebtSheet debt={debt} financials={financials} onChange={handleChange} onClose={() => setEditing(null)} />
+        ) : null;
+      })()}
+      {editing?.kind === "recurring" && (() => {
+        const rec = financials.recurring.find((r) => r.id === editing.id);
+        return rec ? (
+          <EditRecurringSheet
+            recurring={rec} financials={financials} onChange={handleChange} onClose={() => setEditing(null)}
+            onBackfillRecurring={handleBackfillRecurringCycle} backfillingIds={backfillingIds}
+          />
+        ) : null;
+      })()}
+      {editing?.kind === "goal" && (() => {
+        const goal = financials.goals.find((g) => g.id === editing.id);
+        return goal ? (
+          <EditGoalSheet goal={goal} financials={financials} onChange={handleChange} onClose={() => setEditing(null)} />
+        ) : null;
+      })()}
+      {editing?.kind === "transaction" && (() => {
+        const tx = financials.transactions.find((t) => t.id === editing.id);
+        return tx ? (
+          <EditTransactionSheet transaction={tx} financials={financials} onChange={handleChange} onClose={() => setEditing(null)} />
+        ) : null;
+      })()}
     </div>
   );
 }

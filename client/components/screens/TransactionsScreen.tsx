@@ -58,7 +58,7 @@ function recurringForMonth(recurring: StoredRecurring[], ym: string, currentYm: 
   return out;
 }
 
-export default function TransactionsScreen({ financials, onChange }: { financials: LocalFinancials; onChange: (f: LocalFinancials) => void }) {
+export default function TransactionsScreen({ financials, onChange, onEdit }: { financials: LocalFinancials; onChange: (f: LocalFinancials) => void; onEdit: (id: string) => void }) {
   const T = useTheme();
   const [filter, setFilter] = useState("all");
   const [query,  setQuery]  = useState("");
@@ -496,7 +496,7 @@ export default function TransactionsScreen({ financials, onChange }: { financial
                 {txs.map((t, i) => (
                   <div
                     key={t.id}
-                    className="flex items-center gap-3 px-4 py-3"
+                    className="flex items-center gap-3 px-4 py-3 group"
                     style={{ background: T.panel, borderTop: i > 0 ? `1px solid ${T.line}` : undefined }}
                   >
                     <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: BC[t.bucket] }} />
@@ -517,6 +517,12 @@ export default function TransactionsScreen({ financials, onChange }: { financial
                           : ""}
                       </p>
                     </div>
+                    <button
+                      onClick={() => onEdit(t.id)}
+                      aria-label="Edit transaction"
+                      className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded transition-all opacity-70 hover:!opacity-100"
+                      style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
+                    >✎</button>
                     <div className="text-right flex-shrink-0">
                       <p className="text-sm font-medium tabular-nums" style={{ color: BC[t.bucket] }}>{money(toUSD(t.amount, t.currency), 2)}</p>
                       {t.currency === "LBP" && (
