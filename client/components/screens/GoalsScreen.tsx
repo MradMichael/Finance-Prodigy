@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, PaymentMethod, StoredCard } from "../../lib/localData";
-import { uid, todayISO, roundMoney, buildGoalContributionTx, toUSD as toUSDShared, activeTransactions, DEFAULT_LBP_RATE } from "../../lib/localData";
+import { uid, todayISO, applyGoalContribution, toUSD as toUSDShared, activeTransactions, DEFAULT_LBP_RATE } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
@@ -65,29 +65,23 @@ export default function GoalsScreen({
     const rawGoal = financials.goals[dashGoalId - 1];
     if (!rawGoal) return;
 
-    const updated = financials.goals.map((g) => {
-      if (g.id !== rawGoal.id) return g;
-      const newAmount = roundMoney(g.currentAmount + amt);
-      return {
-        ...g,
-        currentAmount: newAmount,
-        achievedAt: newAmount >= g.targetAmount
-          ? (g.achievedAt ?? new Date().toISOString().slice(0, 10))
-          : g.achievedAt,
-      };
-    });
     let cardId: string | undefined;
     let cardLabel: string | undefined;
     if (payMethod === "card" && payCardId) {
       const card = financials.cards.find((c) => c.id === payCardId);
       if (card) { cardId = card.id; cardLabel = card.label; }
     }
-    const tx = buildGoalContributionTx(rawGoal, amt, lbpRate, {
+    // AUD-05: shared with InputPanel.tsx's contributeToGoal -- one
+    // implementation of "what happens when you contribute to a goal," not
+    // two independently maintained copies (2334ea9 already proved that
+    // split lets a real bug land on only one side).
+    const result = applyGoalContribution(financials.goals, rawGoal.id, amt, lbpRate, {
       paymentMethod: payMethod, cardId, cardLabel,
       paymentNote: payMethod === "other" && payOtherNote.trim() ? payOtherNote.trim() : undefined,
       date: payDate || todayISO(),
     });
-    onChange({ ...financials, goals: updated, transactions: [tx, ...(financials.transactions ?? [])] });
+    if (!result) return;
+    onChange({ ...financials, goals: result.goals, transactions: [result.transaction, ...(financials.transactions ?? [])] });
     setPaySuccess(dashGoalId);
     setPayGoalId(null);
     setPayAmt("");

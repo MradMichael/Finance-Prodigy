@@ -10,7 +10,7 @@ import {
   dueCycles, isCycleConfirmed, isCycleOverdue, buildRecurringConfirmLog, cycleMonthDivergence,
   nextConfirmTarget, historizedRecurringContribution, pendingBackfillCycles,
   derivedEfBalance, derivedDebtBalance, activeTransactions,
-  buildDebtPaymentTx, buildEfAdjustmentTx, buildDebtAdjustmentTx,
+  buildDebtPaymentTx, buildEfAdjustmentTx, buildDebtAdjustmentTx, applyGoalContribution,
 } from "./localData";
 
 // UTC midnight of a given local calendar date -- matches nextOccurrence's
@@ -841,6 +841,55 @@ describe("buildGoalContributionTx", () => {
   it("carries a real, past date when one is given", () => {
     const tx = buildGoalContributionTx(goal, 50, 89500, { date: "2026-08-20" });
     expect(tx.date).toBe("2026-08-20");
+  });
+});
+
+// AUD-05 (external audit, 2026-08-28): GoalsScreen.tsx's pay() and
+// InputPanel.tsx's contributeToGoal() each independently reimplemented "what
+// happens when you contribute to a goal" -- the exact duplication class
+// that already caused a real shipped bug (git log: 2334ea9, "set achievedAt
+// in InputPanel's quick-add goal contribution" -- one of the two forgot to
+// set it at all). Third time this was flagged (ROADMAP.md's own Phase 2.6.4
+// notes, then 2334ea9's own fix touching only one side, then this audit)
+// without the underlying duplication actually being removed. Extracted the
+// ONE implementation both callers now share.
+describe("applyGoalContribution (AUD-05)", () => {
+  const goal: StoredGoal = { id: "g1", name: "Travel", emoji: "🎯", targetAmount: 1000, currentAmount: 200, currency: "USD", targetDate: "2027-01-01", createdAt: "2026-01-01T00:00:00.000Z" };
+
+  it("returns null when the goal doesn't exist -- callers can bail without a crash", () => {
+    expect(applyGoalContribution([goal], "nonexistent", 50, 89500)).toBeNull();
+  });
+
+  it("bumps currentAmount by the contribution amount, leaving other goals untouched", () => {
+    const other: StoredGoal = { ...goal, id: "g2", name: "Other", currentAmount: 500 };
+    const result = applyGoalContribution([goal, other], "g1", 50, 89500)!;
+    expect(result.goals.find((g) => g.id === "g1")!.currentAmount).toBe(250);
+    expect(result.goals.find((g) => g.id === "g2")!.currentAmount).toBe(500); // untouched
+  });
+
+  it("sets achievedAt once a contribution crosses the target -- the exact case 2334ea9 fixed on only one of the two call sites", () => {
+    const almostDone: StoredGoal = { ...goal, currentAmount: 950, targetAmount: 1000 };
+    const result = applyGoalContribution([almostDone], "g1", 50, 89500)!;
+    expect(result.goals[0].currentAmount).toBe(1000);
+    expect(result.goals[0].achievedAt).toBeTruthy();
+  });
+
+  it("never clears an already-set achievedAt or overwrites it with a later date -- a contribution only ever increases currentAmount, there's no un-achieving case to handle", () => {
+    const alreadyDone: StoredGoal = { ...goal, currentAmount: 1000, targetAmount: 1000, achievedAt: "2026-03-01" };
+    const result = applyGoalContribution([alreadyDone], "g1", 20, 89500)!;
+    expect(result.goals[0].achievedAt).toBe("2026-03-01"); // unchanged, not re-stamped to today
+  });
+
+  it("does not set achievedAt when the contribution doesn't reach the target", () => {
+    const result = applyGoalContribution([goal], "g1", 10, 89500)!; // 200 + 10 = 210, target 1000
+    expect(result.goals[0].achievedAt).toBeUndefined();
+  });
+
+  it("builds the contribution transaction via buildGoalContributionTx, carrying opts through -- one formula, not a second independent one", () => {
+    const result = applyGoalContribution([goal], "g1", 50, 89500, { paymentMethod: "cash" })!;
+    expect(result.transaction.amount).toBe(50);
+    expect(result.transaction.description).toBe("Goal: Travel");
+    expect(result.transaction.paymentMethod).toBe("cash");
   });
 });
 

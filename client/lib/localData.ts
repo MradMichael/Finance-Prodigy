@@ -1400,6 +1400,40 @@ export function buildGoalContributionTx(
 }
 
 /**
+ * AUD-05 (external audit, 2026-08-28) -- the ONE implementation of "what
+ * happens when you contribute to a goal": bumps currentAmount, sets
+ * achievedAt once (and only once) a contribution crosses the target (never
+ * cleared here -- a contribution only ever increases currentAmount, so
+ * there's no "un-achieving" case the way a full edit form's save has to
+ * handle), and builds the corresponding transaction via
+ * buildGoalContributionTx above. GoalsScreen.tsx's pay() and
+ * InputPanel.tsx's contributeToGoal() each independently reimplemented
+ * this -- the exact duplication class that already caused a real shipped
+ * bug (2334ea9: one of the two forgot to set achievedAt at all). Callers
+ * still own their own local form state (amount input, payment-method
+ * selection, success/reset UI) -- that genuinely differs per screen and
+ * isn't part of this function's job.
+ */
+export function applyGoalContribution(
+  goals: StoredGoal[], goalId: string, amount: number, lbpRate: number,
+  opts: { paymentMethod?: PaymentMethod; cardId?: string; cardLabel?: string; paymentNote?: string; date?: string } = {},
+): { goals: StoredGoal[]; transaction: StoredTransaction } | null {
+  const goal = goals.find((g) => g.id === goalId);
+  if (!goal) return null;
+  const updatedGoals = goals.map((g) => {
+    if (g.id !== goalId) return g;
+    const newAmount = roundMoney(g.currentAmount + amount);
+    return {
+      ...g,
+      currentAmount: newAmount,
+      achievedAt: newAmount >= g.targetAmount ? (g.achievedAt ?? new Date().toISOString().slice(0, 10)) : g.achievedAt,
+    };
+  });
+  const transaction = buildGoalContributionTx(goal, amount, lbpRate, opts);
+  return { goals: updatedGoals, transaction };
+}
+
+/**
  * Phase 2.6.3c -- the transaction behind a real debt payment, replacing
  * recordDebtPayment's old direct `d.balance -= amt` mutation. `bucket` is
  * caller-supplied, never defaulted: a minimum payment is a Need, a
