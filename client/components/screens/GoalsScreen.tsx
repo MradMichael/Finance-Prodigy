@@ -12,10 +12,12 @@ export default function GoalsScreen({
   dashData,
   financials,
   onChange,
+  onEdit,
 }: {
   dashData:   ReturnType<typeof computeDashboard>;
   financials: LocalFinancials;
   onChange:   (f: LocalFinancials) => void;
+  onEdit:     (id: string) => void;
 }) {
   const T     = useTheme();
   const goals = dashData.goals;
@@ -88,6 +90,14 @@ export default function GoalsScreen({
     setPayMethod("cash"); setPayCardId(null); setPayOtherNote("");
     setPayDate(todayISO());
     setTimeout(() => setPaySuccess(null), 3000);
+  }
+
+  // dashData.goals' own "id" is a 1-based index into financials.goals, not
+  // the real StoredGoal.id -- same lookup pay()/togglePause() already do.
+  function editGoal(dashGoalId: number) {
+    const rawGoal = financials.goals[dashGoalId - 1];
+    if (!rawGoal) return;
+    onEdit(rawGoal.id);
   }
 
   // Pausing excludes the goal from the health score's goal-pace average and
@@ -186,6 +196,12 @@ export default function GoalsScreen({
                         {pct >= 100 && <span className="ml-2 text-sm">✓</span>}
                       </p>
                       <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <button
+                          onClick={() => editGoal(g.id)}
+                          aria-label="Edit goal"
+                          className="text-[10px] px-1.5 py-0.5 rounded transition-all opacity-70 hover:!opacity-100"
+                          style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
+                        >✎</button>
                         <button
                           onClick={() => togglePause(g.id)}
                           aria-label={g.paused ? "Resume goal" : "Pause goal"}

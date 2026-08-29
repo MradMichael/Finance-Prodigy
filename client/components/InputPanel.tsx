@@ -210,13 +210,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   // Debt form's own field, unrelated to editing an existing one.
   const [dOpenedDate,      setDOpenedDate]      = useState("");
 
-  const [editGoalId,       setEditGoalId]       = useState<string | null>(null);
-  const [editGName,        setEditGName]        = useState("");
-  const [editGEmoji,       setEditGEmoji]       = useState("");
-  const [editGTarget,      setEditGTarget]      = useState("");
-  const [editGCurrent,     setEditGCurrent]     = useState("");
-  const [editGDate,        setEditGDate]        = useState("");
-
+  // Goal editing lives in the shared EditGoalSheet (page.tsx).
   // Recurring editing lives in the shared EditRecurringSheet (page.tsx).
 
   const [editTxId,         setEditTxId]         = useState<string | null>(null);
@@ -557,28 +551,6 @@ export default function InputPanel({ financials, dashData, onChange, session, on
 
   // ── edit helpers ───────────────────────────────────────────── //
 
-  function startEditGoal(g: StoredGoal) {
-    setEditGoalId(g.id); setEditGName(g.name); setEditGEmoji(g.emoji);
-    setEditGTarget(String(g.targetAmount)); setEditGCurrent(String(g.currentAmount));
-    setEditGDate(g.targetDate);
-  }
-  function saveEditGoal(goalId: string) {
-    const target  = parseFloat(editGTarget.replace(/,/g, ""));
-    const current = parseFloat(editGCurrent.replace(/,/g, "")) || 0;
-    // target <= 0 used to be reachable here (only isNaN was checked), which
-    // made every goal display elsewhere read it as 100%/achieved -- a $0
-    // target isn't a real goal, so reject it the same way the add-goal form
-    // already requires a truthy gTarget.
-    if (!editGName.trim() || isNaN(target) || target <= 0 || !editGDate) return;
-    update({
-      goals: financials.goals.map((g) => g.id !== goalId ? g : {
-        ...g, name: editGName.trim(), emoji: editGEmoji || "🎯",
-        targetAmount: target, currentAmount: current, targetDate: editGDate,
-        achievedAt: current >= target ? (g.achievedAt ?? new Date().toISOString()) : undefined,
-      }),
-    });
-    setEditGoalId(null);
-  }
   // Pausing stops the goal counting toward the health score's goal-pace
   // average and Projections' funding plan (see computeDashboard.ts's
   // goalScores / ProjectionsScreen's openGoals) while keeping it, and its
@@ -1578,40 +1550,12 @@ export default function InputPanel({ financials, dashData, onChange, session, on
             const pct = g.targetAmount > 0 ? Math.min(100, (g.currentAmount / g.targetAmount) * 100) : 100;
             const remaining = Math.max(0, g.targetAmount - g.currentAmount);
             const isContrib  = contributeGoalId === g.id;
-            const isEditing  = editGoalId === g.id;
             return (
               <div key={g.id}>
-                {isEditing ? (
-                  <div className="rounded-xl p-3 space-y-2.5" style={{ background: T.panelSoft, border: `1px solid ${T.jade}50` }}>
-                    <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.jade }}>Edit goal</p>
-                    <div className="flex gap-2">
-                      <div style={{ width: 68 }}>
-                        <Label htmlFor="edit-goal-emoji">Emoji</Label>
-                        <FocusInput id="edit-goal-emoji" value={editGEmoji} onChange={(e) => setEditGEmoji(e.target.value)} />
-                      </div>
-                      <div className="flex-1">
-                        <Label htmlFor="edit-goal-name">Name</Label>
-                        <FocusInput id="edit-goal-name" value={editGName} onChange={(e) => setEditGName(e.target.value)} />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div><Label htmlFor="edit-goal-target">Target ({g.currency === "LBP" ? "L£" : "$"})</Label><MoneyInput id="edit-goal-target" value={editGTarget} onChange={setEditGTarget} placeholder="0" /></div>
-                      <div><Label htmlFor="edit-goal-saved">Saved ({g.currency === "LBP" ? "L£" : "$"})</Label><MoneyInput id="edit-goal-saved" value={editGCurrent} onChange={setEditGCurrent} placeholder="0" /></div>
-                    </div>
-                    <div>
-                      <Label htmlFor="edit-goal-date">Target date</Label>
-                      <DateFieldDMY id="edit-goal-date" value={editGDate} onChange={setEditGDate} />
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => saveEditGoal(g.id)} className="px-3 py-1.5 rounded-xl text-xs font-semibold hover:opacity-90" style={{ background: T.jade, color: T.ink }}>Save</button>
-                      <button onClick={() => setEditGoalId(null)} className="px-3 py-1.5 rounded-xl text-xs hover:opacity-70" style={{ color: T.mute }}>Cancel</button>
-                    </div>
-                  </div>
-                ) : (
-                  <div
-                    className="rounded-xl px-3 py-2.5 group"
-                    style={{ background: T.panelSoft, border: `1px solid ${T.line}`, opacity: g.pausedAt ? 0.65 : 1 }}
-                  >
+                <div
+                  className="rounded-xl px-3 py-2.5 group"
+                  style={{ background: T.panelSoft, border: `1px solid ${T.line}`, opacity: g.pausedAt ? 0.65 : 1 }}
+                >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
                         <p className="text-sm flex items-center gap-1.5 min-w-0" style={{ color: T.text }}>
@@ -1637,7 +1581,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                       </div>
                       <div className="flex gap-1.5 opacity-70 md:opacity-0 md:group-hover:opacity-100 transition-opacity flex-shrink-0">
                         <button
-                          onClick={() => startEditGoal(g)}
+                          onClick={() => onEdit("goal", g.id)}
                           aria-label="Edit goal"
                           className="text-[10px] px-1.5 py-0.5 rounded transition-all hover:opacity-80"
                           style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
@@ -1671,8 +1615,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                       <span style={{ color: T.mute }}>by {fmtDate(g.targetDate)}</span>
                     </div>
                   </div>
-                )}
-                {isContrib && !isEditing && (
+                {isContrib && (
                   <div className="mt-1 rounded-xl p-3 space-y-2" style={{ background: T.ink, border: `1px solid ${T.line}` }}>
                     <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.jade }}>
                       Add to this goal

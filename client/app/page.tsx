@@ -31,6 +31,7 @@ import { Signet } from "../components/EssaBrand";
 import RecurringModelNoticeModal from "../components/RecurringModelNoticeModal";
 import EditDebtSheet from "../components/EditDebtSheet";
 import EditRecurringSheet from "../components/EditRecurringSheet";
+import EditGoalSheet from "../components/EditGoalSheet";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HOME
@@ -353,7 +354,7 @@ export default function Home() {
           {screen === "finances"     && <InputPanel financials={financials} dashData={dashboardData} onChange={handleChange} session={session} onConfirmRecurring={handleConfirmRecurringPayment} loggingRecurringIds={loggingRecurringIds} justConfirmedIds={justConfirmedIds} onBackfillRecurring={handleBackfillRecurringCycle} backfillingIds={backfillingIds} onEdit={handleEdit} />}
           {screen === "transactions" && <TransactionsScreen financials={financials} onChange={handleChange} />}
           {screen === "categories"   && <CategoriesScreen financials={financials} onChange={handleChange} />}
-          {screen === "goals"        && <GoalsScreen dashData={dashboardData} financials={financials} onChange={handleChange} />}
+          {screen === "goals"        && <GoalsScreen dashData={dashboardData} financials={financials} onChange={handleChange} onEdit={(id) => handleEdit("goal", id)} />}
           {screen === "debts"        && <DebtsScreen financials={financials} dashData={dashboardData} onEdit={(id) => handleEdit("debt", id)} />}
           {screen === "recurring"    && <RecurringScreen financials={financials} onEdit={(id) => handleEdit("recurring", id)} />}
           {screen === "projections"  && <ProjectionsScreen financials={financials} dashData={dashboardData} />}
@@ -391,6 +392,12 @@ export default function Home() {
             recurring={rec} financials={financials} onChange={handleChange} onClose={() => setEditing(null)}
             onBackfillRecurring={handleBackfillRecurringCycle} backfillingIds={backfillingIds}
           />
+        ) : null;
+      })()}
+      {editing?.kind === "goal" && (() => {
+        const goal = financials.goals.find((g) => g.id === editing.id);
+        return goal ? (
+          <EditGoalSheet goal={goal} financials={financials} onChange={handleChange} onClose={() => setEditing(null)} />
         ) : null;
       })()}
     </div>
