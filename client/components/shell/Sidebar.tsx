@@ -5,6 +5,7 @@ import type { Session } from "../../lib/auth";
 import { useTheme } from "../../contexts/ThemeContext";
 import { Signet } from "../EssaBrand";
 import { NAV, type Screen, type SyncStatus } from "../screens/shared";
+import { syncStatusColor, syncStatusShortLabel } from "./SyncDot";
 
 const SIDEBAR_PIN_KEY = "essa_sidebar_pinned";
 
@@ -123,10 +124,7 @@ export default function Sidebar({
             {syncStatus !== "idle" && (
               <span
                 className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border"
-                style={{
-                  background: syncStatus === "synced" ? T.jade : syncStatus === "syncing" ? T.brass : syncStatus === "conflict" ? T.coral : T.mute,
-                  borderColor: T.panel,
-                }}
+                style={{ background: syncStatusColor(syncStatus, T), borderColor: T.panel }}
               />
             )}
           </div>
@@ -134,7 +132,7 @@ export default function Sidebar({
             <div className="text-left overflow-hidden flex-1">
               <p className="text-xs font-medium truncate" style={{ color: T.text }}>{session.name}</p>
               <p className="text-[10px] truncate" style={{ color: T.mute }}>
-                {syncStatus === "syncing" ? "Syncing…" : syncStatus === "synced" ? "Synced" : syncStatus === "conflict" ? "Sync conflict" : syncStatus === "offline" ? "Offline" : session.email}
+                {syncStatus !== "idle" ? syncStatusShortLabel(syncStatus) : session.email}
               </p>
             </div>
           )}
