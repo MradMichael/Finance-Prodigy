@@ -7,7 +7,7 @@ import type {
 } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, toUSD as toUSDShared, withRate, applyGoalContribution, buildDebtPaymentTx, looksRecurring, buildQuickRecurring, allCategories, categoryLabel, categoryIcon, matchCategoryRule, moneyEquals, roundMoney, derivedDebtBalance, activeTransactions, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
+import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, toUSD as toUSDShared, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, allCategories, categoryLabel, categoryIcon, matchCategoryRule, roundMoney, derivedDebtBalance, activeTransactions, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker, CardPicker } from "./form/Primitives";
@@ -41,9 +41,11 @@ interface Props {
   backfillingIds?: Set<string>;
   /** Opens the shared edit surface (page.tsx) for the given entity -- one implementation per kind, shared with each entity's own standalone screen. */
   onEdit: (kind: "transaction" | "debt" | "recurring" | "goal", id: string) => void;
+  /** Opens the shared "record a payment" surface (page.tsx) for a debt -- shared with DebtsScreen. */
+  onPay: (debtId: string) => void;
 }
 
-export default function InputPanel({ financials, dashData, onChange, session, onConfirmRecurring, loggingRecurringIds, justConfirmedIds, onBackfillRecurring, backfillingIds, onEdit }: Props) {
+export default function InputPanel({ financials, dashData, onChange, session, onConfirmRecurring, loggingRecurringIds, justConfirmedIds, onBackfillRecurring, backfillingIds, onEdit, onPay }: Props) {
   const T = useTheme();
   const BUCKETS: { value: Bucket; label: string; icon: string; color: string }[] = [
     { value: "NEEDS",   label: "Needs",   icon: "🏠", color: T.sky   },
@@ -117,28 +119,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   const [dApr,     setDApr]     = useState("");
   const [dMin,     setDMin]     = useState("");
   const [dCurrency, setDCurrency] = useState<Currency>("USD");
-  // Debt payment state: track which debt is open for payment
-  const [payingDebtId, setPayingDebtId] = useState<string | null>(null);
-  const [debtPayAmt,   setDebtPayAmt]   = useState("");
-  // Phase 2.6.3c: recordDebtPayment now creates a real transaction, which
-  // needs a bucket like any other -- owner's explicit instruction not to
-  // default it silently (a minimum payment is a Need, a voluntary
-  // overpayment is closer to Savings, and guessing wrong skews budget pace).
-  const [debtPayBucket, setDebtPayBucket] = useState<Bucket>("NEEDS");
-  // Phase 2.6.4: category, like every other transaction form.
-  const [debtPayCategory, setDebtPayCategory] = useState("");
-  // Pay-from-EF only -- a debt payment only ever draws from the safety net,
-  // never contributes to it, unlike the main transaction form's two-way
-  // checkbox. Blank debtPayEfAmt means "the full payment amount," same
-  // partial-amount convention (c) already established.
-  const [debtPayFromEF, setDebtPayFromEF] = useState(false);
-  const [debtPayEfAmt,  setDebtPayEfAmt]  = useState("");
-  const [debtPayMethod, setDebtPayMethod] = useState<PaymentMethod>("cash");
-  const [debtPayCardId, setDebtPayCardId] = useState<string | null>(null);
-  const [debtPayOtherNote, setDebtPayOtherNote] = useState("");
-  // 2.4.47: date defaults to today but is editable -- a payment made a few
-  // days ago no longer has to be misdated.
-  const [debtPayDate,   setDebtPayDate]   = useState(todayISO());
+  // Debt payment lives in the shared PayDebtSheet (page.tsx).
 
   // Asset form
   const [aName,     setAName]     = useState("");
@@ -371,54 +352,6 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   function deleteTrackedBalance(id: string) {
     if (!confirm("Remove this tracked balance?")) return;
     update({ trackedBalances: (financials.trackedBalances ?? []).filter((tb) => tb.id !== id) });
-  }
-
-  // Phase 2.6.3c: creates a real, debtId-linked transaction instead of
-  // mutating d.balance directly -- a debt payment is real money leaving the
-  // pocket and now counts toward spend totals for the first time, in
-  // whichever bucket the owner actually picks (never defaulted, see
-  // debtPayBucket's own comment). paidOffAt stays a real, separately-set
-  // flag (there's no "when did this reach zero" fact the derived balance
-  // alone can answer) -- set once the payment being recorded brings the
-  // derived balance to 0, cleared if a later payment/edit brings it back up.
-  function recordDebtPayment(debtId: string) {
-    const amt = parseFloat(debtPayAmt.replace(/,/g, ""));
-    if (!amt || amt <= 0) return;
-    const debt = financials.debts.find((d) => d.id === debtId);
-    if (!debt) return;
-    const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
-    let cardId: string | undefined;
-    let cardLabel: string | undefined;
-    if (debtPayMethod === "card" && debtPayCardId) {
-      const card = cards.find((c) => c.id === debtPayCardId);
-      if (card) { cardId = card.id; cardLabel = card.label; }
-    }
-    // Phase 2.6.4: blank debtPayEfAmt means "the full payment amount," same
-    // partial-amount convention as the main transaction form's own EF
-    // field -- entered in the debt's own currency (this form has no
-    // separate currency toggle), converted to USD like efAmount always is.
-    // A debt payment only ever DRAWS from EF, never contributes to it.
-    const efAmtRaw = debtPayFromEF ? (debtPayEfAmt.trim() ? parseFloat(debtPayEfAmt.replace(/,/g, "")) : amt) : null;
-    const efAmountUSD = efAmtRaw != null ? roundMoney(-(debt.currency === "LBP" ? efAmtRaw / lbpRate : efAmtRaw)) : undefined;
-    const tx = buildDebtPaymentTx(debt, amt, debtPayBucket, lbpRate, {
-      category: debtPayCategory || undefined,
-      efAmount: efAmountUSD,
-      paymentMethod: debtPayMethod,
-      cardId, cardLabel,
-      paymentNote: debtPayMethod === "other" && debtPayOtherNote.trim() ? debtPayOtherNote.trim() : undefined,
-      date: debtPayDate || todayISO(),
-    });
-    const newTransactions = [tx, ...financials.transactions];
-    const newBal = derivedDebtBalance(debt, newTransactions);
-    const updatedDebts = financials.debts.map((d) => d.id !== debtId ? d : {
-      ...d, paidOffAt: moneyEquals(newBal, 0) ? (d.paidOffAt ?? new Date().toISOString()) : d.paidOffAt,
-    });
-    update({ transactions: newTransactions, debts: updatedDebts });
-    setPayingDebtId(null); setDebtPayAmt(""); setDebtPayCategory("");
-    setDebtPayFromEF(false); setDebtPayEfAmt("");
-    setDebtPayMethod("cash"); setDebtPayCardId(null); setDebtPayOtherNote("");
-    setDebtPayDate(todayISO());
-    showToast(`Payment recorded for ${debt.name}`);
   }
 
   function addRecurring() {
@@ -1670,7 +1603,6 @@ export default function InputPanel({ financials, dashData, onChange, session, on
         {/* Debts */}
         <Section title="Debts" icon="💳" badge={financials.debts.filter((d) => !d.paidOffAt).length} defaultOpen={false}>
           {financials.debts.map((d) => {
-            const isPaying  = payingDebtId === d.id;
             // Phase 2.6.3a: derived once per row from openingBalance + the
             // linked transaction ledger, not read from the stored `balance`
             // field.
@@ -1714,11 +1646,11 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                         >✎</button>
                         {!d.paidOffAt && (
                           <button
-                            onClick={() => { setPayingDebtId(isPaying ? null : d.id); setDebtPayAmt(""); setDebtPayDate(todayISO()); }}
-                            aria-label={isPaying ? "Cancel payment" : "Record a payment"}
+                            onClick={() => onPay(d.id)}
+                            aria-label="Record a payment"
                             className="text-[10px] px-1.5 py-0.5 rounded transition-all hover:opacity-80"
                             style={{ color: T.jade, border: `1px solid ${T.jade}40` }}
-                          >{isPaying ? "cancel" : "pay"}</button>
+                          >pay</button>
                         )}
                         <button
                           onClick={() => { if (confirm("Delete this debt?")) update({ debts: financials.debts.filter((x) => x.id !== d.id) }); }}
@@ -1728,92 +1660,6 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                         >✕</button>
                       </div>
                     </div>
-                    {/* Inline payment form */}
-                    {isPaying && (
-                      <div className="mt-2 pt-2 space-y-2" style={{ borderTop: `1px solid ${T.line}` }}>
-                        <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.jade }}>
-                          Record a payment
-                        </p>
-                        <div className="flex gap-2">
-                          <div className="flex-1">
-                            <MoneyInput value={debtPayAmt} onChange={setDebtPayAmt} placeholder="Payment amount" />
-                          </div>
-                          <button
-                            onClick={() => recordDebtPayment(d.id)}
-                            className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all hover:opacity-90"
-                            style={{ background: T.jade, color: T.ink }}
-                          >Apply</button>
-                        </div>
-                        <div>
-                          <Label htmlFor="debt-pay-date">Date paid</Label>
-                          <DateFieldDMY id="debt-pay-date" value={debtPayDate} onChange={setDebtPayDate} />
-                        </div>
-                        {/* Owner's explicit instruction: never default this --
-                            a minimum payment is a Need, a voluntary
-                            overpayment is closer to Savings, and guessing
-                            wrong silently skews budget pace. */}
-                        <div className="grid grid-cols-3 gap-1.5">
-                          {BUCKETS.map((bkt) => (
-                            <button key={bkt.value} onClick={() => setDebtPayBucket(bkt.value)}
-                              aria-pressed={debtPayBucket === bkt.value}
-                              className="py-1.5 rounded-lg text-[10px] font-medium transition-all"
-                              style={{ background: debtPayBucket === bkt.value ? bkt.color + "22" : T.panelSoft, border: `1px solid ${debtPayBucket === bkt.value ? bkt.color : T.line}`, color: debtPayBucket === bkt.value ? bkt.color : T.mute }}>
-                              {bkt.icon} {bkt.label}
-                            </button>
-                          ))}
-                        </div>
-                        <select
-                          value={debtPayCategory}
-                          onChange={(e) => setDebtPayCategory(e.target.value)}
-                          aria-label="Category"
-                          className="w-full rounded-lg px-2 py-1.5 text-[10px]"
-                          style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
-                        >
-                          <option value="">No category</option>
-                          {allCategories(financials.customCategories).map((c) => (
-                            <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
-                          ))}
-                        </select>
-                        {/* Pay-from-EF only -- a debt payment only ever draws
-                            from the safety net, never contributes to it. */}
-                        {dashData.emergencyFund.balance > 0 && (
-                          <>
-                            <button
-                              onClick={() => setDebtPayFromEF((v) => !v)}
-                              className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-left transition-all"
-                              style={{
-                                background: debtPayFromEF ? T.coral + "18" : T.panelSoft,
-                                border: `1px solid ${debtPayFromEF ? T.coral : T.line}`,
-                              }}
-                            >
-                              <p className="text-[10px] font-medium" style={{ color: debtPayFromEF ? T.coral : T.text }}>
-                                Pay this from Safety net
-                              </p>
-                              <span className="text-sm">{debtPayFromEF ? "✓" : "○"}</span>
-                            </button>
-                            {debtPayFromEF && (
-                              <MoneyInput value={debtPayEfAmt} onChange={setDebtPayEfAmt} placeholder={`Full amount (${debtPayAmt || "0"})`} />
-                            )}
-                          </>
-                        )}
-                        <PaymentMethodPicker
-                          value={debtPayMethod}
-                          onChange={setDebtPayMethod}
-                          cardId={debtPayCardId}
-                          onCardIdChange={setDebtPayCardId}
-                          otherNote={debtPayOtherNote}
-                          onOtherNoteChange={setDebtPayOtherNote}
-                          cards={cards}
-                          onSaveCard={saveCard}
-                        />
-                        <p className="text-[10px]" style={{ color: T.mute }}>
-                          Balance after: {fmtCur(Math.max(0, balance - (parseFloat(debtPayAmt.replace(/,/g, "")) || 0)), d.currency)}
-                          {parseFloat(debtPayAmt.replace(/,/g, "")) >= balance && (
-                            <span style={{ color: T.jade }}>, fully paid off 🏁</span>
-                          )}
-                        </p>
-                      </div>
-                    )}
                   </div>
               </div>
             );

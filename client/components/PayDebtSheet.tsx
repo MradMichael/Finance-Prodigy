@@ -126,6 +126,9 @@ export default function PayDebtSheet({
                 </button>
               ))}
             </div>
+            <p className="text-[10px] mt-1" style={{ color: T.mute }}>
+              Affects your budget pace, not this debt&apos;s balance — a minimum payment is usually a Need, extra above that is closer to Savings.
+            </p>
           </div>
           <div>
             <Label htmlFor="pay-debt-category">Category</Label>

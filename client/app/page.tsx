@@ -356,7 +356,7 @@ export default function Home() {
           {screen === "overview"     && <FinancialDashboard data={dashboardData} onNavigate={setScreen} onConfirmRecurring={handleConfirmRecurringPayment} loggingRecurringIds={loggingRecurringIds} justConfirmedIds={justConfirmedIds} />}
           {screen === "budget"       && <BudgetScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
           {screen === "setup"        && <SetupScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
-          {screen === "finances"     && <InputPanel financials={financials} dashData={dashboardData} onChange={handleChange} session={session} onConfirmRecurring={handleConfirmRecurringPayment} loggingRecurringIds={loggingRecurringIds} justConfirmedIds={justConfirmedIds} onBackfillRecurring={handleBackfillRecurringCycle} backfillingIds={backfillingIds} onEdit={handleEdit} />}
+          {screen === "finances"     && <InputPanel financials={financials} dashData={dashboardData} onChange={handleChange} session={session} onConfirmRecurring={handleConfirmRecurringPayment} loggingRecurringIds={loggingRecurringIds} justConfirmedIds={justConfirmedIds} onBackfillRecurring={handleBackfillRecurringCycle} backfillingIds={backfillingIds} onEdit={handleEdit} onPay={setPayingDebtId} />}
           {screen === "transactions" && <TransactionsScreen financials={financials} onChange={handleChange} onEdit={(id) => handleEdit("transaction", id)} />}
           {screen === "categories"   && <CategoriesScreen financials={financials} onChange={handleChange} />}
           {screen === "goals"        && <GoalsScreen dashData={dashboardData} financials={financials} onChange={handleChange} onEdit={(id) => handleEdit("goal", id)} />}
