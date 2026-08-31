@@ -138,19 +138,25 @@ export default function GoalsScreen({
           )}
         </div>
 
-        {/* Health score for goals */}
+        {/* Health score for goals -- weight 0 means "not counted this month"
+            (no active goals to measure a pace against, see
+            computeDashboard.ts), not a real 0/100 score. Showing a number
+            there -- especially in alarm-red -- would fabricate a
+            measurement that doesn't exist. */}
         {healthGoalComponent && (
           <div className="rounded-2xl px-5 py-4 flex items-center justify-between gap-4" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
             <div>
               <p className="text-xs uppercase tracking-widest font-semibold" style={{ color: T.mute }}>Goal momentum · health impact</p>
               <p className="text-sm mt-1" style={{ color: T.mute }}>{healthGoalComponent.detail}</p>
             </div>
-            <div className="text-right flex-shrink-0">
-              <p className="text-2xl font-bold tabular-nums" style={{ color: healthGoalComponent.score >= 70 ? T.jade : healthGoalComponent.score >= 40 ? T.brass : T.coral }}>
-                {healthGoalComponent.score}
-              </p>
-              <p className="text-[10px]" style={{ color: T.mute }}>/ 100</p>
-            </div>
+            {healthGoalComponent.weight > 0 && (
+              <div className="text-right flex-shrink-0">
+                <p className="text-2xl font-bold tabular-nums" style={{ color: healthGoalComponent.score >= 70 ? T.jade : healthGoalComponent.score >= 40 ? T.brass : T.coral }}>
+                  {healthGoalComponent.score}
+                </p>
+                <p className="text-[10px]" style={{ color: T.mute }}>/ 100</p>
+              </div>
+            )}
           </div>
         )}
 

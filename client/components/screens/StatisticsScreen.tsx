@@ -29,6 +29,13 @@ export default function StatisticsScreen({
   // ── Cash flow trend + table (same underlying data, two views) ──────
   const trend = dashData.sixMonthTrend;
   const trendMax = Math.max(1, ...trend.map((t) => Math.max(t.income, t.spend)));
+  // sixMonthTrend is always a fixed 6-month window (never an empty array,
+  // even for a brand-new account), so the "trend.length === 0" checks below
+  // used to never actually fire -- a zero-state audit (2026-08-31) found a
+  // wall of six $0-in/$0-out rows shown silently instead. Checking for real
+  // activity, not array length, matches JourneyScreen's own pattern for the
+  // identical "nothing logged yet" case right next to this screen in the nav.
+  const hasTrendActivity = trend.some((t) => t.income > 0 || t.spend > 0);
 
   // ── Period comparison: this month vs last month, transactions +
   // recurring blended in (matching how every other screen treats "this
@@ -77,6 +84,7 @@ export default function StatisticsScreen({
     // same screen already shows in the Net worth forecast section below.
     { label: "Net", a: thisMonth.income - thisMonth.needs - thisMonth.wants - thisMonth.savings, b: lastMonth.income - lastMonth.needs - lastMonth.wants - lastMonth.savings },
   ];
+  const hasComparisonActivity = comparisonRows.some((r) => r.a !== 0 || r.b !== 0);
 
   // ── Planned payments timeline: next 30 days, every occurrence (not
   // just the next one) for items that repeat more than once in that
@@ -120,8 +128,8 @@ export default function StatisticsScreen({
         {/* Cash flow trend */}
         <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
           <p className="text-xs uppercase tracking-widest mb-4" style={{ color: T.mute }}>Cash flow trend</p>
-          {trend.length === 0 ? (
-            <p className="text-sm" style={{ color: T.mute }}>Not enough history yet.</p>
+          {!hasTrendActivity ? (
+            <p className="text-sm" style={{ color: T.mute }}>Once you&apos;ve logged income and spending, this fills in with your last 6 months.</p>
           ) : (
             <div className="space-y-3">
               {trend.map((t) => (
@@ -149,6 +157,9 @@ export default function StatisticsScreen({
         {/* Period comparison */}
         <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
           <p className="text-xs uppercase tracking-widest mb-4" style={{ color: T.mute }}>This month vs. last month</p>
+          {!hasComparisonActivity ? (
+            <p className="text-sm" style={{ color: T.mute }}>Once you&apos;ve logged a month or two, this compares them side by side.</p>
+          ) : (
           <div className="space-y-2.5">
             {comparisonRows.map((row) => {
               const d = delta(row.a, row.b);
@@ -166,6 +177,7 @@ export default function StatisticsScreen({
               );
             })}
           </div>
+          )}
         </div>
 
         {/* Planned payments timeline */}
@@ -212,8 +224,8 @@ export default function StatisticsScreen({
         {/* Cash flow table / monthly book */}
         <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
           <p className="text-xs uppercase tracking-widest mb-4" style={{ color: T.mute }}>Monthly book (USD)</p>
-          {trend.length === 0 ? (
-            <p className="text-sm" style={{ color: T.mute }}>Not enough history yet.</p>
+          {!hasTrendActivity ? (
+            <p className="text-sm" style={{ color: T.mute }}>Once you&apos;ve logged income and spending, each month&apos;s book appears here.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-xs" style={{ borderCollapse: "collapse" }}>
