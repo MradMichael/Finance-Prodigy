@@ -102,10 +102,9 @@ export default function PayDebtSheet({
         <p className="text-sm mb-4" style={{ color: T.text }}>{debt.name} · {fmtCur(balance, debt.currency)} owed</p>
 
         <div className="space-y-2.5">
-          <div className="flex gap-2">
-            <div className="flex-1">
-              <MoneyInput value={amt} onChange={setAmt} placeholder="Payment amount" />
-            </div>
+          <div>
+            <Label htmlFor="pay-debt-amount">Amount</Label>
+            <MoneyInput id="pay-debt-amount" value={amt} onChange={setAmt} placeholder="Payment amount" />
           </div>
           <div>
             <Label htmlFor="pay-debt-date">Date paid</Label>
