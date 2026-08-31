@@ -979,6 +979,10 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                                 {tx.description}
                                 {divergence && <span title={divergence} style={{ color: T.brass }}> ⚠</span>}
                               </span>
+                              {/* Was hover-only (title= alone) -- unreachable on touch. Same message, always visible when present, matching 2.4.36's own confirm-form warning below. */}
+                              {divergence && (
+                                <span className="text-[9px] block" style={{ color: T.brass }}>{divergence}</span>
+                              )}
                               {(tx.paymentMethod || tx.category) && (
                                 <span className="text-[9px]" style={{ color: T.mute }}>
                                   {tx.paymentMethod && (
@@ -1005,13 +1009,13 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                             <button
                               onClick={() => onEdit("transaction", tx.id)}
                               aria-label="Edit transaction"
-                              className="opacity-70 md:opacity-0 md:group-hover:opacity-100 hover:!opacity-100 transition-opacity text-[10px] px-1.5 py-0.5 rounded"
+                              className="opacity-70 hover:!opacity-100 transition-opacity text-[10px] px-1.5 py-0.5 rounded"
                               style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
                             >✎</button>
                             <button
                               onClick={() => { if (confirm("Delete this transaction?")) softDeleteTransaction(tx.id); }}
                               aria-label="Delete transaction"
-                              className="opacity-70 md:opacity-0 md:group-hover:opacity-100 hover:!opacity-100 transition-opacity text-xs px-1"
+                              className="opacity-70 hover:!opacity-100 transition-opacity text-xs px-1"
                               style={{ color: T.coral }}
                             >✕</button>
                           </div>
@@ -1101,19 +1105,23 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                                     <p className="text-[9px]" style={{ color: T.mute }}>
                                       {fmtDate(tx.date)}{tx.category && ` · ${categoryIcon(tx.category, financials.customCategories)} ${categoryLabel(tx.category, financials.customCategories)}`}
                                     </p>
+                                    {/* Was hover-only (title= alone) -- unreachable on touch. */}
+                                    {divergence && (
+                                      <p className="text-[9px]" style={{ color: T.brass }}>{divergence}</p>
+                                    )}
                                   </div>
                                   <div className="flex items-center gap-1.5 flex-shrink-0">
                                     <span className="text-xs tabular-nums font-medium" style={{ color: b.color }}>{fmtCur(tx.amount, tx.currency ?? "USD")}</span>
                                     <button
                                       onClick={() => onEdit("transaction", tx.id)}
                                       aria-label="Edit transaction"
-                                      className="opacity-70 md:opacity-0 md:group-hover:opacity-100 hover:!opacity-100 transition-opacity text-[10px] px-1.5 py-0.5 rounded"
+                                      className="opacity-70 hover:!opacity-100 transition-opacity text-[10px] px-1.5 py-0.5 rounded"
                                       style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
                                     >✎</button>
                                     <button
                                       onClick={() => { if (confirm("Delete this transaction?")) softDeleteTransaction(tx.id); }}
                                       aria-label="Delete transaction"
-                                      className="opacity-70 md:opacity-0 md:group-hover:opacity-100 hover:!opacity-100 transition-opacity text-[10px] px-1"
+                                      className="opacity-70 hover:!opacity-100 transition-opacity text-[10px] px-1"
                                       style={{ color: T.coral }}
                                     >✕</button>
                                   </div>
@@ -1174,7 +1182,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                           </p>
                         )}
                       </div>
-                      <div className="flex gap-1.5 opacity-70 md:opacity-0 md:group-hover:opacity-100 transition-opacity flex-shrink-0">
+                      <div className="flex gap-1.5 opacity-70 transition-opacity flex-shrink-0">
                         <button
                           onClick={() => onEdit("goal", g.id)}
                           aria-label="Edit goal"
@@ -1364,7 +1372,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                                 <span className="text-xs font-semibold tabular-nums" style={{ color: b.color }}>
                                   {sym}{mo.toFixed(0)}<span className="font-normal" style={{ color: T.mute }}>/mo</span>
                                 </span>
-                                <div className="flex gap-1.5 opacity-70 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                                <div className="flex gap-1.5 opacity-70 transition-opacity">
                                   <button
                                     onClick={() => onEdit("recurring", r.id)}
                                     aria-label="Edit recurring payment"
@@ -1697,7 +1705,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                           </p>
                         )}
                       </div>
-                      <div className="flex items-center gap-1.5 opacity-70 md:opacity-0 md:group-hover:opacity-100 transition-opacity flex-shrink-0 ml-2">
+                      <div className="flex items-center gap-1.5 opacity-70 transition-opacity flex-shrink-0 ml-2">
                         <button
                           onClick={() => onEdit("debt", d.id)}
                           aria-label="Edit debt"

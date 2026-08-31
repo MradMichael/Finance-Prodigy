@@ -501,10 +501,21 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
                   >
                     <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: BC[t.bucket] }} />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm truncate" style={{ color: T.text }}>
-                        {t.description}
-                        {cycleMonthDivergence(t, recurring) && <span title={cycleMonthDivergence(t, recurring)!} style={{ color: T.brass }}> ⚠</span>}
-                      </p>
+                      {(() => {
+                        const divergence = cycleMonthDivergence(t, recurring);
+                        return (
+                          <>
+                            <p className="text-sm truncate" style={{ color: T.text }}>
+                              {t.description}
+                              {divergence && <span title={divergence} style={{ color: T.brass }}> ⚠</span>}
+                            </p>
+                            {/* Was hover-only (title= alone) -- unreachable on touch. */}
+                            {divergence && (
+                              <p className="text-[10px]" style={{ color: T.brass }}>{divergence}</p>
+                            )}
+                          </>
+                        );
+                      })()}
                       <p className="text-[10px]" style={{ color: T.mute }}>
                         {fmtDate(t.date)} · {BL[t.bucket]}
                         {t.category && ` · ${categoryIcon(t.category)} ${categoryLabel(t.category)}`}
