@@ -202,7 +202,7 @@ export default function CategoriesScreen({
                     style={{ background: T.panelSoft, border: `1px solid ${T.line}` }}
                   >
                     <span className="text-sm" style={{ color: T.text }}>{c.icon} {c.label}</span>
-                    <div className="flex gap-1.5 opacity-70 md:opacity-0 md:group-hover:opacity-100 transition-opacity flex-shrink-0">
+                    <div className="flex gap-1.5 opacity-70 transition-opacity flex-shrink-0">
                       <button
                         onClick={() => startEdit(c)}
                         aria-label={`Edit ${c.label} category`}

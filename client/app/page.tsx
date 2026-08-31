@@ -32,6 +32,7 @@ import RecurringModelNoticeModal from "../components/RecurringModelNoticeModal";
 import EditDebtSheet from "../components/EditDebtSheet";
 import EditRecurringSheet from "../components/EditRecurringSheet";
 import EditGoalSheet from "../components/EditGoalSheet";
+import PayDebtSheet from "../components/PayDebtSheet";
 import EditTransactionSheet from "../components/EditTransactionSheet";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -82,6 +83,9 @@ export default function Home() {
   type EditTarget = { kind: "transaction" | "debt" | "recurring" | "goal"; id: string };
   const [editing, setEditing] = useState<EditTarget | null>(null);
   const handleEdit = (kind: EditTarget["kind"], id: string) => setEditing({ kind, id });
+  // "Record a payment" for a debt -- previously only reachable from
+  // InputPanel's Manage tab, now also from DebtsScreen itself.
+  const [payingDebtId, setPayingDebtId] = useState<string | null>(null);
 
   // keep a stable ref so the debounce closure always sees the latest session
   useEffect(() => { sessionRef.current = session; }, [session]);
@@ -352,11 +356,11 @@ export default function Home() {
           {screen === "overview"     && <FinancialDashboard data={dashboardData} onNavigate={setScreen} onConfirmRecurring={handleConfirmRecurringPayment} loggingRecurringIds={loggingRecurringIds} justConfirmedIds={justConfirmedIds} />}
           {screen === "budget"       && <BudgetScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
           {screen === "setup"        && <SetupScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
-          {screen === "finances"     && <InputPanel financials={financials} dashData={dashboardData} onChange={handleChange} session={session} onConfirmRecurring={handleConfirmRecurringPayment} loggingRecurringIds={loggingRecurringIds} justConfirmedIds={justConfirmedIds} onBackfillRecurring={handleBackfillRecurringCycle} backfillingIds={backfillingIds} onEdit={handleEdit} />}
+          {screen === "finances"     && <InputPanel financials={financials} dashData={dashboardData} onChange={handleChange} session={session} onConfirmRecurring={handleConfirmRecurringPayment} loggingRecurringIds={loggingRecurringIds} justConfirmedIds={justConfirmedIds} onBackfillRecurring={handleBackfillRecurringCycle} backfillingIds={backfillingIds} onEdit={handleEdit} onPay={setPayingDebtId} />}
           {screen === "transactions" && <TransactionsScreen financials={financials} onChange={handleChange} onEdit={(id) => handleEdit("transaction", id)} />}
           {screen === "categories"   && <CategoriesScreen financials={financials} onChange={handleChange} />}
           {screen === "goals"        && <GoalsScreen dashData={dashboardData} financials={financials} onChange={handleChange} onEdit={(id) => handleEdit("goal", id)} />}
-          {screen === "debts"        && <DebtsScreen financials={financials} dashData={dashboardData} onEdit={(id) => handleEdit("debt", id)} />}
+          {screen === "debts"        && <DebtsScreen financials={financials} dashData={dashboardData} onEdit={(id) => handleEdit("debt", id)} onPay={setPayingDebtId} />}
           {screen === "recurring"    && <RecurringScreen financials={financials} onEdit={(id) => handleEdit("recurring", id)} />}
           {screen === "projections"  && <ProjectionsScreen financials={financials} dashData={dashboardData} />}
           {screen === "journey"      && <JourneyScreen financials={financials} dashData={dashboardData} onNavigate={setScreen} />}
@@ -399,6 +403,12 @@ export default function Home() {
         const goal = financials.goals.find((g) => g.id === editing.id);
         return goal ? (
           <EditGoalSheet goal={goal} financials={financials} onChange={handleChange} onClose={() => setEditing(null)} />
+        ) : null;
+      })()}
+      {payingDebtId && (() => {
+        const debt = financials.debts.find((d) => d.id === payingDebtId);
+        return debt ? (
+          <PayDebtSheet debt={debt} financials={financials} onChange={handleChange} onClose={() => setPayingDebtId(null)} />
         ) : null;
       })()}
       {editing?.kind === "transaction" && (() => {

@@ -5,6 +5,7 @@ import type { Session } from "../../lib/auth";
 import { useTheme } from "../../contexts/ThemeContext";
 import { Signet } from "../EssaBrand";
 import type { SyncStatus } from "../screens/shared";
+import { syncStatusColor, syncStatusLongLabel } from "./SyncDot";
 
 export default function TopBar({ session, onProfile, onSignOut, syncStatus }: { session: Session; onProfile: () => void; onSignOut: () => void; syncStatus: SyncStatus }) {
   const T        = useTheme();
@@ -45,10 +46,7 @@ export default function TopBar({ session, onProfile, onSignOut, syncStatus }: { 
             {syncStatus !== "idle" && (
               <span
                 className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border"
-                style={{
-                  background: syncStatus === "synced" ? T.jade : syncStatus === "syncing" ? T.brass : syncStatus === "conflict" ? T.coral : T.mute,
-                  borderColor: T.panel,
-                }}
+                style={{ background: syncStatusColor(syncStatus, T), borderColor: T.panel }}
               />
             )}
           </div>
@@ -63,9 +61,9 @@ export default function TopBar({ session, onProfile, onSignOut, syncStatus }: { 
                 <p className="px-4 pb-2 mb-1 text-[10px] flex items-center gap-1.5" style={{ color: T.mute, borderBottom: `1px solid ${T.line}` }}>
                   <span
                     className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                    style={{ background: syncStatus === "synced" ? T.jade : syncStatus === "syncing" ? T.brass : syncStatus === "conflict" ? T.coral : T.mute }}
+                    style={{ background: syncStatusColor(syncStatus, T) }}
                   />
-                  {syncStatus === "syncing" ? "Syncing…" : syncStatus === "synced" ? "Synced" : syncStatus === "conflict" ? "Sync conflict — server has newer data. Resolve in Settings." : "Sync offline — changes saved on this device only"}
+                  {syncStatusLongLabel(syncStatus)}
                 </p>
               )}
               <button onClick={() => { closeMenu(); onProfile(); }}
