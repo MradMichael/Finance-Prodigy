@@ -92,7 +92,8 @@ describe("health score", () => {
   it("grade matches the documented thresholds", () => {
     // Full EF, no debt, needs well under target, and a savings transaction
     // meeting the 20% target this month should land in the top grade.
-    // (No goals -> goalScore defaults to 50, capping the max achievable score.)
+    // No goals -> the goals sub-score is excluded (not defaulted), so this
+    // account's real scores across the other four are what determines it.
     const data = makeData({
       income: 3000, emergencyFundBalance: 100000, emergencyFundTargetMonths: 1,
       transactions: [{ id: "t1", amount: 600, currency: "USD", bucket: "SAVINGS", description: "Savings", date: "2026-07-01" }],
@@ -100,6 +101,42 @@ describe("health score", () => {
     const result = computeDashboard(data);
     expect(result.health.score).toBeGreaterThanOrEqual(80);
     expect(result.health.grade).toBe("Thriving");
+  });
+
+  // 2.4.49-adjacent (usability zero-state audit, 2026-08-31): avgGoalPace
+  // used to default to a hardcoded 0.5 with zero active goals, fabricating
+  // a "50" that fed straight into the composite. A fabricated input is
+  // worse than a missing one -- the goals sub-score is now excluded and its
+  // weight redistributed across the other four, rather than defaulted.
+  it("zero active goals: goals sub-score is excluded, not defaulted to 50, and weights still sum to 100", () => {
+    const data = makeData({ income: 3000, goals: [] });
+    const result = computeDashboard(data);
+    const totalWeight = result.health.components.reduce((s, c) => s + c.weight, 0);
+    expect(totalWeight).toBe(100);
+    const goalsComponent = result.health.components.find((c) => c.key === "goals")!;
+    expect(goalsComponent.weight).toBe(0);
+    expect(goalsComponent.score).toBe(0);
+  });
+
+  it("zero active goals doesn't cap the achievable score at 90 the way a fabricated 50-weighted-at-10% would", () => {
+    // Everything else maxed: no fabricated goals pace should be able to
+    // drag a perfect account down below 100.
+    const data = makeData({
+      income: 3000, emergencyFundBalance: 100000, emergencyFundTargetMonths: 1, goals: [],
+      transactions: [{ id: "t1", amount: 600, currency: "USD", bucket: "SAVINGS", description: "Savings", date: "2026-07-01" }],
+    });
+    const result = computeDashboard(data);
+    expect(result.health.score).toBe(100);
+  });
+
+  it("only-paused goals count as zero active goals (same exclusion as the debt-free / totalMinPayments precedent)", () => {
+    const data = makeData({
+      income: 3000,
+      goals: [{ id: "g1", name: "Paused goal", emoji: "🎯", targetAmount: 1000, currentAmount: 0, targetDate: "2027-01-01", currency: "USD", createdAt: NOW.toISOString(), pausedAt: NOW.toISOString() }],
+    });
+    const result = computeDashboard(data);
+    const goalsComponent = result.health.components.find((c) => c.key === "goals")!;
+    expect(goalsComponent.weight).toBe(0);
   });
 });
 

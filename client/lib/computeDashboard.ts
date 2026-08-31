@@ -391,11 +391,27 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   // excluded from totalMinPayments above -- an intentionally-stalled goal
   // shouldn't drag down the pace score of goals you're actively working.
   const goalScores = data.goals.filter((g) => !g.pausedAt).map((g) => goalPace(g).pace);
-  const avgGoalPace = goalScores.length ? goalScores.reduce((s, v) => s + v, 0) / goalScores.length : 0.5;
-  const goalScore   = Math.min(100, avgGoalPace * 100);
+  const hasActiveGoals = goalScores.length > 0;
+  // 2.4.49-adjacent (usability zero-state audit, 2026-08-31): with zero
+  // active goals there is nothing to average, so avgGoalPace/goalScore used
+  // to fall back to a hardcoded 0.5/50 -- a fabricated "average" standing in
+  // for a real measurement, both on GoalsScreen's own card (fixed there,
+  // see GoalsScreen.tsx) and here, silently baked into the headline health
+  // score. A fabricated input is worse than a missing one: when there's
+  // nothing to measure, goalScore doesn't exist and its 10% weight is
+  // redistributed across the four sub-scores that ARE real, instead of
+  // being spent on a constant.
+  const avgGoalPace = hasActiveGoals ? goalScores.reduce((s, v) => s + v, 0) / goalScores.length : 0;
+  const goalScore   = hasActiveGoals ? Math.min(100, avgGoalPace * 100) : 0;
+  // Weights sum to 1 either way -- goals' 0.10 is dropped and the remaining
+  // four scaled up by 1/0.90 so "no active goals" never caps the best
+  // achievable score below 100.
+  const W = hasActiveGoals
+    ? { savings: 0.25, needs: 0.20, ef: 0.25, debt: 0.20, goals: 0.10 }
+    : { savings: 0.25 / 0.90, needs: 0.20 / 0.90, ef: 0.25 / 0.90, debt: 0.20 / 0.90, goals: 0 };
 
   const totalScore = Math.round(
-    savingsScore * 0.25 + needsScore * 0.20 + efScore * 0.25 + debtScore * 0.20 + goalScore * 0.10,
+    savingsScore * W.savings + needsScore * W.needs + efScore * W.ef + debtScore * W.debt + goalScore * W.goals,
   );
   const grade =
     totalScore >= 80 ? "Thriving"
@@ -951,10 +967,10 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     health: {
       score: totalScore, grade,
       components: [
-        { key: "savings", label: "Savings rate", score: Math.round(savingsScore), weight: 25, detail: `${savingsRatePct.toFixed(1)}% of income saved (target ${targetSavingsPct}%)` },
-        { key: "needs",   label: "Needs discipline", score: Math.round(needsScore), weight: 20, detail: `Essentials take ${Math.round(needsPct * 100)}% of income (target ≤${budgetTargetPct.needs}%)` },
-        { key: "ef",      label: "Safety net", score: Math.round(efScore), weight: 25, detail: `Safety net ${Math.round(efPct)}% funded` },
-        { key: "debt",    label: "Debt pressure", score: Math.round(debtScore), weight: 20, detail: `Debt payments are ${Math.round(debtPressurePct * 100)}% of income` },
+        { key: "savings", label: "Savings rate", score: Math.round(savingsScore), weight: Math.round(W.savings * 100), detail: `${savingsRatePct.toFixed(1)}% of income saved (target ${targetSavingsPct}%)` },
+        { key: "needs",   label: "Needs discipline", score: Math.round(needsScore), weight: Math.round(W.needs * 100), detail: `Essentials take ${Math.round(needsPct * 100)}% of income (target ≤${budgetTargetPct.needs}%)` },
+        { key: "ef",      label: "Safety net", score: Math.round(efScore), weight: Math.round(W.ef * 100), detail: `Safety net ${Math.round(efPct)}% funded` },
+        { key: "debt",    label: "Debt pressure", score: Math.round(debtScore), weight: Math.round(W.debt * 100), detail: `Debt payments are ${Math.round(debtPressurePct * 100)}% of income` },
         // 2.4.44: honest-copy fix, not a formula fix (that's tracked
         // separately) -- goalPace compares the account's WHOLE Savings
         // contribution against each goal's own requirement independently,
@@ -962,7 +978,11 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
         // goals") reads as if each goal earns its own credit, which is
         // exactly the case the owner found confusing once Savings is split
         // across purposes. Says plainly what the number actually measures.
-        { key: "goals",   label: "Goal momentum", score: Math.round(goalScore), weight: 10, detail: `Paced against your total Savings, shared across ${goalScores.length} active goal${goalScores.length !== 1 ? "s" : ""}` },
+        // 2.4.49-adjacent: weight is 0, not 10, when there are no active
+        // goals -- score 0 paired with weight 10 would read as "failing,"
+        // when the truth is "not measured" (see the totalScore comment
+        // above for the full reasoning).
+        { key: "goals",   label: "Goal momentum", score: Math.round(goalScore), weight: Math.round(W.goals * 100), detail: hasActiveGoals ? `Paced against your total Savings, shared across ${goalScores.length} active goal${goalScores.length !== 1 ? "s" : ""}` : "No active goals yet — not counted toward your score" },
       ],
     },
     encouragements: enc,
