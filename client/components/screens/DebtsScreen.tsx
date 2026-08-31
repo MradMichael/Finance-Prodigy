@@ -38,8 +38,19 @@ export default function DebtsScreen({ financials, dashData, onEdit, onPay }: { f
 
         {activeDebts.length === 0 && (
           <div className="text-center py-20">
-            <p className="text-3xl mb-3" style={SERIF}>Debt-free. 🏁</p>
-            <p className="text-sm" style={{ color: T.mute }}>Every dollar you earn works for your future.</p>
+            {financials.debts.length > 0 ? (
+              // Genuinely earned -- every debt below was paid down to $0,
+              // not just never entered (see the "never had any" branch).
+              <>
+                <p className="text-3xl mb-3" style={SERIF}>Debt-free. 🏁</p>
+                <p className="text-sm" style={{ color: T.mute }}>Every dollar you earn works for your future.</p>
+              </>
+            ) : (
+              <>
+                <p className="text-3xl mb-3" style={SERIF}>No debts on record.</p>
+                <p className="text-sm" style={{ color: T.mute }}>Add one in My Finances if you&apos;re tracking a loan, credit card, or anything else you owe.</p>
+              </>
+            )}
           </div>
         )}
         {activeDebts.length > 0 && (
