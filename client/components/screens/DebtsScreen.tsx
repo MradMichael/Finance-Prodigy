@@ -6,7 +6,7 @@ import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money, fmtCur } from "./shared";
 
-export default function DebtsScreen({ financials, dashData, onEdit }: { financials: LocalFinancials; dashData: ReturnType<typeof computeDashboard>; onEdit: (id: string) => void }) {
+export default function DebtsScreen({ financials, dashData, onEdit, onPay }: { financials: LocalFinancials; dashData: ReturnType<typeof computeDashboard>; onEdit: (id: string) => void; onPay: (id: string) => void }) {
   const T = useTheme();
   const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
   // Phase 2.6.3a: each debt's balance is derived once here (openingBalance
@@ -36,12 +36,13 @@ export default function DebtsScreen({ financials, dashData, onEdit }: { financia
           <h1 className="text-3xl mt-1" style={SERIF}>Debts</h1>
         </div>
 
-        {activeDebts.length === 0 ? (
+        {activeDebts.length === 0 && (
           <div className="text-center py-20">
             <p className="text-3xl mb-3" style={SERIF}>Debt-free. 🏁</p>
             <p className="text-sm" style={{ color: T.mute }}>Every dollar you earn works for your future.</p>
           </div>
-        ) : (
+        )}
+        {activeDebts.length > 0 && (
           <>
             {/* Summary cards */}
             <div className="grid grid-cols-2 gap-3">
@@ -93,10 +94,15 @@ export default function DebtsScreen({ financials, dashData, onEdit }: { financia
                 )}
               </div>
             )}
+          </>
+        )}
 
-            {/* Individual debts */}
-            <div className="space-y-3">
-              {financials.debts.map((d) => {
+        {/* Individual debts -- shown whenever any debt exists, even if all
+            are paid off (activeDebts.length === 0 above), so payoff history
+            doesn't disappear the moment the last active debt is cleared. */}
+        {financials.debts.length > 0 && (
+          <div className="space-y-3">
+            {financials.debts.map((d) => {
                 const balance = debtBalances.get(d.id) ?? 0;
                 const monthlyInt = (d.apr / 100 / 12) * balance;
                 return (
@@ -113,6 +119,14 @@ export default function DebtsScreen({ financials, dashData, onEdit }: { financia
                           className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded transition-all opacity-70 hover:!opacity-100"
                           style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
                         >✎</button>
+                        {!d.paidOffAt && (
+                          <button
+                            onClick={() => onPay(d.id)}
+                            aria-label="Record a payment"
+                            className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded transition-all opacity-70 hover:!opacity-100"
+                            style={{ color: T.jade, border: `1px solid ${T.jade}40` }}
+                          >pay</button>
+                        )}
                       </p>
                       <p className="text-xl font-semibold tabular-nums flex-shrink-0" style={{ ...SERIF, color: d.paidOffAt ? T.jade : T.coral }}>{fmtCur(balance, d.currency)}</p>
                     </div>
@@ -125,8 +139,7 @@ export default function DebtsScreen({ financials, dashData, onEdit }: { financia
                   </div>
                 );
               })}
-            </div>
-          </>
+          </div>
         )}
       </div>
     </main>
