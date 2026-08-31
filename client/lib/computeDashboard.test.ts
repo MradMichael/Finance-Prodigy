@@ -1462,3 +1462,46 @@ describe("alerts", () => {
     }
   });
 });
+
+// Batch C (dual-currency single transaction, 2026-08-31 design decision):
+// linkedPaymentId groups two transactions created together as one
+// split-currency payment, purely for display. This is the test that
+// enforces the design's own hard constraint -- if linkedPaymentId ever
+// starts influencing a total, this locks in the regression the moment it
+// happens, not whenever someone happens to notice the number looks wrong.
+describe("dual-currency single transaction — linkedPaymentId is display-only", () => {
+  it("two linked legs sum in month totals exactly like two unrelated ordinary transactions -- the field makes zero difference to any derived number", () => {
+    const legUSD: StoredTransaction = { id: "t1", amount: 10, currency: "USD", bucket: "NEEDS", description: "Electricity bill", date: "2026-07-10" };
+    const legLBP: StoredTransaction = { id: "t2", amount: 200000, currency: "LBP", bucket: "NEEDS", description: "Electricity bill", date: "2026-07-10" };
+
+    const linked = makeData({ income: 3000, transactions: [{ ...legUSD, linkedPaymentId: "split-1" }, { ...legLBP, linkedPaymentId: "split-1" }] });
+    const unlinked = makeData({ income: 3000, transactions: [legUSD, legLBP] });
+
+    const linkedResult = computeDashboard(linked);
+    const unlinkedResult = computeDashboard(unlinked);
+
+    // Every total this pair could plausibly affect, compared field-by-field
+    // rather than trusting a single aggregate to catch a divergence.
+    expect(linkedResult.month.needsSpend).toBe(unlinkedResult.month.needsSpend);
+    expect(linkedResult.month.totalSpend).toBe(unlinkedResult.month.totalSpend);
+    expect(linkedResult.month.netCashFlow).toBe(unlinkedResult.month.netCashFlow);
+    expect(linkedResult.health.score).toBe(unlinkedResult.health.score);
+    expect(linkedResult.balanceChecks).toEqual(unlinkedResult.balanceChecks);
+  });
+
+  it("a linked leg's own spend contribution is just its own amount -- no double-count or under-count against its sibling", () => {
+    const data = makeData({
+      income: 3000,
+      transactions: [
+        { id: "t1", amount: 10, currency: "USD", bucket: "NEEDS", description: "Split bill", date: "2026-07-10", linkedPaymentId: "split-1" },
+        { id: "t2", amount: 200000, currency: "LBP", bucket: "NEEDS", description: "Split bill", date: "2026-07-10", linkedPaymentId: "split-1" },
+      ],
+    });
+    const result = computeDashboard(data);
+    // $10 + (L£200,000 / 89,500) ≈ $12.23 -- computed independently here,
+    // not copied from the implementation, so this catches either direction
+    // of a double-count (would read ~$22.23) or a drop (would read ~$10 or
+    // ~$2.23) equally.
+    expect(result.month.needsSpend).toBeCloseTo(10 + 200000 / 89500, 5);
+  });
+});

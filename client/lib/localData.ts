@@ -118,6 +118,21 @@ export interface StoredTransaction {
   // already treats `amount` for a debt-linked transaction (no conversion,
   // assumed to already be in the debt's own terms).
   debtAdjustment?: number | null;
+  // Added for the dual-currency-single-transaction backlog item (Batch C,
+  // 2026-08-31 design decision) -- groups two transactions created together
+  // as one split-currency payment ($10 USD + L£200,000 as one real bill),
+  // purely for DISPLAY: adjacent placement and a "split payment" tag in
+  // TransactionsScreen. Nothing in computeDashboard.ts or any other
+  // derivation may read this field. Every total, category breakdown,
+  // search match, and dedup check already treats each leg as its own
+  // complete, ordinary transaction -- that's what keeps a currency split
+  // from becoming a fifth carrier field (amount/currency/efAmount/
+  // debtAdjustment are the first four) that every read site has to
+  // understand. If a future need makes this field affect a number, the two
+  // legs should have been one transaction with a real second-currency
+  // field instead -- see the Batch C design decision for the full argument
+  // against that shape today.
+  linkedPaymentId?: string;
 }
 
 export interface StoredGoal {
