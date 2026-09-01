@@ -1,0 +1,139 @@
+import { projectCompletion } from "./projections";
+
+/**
+ * F3 — Goal Feasibility Engine, sub-phase 1: the pure allocation engine.
+ * docs/ROADMAP.md, Phase 4, has the full design; the short version:
+ *
+ * Checking each goal against total capacity independently is exactly the
+ * bug 2.4.44 already proved live on ProjectionsScreen's individual goal
+ * rows -- three goals can each look individually affordable while their
+ * SUM exceeds what's actually available. This engine never checks a goal
+ * in isolation: it walks goals in priority order (soonest target date
+ * first) and allocates capacity sequentially, the same shape
+ * simulateDebtPayoff (debtEngine.ts) already uses for competing debts --
+ * proven, not invented here.
+ *
+ * Currency-agnostic by design, mirroring DebtInput/toDebtInputs: amounts in
+ * are already USD. The StoredGoal -> GoalCapacityInput conversion (currency
+ * conversion, filtering out paused/archived goals) is a wiring-stage
+ * concern, sub-phase 3, not this pure engine's job -- same division of
+ * responsibility toDebtInputs already established for debts.
+ */
+
+export interface GoalCapacityInput {
+  id: string;
+  name: string;
+  targetAmountUSD: number;
+  currentAmountUSD: number;
+  /** ISO date (YYYY-MM-DD). */
+  targetDate: string;
+}
+
+export type GoalFeasibilityStatus = "achievable" | "achievable_with_adjustment" | "not_achievable";
+
+export interface GoalAllocationResult {
+  id: string;
+  name: string;
+  status: GoalFeasibilityStatus;
+  remainingUSD: number;
+  /** What this goal alone needs, ignoring every other goal, to hit its own target date. */
+  requiredMonthlyRateUSD: number;
+  /** What it actually gets once higher-priority goals have taken their share. */
+  allocatedMonthlyRateUSD: number;
+  /** Months to completion at the allocated rate; null if the allocated rate is 0 and there's still a gap (mirrors projectCompletion's own convention). */
+  projectedMonths: number | null;
+  projectedDateDisplay: string | null;
+  /** Extra $/mo that would close the gap at this goal's CURRENT priority slot and restore its original target date. 0 when achievable. */
+  shortfallMonthlyRateUSD: number;
+}
+
+export interface GoalCapacityConflict {
+  /** True when the goals' combined requirement exceeds total capacity -- computed independently of any single goal's own status, from the same per-goal required rates the allocation walk below uses. Can never be true while every goal reads "achievable": there isn't enough capacity for that to be possible. */
+  hasConflict: boolean;
+  totalRequiredMonthlyRateUSD: number;
+  totalCapacityUSD: number;
+  /** totalRequired - totalCapacity, floored at 0. */
+  shortfallUSD: number;
+}
+
+export interface GoalAllocationReport {
+  conflict: GoalCapacityConflict;
+  /** Priority order (soonest target date first) -- the order capacity was actually allocated in. */
+  goals: GoalAllocationResult[];
+}
+
+/**
+ * Months from `asOf` to `targetDate`, using the same 30.44-day-average
+ * convention computeDashboard.ts's own goalPace already uses (rawMs there),
+ * so this engine's requiredMonthlyRateUSD is comparable to what a user may
+ * already have seen from that figure -- same math, correctly allocated
+ * afterward instead of independently compared. Floored at 1 (never 0 or
+ * negative) so an overdue or same-day target doesn't divide by zero or
+ * flip sign; matches goalPace's own Math.max(1, rawMs).
+ */
+function monthsUntil(targetDate: string, asOf: Date): number {
+  const rawMonths = Math.round((new Date(targetDate).getTime() - asOf.getTime()) / (30.44 * 24 * 3600 * 1000));
+  return Math.max(1, rawMonths);
+}
+
+export function allocateGoalCapacity(
+  goals: GoalCapacityInput[],
+  monthlyCapacityUSD: number,
+  asOf: Date = new Date(),
+): GoalAllocationReport {
+  const withRates = goals.map((g) => {
+    const remainingUSD = Math.max(0, g.targetAmountUSD - g.currentAmountUSD);
+    const months = monthsUntil(g.targetDate, asOf);
+    const requiredMonthlyRateUSD = remainingUSD / months;
+    return { ...g, remainingUSD, months, requiredMonthlyRateUSD };
+  });
+
+  const totalRequiredMonthlyRateUSD = withRates.reduce((s, g) => s + g.requiredMonthlyRateUSD, 0);
+  const conflict: GoalCapacityConflict = {
+    hasConflict: totalRequiredMonthlyRateUSD > monthlyCapacityUSD,
+    totalRequiredMonthlyRateUSD,
+    totalCapacityUSD: monthlyCapacityUSD,
+    shortfallUSD: Math.max(0, totalRequiredMonthlyRateUSD - monthlyCapacityUSD),
+  };
+
+  // Soonest target date first -- the same "quick wins / nearest deadline
+  // first" instinct as debt snowball, and the sensible default absent any
+  // user-chosen priority (a v2 concern, see the ROADMAP design note).
+  const prioritized = [...withRates].sort((a, b) => new Date(a.targetDate).getTime() - new Date(b.targetDate).getTime());
+
+  let remainingCapacityUSD = monthlyCapacityUSD;
+  const results: GoalAllocationResult[] = prioritized.map((g) => {
+    const allocatedMonthlyRateUSD = g.remainingUSD <= 0
+      ? 0
+      : Math.max(0, Math.min(g.requiredMonthlyRateUSD, remainingCapacityUSD));
+    remainingCapacityUSD = Math.max(0, remainingCapacityUSD - allocatedMonthlyRateUSD);
+
+    const proj = projectCompletion(g.remainingUSD, allocatedMonthlyRateUSD, asOf);
+    const onSchedule = g.remainingUSD <= 0 || (proj.months !== null && proj.months <= g.months);
+    // "not_achievable" specifically means no reprioritization could ever
+    // fix it -- this goal's own need exceeds the ENTIRE pool, not just
+    // what was left after higher-priority goals. Anything short of that,
+    // where the shortfall is purely a priority-order artifact, is
+    // "achievable_with_adjustment": reprioritizing it higher, or adding
+    // capacity, would close the gap.
+    const status: GoalFeasibilityStatus = onSchedule
+      ? "achievable"
+      : g.requiredMonthlyRateUSD > monthlyCapacityUSD
+      ? "not_achievable"
+      : "achievable_with_adjustment";
+
+    return {
+      id: g.id,
+      name: g.name,
+      status,
+      remainingUSD: g.remainingUSD,
+      requiredMonthlyRateUSD: g.requiredMonthlyRateUSD,
+      allocatedMonthlyRateUSD,
+      projectedMonths: proj.months,
+      projectedDateDisplay: proj.dateDisplay,
+      shortfallMonthlyRateUSD: onSchedule ? 0 : g.requiredMonthlyRateUSD - allocatedMonthlyRateUSD,
+    };
+  });
+
+  return { conflict, goals: results };
+}
