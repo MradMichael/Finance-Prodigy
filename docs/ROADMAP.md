@@ -358,7 +358,7 @@ The owner's own dominant financial fact is a fixed monthly installment with a kn
 - **Phase 3 dependency, resolved (path B, owner's decision):** F3's sub-phase 0 computes the capacity step-change internally from `StoredRecurring.endDate`/`isRecurringActive()` directly, rather than waiting on Phase 3's full product surface. Phase 3 stays open with its own acceptance criteria — see its own entry above.
 
 **Sub-phases:**
-1. **Pure allocation engine, tests-first, unwired** (`allocateGoalCapacity`, sibling of `simulateDebtPayoff`/`projectCompletion`). Conflict case written first. **In progress 2026-09-01.**
+1. **Pure allocation engine, tests-first, unwired** (`allocateGoalCapacity`, sibling of `simulateDebtPayoff`/`projectCompletion`). Conflict case written first. **Built 2026-09-01 on `feat/goal-feasibility-engine-subphase1` (`aa4e5de`), 471/471 full suite, tsc clean, both builds clean. Held for review, not merged — Rule 6.**
 2. **Capacity input including the step-change** — internal Phase-3-slice per path B above.
 3. **Wire into `ProjectionsScreen.tsx`**, replacing the lumped combined line with the per-goal breakdown and conflict banner. **This sub-phase fixes 2.4.44 as a side effect** — the individual goal rows currently using `goalPace`'s flawed math switch to the new engine's correct allocation.
 4. **Cleanup** — decide whether the health-score's own Goal Momentum display (2.4.44's other half) also switches to the new engine, or stays separately scoped.
