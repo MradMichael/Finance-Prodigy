@@ -137,3 +137,65 @@ export function allocateGoalCapacity(
 
   return { conflict, goals: results };
 }
+
+/**
+ * F3 sub-phase 2 -- capacity input, including the step-change. Path B
+ * (owner's decision, docs/ROADMAP.md, Phase 3/4): computed internally from
+ * StoredRecurring.endDate directly, rather than waiting on Phase 3's full
+ * product surface (remaining-installments UI, a dedicated forward view) --
+ * Phase 3 stays open with its own acceptance criteria, this is only the
+ * slice of it F3 actually needs.
+ *
+ * baseCapacityUSD is assumed to already have every currently-active
+ * obligation netted out (today's real, current monthly capacity) --
+ * capacityByMonth adds each obligation's amount BACK once its own endDate
+ * passes, which is what produces the step change. Which obligations are
+ * "currently active" (and thus already reflected in baseCapacityUSD) is a
+ * wiring-stage decision (isRecurringActive), not this pure function's --
+ * same division of responsibility as GoalCapacityInput/allocateGoalCapacity
+ * above.
+ */
+export interface RecurringCapacityInput {
+  id: string;
+  monthlyAmountUSD: number;
+  /** ISO date (YYYY-MM-DD), or null for an obligation with no end date -- never frees capacity. */
+  endDate: string | null;
+}
+
+export interface MonthlyCapacity {
+  monthsFromNow: number;
+  capacityUSD: number;
+}
+
+/**
+ * UTC-anchored month-stepper, deliberately not debtEngine.ts's own
+ * addMonths (which uses local-time getters) -- endDate strings parse as
+ * UTC midnight (this codebase's established convention, e.g. nextOccurrence/
+ * dueCycles), and this function's exact-date comparisons need to stay on
+ * the same basis regardless of which timezone this runs in, the same
+ * reasoning isCycleOverdue's own UTC-anchored asOf already established.
+ */
+function addMonthsUTC(date: Date, months: number): Date {
+  const targetDay = date.getUTCDate();
+  const candidate = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + months, 1));
+  const daysInTargetMonth = new Date(Date.UTC(candidate.getUTCFullYear(), candidate.getUTCMonth() + 1, 0)).getUTCDate();
+  candidate.setUTCDate(Math.min(targetDay, daysInTargetMonth));
+  return candidate;
+}
+
+export function capacityByMonth(
+  baseCapacityUSD: number,
+  obligations: RecurringCapacityInput[],
+  monthsAhead: number,
+  asOf: Date = new Date(),
+): MonthlyCapacity[] {
+  const results: MonthlyCapacity[] = [];
+  for (let m = 0; m <= monthsAhead; m++) {
+    const monthDate = addMonthsUTC(asOf, m);
+    const freedUpUSD = obligations
+      .filter((o) => o.endDate !== null && new Date(o.endDate) <= monthDate)
+      .reduce((s, o) => s + o.monthlyAmountUSD, 0);
+    results.push({ monthsFromNow: m, capacityUSD: baseCapacityUSD + freedUpUSD });
+  }
+  return results;
+}
