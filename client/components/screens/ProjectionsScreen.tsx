@@ -6,6 +6,7 @@ import { BUDGET_RULES, moneyEquals, toUSD as toUSDShared, DEFAULT_LBP_RATE } fro
 import { dateFmt, toDebtInputs, type computeDashboard } from "../../lib/computeDashboard";
 import { simulateDebtPayoff, addMonths, type DebtInput } from "../../lib/debtEngine";
 import { projectCompletion } from "../../lib/projections";
+import { allocateGoalCapacity, type GoalCapacityInput, type GoalAllocationReport, type GoalFeasibilityStatus } from "../../lib/goalFeasibility";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money } from "./shared";
 
@@ -17,6 +18,13 @@ const PRIORITY_META: Record<PriorityKey, { label: string; color: (T: ReturnType<
 };
 
 interface StageResult { months: number | null; startMonths: number; dateDisplay: string | null; warning?: string | null; skipped?: boolean }
+
+/** F3 (Goal Feasibility Engine) status -> label/color, the per-goal breakdown's own equivalent of PRIORITY_META above. */
+const GOAL_STATUS_META: Record<GoalFeasibilityStatus, { label: string; color: (T: ReturnType<typeof useTheme>) => string }> = {
+  achievable:                 { label: "On track",                        color: (T) => T.jade },
+  achievable_with_adjustment: { label: "Needs adjustment",                 color: (T) => T.brass },
+  not_achievable:              { label: "Not achievable at this amount",   color: (T) => T.coral },
+};
 
 function Bar({ pct, color, T }: { pct: number; color: string; T: ReturnType<typeof useTheme> }) {
   return (
@@ -64,6 +72,25 @@ export default function ProjectionsScreen({
     return s + toUSDShared(remaining, g.currency, lbpRate);
   }, 0);
 
+  // F3 (Goal Feasibility Engine), sub-phase 3: dashData.goals[].id is a
+  // 1-based array INDEX into financials.goals, not a real StoredGoal.id
+  // (2.4.49) -- allocateGoalCapacity's results are keyed by real id, so the
+  // mapping below zips financials.goals with dashData.goals BY ARRAY INDEX
+  // (both are built from the same data.goals.map(), same order, same
+  // length -- the same guarantee GoalsScreen.tsx's editGoal/pay/togglePause
+  // already rely on), carrying the real id through instead of the display
+  // index.
+  const openGoalsWithId = financials.goals
+    .map((stored, i) => ({ stored, dash: goals[i] }))
+    .filter(({ dash }) => dash.projection.pctComplete < 100 && !dash.paused);
+  const goalCapacityInputs: GoalCapacityInput[] = openGoalsWithId.map(({ stored }) => ({
+    id: stored.id,
+    name: stored.name,
+    targetAmountUSD: toUSDShared(stored.targetAmount, stored.currency, lbpRate),
+    currentAmountUSD: toUSDShared(stored.currentAmount, stored.currency, lbpRate),
+    targetDate: stored.targetDate,
+  }));
+
   // The one number that drives every projection below — directly set, not a
   // hidden sum of "recommended savings + something else" (that combination
   // read as a bug the first time it shipped: dial the slider to $150 and
@@ -110,6 +137,13 @@ export default function ProjectionsScreen({
   let cursor = 0;
   let feasible = hasIncome && testAmount > 0;
   let stopReason: string | null = null;
+  // F3 sub-phase 3: set only when the plan's priority order actually
+  // reaches the goals stage (mirrors stages.goals itself) -- computed at
+  // the SAME asOf (startDate, i.e. cursor months from now) the sequential
+  // plan below uses, not "today", so the conflict banner and the overall
+  // plan timeline can never disagree about when goals actually start
+  // competing for capacity.
+  let goalAllocationReport: GoalAllocationReport | null = null;
   for (const key of priority) {
     if (!feasible) { stages[key] = { months: null, startMonths: cursor, dateDisplay: null, skipped: true }; continue; }
     const startDate = addMonths(new Date(), cursor);
@@ -131,9 +165,39 @@ export default function ProjectionsScreen({
         }
       }
     } else {
-      const proj = projectCompletion(totalGoalsRemaining, testAmount, startDate);
-      stages.goals = { months: proj.months, startMonths: cursor, dateDisplay: proj.dateDisplay };
-      if (proj.months === null) { feasible = false; stopReason = "Goals aren't reachable at this monthly amount."; } else cursor += proj.months;
+      // Sequential priority allocation (allocateGoalCapacity), not the old
+      // single-pool projectCompletion(totalGoalsRemaining, ...) -- that
+      // treated every open goal as one blended blob with no awareness of
+      // any individual goal's own target date or of competition between
+      // goals, exactly the bug 2.4.44 already proved live on this screen's
+      // own per-goal rows. testAmount is the right capacity figure here
+      // (not a reduced share of it): this branch only ever runs once EF and
+      // Debt have already finished (the !feasible guard above), so by
+      // definition the FULL testAmount/mo is free for goals at this point
+      // -- the same assumption the old single-pool call already made.
+      const report = allocateGoalCapacity(goalCapacityInputs, testAmount, startDate);
+      goalAllocationReport = report;
+      if (report.goals.length === 0) {
+        stages.goals = { months: 0, startMonths: cursor, dateDisplay: dateFmt(startDate) };
+      } else if (report.goals.some((g) => g.projectedMonths === null)) {
+        // At least one goal was allocated $0/mo and still has a gap -- no
+        // finite date exists for it at this rate (projectCompletion's own
+        // convention), so the combined goals stage itself has no finite date.
+        stages.goals = { months: null, startMonths: cursor, dateDisplay: null };
+        feasible = false;
+        stopReason = report.conflict.hasConflict
+          ? `Goals need ${money(report.conflict.shortfallUSD)}/mo more than this plan provides to hit every target date.`
+          : "Goals aren't reachable at this monthly amount.";
+      } else {
+        // The stage isn't "done" until every open goal is -- the furthest
+        // one out determines the combined finish. Reuses that goal's own
+        // projectedDateDisplay (computed by allocateGoalCapacity at this
+        // same startDate) rather than re-deriving a date from the month
+        // count, so this can never drift from the per-goal row below it.
+        const last = report.goals.reduce((a, b) => (b.projectedMonths ?? 0) > (a.projectedMonths ?? 0) ? b : a);
+        stages.goals = { months: last.projectedMonths, startMonths: cursor, dateDisplay: last.projectedDateDisplay };
+        cursor += last.projectedMonths ?? 0;
+      }
     }
   }
   const totalMonths = feasible ? cursor : null;
@@ -341,38 +405,59 @@ export default function ProjectionsScreen({
           )}
         </div>
 
-        {/* Goals */}
+        {/* Goals -- F3 (Goal Feasibility Engine) sub-phase 3: per-goal breakdown + conflict banner, replacing the old lumped "combined" pair (2.4.44, live bug fixed as a side effect of this wiring). */}
         <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
           <p className="text-xs uppercase tracking-widest mb-3" style={{ color: T.mute }}>Goals</p>
-          {openGoals.length === 0 ? (
+          {openGoalsWithId.length === 0 ? (
             <p className="text-sm" style={{ color: T.mute }}>{goals.length === 0 ? "No goals yet. Add one in Goals." : "All goals achieved. 🎉"}</p>
+          ) : !hasIncome ? (
+            <p className="text-sm" style={{ color: T.mute }}>Set your monthly income to see this.</p>
+          ) : testAmount <= 0 ? (
+            <p className="text-sm" style={{ color: T.mute }}>Set a monthly amount above to see where this plan leads.</p>
+          ) : stages.goals.skipped ? (
+            // hasIncome and testAmount > 0, so this can only mean an earlier
+            // stage (safety net or debt, per the current priority order)
+            // never finished -- goals genuinely haven't been reached yet,
+            // not a data problem.
+            <p className="text-sm" style={{ color: T.mute }}>This plan reaches goals only after safety net and debt are handled first — reorder priorities above, or raise the monthly amount, to see them here.</p>
+          ) : !goalAllocationReport ? (
+            <p className="text-sm" style={{ color: T.mute }}>Set a monthly amount above to see where your goals stand.</p>
           ) : (
             <>
-              <div className="grid grid-cols-2 gap-4 pb-4" style={{ borderBottom: `1px solid ${T.line}` }}>
-                <PaceRow
-                  label="At required pace (combined)"
-                  months={Math.max(0, ...openGoals.map((g) => g.projection.monthsRemaining))}
-                  // The combined timeline is bounded by whichever open goal's
-                  // own deadline is furthest out -- that goal's own
-                  // targetDateDisplay IS the real calendar date this row's
-                  // month count refers to. Was hardcoded null, so this row
-                  // rendered an empty headline for every user with any open
-                  // goal (i.e. almost always).
-                  dateDisplay={openGoals.reduce<typeof openGoals[number] | null>(
-                    (furthest, g) => !furthest || g.projection.monthsRemaining > furthest.projection.monthsRemaining ? g : furthest,
-                    null,
-                  )?.projection.targetDateDisplay ?? null}
-                  color={T.text} T={T}
-                />
-                <PaceRow label="In your plan (combined)" months={stages.goals.months} dateDisplay={stages.goals.dateDisplay} color={T.jade} T={T} />
-              </div>
-              <div className="space-y-2 mt-3">
-                {openGoals.map((g) => (
-                  <div key={g.id} className="flex items-center justify-between text-sm">
-                    <span style={{ color: T.text }}>{g.emoji} {g.name}</span>
-                    <span style={{ color: T.mute }}>{g.projection.pctComplete}% saved · target {g.projection.targetDateDisplay}</span>
-                  </div>
-                ))}
+              {goalAllocationReport.conflict.hasConflict && (
+                <div className="rounded-xl px-3 py-2.5 mb-3" style={{ background: T.coral + "15", border: `1px solid ${T.coral}40` }}>
+                  <p className="text-sm font-medium" style={{ color: T.coral }}>
+                    Your goals need {money(goalAllocationReport.conflict.totalRequiredMonthlyRateUSD)}/mo combined to hit every target date — {money(goalAllocationReport.conflict.shortfallUSD)}/mo more than the {money(testAmount)}/mo this plan gives them.
+                  </p>
+                  <p className="text-xs mt-1" style={{ color: T.coral }}>
+                    Something has to give: reorder your goals (soonest-deadline goals are funded first) or raise the monthly amount above.
+                  </p>
+                </div>
+              )}
+              <div className="space-y-2">
+                {goalAllocationReport.goals.map((result) => {
+                  const dash = openGoalsWithId.find((x) => x.stored.id === result.id)!.dash;
+                  const meta = GOAL_STATUS_META[result.status];
+                  return (
+                    <div key={result.id} className="rounded-xl px-3 py-2" style={{ background: T.panelSoft }}>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-sm" style={{ color: T.text }}>{dash.emoji} {dash.name}</span>
+                        <span className="text-[10px] uppercase tracking-widest font-medium" style={{ color: meta.color(T) }}>{meta.label}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 mt-1">
+                        <span className="text-xs" style={{ color: T.mute }}>{dash.projection.pctComplete}% saved · target {dash.projection.targetDateDisplay}</span>
+                        <span className="text-xs tabular-nums" style={{ color: meta.color(T) }}>
+                          {result.projectedMonths === null ? "Not reachable" : result.projectedMonths === 0 ? "Already there" : `${result.projectedDateDisplay} (${result.projectedMonths} mo)`}
+                        </span>
+                      </div>
+                      {result.shortfallMonthlyRateUSD > 0 && (
+                        <p className="text-[11px] mt-1" style={{ color: T.mute }}>
+                          Needs {money(result.shortfallMonthlyRateUSD)}/mo more to hit its own target date at this priority.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </>
           )}
