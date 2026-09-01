@@ -25,7 +25,7 @@ import type { LocalFinancials } from "../lib/localData";
 import { computeDashboard } from "../lib/computeDashboard";
 import { getSession, hasValidSession, signOut } from "../lib/auth";
 import type { Session } from "../lib/auth";
-import { pushToServer, pullFromServer, hasAutoPulled, markAutoPulled } from "../lib/syncService";
+import { pushToServer, pullFromServer, hasAutoPulled, markAutoPulled, mergeAndPush, buildMergeNoticeText } from "../lib/syncService";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "../components/EssaBrand";
 import RecurringModelNoticeModal from "../components/RecurringModelNoticeModal";
@@ -47,6 +47,12 @@ export default function Home() {
   const [financials, setFinancials] = useState<LocalFinancials | null>(null);
   const [screen,     setScreen]     = useState<Screen>("overview");
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
+  // Phase 2.7 sub-phase 3 -- what an automatic merge actually did, worded
+  // for the user (buildMergeNoticeText). Deliberately NOT cleared by any
+  // timer, unlike syncStatus above: a silent-by-default notification about
+  // money changing is exactly what the owner asked this to avoid (2026-09-01)
+  // -- it stays until manually dismissed, whatever the conflict count.
+  const [mergeNotice, setMergeNotice] = useState<{ text: string; showReviewLink: boolean } | null>(null);
   // Mirrors loggingRecurringRef for rendering (disables the Confirm button
   // while its own write is in flight) -- the ref below is the actual
   // guard; this is display-only and can lag it by a render.
@@ -93,11 +99,28 @@ export default function Home() {
   const autoSync = useCallback(async (data: LocalFinancials, email: string) => {
     setSyncStatus("syncing");
     const result = await pushToServer(email, data);
-    // 2.4.38: a conflict isn't a transient failure a retry would fix (unlike
-    // "offline"), and this device's local changes are still sitting
-    // unsynced -- stays visible until the owner resolves it via Push/Pull on
-    // the profile page, not faded away like the other statuses below.
-    if (result.conflict) { setSyncStatus("conflict"); return; }
+    // 2.4.38: a conflict isn't a transient failure a retry would fix.
+    // Phase 2.7 sub-phase 3: attempt an automatic merge instead of only
+    // setting the static indicator -- pull the server's current data,
+    // merge transactions (both devices' new transactions survive,
+    // tombstones win, a genuine same-id conflict resolves by updatedAt),
+    // push the merged result. Falls back to the static "conflict"
+    // indicator (stays visible until resolved via Push/Pull/Merge on the
+    // profile page) only if the merge itself can't complete.
+    if (result.conflict) {
+      const merged = await mergeAndPush(email, data);
+      if (!merged.ok) { setSyncStatus("conflict"); return; }
+      const userId = sessionRef.current?.userId;
+      if (userId) {
+        await saveData(merged.mergedData, userId);
+        setFinancials(merged.mergedData);
+      }
+      const notice = buildMergeNoticeText(merged.addedFromServer, merged.conflictDetails);
+      if (notice.text) setMergeNotice(notice);
+      setSyncStatus("synced");
+      setTimeout(() => setSyncStatus((s) => s !== "syncing" ? "idle" : s), 4000);
+      return;
+    }
     setSyncStatus(result.ok ? "synced" : "offline");
     // fade back to idle after 4 s so the indicator doesn't stay forever
     setTimeout(() => setSyncStatus((s) => s !== "syncing" ? "idle" : s), 4000);
@@ -386,6 +409,41 @@ export default function Home() {
 
       {/* Mobile bottom nav */}
       <BottomNav screen={screen} setScreen={setScreen} />
+
+      {/* Merge notice (Phase 2.7 sub-phase 3) -- deliberately NOT auto-dismissed.
+          A silent-by-default notification about money changing is what this
+          exists to avoid (owner's instruction, 2026-09-01); it stays until
+          the user dismisses it themselves. */}
+      {mergeNotice && (
+        <div
+          className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50 flex items-start gap-3"
+          style={{ background: T.panel, border: `1px solid ${T.line}` }}
+        >
+          <span className="text-sm flex-1" style={{ color: T.text }}>
+            {mergeNotice.text}
+            {mergeNotice.showReviewLink && (
+              <>
+                {" "}
+                <button
+                  onClick={() => { setScreen("transactions"); setMergeNotice(null); }}
+                  className="underline font-medium"
+                  style={{ color: T.brass }}
+                >
+                  Review in Transactions
+                </button>
+              </>
+            )}
+          </span>
+          <button
+            onClick={() => setMergeNotice(null)}
+            aria-label="Dismiss"
+            className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-lg hover:opacity-70 transition-opacity"
+            style={{ color: T.mute }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* One-time notice: shown once per account migrated onto the confirm-on-due model (Phase 2.5.3) */}
       {!financials.recurringModelNoticeSeen && financials.recurring.some((r) => r.confirmCutoverDate) && (

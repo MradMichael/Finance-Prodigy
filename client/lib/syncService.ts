@@ -186,8 +186,15 @@ export async function pullFromServer(email: string): Promise<{ ok: true; data: L
   }
 }
 
+export interface MergeConflictDetail {
+  /** What the merge kept -- same object as mergeTransactions' own conflicts array. */
+  winner: StoredTransaction;
+  /** What got silently overridden -- the OTHER side's pre-merge copy. This is what a "was $X" trace needs and mergeTransactions' own conflicts array can't provide on its own (it only ever returns the winner). */
+  loser: StoredTransaction;
+}
+
 export type MergeAndPushResult =
-  | { ok: true; syncedAt: string; addedFromServer: number; conflictsResolved: number; conflicts: StoredTransaction[] }
+  | { ok: true; syncedAt: string; addedFromServer: number; conflictsResolved: number; conflicts: StoredTransaction[]; conflictDetails: MergeConflictDetail[]; mergedData: LocalFinancials }
   | { ok: false; error: string; conflict?: boolean };
 
 /**
@@ -227,13 +234,67 @@ export async function mergeAndPush(email: string, local: LocalFinancials): Promi
   const pushed = await pushToServer(email, mergedData);
   if (!pushed.ok) return { ok: false, error: pushed.error ?? "Merge succeeded locally, but push failed.", conflict: pushed.conflict };
 
+  // Each conflict's winner is verbatim either local's or server's pre-merge
+  // copy (resolveTransactionConflict never synthesizes a third value) --
+  // whichever one it ISN'T is the loser, the value that got silently
+  // overridden. Needed so the eventual notice can say "was $X", not just
+  // "something changed" (owner's instruction, 2026-09-01).
+  const conflictDetails: MergeConflictDetail[] = merged.conflicts.map((winner) => {
+    const localOriginal = local.transactions.find((t) => t.id === winner.id)!;
+    const serverOriginal = pulled.data.transactions.find((t) => t.id === winner.id)!;
+    const loser = JSON.stringify(winner) === JSON.stringify(localOriginal) ? serverOriginal : localOriginal;
+    return { winner, loser };
+  });
+
   return {
     ok: true,
     syncedAt: pushed.syncedAt!,
     addedFromServer: merged.addedFromServer,
     conflictsResolved: merged.conflictsResolved,
     conflicts: merged.conflicts,
+    conflictDetails,
+    mergedData,
   };
+}
+
+/**
+ * Phase 2.7, sub-phase 3 -- the actual wording a user sees after an
+ * automatic merge. Pure and separately testable so the wording rules
+ * (owner's instruction, 2026-09-01) can be verified without a live sync:
+ * 2 or fewer conflicts are named inline (what changed, what it was); 3 or
+ * more collapse to a count plus a signal to review, rather than a wall of
+ * text in a toast. Silence (empty string) only when there is truly
+ * nothing to report -- a merge that added nothing and resolved nothing
+ * (e.g. only non-transaction fields differed, which this phase doesn't
+ * detect -- see 2.4.52) stays quiet, matching today's roughly-silent
+ * successful-sync behavior.
+ */
+function fmtMoney(n: number): string {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
+}
+
+export function buildMergeNoticeText(
+  addedFromServer: number,
+  conflictDetails: MergeConflictDetail[],
+): { text: string; showReviewLink: boolean } {
+  const parts: string[] = [];
+  if (addedFromServer > 0) {
+    parts.push(`${addedFromServer} new transaction${addedFromServer === 1 ? "" : "s"} added`);
+  }
+  const n = conflictDetails.length;
+  let showReviewLink = false;
+  const describe = (d: MergeConflictDetail) =>
+    `kept the newer edit to "${d.winner.description}" (${fmtMoney(d.winner.amount)}, was ${fmtMoney(d.loser.amount)})`;
+  if (n === 1) {
+    parts.push(describe(conflictDetails[0]));
+  } else if (n === 2) {
+    parts.push(conflictDetails.map(describe).join(" and "));
+  } else if (n >= 3) {
+    parts.push(`${n} edit conflicts resolved (kept the most recent edit each time)`);
+    showReviewLink = true;
+  }
+  if (parts.length === 0) return { text: "", showReviewLink: false };
+  return { text: `Merged with your other device — ${parts.join(", ")}.`, showReviewLink };
 }
 
 export function getLastSyncTime(): string | null {
