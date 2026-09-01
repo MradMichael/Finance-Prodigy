@@ -315,7 +315,9 @@ Once live, **Rule 8 activates**: the ordering below becomes provisional and subj
 
 ## Phase 3 — F2 Recurring obligations with end dates
 
-**Status:** not started · **Depends on:** Phase 1, Phase 2.5 · **Blocks:** Phase 4
+**Status:** not started · **Depends on:** Phase 1, Phase 2.5 · **Blocks:** nothing (see 2026-09-01 note)
+
+**2026-09-01 — owner's explicit decision (path B, F3 design session):** Phase 4 (F3) no longer waits on this phase. F3 needs only the *capacity step-change* this phase would eventually surface — computable directly from the already-existing `StoredRecurring.endDate`/`isRecurringActive()` as F3's own internal sub-phase 0, without building this phase's product surface first. **This phase stays explicitly open, with its own acceptance criteria intact — partially satisfied by F3's internal capacity math, product surface (remaining-installments UI, a dedicated forward view screen) still unbuilt.** Deliberately visible as unfinished, not quietly absorbed into F3.
 
 **Dependency note added 2026-08-22:** Phase 2.5 now sits between Phase 1 and this one, and both touch `StoredRecurring` directly. Building this phase's forward-capacity view on the live-estimate model would mean redoing it once 2.5 lands — plan this against the confirm-on-due model, not the one described below.
 
@@ -335,22 +337,35 @@ The owner's own dominant financial fact is a fixed monthly installment with a kn
 
 ## Phase 4 — F3 Goal feasibility engine
 
-**Status:** not started · **Depends on:** Phase 3
+**Status:** design complete, sub-phase 1 in progress 2026-09-01 · **Depends on:** Phase 1, 2.4.44 (see note) — no longer blocked on Phase 3 in full (path B, see Phase 3's own 2026-09-01 note)
 
 **This is the highest-value feature in the roadmap and the strongest reason for the product to exist.** It automates the question the owner currently answers by exporting a report and reasoning over it manually: *can I actually afford this, by that date?*
 
 **Requirements**
-- A goal has target amount, target date, currency, and active/archived status.
-- Given current balances, projected capacity from Phase 3, and existing allocations, the engine reports per goal: **achievable**, **achievable with adjustment**, or **not achievable by the target date**.
+- A goal has target amount, target date, currency, and active/archived status (`pausedAt` already serves as "archived" — its own existing comment already says "paused/archived," no new field needed).
+- Given current balances, projected capacity, and existing allocations, the engine reports per goal: **achievable**, **achievable with adjustment**, or **not achievable by the target date**.
 - Where not achievable: state the specific shortfall and the monthly contribution required to close it.
 - Where goals compete for the same capacity: **state the conflict explicitly.** Never silently assume parallel funding.
 - Archived goals excluded from capacity, retained as records.
 
-**Design note.** The conflict case is the one that makes this feature honest. An engine that reports three goals each individually achievable, while funding all three from the same money, is worse than no engine. Test that case first.
+**Design note (original).** The conflict case is the one that makes this feature honest. An engine that reports three goals each individually achievable, while funding all three from the same money, is worse than no engine. Test that case first.
+
+**Design, completed 2026-09-01 — full detail below, confirmed against current code, not assumed:**
+- **F3 does not re-decide EF/Debt/Goals priority** — `ProjectionsScreen.tsx` already owns that 3-way waterfall (user-reorderable). F3 consumes whatever capacity currently reaches the Goals stage and replaces that stage's single lumped "In your plan (combined)" line with a real per-goal, conflict-aware breakdown.
+- **Allocation model mirrors `simulateDebtPayoff`'s already-proven shape** (`debtEngine.ts`) — sequential priority, not independent per-goal checks, not proportional splitting. Default priority: soonest target date first (no configuration needed for v1; user-reorderable is a natural v2).
+- **The conflict flag is computed independently of any single goal's status**: `totalRequired = Σ(required rate across active goals)` vs. total Goals capacity — can never be silently true while every goal reads "achievable," by construction.
+- **2.4.44 dependency, resolved:** `goalPace`'s existing `pace`/`onTrack` (`computeDashboard.ts`) cannot be reused for feasibility — it's the exact bug 2.4.44 documents, dividing the whole Savings pool against each goal independently. F3 builds its own correct sequential allocation from scratch; see 2.4.44's own re-rated entry in `docs/AUDIT_2026-08.md` for why this isn't optional.
+- **Phase 3 dependency, resolved (path B, owner's decision):** F3's sub-phase 0 computes the capacity step-change internally from `StoredRecurring.endDate`/`isRecurringActive()` directly, rather than waiting on Phase 3's full product surface. Phase 3 stays open with its own acceptance criteria — see its own entry above.
+
+**Sub-phases:**
+1. **Pure allocation engine, tests-first, unwired** (`allocateGoalCapacity`, sibling of `simulateDebtPayoff`/`projectCompletion`). Conflict case written first. **In progress 2026-09-01.**
+2. **Capacity input including the step-change** — internal Phase-3-slice per path B above.
+3. **Wire into `ProjectionsScreen.tsx`**, replacing the lumped combined line with the per-goal breakdown and conflict banner. **This sub-phase fixes 2.4.44 as a side effect** — the individual goal rows currently using `goalPace`'s flawed math switch to the new engine's correct allocation.
+4. **Cleanup** — decide whether the health-score's own Goal Momentum display (2.4.44's other half) also switches to the new engine, or stays separately scoped.
 
 **Acceptance:** validated against the owner's real goals and real capacity; conflict case produces an explicit warning.
 
-**SAFE STOP.**
+**SAFE STOP** per sub-phase, per the standard discipline.
 
 ---
 
@@ -416,23 +431,39 @@ Users are on inconsistent Lebanese mobile networks.
 
 ## Phase 9 — Generalized currency (beyond USD/LBP)
 
-**Status:** not started (added 2026-08-25, owner's explicit assessment: Phase 1-sized, not building before the cohort) · **Depends on:** Phase 1
+**Status:** not started · **Depends on:** Phase 1 · Split into two genuinely different-sized versions 2026-09-01 — the original "90 occurrences, Phase-1-sized" estimate below conflated them. See the scope-reassessment note at the end of this section for why that matters.
 
-**The ask:** a user outside Lebanon (e.g. Europe) should be able to use EUR instead of LBP — USD stays the anchor currency, but the *second* currency shouldn't be hardcoded to LBP specifically.
+**The ask:** a user outside Lebanon (e.g. Europe, or Lebanese diaspora — see the small-version note below) should be able to use a currency other than LBP as their second currency.
 
-**Why this is Phase-1-sized, not a small follow-on.** `Currency` is a closed 2-value union (`"USD" | "LBP"`, `client/lib/localData.ts:3`), and that assumption is load-bearing, not incidental — 90 occurrences of LBP-specific branching (`=== "LBP"`, the `L£` symbol, dual-currency toggles) across 18 files, per a direct grep this session. Concretely, generalizing means:
-- Widening `Currency` from a 2-value union to an open set (ISO codes), which ripples into every `Currency`-typed field across `StoredTransaction`/`StoredRecurring`/`StoredGoal`/`StoredDebt`/`StoredAsset`/`TrackedBalance`.
-- `lbpRate`/`lbpRateHistory`/`lbpRateAtEntry`/`DEFAULT_LBP_RATE` are all LBP-*named*, single-flat-value fields — becoming a currency-keyed rate map (`exchangeRates: Record<string, number>`, and the historized equivalent) is a real data-model change requiring its own migration, not a rename.
-- `toUSDShared`/`toUSDForMonth`/`valueForMonth` (the entire conversion engine) assume exactly one foreign currency anchored against USD — generalizing to *any* foreign currency is an architecture change to the conversion layer itself, not a third hardcoded branch alongside the other two.
-- Every currency-symbol/toggle site (`CurrencyToggle` in `form/Primitives.tsx`, `fmtCur`, every hardcoded `"$"`/`"L£"` ternary) needs a symbol/formatting lookup instead of a binary choice.
+### Phase 9-large — any currency pair, currency-keyed conversion, no privileged base
 
-Phase 1 (1.1–1.5, the dual-currency work already built) took multiple sub-phases to introduce exactly *one* additional currency correctly. Generalizing to *any* second currency is comparable in size, arguably larger — it means removing the binary assumption Phase 1 just finished building in, everywhere it appears, not repeating Phase 1's pattern a third time.
+**Why this is Phase-1-sized.** `Currency` is a closed 2-value union (`"USD" | "LBP"`, `client/lib/localData.ts:3`), and that assumption is load-bearing for this version specifically:
+- Widening `Currency` to an open set (ISO codes), rippling into every `Currency`-typed field across `StoredTransaction`/`StoredRecurring`/`StoredGoal`/`StoredDebt`/`StoredAsset`/`TrackedBalance`.
+- `lbpRate`/`lbpRateHistory`/`lbpRateAtEntry`/`DEFAULT_LBP_RATE` becoming a currency-keyed rate map (`exchangeRates: Record<string, number>`, and the historized equivalent) — a real data-model change, not a rename.
+- `toUSDShared`/`toUSDForMonth`/`valueForMonth` (the entire conversion engine) assume exactly one foreign currency anchored against USD — generalizing to *any* pair, with no privileged base, is an architecture change to the conversion layer itself.
+- Every currency-symbol/toggle site needs a symbol/formatting lookup instead of a binary choice.
 
-**Acceptance (sketch, not final — design this properly when scheduled):** a user can pick any supported currency as their "second currency" at setup; every screen that today hardcodes LBP behaves identically for the chosen currency; historized past-month figures for an account that switches its second currency mid-history don't retroactively rewrite what was already shown.
+Phase 1 (1.1–1.5) took multiple sub-phases to introduce exactly *one* additional currency correctly. This version is comparable in size, arguably larger.
 
-**Reaffirmed deferred, 2026-08-29, owner's explicit decision (usability/capability backlog planning pass).** Weighed directly against the dual-currency-single-transaction backlog item (Deferred backlog, below): that item is a ~1-day fix serving a need the owner has already personally hit (a real $10 + L£200,000 bill); this phase is Phase-1-sized effort serving a currency nobody in the launch cohort (a WhatsApp group of people the owner knows directly) currently needs. Building this first would repeat the sequencing problem that prompted the whole planning pass — large, speculative-value work displacing small, certain-value work. Revisit if/when an actual non-LBP-second-currency user is expected.
+**Acceptance (sketch, not final):** any currency pair, no privileged base; historized past-month figures for an account that switches currencies mid-history don't retroactively rewrite what was already shown.
 
-**SAFE STOP.**
+**Not building before the cohort — no active argument for this version at all right now** (see small version below for the version that actually has a near-term case).
+
+### Phase 9-small — second currency becomes a setting, still USD-plus-one
+
+**The real ask, reassessed 2026-09-01.** The cohort is Lebanese, so LBP is correctly hardcoded for them — but Phase 2's market is the diaspora, and a Lebanese person in Dubai thinks in AED, not LBP. This version doesn't need any-currency-pair generality: USD stays the anchor, exactly as today, and the *second* currency becomes a user-chosen setting instead of a hardcoded literal.
+
+**(a) How much of the 90/172-site estimate is real logic vs. naming.** Fresh grep, 2026-09-01: 172 occurrences across 23 files (the file count grew from 18 since this was last estimated — Batch A/B/C added new components). Broken down: `lbpRate` (89), `DEFAULT_LBP_RATE` (49), `lbpRateAtEntry` (20), `lbpRateHistory` (15) are all naming only. `"L£"` (20) is a cosmetic lookup. `=== "LBP"` comparisons (38) are mostly symbol/label selection, not behavioral branching. **Genuinely LBP-specific logic: exactly 2 sites** (`InputPanel.tsx:212`, `EditTransactionSheet.tsx:95`) — the "amount < 500 in LBP looks like a mistyped USD entry" guard, which embeds an LBP-specific magnitude assumption that doesn't generalize and needs to become conditional on `secondCurrency === "LBP"` rather than deleted. The devaluation stress-test on `CurrencyScreen.tsx` is mechanically generic already (only its copy is LBP-specific). **170 of 172 sites are rename-and-thread, not new logic** — real work, but TypeScript's own type system finds every site once `Currency` widens, unlike the large version's genuine architecture change.
+
+**(b) Migration:** trivial. Schema v4→v5, one additive field `secondCurrency: string`, backfilled to `"LBP"` for every existing account — zero behavior change for current users, same non-clobbering pattern as every migration this session.
+
+**(c) Rate history and the locked-at-setup decision (owner's decision, 2026-09-01):** `secondCurrency` is chosen once at setup and **never changeable afterward** — same rule, same reasoning, as goal currency (`addGoal`'s existing "locked at creation... changing it later would silently reinterpret" comment). `lbpRateHistory` stays one sequence, forever, under this rule — a user's second currency never changes, so there's never a second currency's history to reconcile against. **This is the design decision that keeps the small version small.** Allowing a later switch would require currency-keyed history, per-currency migrations, and a decision about what happens to reports that already showed the old currency's figures — that complexity is what makes the large version large. If switching is ever wanted, it gets designed as its own decision, not folded into this one.
+
+**(d) Real size and timing:** not "a session," not Phase-1-sized — genuinely between the two. Estimate: 2–3 focused sessions (type widening + threading, a curated setup picker, scoping the 2 real logic sites, a copy pass on ~6-8 LBP-specific strings). **Recommended post-cohort:** delivers zero visible change for the current (100% LBP) cohort, and unlocks the diaspora market specifically, which isn't this launch.
+
+**Acceptance:** a user picks their second currency once at setup (curated list, not full ISO-4217); every screen behaves identically for the chosen currency; the choice is permanently locked after first use.
+
+**SAFE STOP** (both versions).
 
 ---
 
