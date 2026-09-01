@@ -935,6 +935,65 @@ describe("goal edge cases", () => {
     expect(onePaused.goals.find((g) => g.name === "Behind")?.paused).toBe(true);
     expect(onePaused.goals.find((g) => g.name === "Met")?.paused).toBe(false);
   });
+
+  // 2.4.44, formula fix -- closes the finding for good (Projections' half
+  // was already fixed via allocateGoalCapacity, F3 sub-phase 3; this closes
+  // the health-score/GoalsScreen-badge half). The old formula compared each
+  // goal's own requirement against the WHOLE Savings pool independently, so
+  // N competing goals could each read "on pace" even though their SUM
+  // exceeds what's actually being saved -- the exact bug already proven on
+  // Projections. Deliberately NOT the same fix as Projections though: this
+  // is retrospective (how the month actually went), not a plan for a
+  // chosen amount, so there's no priority order here -- every still-open
+  // goal shares one aggregate coverage ratio instead of being ranked.
+  it("two goals each needing $1,000/mo, $1,200/mo real savings: aggregate coverage is 60%, not each independently reading ~100%+", () => {
+    const goalA = { id: "g1", name: "Goal A", emoji: "🎯", targetAmount: 1000, currentAmount: 0, currency: "USD" as const, targetDate: "2026-08-15", createdAt: "2026-01-01T00:00:00.000Z" };
+    const goalB = { id: "g2", name: "Goal B", emoji: "🎯", targetAmount: 1000, currentAmount: 0, currency: "USD" as const, targetDate: "2026-08-15", createdAt: "2026-01-01T00:00:00.000Z" };
+    const data = makeData({
+      income: 3000,
+      goals: [goalA, goalB],
+      transactions: [{ id: "t1", amount: 1200, currency: "USD", bucket: "SAVINGS", description: "Savings", date: "2026-07-01" }],
+    });
+    const result = computeDashboard(data);
+
+    // The old independent-comparison formula would give each goal
+    // min(2, 1200/1000) = 1.2 -> avg 1.2 -> score 100 (capped). The
+    // aggregate model: total required $2,000 against $1,200 available ->
+    // 60% coverage, shared by both -- this is the regression lock.
+    const goalsComponent = result.health.components.find((c) => c.key === "goals")!;
+    expect(goalsComponent.score).toBe(60);
+
+    // Extends to the per-goal projection too (GoalsScreen's "on pace" /
+    // "needs push" badge is driven by projection.onTrack) -- both goals
+    // share the identical ratio, not one "on pace" and the other "needs
+    // push" for money drawn from the exact same pool.
+    const [pA, pB] = result.goals.map((g) => g.projection);
+    expect(pA.paceRatio).toBeCloseTo(0.6, 5);
+    expect(pB.paceRatio).toBeCloseTo(0.6, 5);
+    expect(pA.onTrack).toBe(false);
+    expect(pB.onTrack).toBe(false);
+  });
+
+  it("goals with DIFFERENT requirements still share the SAME coverage ratio -- no priority order, unlike Projections' allocateGoalCapacity", () => {
+    // A needs $1,500/mo, B needs $500/mo -- $2,000 total against $1,200
+    // available -> 60% for BOTH. A sequential/priority model (like
+    // Projections' engine, which this deliberately does NOT reuse) would
+    // instead fund one goal ahead of the other; this score is retrospective
+    // (how the month actually went, not a plan being chosen), so applying
+    // a priority to money already spent would assert an intention that was
+    // never expressed.
+    const goalA = { id: "g1", name: "Big goal",   emoji: "🎯", targetAmount: 1500, currentAmount: 0, currency: "USD" as const, targetDate: "2026-08-15", createdAt: "2026-01-01T00:00:00.000Z" };
+    const goalB = { id: "g2", name: "Small goal", emoji: "🎯", targetAmount: 500,  currentAmount: 0, currency: "USD" as const, targetDate: "2026-08-15", createdAt: "2026-01-01T00:00:00.000Z" };
+    const data = makeData({
+      income: 3000,
+      goals: [goalA, goalB],
+      transactions: [{ id: "t1", amount: 1200, currency: "USD", bucket: "SAVINGS", description: "Savings", date: "2026-07-01" }],
+    });
+    const result = computeDashboard(data);
+    const [pA, pB] = result.goals.map((g) => g.projection);
+    expect(pA.paceRatio).toBeCloseTo(0.6, 5);
+    expect(pB.paceRatio).toBeCloseTo(0.6, 5);
+  });
 });
 
 describe("sixMonthTrend income display — the incomeForMonth floor must not leak into the chart", () => {
