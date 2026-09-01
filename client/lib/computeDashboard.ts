@@ -361,8 +361,8 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   const debtScore = Math.max(0, 100 - debtPressurePct * 400);
 
   /**
-   * Per-goal remaining/pace, shared by the health-score average below and
-   * the goals[] projection array further down -- previously two
+   * Per-goal remaining/requirement, shared by the health-score average
+   * below and the goals[] projection array further down -- previously two
    * independently-computed, structurally identical blocks (the code's own
    * comment already warned they could drift). Phase 1.4 sharpens that risk:
    * `req` (rem/ms) is in the goal's OWN currency, and needs opposite
@@ -376,13 +376,39 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
    * called from both sites, is what makes them structurally incapable of
    * disagreeing -- not just tested to currently agree.
    */
-  const goalPace = (g: LocalFinancials["goals"][number]) => {
+  const goalRequirement = (g: LocalFinancials["goals"][number]) => {
     const rem = Math.max(0, g.targetAmount - g.currentAmount);
     const rawMs = Math.round((new Date(g.targetDate).getTime() - now.getTime()) / (30.44 * 24 * 3600 * 1000));
     const ms = Math.max(1, rawMs); // safe denominator -- never displayed directly
     const req = rem / ms; // native currency -- GoalsScreen's quick-add seed
     const reqUSD = toUSD(req, g.currency); // for comparing against savingsContrib (USD)
-    const pace = rem <= 0 ? 1 : (reqUSD > 0 ? Math.min(2, savingsContrib / reqUSD) : 0.5);
+    return { rem, rawMs, ms, req, reqUSD };
+  };
+
+  /**
+   * 2.4.44, formula fix. The old per-goal pace compared EACH goal's own
+   * requirement against the WHOLE Savings pool independently -- three
+   * goals each individually affordable while their SUM exceeds what's
+   * actually being saved, the same trap Projections' allocateGoalCapacity
+   * (F3) was built to close. This closes it here too, but NOT by reusing
+   * that engine: allocateGoalCapacity answers "if I dedicate $X, what
+   * happens" for an amount and priority order the user chooses.
+   * goalPace/goalScore answer "how did this month actually go" -- money
+   * already spent, with no priority ever expressed. Ranking goals by
+   * deadline and funding one ahead of another would assert an intention
+   * that was never there; instead every still-open active goal shares ONE
+   * aggregate coverage ratio (total real Savings / total required), so two
+   * goals each 60% covered both read 60% -- honest, and never disguises a
+   * shortfall as one goal "on pace" and another arbitrarily "behind."
+   */
+  const activeGoalReqsUSD = data.goals
+    .filter((g) => !g.pausedAt)
+    .reduce((s, g) => s + goalRequirement(g).reqUSD, 0);
+  const goalCoverageRatio = activeGoalReqsUSD > 0 ? Math.min(1, savingsContrib / activeGoalReqsUSD) : 1;
+
+  const goalPace = (g: LocalFinancials["goals"][number]) => {
+    const { rem, rawMs, ms, req, reqUSD } = goalRequirement(g);
+    const pace = rem <= 0 ? 1 : goalCoverageRatio;
     return { rem, rawMs, ms, req, reqUSD, pace };
   };
 
@@ -971,13 +997,14 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
         { key: "needs",   label: "Needs discipline", score: Math.round(needsScore), weight: Math.round(W.needs * 100), detail: `Essentials take ${Math.round(needsPct * 100)}% of income (target ≤${budgetTargetPct.needs}%)` },
         { key: "ef",      label: "Safety net", score: Math.round(efScore), weight: Math.round(W.ef * 100), detail: `Safety net ${Math.round(efPct)}% funded` },
         { key: "debt",    label: "Debt pressure", score: Math.round(debtScore), weight: Math.round(W.debt * 100), detail: `Debt payments are ${Math.round(debtPressurePct * 100)}% of income` },
-        // 2.4.44: honest-copy fix, not a formula fix (that's tracked
-        // separately) -- goalPace compares the account's WHOLE Savings
-        // contribution against each goal's own requirement independently,
-        // not a per-goal split. The old copy ("Average pace across N active
-        // goals") reads as if each goal earns its own credit, which is
-        // exactly the case the owner found confusing once Savings is split
-        // across purposes. Says plainly what the number actually measures.
+        // 2.4.44: closed. The old copy ("Average pace across N active
+        // goals") read as if each goal earned its own credit -- fixed
+        // first as a copy change, then (see goalPace/goalRequirement above)
+        // as the formula itself: goalPace now shares one aggregate
+        // coverage ratio across every active goal instead of comparing
+        // each against the WHOLE Savings pool independently. "Shared
+        // across" is no longer just honest about the input; it's what the
+        // math actually does.
         // 2.4.49-adjacent: weight is 0, not 10, when there are no active
         // goals -- score 0 paired with weight 10 would read as "failing,"
         // when the truth is "not measured" (see the totalScore comment
