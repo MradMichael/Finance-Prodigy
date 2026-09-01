@@ -68,6 +68,15 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   const [txDesc,   setTxDesc]   = useState("");
   const [txDate,   setTxDate]   = useState(todayISO());
   const [txCurrency,  setTxCurrency]  = useState<Currency>("USD");
+  // Batch C (dual-currency single transaction, 2026-08-31): one real
+  // payment split across both currencies ($10 USD + L£200,000 as one
+  // bill). Deliberately excludes EF/debt-linking and the card-add flow's
+  // typo guard -- kept to the case actually asked for, not a redesign of
+  // the whole entry form. See localData.ts's linkedPaymentId doc comment
+  // for what this does and does not do downstream.
+  const [txSplitMode, setTxSplitMode] = useState(false);
+  const [txSplitUSD,  setTxSplitUSD]  = useState("");
+  const [txSplitLBP,  setTxSplitLBP]  = useState("");
   const [txPayMethod, setTxPayMethod] = useState<PaymentMethod>("cash");
   const [txPayNote,   setTxPayNote]   = useState("");
   const [txAddToEF,   setTxAddToEF]   = useState(false);
@@ -207,20 +216,27 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     commitTransaction();
   }
 
+  // Shared by commitTransaction and commitSplitTransaction -- resolves the
+  // card being paid with (saves a new one if the add-card panel is open),
+  // so this small but easy-to-get-wrong bit of logic isn't duplicated.
+  function resolveCard(): { cardId?: string; cardLabel?: string } {
+    if (txPayMethod !== "card") return {};
+    if (showAddCard) {
+      const saved = saveCard(newCardType, newCardLast4);
+      if (saved) { setNewCardLast4(""); setShowAddCard(false); return { cardId: saved.id, cardLabel: saved.label }; }
+      return {};
+    }
+    if (txCardId) {
+      const card = cards.find((c) => c.id === txCardId);
+      if (card) return { cardId: card.id, cardLabel: card.label };
+    }
+    return {};
+  }
+
   function commitTransaction() {
     const amt = parseFloat(txAmt);
     if (!amt || amt <= 0) return;
-    let cardId: string | undefined;
-    let cardLabel: string | undefined;
-    if (txPayMethod === "card") {
-      if (showAddCard) {
-        const saved = saveCard(newCardType, newCardLast4);
-        if (saved) { cardId = saved.id; cardLabel = saved.label; setNewCardLast4(""); setShowAddCard(false); }
-      } else if (txCardId) {
-        const card = cards.find((c) => c.id === txCardId);
-        if (card) { cardId = card.id; cardLabel = card.label; }
-      }
-    }
+    const { cardId, cardLabel } = resolveCard();
     const amtUSD = txCurrency === "LBP" ? amt / (financials.lbpRate ?? DEFAULT_LBP_RATE) : amt;
     const description = txDesc.trim() || txBucket.charAt(0) + txBucket.slice(1).toLowerCase();
     // "If null only": a category rule only ever fills in a category the
@@ -250,6 +266,39 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     };
     update({ transactions: [tx, ...financials.transactions] });
     setTxAmt(""); setTxDesc(""); setTxPayNote(""); setTxAddToEF(false); setTxFromEF(false); setTxEfAmt(""); setTxCategory("");
+  }
+
+  // Batch C: one real payment, two currency legs, sharing everything except
+  // amount/currency (description/date/bucket/category/payment method are
+  // entered once). Each leg is built the same way commitTransaction builds
+  // its one -- no EF/debt-linking here, that's the normal single-currency
+  // form's job. linkedPaymentId is the only thing tying the two together,
+  // and it's stamped identically on both -- see its own doc comment in
+  // localData.ts for why nothing downstream may read it as anything other
+  // than a display hint.
+  function commitSplitTransaction() {
+    const amtUSDLeg = parseFloat(txSplitUSD.replace(/,/g, ""));
+    const amtLBPLeg = parseFloat(txSplitLBP.replace(/,/g, ""));
+    if (!(amtUSDLeg > 0) || !(amtLBPLeg > 0)) return;
+    const { cardId, cardLabel } = resolveCard();
+    const description = txDesc.trim() || txBucket.charAt(0) + txBucket.slice(1).toLowerCase();
+    const autoCategory = txCategory || matchCategoryRule(description, financials.categoryRules);
+    const now = new Date().toISOString();
+    const linkedPaymentId = uid();
+    const shared = {
+      description, date: txDate, bucket: txBucket, paymentMethod: txPayMethod,
+      createdAt: now, updatedAt: now, linkedPaymentId,
+      ...(autoCategory ? { category: autoCategory } : {}),
+      ...(txPayMethod === "other" && txPayNote.trim() ? { paymentNote: txPayNote.trim() } : {}),
+      ...(cardId ? { cardId, cardLabel } : {}),
+    };
+    const legUSD: StoredTransaction = { id: uid(), amount: amtUSDLeg, currency: "USD", ...shared };
+    const legLBP: StoredTransaction = {
+      id: uid(), amount: amtLBPLeg, currency: "LBP", ...shared,
+      ...withRate("LBP", financials.lbpRate ?? DEFAULT_LBP_RATE),
+    };
+    update({ transactions: [legUSD, legLBP, ...financials.transactions] });
+    setTxSplitUSD(""); setTxSplitLBP(""); setTxSplitMode(false); setTxDesc(""); setTxPayNote(""); setTxCategory("");
   }
 
   function addGoal() {
@@ -564,21 +613,53 @@ export default function InputPanel({ financials, dashData, onChange, session, on
 
         {/* Log an entry */}
         <Section title="Log an entry" icon="📝" defaultOpen>
-          <div className="grid grid-cols-2 gap-2.5">
-            <div>
-              <Label htmlFor="tx-amount">Amount</Label>
-              <MoneyInput
-                id="tx-amount"
-                value={txAmt}
-                onChange={setTxAmt}
-                placeholder="0"
-              />
+          {!txSplitMode ? (
+            <div className="grid grid-cols-2 gap-2.5">
+              <div>
+                <Label htmlFor="tx-amount">Amount</Label>
+                <MoneyInput
+                  id="tx-amount"
+                  value={txAmt}
+                  onChange={setTxAmt}
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <Label htmlFor="tx-date">Date</Label>
+                <DateFieldDMY id="tx-date" value={txDate} onChange={setTxDate} />
+              </div>
             </div>
-            <div>
-              <Label htmlFor="tx-date">Date</Label>
-              <DateFieldDMY id="tx-date" value={txDate} onChange={setTxDate} />
-            </div>
-          </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <Label htmlFor="tx-split-usd">Amount (USD)</Label>
+                  <MoneyInput id="tx-split-usd" value={txSplitUSD} onChange={setTxSplitUSD} placeholder="0" />
+                </div>
+                <div>
+                  <Label htmlFor="tx-split-lbp">Amount (LBP)</Label>
+                  <MoneyInput id="tx-split-lbp" value={txSplitLBP} onChange={setTxSplitLBP} placeholder="0" />
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="tx-date">Date</Label>
+                <DateFieldDMY id="tx-date" value={txDate} onChange={setTxDate} />
+              </div>
+            </>
+          )}
+
+          {/* One real payment split across both currencies -- e.g. a bill
+              paid as $10 + L£200,000. Writes two ordinary transactions
+              sharing everything below except amount/currency, tagged only
+              for display grouping (localData.ts's linkedPaymentId). */}
+          <button
+            type="button"
+            onClick={() => setTxSplitMode((v) => !v)}
+            className="text-[11px] font-medium hover:opacity-80 transition-opacity"
+            style={{ color: txSplitMode ? T.jade : T.mute }}
+          >
+            {txSplitMode ? "✓ Split across USD and LBP" : "Split across USD and LBP?"}
+          </button>
 
           <div>
             <Label>Type</Label>
@@ -618,8 +699,11 @@ export default function InputPanel({ financials, dashData, onChange, session, on
             </select>
           </div>
 
-          {/* Savings context: target hint + EF toggle */}
-          {txBucket === "SAVINGS" && financials.income > 0 && (() => {
+          {/* Savings context: target hint + EF toggle -- not shown in split
+              mode, since commitSplitTransaction deliberately doesn't set
+              efAmount on either leg (EF/debt-linking is out of scope for
+              this entry path, see its own comment). */}
+          {!txSplitMode && txBucket === "SAVINGS" && financials.income > 0 && (() => {
             const ruleKey: BudgetRuleKey = financials.budgetRule ?? "50-30-20";
             const savPct  = ruleKey === "custom"
               ? Math.max(0, 100 - (financials.budgetCustomNeeds ?? 50) - (financials.budgetCustomWants ?? 30))
@@ -689,8 +773,10 @@ export default function InputPanel({ financials, dashData, onChange, session, on
             );
           })()}
 
-          {/* Needs/Wants: option to pay this from the Emergency Fund instead of new spending */}
-          {txBucket !== "SAVINGS" && txBucket !== "INCOME" && dashData.emergencyFund.balance > 0 && (
+          {/* Needs/Wants: option to pay this from the Emergency Fund instead
+              of new spending -- not shown in split mode, same reasoning as
+              the Savings/EF block above. */}
+          {!txSplitMode && txBucket !== "SAVINGS" && txBucket !== "INCOME" && dashData.emergencyFund.balance > 0 && (
             <>
               <button
                 onClick={() => setTxFromEF((v) => !v)}
@@ -726,9 +812,9 @@ export default function InputPanel({ financials, dashData, onChange, session, on
               value={txDesc}
               onChange={(e) => setTxDesc(e.target.value)}
               placeholder={txBucket === "INCOME" ? "Bonus, freelance gig, gift…" : "Rent, groceries, gym…"}
-              onKeyDown={(e) => e.key === "Enter" && addTransaction()}
+              onKeyDown={(e) => e.key === "Enter" && (txSplitMode ? commitSplitTransaction() : addTransaction())}
             />
-            {txBucket !== "INCOME" && looksRecurring(txDesc, txDate, activeTx, financials.recurring ?? []) && (
+            {!txSplitMode && txBucket !== "INCOME" && looksRecurring(txDesc, txDate, activeTx, financials.recurring ?? []) && (
               <div className="mt-2 rounded-xl px-3 py-2.5 flex items-center justify-between gap-2" style={{ background: T.brass + "14", border: `1px solid ${T.brass}30` }}>
                 <p className="text-[11px]" style={{ color: T.brass }}>You&apos;ve logged this before in another month. Looks recurring.</p>
                 <button
@@ -743,10 +829,12 @@ export default function InputPanel({ financials, dashData, onChange, session, on
             )}
           </div>
 
-          <div>
-            <Label>Currency</Label>
-            <CurrencyToggle value={txCurrency} onChange={setTxCurrency} />
-          </div>
+          {!txSplitMode && (
+            <div>
+              <Label>Currency</Label>
+              <CurrencyToggle value={txCurrency} onChange={setTxCurrency} />
+            </div>
+          )}
 
           {/* Payment method */}
           <div>
@@ -866,7 +954,11 @@ export default function InputPanel({ financials, dashData, onChange, session, on
             )}
           </div>
 
-          <PrimaryBtn onClick={addTransaction} color={T.jade} disabled={!(parseFloat(txAmt) > 0)}>
+          <PrimaryBtn
+            onClick={txSplitMode ? commitSplitTransaction : addTransaction}
+            color={T.jade}
+            disabled={txSplitMode ? !(parseFloat(txSplitUSD) > 0 && parseFloat(txSplitLBP) > 0) : !(parseFloat(txAmt) > 0)}
+          >
             + Add entry
           </PrimaryBtn>
         </Section>

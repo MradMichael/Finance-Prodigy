@@ -503,6 +503,13 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
                     <div className="flex-1 min-w-0">
                       {(() => {
                         const divergence = cycleMonthDivergence(t, recurring);
+                        // Display-only sibling lookup -- linkedPaymentId
+                        // (Batch C) exists purely to group two currency legs
+                        // of one real payment in the UI; this never feeds a
+                        // total, only which caption renders on this row.
+                        const splitSibling = t.linkedPaymentId
+                          ? allTx.find((o) => o.id !== t.id && o.linkedPaymentId === t.linkedPaymentId)
+                          : undefined;
                         return (
                           <>
                             <p className="text-sm truncate" style={{ color: T.text }}>
@@ -512,6 +519,11 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
                             {/* Was hover-only (title= alone) -- unreachable on touch. */}
                             {divergence && (
                               <p className="text-[10px]" style={{ color: T.brass }}>{divergence}</p>
+                            )}
+                            {splitSibling && (
+                              <p className="text-[10px]" style={{ color: T.jade }}>
+                                ⇄ split payment · also {fmtCur(splitSibling.amount, splitSibling.currency)}
+                              </p>
                             )}
                           </>
                         );
