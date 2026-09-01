@@ -1740,6 +1740,8 @@ export interface MergeTransactionsResult {
   addedFromServer: number;
   /** Same id on both sides with genuinely different content, resolved automatically by updatedAt -- surfaced so the caller can say what happened, not resolve it invisibly (docs/ROADMAP.md Phase 2.7's own design note). */
   conflictsResolved: number;
+  /** The winning copy of each transaction counted in conflictsResolved (conflicts.length === conflictsResolved, always) -- a bare count can't tell a user WHAT changed (which amount, which description) when a last-writer-wins pick silently overrides an edit; this is what a caller needs to say that, not just that something happened. */
+  conflicts: StoredTransaction[];
 }
 
 /**
@@ -1796,19 +1798,19 @@ export function mergeTransactions(local: StoredTransaction[], server: StoredTran
   const serverById = new Map(server.map((t) => [t.id, t]));
   const localIds = new Set(local.map((t) => t.id));
   const transactions: StoredTransaction[] = [];
+  const conflicts: StoredTransaction[] = [];
   let addedFromServer = 0;
-  let conflictsResolved = 0;
 
   for (const l of local) {
     const s = serverById.get(l.id);
     if (!s) { transactions.push(l); continue; }
     const { winner, isConflict } = resolveTransactionConflict(l, s);
-    if (isConflict) conflictsResolved++;
+    if (isConflict) conflicts.push(winner);
     transactions.push(winner);
   }
   for (const s of server) {
     if (!localIds.has(s.id)) { transactions.push(s); addedFromServer++; }
   }
 
-  return { transactions, addedFromServer, conflictsResolved };
+  return { transactions, addedFromServer, conflictsResolved: conflicts.length, conflicts };
 }

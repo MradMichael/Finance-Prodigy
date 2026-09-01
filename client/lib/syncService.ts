@@ -1,6 +1,7 @@
 "use client";
 
-import type { LocalFinancials } from "./localData";
+import type { LocalFinancials, StoredTransaction } from "./localData";
+import { mergeTransactions } from "./localData";
 import { getSyncToken } from "./crypto";
 import { getRecoveryTokenForSync } from "./auth";
 
@@ -183,6 +184,56 @@ export async function pullFromServer(email: string): Promise<{ ok: true; data: L
   } catch {
     return { ok: false, error: "Could not reach server. Is it running?" };
   }
+}
+
+export type MergeAndPushResult =
+  | { ok: true; syncedAt: string; addedFromServer: number; conflictsResolved: number; conflicts: StoredTransaction[] }
+  | { ok: false; error: string; conflict?: boolean };
+
+/**
+ * Phase 2.7, sub-phase 2 -- wires mergeTransactions (sub-phase 1) into a
+ * real pull-merge-push flow. Called on a stale_push conflict (2.4.38)
+ * instead of only showing the static "resolve in Settings" indicator: pull
+ * the server's current data, merge transactions with local's (both new-
+ * elsewhere transactions survive, tombstones win, a genuine same-id
+ * conflict resolves by updatedAt), push the merged result back.
+ *
+ * Non-transaction fields (goals/debts/recurring/assets/cards/
+ * trackedBalances/settings) are NOT merged this phase -- design scope
+ * (docs/ROADMAP.md Phase 2.7): those have no delete-tombstones today, so
+ * naively unioning them by id risks resurrecting something one device
+ * hard-deleted, the same class of bug 2.6.3(b) exists to prevent. They
+ * keep today's pick-a-side resolution -- local's own values, since local
+ * is the side initiating the merge -- with the transaction merge layered
+ * on top. A real divergence in those fields (e.g. a debt edited on one
+ * device, a different edit to the same debt on the other) is NOT detected
+ * or specially surfaced by this sub-phase; it's silently resolved as
+ * "local wins," same as it would have been before this phase existed.
+ * Flagged here rather than silently assumed solved -- a genuine non-
+ * transaction merge is real, undesigned future work, not implied by this
+ * function's name.
+ *
+ * No server-side change: the server stores one opaque blob with zero
+ * merge awareness (confirmed by reading server/src/routes/sync.ts), so
+ * this pull/merge/push sequence is the entire mechanism, client-side only.
+ */
+export async function mergeAndPush(email: string, local: LocalFinancials): Promise<MergeAndPushResult> {
+  const pulled = await pullFromServer(email);
+  if (!pulled.ok) return { ok: false, error: pulled.error };
+
+  const merged = mergeTransactions(local.transactions, pulled.data.transactions);
+  const mergedData: LocalFinancials = { ...local, transactions: merged.transactions };
+
+  const pushed = await pushToServer(email, mergedData);
+  if (!pushed.ok) return { ok: false, error: pushed.error ?? "Merge succeeded locally, but push failed.", conflict: pushed.conflict };
+
+  return {
+    ok: true,
+    syncedAt: pushed.syncedAt!,
+    addedFromServer: merged.addedFromServer,
+    conflictsResolved: merged.conflictsResolved,
+    conflicts: merged.conflicts,
+  };
 }
 
 export function getLastSyncTime(): string | null {

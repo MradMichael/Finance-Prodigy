@@ -3,10 +3,11 @@ import {
   pushToServer, pullFromServer, relinkSync, deleteFromServer, checkEmailExists,
   getLastSyncTime, hasAutoPulled, markAutoPulled,
   hasAnyLocalData, hasRealLocalData, confirmOverwriteIfNeeded,
+  mergeAndPush,
 } from "./syncService";
 import { getSyncToken } from "./crypto";
 import { getRecoveryTokenForSync } from "./auth";
-import { saveData, DEFAULT_DATA, type LocalFinancials } from "./localData";
+import { saveData, DEFAULT_DATA, type LocalFinancials, type StoredTransaction } from "./localData";
 
 vi.mock("./crypto", async (importOriginal) => {
   // Only getSyncToken is mocked -- activateSessionKey/encryptJSON/decryptJSON
@@ -190,6 +191,96 @@ describe("pullFromServer", () => {
     mockFetchOnce(401, { error: "Invalid sync credentials for this account." });
     const result = await pullFromServer("a@test.com");
     expect(result).toEqual({ ok: false, error: "Invalid sync credentials for this account." });
+  });
+});
+
+describe("mergeAndPush (Phase 2.7 sub-phase 2 -- wires mergeTransactions into the pull-merge-push flow, tests-first)", () => {
+  function makeTx(overrides: Partial<StoredTransaction> = {}): StoredTransaction {
+    return { id: "t1", amount: 10, currency: "USD", bucket: "NEEDS", description: "Test", date: "2026-08-01", ...overrides };
+  }
+
+  it("pulls the server's current data, merges transactions, and pushes the merged result -- both new-elsewhere transactions survive", async () => {
+    const local: LocalFinancials = { ...DEFAULT_DATA, income: 3000, transactions: [makeTx({ id: "local-only" })] };
+    const serverData: LocalFinancials = { ...DEFAULT_DATA, transactions: [makeTx({ id: "server-only" })] };
+    const fetchSpy = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ syncedAt: "2026-08-01T00:00:00.000Z", data: serverData, hasRecoveryCode: false }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ syncedAt: "2026-08-02T00:00:00.000Z" }) });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = await mergeAndPush("a@test.com", local);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.addedFromServer).toBe(1);
+    expect(result.conflictsResolved).toBe(0);
+
+    // The SECOND fetch call is the push -- confirm it actually sent the
+    // merged transaction list, not just local's original one.
+    const pushBody = JSON.parse(fetchSpy.mock.calls[1][1].body);
+    const pushedIds = pushBody.data.transactions.map((t: StoredTransaction) => t.id).sort();
+    expect(pushedIds).toEqual(["local-only", "server-only"]);
+  });
+
+  it("preserves local's own non-transaction fields in the pushed payload -- this phase merges transactions only; everything else keeps today's pick-a-side (local wins, since local is the side initiating the merge)", async () => {
+    const local: LocalFinancials = { ...DEFAULT_DATA, income: 3000, transactions: [] };
+    const serverData: LocalFinancials = { ...DEFAULT_DATA, income: 9999, transactions: [] };
+    const fetchSpy = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ syncedAt: "2026-08-01T00:00:00.000Z", data: serverData, hasRecoveryCode: false }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ syncedAt: "2026-08-02T00:00:00.000Z" }) });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await mergeAndPush("a@test.com", local);
+    const pushBody = JSON.parse(fetchSpy.mock.calls[1][1].body);
+    expect(pushBody.data.income).toBe(3000); // local's, not server's 9999
+  });
+
+  it("surfaces conflictsResolved AND the conflicts array (not just a count) -- what the eventual toast (sub-phase 3) needs to name what changed, not just that something did", async () => {
+    const olderLocal = makeTx({ id: "shared", amount: 50, description: "Groceries", updatedAt: "2026-08-01T00:00:00.000Z" });
+    const newerServer = makeTx({ id: "shared", amount: 75, description: "Groceries (corrected)", updatedAt: "2026-08-10T00:00:00.000Z" });
+    const local: LocalFinancials = { ...DEFAULT_DATA, transactions: [olderLocal] };
+    const serverData: LocalFinancials = { ...DEFAULT_DATA, transactions: [newerServer] };
+    const fetchSpy = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ syncedAt: "2026-08-01T00:00:00.000Z", data: serverData, hasRecoveryCode: false }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ syncedAt: "2026-08-02T00:00:00.000Z" }) });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = await mergeAndPush("a@test.com", local);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.conflictsResolved).toBe(1);
+    expect(result.conflicts).toHaveLength(1);
+    expect(result.conflicts[0].amount).toBe(75);
+    expect(result.conflicts[0].description).toBe("Groceries (corrected)");
+  });
+
+  it("propagates a pull failure without ever attempting a push", async () => {
+    const fetchSpy = vi.fn().mockResolvedValueOnce({ ok: false, status: 401, json: async () => ({ error: "Invalid sync credentials for this account." }) });
+    vi.stubGlobal("fetch", fetchSpy);
+    const result = await mergeAndPush("a@test.com", { ...DEFAULT_DATA, transactions: [] });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error).toBe("Invalid sync credentials for this account.");
+    expect(fetchSpy).toHaveBeenCalledTimes(1); // pull only -- push never attempted
+  });
+
+  it("propagates a push failure (e.g. the server moved on again between pull and push -- a genuine race) as a real error, not silently swallowed", async () => {
+    const fetchSpy = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ syncedAt: "2026-08-01T00:00:00.000Z", data: DEFAULT_DATA, hasRecoveryCode: false }) })
+      .mockResolvedValueOnce({ ok: false, status: 409, json: async () => ({ code: "stale_push", error: "Server data has changed since your last sync." }) });
+    vi.stubGlobal("fetch", fetchSpy);
+    const result = await mergeAndPush("a@test.com", { ...DEFAULT_DATA, transactions: [] });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected failure");
+    expect(result.conflict).toBe(true);
+  });
+
+  it("uses the exact same /api/sync/pull and /api/sync/push endpoints as the manual flow -- no server-side change required", async () => {
+    const fetchSpy = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ syncedAt: "2026-08-01T00:00:00.000Z", data: DEFAULT_DATA, hasRecoveryCode: false }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ syncedAt: "2026-08-02T00:00:00.000Z" }) });
+    vi.stubGlobal("fetch", fetchSpy);
+    await mergeAndPush("a@test.com", { ...DEFAULT_DATA, transactions: [] });
+    expect(fetchSpy.mock.calls[0][0]).toContain("/api/sync/pull");
+    expect(fetchSpy.mock.calls[1][0]).toBe("/api/sync/push");
   });
 });
 
