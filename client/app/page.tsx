@@ -20,7 +20,7 @@ import Sidebar from "../components/shell/Sidebar";
 import BottomNav from "../components/shell/BottomNav";
 import TopBar from "../components/shell/TopBar";
 import type { Screen, SyncStatus } from "../components/screens/shared";
-import { loadData, saveData, isEmptyFinancials, buildRecurringConfirmLog, nextConfirmTarget, DEFAULT_LBP_RATE } from "../lib/localData";
+import { loadData, saveData, isEmptyFinancials, buildRecurringConfirmLog, nextConfirmTarget, autoPurgeExpired, DEFAULT_LBP_RATE } from "../lib/localData";
 import type { LocalFinancials } from "../lib/localData";
 import { computeDashboard } from "../lib/computeDashboard";
 import { getSession, hasValidSession, signOut } from "../lib/auth";
@@ -280,6 +280,19 @@ export default function Home() {
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [financials, dashboardData]);
+
+  // 30-day retention for soft-deleted transactions (2026-09-01) -- checked
+  // opportunistically on load, same shape as the snapshot effect above, not
+  // a background timer (there's no process running when the app isn't
+  // open). autoPurgeExpired returns the same array reference when nothing
+  // needs purging, so this can't loop.
+  useEffect(() => {
+    if (!financials) return;
+    const purged = autoPurgeExpired(financials.transactions);
+    if (purged === financials.transactions) return;
+    handleChange({ ...financials, transactions: purged });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [financials]);
 
   // If the initial session/data load hangs (a stuck decrypt, a slow or
   // failed auto-pull, anything), the loading branch below used to spin

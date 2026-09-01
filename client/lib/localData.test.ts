@@ -9,7 +9,7 @@ import {
   migrateFinancials, schemaVersionOf, withRate, CURRENT_SCHEMA_VERSION, todayISO,
   dueCycles, isCycleConfirmed, isCycleOverdue, buildRecurringConfirmLog, cycleMonthDivergence,
   nextConfirmTarget, historizedRecurringContribution, pendingBackfillCycles,
-  derivedEfBalance, derivedDebtBalance, activeTransactions, purgeTransaction,
+  derivedEfBalance, derivedDebtBalance, activeTransactions, purgeTransaction, autoPurgeExpired,
   buildDebtPaymentTx, buildEfAdjustmentTx, buildDebtAdjustmentTx, applyGoalContribution,
 } from "./localData";
 
@@ -1695,6 +1695,58 @@ describe("migrateFinancials", () => {
     it("a purged row is still excluded by activeTransactions, same as any soft-deleted row", () => {
       const result = purgeTransaction(makeDeletedTx(), now);
       expect(activeTransactions([result])).toEqual([]);
+    });
+  });
+
+  describe("autoPurgeExpired (30-day retention, 2026-09-01, tests-first per Standing Rule 4)", () => {
+    const now = new Date("2026-09-01T00:00:00.000Z");
+    function makeTx(overrides: Partial<StoredTransaction> = {}): StoredTransaction {
+      return { id: "t1", amount: 10, currency: "USD", bucket: "NEEDS", description: "Test", date: "2026-07-01", ...overrides };
+    }
+
+    it("purges a transaction deleted more than 30 days ago", () => {
+      const deletedAt = new Date(now.getTime() - 31 * 24 * 3600 * 1000).toISOString();
+      const result = autoPurgeExpired([makeTx({ deletedAt })], now);
+      expect(result[0].purgedAt).toBe(now.toISOString());
+      expect(result[0].description).toBe("");
+    });
+
+    it("leaves a transaction deleted exactly 30 days ago alone -- the window hasn't passed, it's still within it", () => {
+      const deletedAt = new Date(now.getTime() - 30 * 24 * 3600 * 1000).toISOString();
+      const result = autoPurgeExpired([makeTx({ deletedAt, description: "Still here" })], now);
+      expect(result[0].purgedAt).toBeUndefined();
+      expect(result[0].description).toBe("Still here");
+    });
+
+    it("leaves an active (non-deleted) transaction alone regardless of age", () => {
+      const oldTx = makeTx({ date: "2020-01-01" }); // no deletedAt at all
+      const result = autoPurgeExpired([oldTx], now);
+      expect(result[0]).toEqual(oldTx);
+    });
+
+    it("leaves an already-purged transaction alone -- doesn't re-stamp purgedAt with a new timestamp", () => {
+      const originalPurgedAt = "2026-08-01T00:00:00.000Z";
+      const alreadyPurged = makeTx({ deletedAt: "2026-07-01T00:00:00.000Z", purgedAt: originalPurgedAt, description: "" });
+      const result = autoPurgeExpired([alreadyPurged], now);
+      expect(result[0].purgedAt).toBe(originalPurgedAt);
+    });
+
+    it("returns the same array reference when nothing needs purging -- a cheap no-op check for the caller", () => {
+      const txs = [makeTx({ deletedAt: new Date(now.getTime() - 5 * 24 * 3600 * 1000).toISOString() })];
+      const result = autoPurgeExpired(txs, now);
+      expect(result).toBe(txs);
+    });
+
+    it("purges only the expired one out of a mix of active, recently-deleted, and long-deleted transactions", () => {
+      const txs = [
+        makeTx({ id: "active" }),
+        makeTx({ id: "recent", deletedAt: new Date(now.getTime() - 5 * 24 * 3600 * 1000).toISOString() }),
+        makeTx({ id: "expired", deletedAt: new Date(now.getTime() - 45 * 24 * 3600 * 1000).toISOString() }),
+      ];
+      const result = autoPurgeExpired(txs, now);
+      expect(result.find((t) => t.id === "active")!.purgedAt).toBeUndefined();
+      expect(result.find((t) => t.id === "recent")!.purgedAt).toBeUndefined();
+      expect(result.find((t) => t.id === "expired")!.purgedAt).toBe(now.toISOString());
     });
   });
 

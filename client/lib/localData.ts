@@ -1700,3 +1700,36 @@ export function purgeTransaction(t: StoredTransaction, now: Date = new Date()): 
     purgedAt: now.toISOString(),
   };
 }
+
+// 30 days: long enough that "Recently deleted" stays a real undo window
+// (same instinct as Photos/Mail apps' own "recently deleted" retention),
+// short enough that "forever" stops being the default -- deferred at
+// 2.6.3b's soft-delete launch, decided 2026-09-01.
+export const DELETED_TRANSACTION_RETENTION_DAYS = 30;
+
+/**
+ * Auto-purges every soft-deleted transaction past the retention window --
+ * checked opportunistically on load (no background job needed for a
+ * client-only app), not a timer. Already-purged rows are left alone
+ * (purgeTransaction is idempotent in effect, but re-running it would
+ * pointlessly re-stamp purgedAt with a new timestamp, which would read as
+ * "just removed" when it wasn't). Returns the SAME array reference when
+ * nothing needs purging, so a caller can cheaply check "did anything
+ * change" via reference equality instead of a deep comparison.
+ */
+export function autoPurgeExpired(
+  transactions: StoredTransaction[],
+  now: Date = new Date(),
+  retentionDays: number = DELETED_TRANSACTION_RETENTION_DAYS,
+): StoredTransaction[] {
+  const cutoffMs = retentionDays * 24 * 3600 * 1000;
+  let changed = false;
+  const result = transactions.map((t) => {
+    if (t.deletedAt == null || t.purgedAt != null) return t;
+    const age = now.getTime() - new Date(t.deletedAt).getTime();
+    if (age <= cutoffMs) return t;
+    changed = true;
+    return purgeTransaction(t, now);
+  });
+  return changed ? result : transactions;
+}
