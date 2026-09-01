@@ -60,7 +60,10 @@ function recurringForMonth(recurring: StoredRecurring[], ym: string, currentYm: 
 
 export default function TransactionsScreen({ financials, onChange, onEdit }: { financials: LocalFinancials; onChange: (f: LocalFinancials) => void; onEdit: (id: string) => void }) {
   const T = useTheme();
-  const [filter, setFilter] = useState("all");
+  // Defaults to the current month, not "All time" -- that's what a user is
+  // actually managing day to day; "All time" is a choice to make, not the
+  // thing they see first (owner's live-use report, 2026-09-01).
+  const [filter, setFilter] = useState(todayISO().slice(0, 7));
   const [query,  setQuery]  = useState("");
   const [donutView, setDonutView] = useState<"type" | "category">("type");
   // Phase 2.6.3b: "Recently deleted" -- always-visible entry point (the pill
@@ -105,7 +108,12 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
       cursor.setMonth(cursor.getMonth() - 1);
     }
   }
-  const months = Array.from(new Set([...allTx.map((t) => t.date.slice(0, 7)), ...recurActiveMonths])).sort().reverse();
+  // currentYm is always included, even with zero transactions and zero
+  // recurring activity -- the filter now defaults to it, and a brand-new
+  // account's month dropdown must have a real option matching that default,
+  // not just fall back to whatever the browser does with an unmatched
+  // <select> value.
+  const months = Array.from(new Set([...allTx.map((t) => t.date.slice(0, 7)), ...recurActiveMonths, currentYm])).sort().reverse();
 
   const q = query.trim().toLowerCase();
   const matchesQuery = (t: (typeof allTx)[number]) => {
