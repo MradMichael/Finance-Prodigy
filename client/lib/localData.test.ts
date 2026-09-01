@@ -11,6 +11,7 @@ import {
   nextConfirmTarget, historizedRecurringContribution, pendingBackfillCycles,
   derivedEfBalance, derivedDebtBalance, activeTransactions, purgeTransaction, autoPurgeExpired,
   buildDebtPaymentTx, buildEfAdjustmentTx, buildDebtAdjustmentTx, applyGoalContribution,
+  mergeTransactions,
 } from "./localData";
 
 // UTC midnight of a given local calendar date -- matches nextOccurrence's
@@ -1747,6 +1748,112 @@ describe("migrateFinancials", () => {
       expect(result.find((t) => t.id === "active")!.purgedAt).toBeUndefined();
       expect(result.find((t) => t.id === "recent")!.purgedAt).toBeUndefined();
       expect(result.find((t) => t.id === "expired")!.purgedAt).toBe(now.toISOString());
+    });
+  });
+
+  // Phase 2.7 (sync merge), sub-phase 1 -- the pure mergeTransactions
+  // engine, tests-first per Standing Rule 4. Written before the
+  // implementation. The FIRST case is deliberately the tombstone-rank
+  // rule, not the routine "two devices, two new transactions" case: it's
+  // what makes purgeTransaction's whole "scrub the payload, don't remove
+  // the row" design (2026-09-01) actually pay off -- if this merge ever
+  // let a stale active or soft-deleted copy of a purged row win, every
+  // purge in the app would be silently undone the next time two devices
+  // sync, exactly the failure purgedAt's own doc comment warns about.
+  describe("mergeTransactions (Phase 2.7 sub-phase 1 -- pure engine, unwired, tests-first per Standing Rule 4)", () => {
+    function makeTx(overrides: Partial<StoredTransaction> = {}): StoredTransaction {
+      return { id: "t1", amount: 10, currency: "USD", bucket: "NEEDS", description: "Test", date: "2026-08-01", ...overrides };
+    }
+
+    it("a purged row's payload is never resurrected by merging with a stale active or soft-deleted copy from the other side -- purgedAt outranks deletedAt outranks active, unconditionally", () => {
+      const purged = makeTx({ purgedAt: "2026-09-01T00:00:00.000Z", deletedAt: "2026-08-20T00:00:00.000Z", amount: 0, description: "" });
+      const staleActive = makeTx({ amount: 500, description: "Sensitive grocery run" });
+      // Direction 1: local already purged, server hasn't seen it yet.
+      const r1 = mergeTransactions([purged], [staleActive]);
+      expect(r1.transactions).toHaveLength(1);
+      expect(r1.transactions[0].purgedAt).toBe("2026-09-01T00:00:00.000Z");
+      expect(r1.transactions[0].amount).toBe(0);
+      expect(r1.transactions[0].description).toBe("");
+      // Direction 2: server already purged, local is the stale one -- same
+      // outcome regardless of which side initiated the sync.
+      const r2 = mergeTransactions([staleActive], [purged]);
+      expect(r2.transactions[0].purgedAt).toBe("2026-09-01T00:00:00.000Z");
+      expect(r2.transactions[0].amount).toBe(0);
+      // A merely soft-deleted (not purged) copy loses to a purged one too.
+      const staleDeleted = makeTx({ deletedAt: "2026-08-25T00:00:00.000Z", amount: 500 });
+      const r3 = mergeTransactions([purged], [staleDeleted]);
+      expect(r3.transactions[0].purgedAt).toBe("2026-09-01T00:00:00.000Z");
+    });
+
+    it("two devices each log a different transaction between syncs -- both survive (the routine case this phase exists to fix)", () => {
+      const local = [makeTx({ id: "local-only", description: "Coffee" })];
+      const server = [makeTx({ id: "server-only", description: "Gas" })];
+      const result = mergeTransactions(local, server);
+      expect(result.transactions.map((t) => t.id).sort()).toEqual(["local-only", "server-only"]);
+      expect(result.addedFromServer).toBe(1);
+      expect(result.conflictsResolved).toBe(0);
+    });
+
+    it("deletedAt tombstone wins over an active copy of the same transaction", () => {
+      const deletedLocally = makeTx({ deletedAt: "2026-08-15T00:00:00.000Z" });
+      const stillActiveOnServer = makeTx({ amount: 999 });
+      const result = mergeTransactions([deletedLocally], [stillActiveOnServer]);
+      expect(result.transactions[0].deletedAt).toBe("2026-08-15T00:00:00.000Z");
+    });
+
+    it("a genuine edit-vs-edit conflict (same id, both active, content differs) resolves via updatedAt -- the newer edit wins, and it's reported, not silent", () => {
+      const older = makeTx({ amount: 50, description: "Original", updatedAt: "2026-08-01T00:00:00.000Z" });
+      const newer = makeTx({ amount: 75, description: "Corrected", updatedAt: "2026-08-10T00:00:00.000Z" });
+      const result = mergeTransactions([older], [newer]);
+      expect(result.transactions[0].amount).toBe(75);
+      expect(result.transactions[0].description).toBe("Corrected");
+      expect(result.conflictsResolved).toBe(1);
+      // Order-independent: the NEWER edit wins regardless of which side is "local".
+      const reversed = mergeTransactions([newer], [older]);
+      expect(reversed.transactions[0].amount).toBe(75);
+      expect(reversed.conflictsResolved).toBe(1);
+    });
+
+    it("a transaction that's never been touched again (no updatedAt) loses to a copy that has one -- absence of a timestamp is treated as older, not as 'no conflict'", () => {
+      const neverEdited = makeTx({ amount: 50, description: "Original" }); // no updatedAt at all
+      const editedElsewhere = makeTx({ amount: 75, description: "Corrected", updatedAt: "2026-08-10T00:00:00.000Z" });
+      const result = mergeTransactions([neverEdited], [editedElsewhere]);
+      expect(result.transactions[0].amount).toBe(75);
+      expect(result.conflictsResolved).toBe(1);
+    });
+
+    it("identical content on both sides is not counted as a conflict, even with the same id", () => {
+      const same = makeTx({ updatedAt: "2026-08-01T00:00:00.000Z" });
+      const result = mergeTransactions([same], [{ ...same }]);
+      expect(result.transactions).toHaveLength(1);
+      expect(result.conflictsResolved).toBe(0);
+      expect(result.addedFromServer).toBe(0);
+    });
+
+    it("is order-independent: merging A into B settles every id to the same final content as merging B into A", () => {
+      const local = [
+        makeTx({ id: "shared", amount: 50, updatedAt: "2026-08-01T00:00:00.000Z" }),
+        makeTx({ id: "local-only" }),
+        makeTx({ id: "deleted-locally", deletedAt: "2026-08-05T00:00:00.000Z" }),
+      ];
+      const server = [
+        makeTx({ id: "shared", amount: 75, updatedAt: "2026-08-10T00:00:00.000Z" }),
+        makeTx({ id: "server-only" }),
+        makeTx({ id: "deleted-locally", amount: 999 }), // stale active copy of the one deleted on local
+      ];
+      const forward = mergeTransactions(local, server);
+      const backward = mergeTransactions(server, local);
+      const byId = (r: ReturnType<typeof mergeTransactions>) =>
+        Object.fromEntries(r.transactions.map((t) => [t.id, t]));
+      expect(byId(forward)).toEqual(byId(backward));
+    });
+
+    it("both empty is empty; one empty is just the other side, with no false conflicts", () => {
+      expect(mergeTransactions([], [])).toEqual({ transactions: [], addedFromServer: 0, conflictsResolved: 0 });
+      const local = [makeTx()];
+      const result = mergeTransactions(local, []);
+      expect(result.transactions).toEqual(local);
+      expect(result.addedFromServer).toBe(0);
     });
   });
 

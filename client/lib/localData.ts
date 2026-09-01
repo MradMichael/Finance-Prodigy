@@ -1733,3 +1733,82 @@ export function autoPurgeExpired(
   });
   return changed ? result : transactions;
 }
+
+export interface MergeTransactionsResult {
+  transactions: StoredTransaction[];
+  /** Present only on the second (server) side -- pulled into the merged result. Feeds the "N new transactions added" toast (Phase 2.7 sub-phase 3). */
+  addedFromServer: number;
+  /** Same id on both sides with genuinely different content, resolved automatically by updatedAt -- surfaced so the caller can say what happened, not resolve it invisibly (docs/ROADMAP.md Phase 2.7's own design note). */
+  conflictsResolved: number;
+}
+
+/**
+ * Tombstone rank -- purgedAt outranks deletedAt outranks active,
+ * unconditionally, no timestamp comparison. Mirrors purgeTransaction's own
+ * doc comment on StoredTransaction.purgedAt one level up: a purge
+ * deliberately never removes the row, specifically so this rank can win
+ * outright over a stale active or soft-deleted copy from a device that
+ * hasn't seen the purge yet. A row with a HIGHER rank is never displaced
+ * by a lower-ranked one, regardless of which was touched more recently --
+ * a delete or a purge is a deliberate action that must never be silently
+ * reverted by an older copy.
+ */
+function tombstoneRank(t: StoredTransaction): number {
+  if (t.purgedAt != null) return 2;
+  if (t.deletedAt != null) return 1;
+  return 0;
+}
+
+/**
+ * Resolves one id that exists on both sides. Rank wins first and
+ * unconditionally (see tombstoneRank). Only when both sides carry the SAME
+ * rank does content get compared at all: genuinely identical content isn't
+ * a conflict (nothing to arbitrate), genuinely different content is a real
+ * edit-vs-edit conflict, resolved by `updatedAt` -- last-writer-wins,
+ * matching the design's own reasoning (docs/ROADMAP.md Phase 2.7): a
+ * genuine conflict is rare enough for a two-device personal app that
+ * blocking a routine sync on it is worse than an occasional silently-
+ * applied "wrong" pick, as long as the caller is TOLD a conflict happened.
+ * A missing `updatedAt` sorts as older than any real timestamp -- it's
+ * stamped on every write since 2.6.3(c), so a copy that's never been
+ * touched again is exactly the one that should lose to one that has.
+ */
+function resolveTransactionConflict(a: StoredTransaction, b: StoredTransaction): { winner: StoredTransaction; isConflict: boolean } {
+  const rankA = tombstoneRank(a);
+  const rankB = tombstoneRank(b);
+  if (rankA !== rankB) return { winner: rankA > rankB ? a : b, isConflict: false };
+  if (JSON.stringify(a) === JSON.stringify(b)) return { winner: a, isConflict: false };
+  const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : -Infinity;
+  const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : -Infinity;
+  return { winner: timeA >= timeB ? a : b, isConflict: true };
+}
+
+/**
+ * Phase 2.7, sub-phase 1 -- the sync merge engine, pure and unwired.
+ * Design approved 2026-08-26 (docs/ROADMAP.md): union by id, present on
+ * one side only is kept, tombstones outrank active copies, a genuine
+ * same-id conflict resolves by updatedAt and is reported, not silent.
+ * Deliberately order-independent in its actual per-id outcome (see the
+ * symmetry test) -- which side is "local" only changes which count
+ * (addedFromServer) the caller sees, never which content wins.
+ */
+export function mergeTransactions(local: StoredTransaction[], server: StoredTransaction[]): MergeTransactionsResult {
+  const serverById = new Map(server.map((t) => [t.id, t]));
+  const localIds = new Set(local.map((t) => t.id));
+  const transactions: StoredTransaction[] = [];
+  let addedFromServer = 0;
+  let conflictsResolved = 0;
+
+  for (const l of local) {
+    const s = serverById.get(l.id);
+    if (!s) { transactions.push(l); continue; }
+    const { winner, isConflict } = resolveTransactionConflict(l, s);
+    if (isConflict) conflictsResolved++;
+    transactions.push(winner);
+  }
+  for (const s of server) {
+    if (!localIds.has(s.id)) { transactions.push(s); addedFromServer++; }
+  }
+
+  return { transactions, addedFromServer, conflictsResolved };
+}
