@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, StoredRecurring } from "../../lib/localData";
-import { fmtDate, historizedRecurringContribution, toUSD as toUSDShared, categoryLabel as categoryLabelShared, categoryIcon as categoryIconShared, todayISO, activeTransactions, cycleMonthDivergence, DEFAULT_LBP_RATE } from "../../lib/localData";
+import { fmtDate, historizedRecurringContribution, toUSD as toUSDShared, categoryLabel as categoryLabelShared, categoryIcon as categoryIconShared, todayISO, activeTransactions, cycleMonthDivergence, purgeTransaction, DEFAULT_LBP_RATE } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money, fmtCur } from "./shared";
 import Donut from "../charts/Donut";
@@ -80,11 +80,25 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
   const deletedTx = financials.transactions
     .filter((t) => t.deletedAt != null)
     .sort((a, b) => (b.deletedAt as string).localeCompare(a.deletedAt as string));
+  // The pill badge counts what's actually actionable -- a purged row has
+  // nothing left to restore, so counting it would inflate "N things you
+  // might want to check" with entries that aren't things anymore.
+  const restorableCount = deletedTx.filter((t) => t.purgedAt == null).length;
 
   function restoreTransaction(txId: string) {
     onChange({
       ...financials,
       transactions: financials.transactions.map((t) => t.id !== txId ? t : { ...t, deletedAt: undefined, updatedAt: new Date().toISOString() }),
+    });
+  }
+
+  // Scrubs the payload, keeps the row -- see purgeTransaction's own doc
+  // comment in localData.ts for why this can't be a real removal without
+  // risking Phase 2.7's future merge silently resurrecting it.
+  function purgeTransactionPermanently(txId: string) {
+    onChange({
+      ...financials,
+      transactions: financials.transactions.map((t) => t.id !== txId ? t : purgeTransaction(t)),
     });
   }
   const recurring = financials.recurring ?? [];
@@ -296,12 +310,12 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
               }}
             >
               🗑 Recently deleted
-              {deletedTx.length > 0 && (
+              {restorableCount > 0 && (
                 <span
                   className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
                   style={{ background: T.brass + "30", color: T.brass }}
                 >
-                  {deletedTx.length}
+                  {restorableCount}
                 </span>
               )}
             </button>
@@ -315,7 +329,24 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
                 <p className="text-sm" style={{ color: T.mute }}>Nothing deleted.</p>
               </div>
             ) : (
-              deletedTx.map((t, i) => (
+              deletedTx.map((t, i) => t.purgedAt ? (
+                // Nothing left to restore -- says so plainly rather than
+                // showing an empty husk (a blank description, a $0 amount)
+                // next to a Restore button that would restore nothing.
+                <div
+                  key={t.id}
+                  className="flex items-center gap-3 px-4 py-3"
+                  style={{ background: T.panel, borderTop: i > 0 ? `1px solid ${T.line}` : undefined, opacity: 0.5 }}
+                >
+                  <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: T.mute }} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm italic" style={{ color: T.mute }}>Contents permanently removed</p>
+                    <p className="text-[10px]" style={{ color: T.mute }}>
+                      {fmtDate(t.date)} · deleted {fmtDate(t.deletedAt)} · removed {fmtDate(t.purgedAt)}
+                    </p>
+                  </div>
+                </div>
+              ) : (
                 <div
                   key={t.id}
                   className="flex items-center gap-3 px-4 py-3"
@@ -337,6 +368,14 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
                     style={{ background: T.jade, color: T.ink }}
                   >
                     Restore
+                  </button>
+                  <button
+                    onClick={() => { if (confirm("Permanently delete this transaction? Its details can't be recovered after this.")) purgeTransactionPermanently(t.id); }}
+                    aria-label="Delete permanently"
+                    className="text-xs px-2.5 py-1.5 rounded-lg font-medium transition-all hover:opacity-90 flex-shrink-0"
+                    style={{ background: "transparent", border: `1px solid ${T.coral}60`, color: T.coral }}
+                  >
+                    Delete permanently
                   </button>
                 </div>
               ))

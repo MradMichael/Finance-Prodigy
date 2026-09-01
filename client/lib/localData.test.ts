@@ -9,7 +9,7 @@ import {
   migrateFinancials, schemaVersionOf, withRate, CURRENT_SCHEMA_VERSION, todayISO,
   dueCycles, isCycleConfirmed, isCycleOverdue, buildRecurringConfirmLog, cycleMonthDivergence,
   nextConfirmTarget, historizedRecurringContribution, pendingBackfillCycles,
-  derivedEfBalance, derivedDebtBalance, activeTransactions,
+  derivedEfBalance, derivedDebtBalance, activeTransactions, purgeTransaction,
   buildDebtPaymentTx, buildEfAdjustmentTx, buildDebtAdjustmentTx, applyGoalContribution,
 } from "./localData";
 
@@ -1636,6 +1636,65 @@ describe("migrateFinancials", () => {
     it("treats undefined deletedAt as active, not just a literal absence check quirk", () => {
       const txs = [makeTx({ id: "t1", deletedAt: undefined })];
       expect(activeTransactions(txs)).toEqual(txs);
+    });
+  });
+
+  describe("purgeTransaction (permanent delete, 2026-09-01 -- scrub, not remove, tests-first per Standing Rule 4)", () => {
+    function makeDeletedTx(overrides: Partial<StoredTransaction> = {}): StoredTransaction {
+      return {
+        id: "t1", amount: 42, currency: "USD", bucket: "NEEDS",
+        description: "Sensitive grocery run", date: "2026-08-01",
+        deletedAt: "2026-08-20T00:00:00.000Z",
+        category: "groceries", paymentMethod: "card", cardId: "c1", cardLabel: "Visa •••• 1234",
+        paymentNote: "split with roommate", recurringId: "r1", cycleDate: "2026-08-01",
+        debtId: "d1", debtAdjustment: 5, efAmount: 10, linkedPaymentId: "split-1",
+        createdAt: "2026-08-01T00:00:00.000Z", updatedAt: "2026-08-01T00:00:00.000Z",
+        ...overrides,
+      };
+    }
+    const now = new Date("2026-09-01T12:00:00.000Z");
+
+    it("stamps purgedAt with the given time", () => {
+      const result = purgeTransaction(makeDeletedTx(), now);
+      expect(result.purgedAt).toBe(now.toISOString());
+    });
+
+    it("zeroes amount and empties description", () => {
+      const result = purgeTransaction(makeDeletedTx(), now);
+      expect(result.amount).toBe(0);
+      expect(result.description).toBe("");
+    });
+
+    it("drops every other identifying/linking field -- not just the two named when purge was designed", () => {
+      const result = purgeTransaction(makeDeletedTx(), now);
+      expect(result.category).toBeUndefined();
+      expect(result.paymentMethod).toBeUndefined();
+      expect(result.paymentNote).toBeUndefined();
+      expect(result.cardId).toBeUndefined();
+      expect(result.cardLabel).toBeUndefined();
+      expect(result.recurringId).toBeUndefined();
+      expect(result.cycleDate).toBeUndefined();
+      expect(result.debtId).toBeUndefined();
+      expect(result.debtAdjustment).toBeUndefined();
+      expect(result.efAmount).toBeUndefined();
+      expect(result.linkedPaymentId).toBeUndefined();
+      expect(result.createdAt).toBeUndefined();
+      expect(result.updatedAt).toBeUndefined();
+    });
+
+    it("keeps id, bucket, currency, date, and the original deletedAt -- the merge-safety skeleton", () => {
+      const original = makeDeletedTx();
+      const result = purgeTransaction(original, now);
+      expect(result.id).toBe(original.id);
+      expect(result.bucket).toBe(original.bucket);
+      expect(result.currency).toBe(original.currency);
+      expect(result.date).toBe(original.date);
+      expect(result.deletedAt).toBe(original.deletedAt);
+    });
+
+    it("a purged row is still excluded by activeTransactions, same as any soft-deleted row", () => {
+      const result = purgeTransaction(makeDeletedTx(), now);
+      expect(activeTransactions([result])).toEqual([]);
     });
   });
 

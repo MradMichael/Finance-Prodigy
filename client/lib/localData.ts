@@ -133,6 +133,29 @@ export interface StoredTransaction {
   // field instead -- see the Batch C design decision for the full argument
   // against that shape today.
   linkedPaymentId?: string;
+  // Added 2026-09-01 (permanent delete, deferred at 2.6.3b's soft-delete
+  // launch -- "retention is undecided"). A soft-deleted row (deletedAt set)
+  // still carries its full payload, filtered from every read but not
+  // removed -- that's what made it recoverable, and what left it in every
+  // sync push and (until the same-day fix) the JSON export.
+  //
+  // Purging does NOT remove the row -- it scrubs the sensitive payload
+  // (description/amount/category/paymentNote/card fields) and stamps this
+  // field. The row's bare skeleton (id, deletedAt, bucket, currency, date)
+  // stays. This is deliberate, not a half-measure: mergeTransactions
+  // (Phase 2.7, docs/ROADMAP.md) unions transactions by id and keeps
+  // anything "present on one side only" -- a TRUE row removal would be
+  // silently resurrected the next time this device merges with another
+  // that hadn't seen the purge yet. A row that still exists, just emptied,
+  // can never be mistaken for "new" by that rule. `purgedAt` set outranks
+  // `deletedAt` outranks active, unconditionally (no timestamp
+  // comparison) -- same "tombstone always wins" convention deletedAt
+  // already uses one level down.
+  //
+  // Set by a manual "Delete permanently" action, or the 30-day auto-purge
+  // on load. Once set, restoreTransaction no longer applies -- there's
+  // nothing left to restore.
+  purgedAt?: string;
 }
 
 export interface StoredGoal {
@@ -1648,4 +1671,32 @@ export function derivedDebtBalance(debt: StoredDebt, transactions: StoredTransac
  */
 export function activeTransactions(transactions: StoredTransaction[]): StoredTransaction[] {
   return transactions.filter((t) => t.deletedAt == null);
+}
+
+/**
+ * Scrubs a soft-deleted transaction's sensitive payload and stamps
+ * purgedAt -- does NOT remove the row (see purgedAt's own doc comment for
+ * why). Keeps only what's needed for merge-safety and the tombstone chain
+ * (id, bucket, currency, date, deletedAt) -- everything else that could
+ * carry information about what was bought, from whom, or how (amount,
+ * description, category, payment method/note/card, and every linking
+ * field: recurringId, cycleDate, debtId, efAmount, debtAdjustment,
+ * linkedPaymentId) is dropped, not just the description/amount named when
+ * this was designed -- a purge that left a linked debtId or a payment note
+ * behind would still be a real, if smaller, version of the same leak.
+ * Only meaningful on an already-soft-deleted transaction; callers must
+ * gate on deletedAt themselves (matches restoreTransaction's own
+ * precedent of leaving that check to the caller, not this function).
+ */
+export function purgeTransaction(t: StoredTransaction, now: Date = new Date()): StoredTransaction {
+  return {
+    id: t.id,
+    amount: 0,
+    currency: t.currency,
+    bucket: t.bucket,
+    description: "",
+    date: t.date,
+    deletedAt: t.deletedAt,
+    purgedAt: now.toISOString(),
+  };
 }
