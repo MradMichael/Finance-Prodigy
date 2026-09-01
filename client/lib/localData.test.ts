@@ -1849,11 +1849,28 @@ describe("migrateFinancials", () => {
     });
 
     it("both empty is empty; one empty is just the other side, with no false conflicts", () => {
-      expect(mergeTransactions([], [])).toEqual({ transactions: [], addedFromServer: 0, conflictsResolved: 0 });
+      expect(mergeTransactions([], [])).toEqual({ transactions: [], addedFromServer: 0, conflictsResolved: 0, conflicts: [] });
       const local = [makeTx()];
       const result = mergeTransactions(local, []);
       expect(result.transactions).toEqual(local);
       expect(result.addedFromServer).toBe(0);
+    });
+
+    // A bare count isn't enough for a caller (Phase 2.7 sub-phase 2) to
+    // tell the USER what actually happened -- a silent last-writer-wins on
+    // a transaction's amount is exactly the kind of thing that should
+    // leave a trace, even though it resolves correctly (owner's
+    // instruction, 2026-09-01). `conflicts` carries the winning copy of
+    // each resolved conflict, so a caller can name what changed (amount,
+    // description, date) instead of just saying "something changed."
+    it("conflicts carries the winning copy of each resolved conflict, in the same order they occur in local, so a caller can name what changed -- not just count it", () => {
+      const olderA = makeTx({ id: "a", amount: 50, description: "Groceries", updatedAt: "2026-08-01T00:00:00.000Z" });
+      const newerA = makeTx({ id: "a", amount: 75, description: "Groceries (corrected)", updatedAt: "2026-08-10T00:00:00.000Z" });
+      const noConflict = makeTx({ id: "b" });
+      const result = mergeTransactions([olderA, noConflict], [newerA, { ...noConflict }]);
+      expect(result.conflicts).toHaveLength(1);
+      expect(result.conflicts[0]).toEqual(newerA);
+      expect(result.conflicts.length).toBe(result.conflictsResolved);
     });
   });
 
