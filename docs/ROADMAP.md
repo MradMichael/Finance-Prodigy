@@ -338,7 +338,7 @@ The owner's own dominant financial fact is a fixed monthly installment with a kn
 
 ## Phase 4 — F3 Goal feasibility engine
 
-**Status:** design complete, sub-phase 1 in progress 2026-09-01 · **Depends on:** Phase 1, 2.4.44 (see note) — no longer blocked on Phase 3 in full (path B, see Phase 3's own 2026-09-01 note)
+**Status:** sub-phases 1–2 built and merged to `main` 2026-09-01; sub-phase 3 built, held for review, not yet merged — Rule 6 · **Depends on:** Phase 1, 2.4.44 (see note) — no longer blocked on Phase 3 in full (path B, see Phase 3's own 2026-09-01 note)
 
 **This is the highest-value feature in the roadmap and the strongest reason for the product to exist.** It automates the question the owner currently answers by exporting a report and reasoning over it manually: *can I actually afford this, by that date?*
 
@@ -359,12 +359,12 @@ The owner's own dominant financial fact is a fixed monthly installment with a kn
 - **Phase 3 dependency, resolved (path B, owner's decision):** F3's sub-phase 0 computes the capacity step-change internally from `StoredRecurring.endDate`/`isRecurringActive()` directly, rather than waiting on Phase 3's full product surface. Phase 3 stays open with its own acceptance criteria — see its own entry above.
 
 **Sub-phases:**
-1. **Pure allocation engine, tests-first, unwired** (`allocateGoalCapacity`, sibling of `simulateDebtPayoff`/`projectCompletion`). Conflict case written first. **Built 2026-09-01 on `feat/goal-feasibility-engine-subphase1` (`aa4e5de`), 471/471 full suite, tsc clean, both builds clean. Held for review, not merged — Rule 6.**
-2. **Capacity input including the step-change** — internal Phase-3-slice per path B above.
-3. **Wire into `ProjectionsScreen.tsx`**, replacing the lumped combined line with the per-goal breakdown and conflict banner. **This sub-phase fixes 2.4.44 as a side effect** — the individual goal rows currently using `goalPace`'s flawed math switch to the new engine's correct allocation.
+1. **Pure allocation engine, tests-first, unwired** (`allocateGoalCapacity`, sibling of `simulateDebtPayoff`/`projectCompletion`). Conflict case written first. **Built 2026-09-01 on `feat/goal-feasibility-engine-subphase1` (`aa4e5de`). Merged to `main` 2026-09-01.**
+2. **Capacity input including the step-change** — internal Phase-3-slice per path B above (`capacityByMonth`, UTC-anchored month-stepping off `StoredRecurring.endDate`). **Built 2026-09-01 on `feat/goal-feasibility-engine-subphase2` (`7d0aea8`). Merged to `main` 2026-09-01. Still unwired — no product surface consumes it yet; Phase 3's own forward-view UI remains the open item.**
+3. **Wire into `ProjectionsScreen.tsx`**, replacing the lumped combined line with the per-goal breakdown and conflict banner. **This sub-phase fixes 2.4.44 as a side effect** — the individual goal rows currently using `goalPace`'s flawed math switch to the new engine's correct allocation. **Built 2026-09-01 on `feat/goal-feasibility-engine-subphase3` (`3af74ef`), tsc clean, 487/487 full suite, client build clean. Mechanism verified against a disposable local fixture account (4 goals, 3 paused/1 active, matching the owner's real shape) — unpausing a second competing goal correctly produced the conflict banner with the exact hand-computed numbers ($2,000/mo combined required, $800/mo shortfall against $1,200/mo capacity; soonest-deadline goal allocated first and reads achievable, the other reads achievable-with-adjustment needing exactly $800/mo more). Not yet validated against the owner's real account — held for review, not merged — Rule 6.**
 4. **Cleanup** — decide whether the health-score's own Goal Momentum display (2.4.44's other half) also switches to the new engine, or stays separately scoped.
 
-**Acceptance:** validated against the owner's real goals and real capacity; conflict case produces an explicit warning.
+**Acceptance:** mechanism validated against a disposable fixture (sub-phase 3, above) — the owner's real-account spot-check is still outstanding; conflict case produces an explicit warning (confirmed).
 
 **SAFE STOP** per sub-phase, per the standard discipline.
 
