@@ -270,7 +270,12 @@ A debt payment can be tagged with a real payment method (and card, where relevan
 
 ## Phase 2.7 — Sync merge for transactions
 
-**Status:** not started, design approved 2026-08-26 · **Depends on:** Phase 2.6 (all of 2.6.3, including (c)) · **Blocks:** Phase 2 (cohort launch).
+**Status:** started 2026-09-01 — sub-phase 1 built, held for review, not yet merged — Rule 6. Design approved 2026-08-26 · **Depends on:** Phase 2.6 (all of 2.6.3, including (c)) — met, 2.6.3(c) merged and live · **Blocks:** Phase 2 (cohort launch).
+
+**Sub-phases (owner's instruction, 2026-09-01: same discipline as Phases 2.5/2.6 and F3 — SAFE STOP per sub-phase, tests-first, held for review at each):**
+1. **`mergeTransactions(local, server)`, pure engine, tests-first, unwired.** Union by id, tombstone-rank rule (`purgedAt` > `deletedAt` > active, unconditional), `updatedAt`-based last-writer-wins for genuine same-id conflicts, order-independent per-id outcome. **Built 2026-09-01 on `feat/sync-merge-subphase1` (`16a935a`), tsc clean, 497/497 full suite (8 new), client build clean. Held for review, not merged — Rule 6.**
+2. **`syncService.ts` wiring** — the pull-merge-push flow on a 409 conflict, using sub-phase 1's engine. No server change (confirmed: the server stores one opaque blob, zero merge awareness).
+3. **`autoSync`'s background merge-on-409 + toast** (`page.tsx`), and the Profile page's new primary "Merge" action alongside the existing Push/Pull.
 
 ### Context
 
