@@ -6,7 +6,7 @@ import Link from "next/link";
 import { getSession, hasValidSession, updateProfile, deleteAccount, signOut, ensureFirstUserIsAdmin, regenerateRecoveryCode } from "../../lib/auth";
 import RecoveryCodeModal from "../../components/RecoveryCodeModal";
 import type { Session } from "../../lib/auth";
-import { loadData, saveData } from "../../lib/localData";
+import { loadData, saveData, activeTransactions } from "../../lib/localData";
 import { computeDashboard } from "../../lib/computeDashboard";
 import { buildReportHtml } from "../../lib/printReport";
 import { pushToServer, pullFromServer, getLastSyncTime, confirmOverwriteIfNeeded } from "../../lib/syncService";
@@ -146,7 +146,12 @@ export default function ProfilePage() {
     setDownloading("data"); setDownloadMsg("");
     try {
       const data = await loadData(session.userId);
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      // A soft-deleted transaction still has its full payload -- it's
+      // filtered from every calculation, not stripped. Left unfiltered
+      // here, every transaction ever deleted (with description, amount,
+      // everything) would leave the device the moment this file does.
+      const exportData = { ...data, transactions: activeTransactions(data.transactions) };
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
