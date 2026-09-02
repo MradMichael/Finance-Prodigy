@@ -1545,6 +1545,55 @@ export function buildDebtPaymentTx(
 }
 
 /**
+ * 2.4.55, sub-phase 2 -- a same-moment transfer between two of the owner's
+ * own payment methods (Cash to a card, a card to Cash, etc.). Returns two
+ * TRANSFER-bucket transactions, not one: a negative (lost) leg on the
+ * source, a positive (gained) leg on the destination -- see
+ * StoredTransaction.bucket's own doc comment for why that polarity matches
+ * `efAmount`, not the reverse. Linked via a FRESH `linkedPaymentId` (not
+ * either leg's own id), purely for display pairing -- same precedent
+ * Batch C's dual-currency-single-payment split already established;
+ * nothing in computeDashboard.ts may read the link itself.
+ *
+ * `source`/`dest` are plain (paymentMethod, cardId, label) values, not
+ * TrackedBalance records -- a transfer's real identity is the payment
+ * method pair `expectedFromRelevantTx` already groups by, not whichever
+ * subset of payment methods happens to have a named TrackedBalance
+ * overlaying it. Deliberately does NOT block source === dest (a same-pool
+ * "transfer" is a no-op) -- that's a UI-level decision, not this pure
+ * function's job to guess at.
+ */
+export function buildTransferTx(
+  amount: number, currency: Currency,
+  source: { paymentMethod: PaymentMethod; cardId?: string; cardLabel?: string; label: string },
+  dest: { paymentMethod: PaymentMethod; cardId?: string; cardLabel?: string; label: string },
+  lbpRate: number,
+  opts: { date?: string; category?: string } = {},
+): [StoredTransaction, StoredTransaction] {
+  const now = new Date().toISOString();
+  const linkedPaymentId = uid();
+  const shared = {
+    currency, date: opts.date || todayISO(), bucket: "TRANSFER" as const,
+    createdAt: now, updatedAt: now, linkedPaymentId,
+    ...withRate(currency, lbpRate),
+    ...(opts.category ? { category: opts.category } : {}),
+  };
+  const outgoing: StoredTransaction = {
+    id: uid(), amount: -amount, description: `Transfer to ${dest.label}`,
+    paymentMethod: source.paymentMethod,
+    ...(source.cardId ? { cardId: source.cardId, cardLabel: source.cardLabel } : {}),
+    ...shared,
+  };
+  const incoming: StoredTransaction = {
+    id: uid(), amount, description: `Transfer from ${source.label}`,
+    paymentMethod: dest.paymentMethod,
+    ...(dest.cardId ? { cardId: dest.cardId, cardLabel: dest.cardLabel } : {}),
+    ...shared,
+  };
+  return [outgoing, incoming];
+}
+
+/**
  * Phase 2.6.3c -- SetupScreen's EF field is no longer an opening-balance
  * editor; it reads as "your real current balance." Saving computes
  * `delta = entered - derivedEfBalance(financials)` and this builds the one
