@@ -22,6 +22,7 @@ Place this file at `docs/CLAUDE_CODE_BRIEF.md` in the repository root and refere
 4. **Money math gets tests.** Any function that adds, subtracts, converts, allocates or forecasts a currency amount must have unit tests before it is modified.
 5. **Never invent a status.** If you cannot determine whether something is implemented, record it as UNKNOWN with the reason. Do not infer from file names, comments or README claims.
 6. **This app holds real financial data belonging to a real person, and is about to hold data belonging to their friends and family.** Treat every data-isolation question as production-critical.
+7. **Any new signed field gets verified against the existing signed fields before it ships.** `efAmount` and `debtAdjustment` both encode direction (positive/negative meaning), and both `TRANSFER`'s amount polarity and `debtAdjustment` were drafted with the wrong sign relative to `efAmount`'s established convention before being caught. When adding a field where the sign carries meaning, state which existing signed field it must agree with and confirm the two conventions actually match — don't assume a fresh derivation is consistent with what's already shipped.
 
 ---
 
