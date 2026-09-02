@@ -18,7 +18,7 @@ type Bucket = "NEEDS" | "WANTS" | "SAVINGS";
 // Transactions (not recurring items) can also be logged as one-off INCOME --
 // see StoredTransaction's doc comment in localData.ts for why recurring stays
 // 3-way.
-type TxBucket = Bucket | "INCOME";
+type TxBucket = Bucket | "INCOME" | "TRANSFER";
 // PM_OPTIONS/CARD_TYPES now live in ./form/Primitives (Phase 2.6.4), shared
 // with the new PaymentMethodPicker -- imported above, not redeclared here.
 
@@ -59,6 +59,18 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     ...BUCKETS,
     { value: "INCOME", label: "Income", icon: "📥", color: T.jade },
   ];
+  // Deliberately NOT in TX_BUCKETS above -- that array also drives the Daily
+  // quick-entry form's selectable "Type" picker (below), and Transfer isn't
+  // pickable there (it has its own dedicated Manage-tab form, which builds
+  // both linked legs correctly; a single quick-entry leg would be an
+  // unpaired, half-built transfer). This exists only so the two transaction
+  // list renders below (This month / History) can find an icon+color for a
+  // TRANSFER row without crashing -- they used to read
+  // `TX_BUCKETS.find(...)!`, which returned undefined and threw for any
+  // TRANSFER-bucket transaction the instant one existed (found live while
+  // building the Transfer form, 2.4.55 sub-phase 2). Matches
+  // EditTransactionSheet.tsx's own TX_BUCKETS entry for TRANSFER exactly.
+  const TRANSFER_META = { value: "TRANSFER" as const, label: "Transfer", icon: "🔁", color: T.mute };
   const update = (patch: Partial<LocalFinancials>) => onChange({ ...financials, ...patch });
 
   // Transaction form
@@ -814,7 +826,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
               placeholder={txBucket === "INCOME" ? "Bonus, freelance gig, gift…" : "Rent, groceries, gym…"}
               onKeyDown={(e) => e.key === "Enter" && (txSplitMode ? commitSplitTransaction() : addTransaction())}
             />
-            {!txSplitMode && txBucket !== "INCOME" && looksRecurring(txDesc, txDate, activeTx, financials.recurring ?? []) && (
+            {!txSplitMode && txBucket !== "INCOME" && txBucket !== "TRANSFER" && looksRecurring(txDesc, txDate, activeTx, financials.recurring ?? []) && (
               <div className="mt-2 rounded-xl px-3 py-2.5 flex items-center justify-between gap-2" style={{ background: T.brass + "14", border: `1px solid ${T.brass}30` }}>
                 <p className="text-[11px]" style={{ color: T.brass }}>You&apos;ve logged this before in another month. Looks recurring.</p>
                 <button
@@ -989,7 +1001,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
             <>
               <div className="space-y-2 max-h-72 overflow-y-auto pr-0.5">
                 {monthTx.map((tx) => {
-                  const b = TX_BUCKETS.find((b) => b.value === tx.bucket)!;
+                  const b = TX_BUCKETS.find((b) => b.value === tx.bucket) ?? TRANSFER_META;
                   const divergence = cycleMonthDivergence(tx, financials.recurring ?? []);
                   return (
                     <div key={tx.id}>
@@ -1116,7 +1128,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                       </div>
                       <div className="space-y-1.5">
                         {txs.sort((a, b) => b.date.localeCompare(a.date)).map((tx) => {
-                          const b = TX_BUCKETS.find((b) => b.value === tx.bucket)!;
+                          const b = TX_BUCKETS.find((b) => b.value === tx.bucket) ?? TRANSFER_META;
                           const divergence = cycleMonthDivergence(tx, financials.recurring ?? []);
                           return (
                             <div key={tx.id}>
