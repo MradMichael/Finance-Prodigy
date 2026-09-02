@@ -136,8 +136,16 @@ function expectedFromRelevantTx(
 ): number {
   // INCOME transactions received on this same payment method put money IN,
   // so they subtract from "spent" (raising the expected balance) instead
-  // of adding to it like every other bucket does.
-  const spentOf = relevantTx.reduce((s, t) => s + (t.bucket === "INCOME" ? -1 : 1) * toUSDForMonth(t.amount, t.currency, t.date.slice(0, 7)), 0);
+  // of adding to it like every other bucket does. TRANSFER (2.4.55) gets
+  // the SAME treatment, not the opposite -- its `amount` is signed to match
+  // efAmount's own polarity (positive = this pool gained, negative = this
+  // pool lost), which means a positive TRANSFER amount must REDUCE spentOf
+  // (raising expected) exactly like INCOME's positive amount already does.
+  // Deliberately not reusing the "+1, sign already baked into amount"
+  // shortcut a first draft of this used -- that version's polarity was the
+  // opposite of efAmount's, undocumented drift a future reader would have
+  // had no way to catch from the code alone.
+  const spentOf = relevantTx.reduce((s, t) => s + (t.bucket === "INCOME" || t.bucket === "TRANSFER" ? -1 : 1) * toUSDForMonth(t.amount, t.currency, t.date.slice(0, 7)), 0);
   const startingUSD = toUSDForMonth(tb.startingBalance, tb.currency, tb.startingDate.slice(0, 7));
   return Math.round((startingUSD - spentOf) * 100) / 100;
 }

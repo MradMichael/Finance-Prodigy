@@ -39,18 +39,23 @@ export interface StoredTransaction {
   // design and the list of sites this touches.
   //
   // `amount` is SIGNED only for this bucket (every other bucket keeps amount
-  // non-negative, as it always has): positive means money entered this
-  // transaction's payment method, negative means it left. This is what makes
-  // expectedFromRelevantTx's existing sign formula ((bucket === "INCOME" ?
-  // -1 : 1) * amount) already correct for TRANSFER with NO change to that
-  // formula -- TRANSFER falls into the same "+1 * amount" branch NEEDS/WANTS/
-  // SAVINGS already use, and a negative amount flowing through it naturally
-  // increases `expected` (money arrived) exactly the way INCOME's -1
-  // multiplier does, without a special case. Same signed-field precedent
-  // `efAmount`/`debtAdjustment` already established elsewhere on this type.
+  // non-negative, as it always has): positive means this transaction's
+  // payment method GAINED money, negative means it LOST money -- the exact
+  // same polarity `efAmount` already uses (positive = added to EF, negative
+  // = drew from it), deliberately kept consistent rather than each signed
+  // field inventing its own direction. `expectedFromRelevantTx`
+  // (computeDashboard.ts) treats TRANSFER the same way it already treats
+  // INCOME (the `-1` multiplier branch, not the `+1` one NEEDS/WANTS/SAVINGS
+  // use) -- a positive TRANSFER amount reduces `spentOf`, raising `expected`,
+  // exactly like a positive INCOME amount already does. (An earlier version
+  // of this had the OPPOSITE polarity, reusing the "+1" branch unchanged --
+  // internally consistent with itself, but silently inconsistent with
+  // `efAmount`, and undocumented drift a future reader had no way to catch
+  // from the code alone. Caught and fixed before sub-phase 2 was built on
+  // top of it, not after.)
   //
-  // A same-moment transfer is two TRANSFER-bucket transactions (one negative
-  // leg on the source pool, one positive leg on the destination pool),
+  // A same-moment transfer is two TRANSFER-bucket transactions (one positive
+  // leg on the destination pool, one negative leg on the source pool),
   // created together and linked via the EXISTING `linkedPaymentId` (Batch C)
   // purely for display pairing -- no new linking mechanism. A reimbursement
   // is one TRANSFER-bucket transaction (the repayment, positive, on whichever
