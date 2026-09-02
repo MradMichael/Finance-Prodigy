@@ -136,8 +136,16 @@ function expectedFromRelevantTx(
 ): number {
   // INCOME transactions received on this same payment method put money IN,
   // so they subtract from "spent" (raising the expected balance) instead
-  // of adding to it like every other bucket does.
-  const spentOf = relevantTx.reduce((s, t) => s + (t.bucket === "INCOME" ? -1 : 1) * toUSDForMonth(t.amount, t.currency, t.date.slice(0, 7)), 0);
+  // of adding to it like every other bucket does. TRANSFER (2.4.55) gets
+  // the SAME treatment, not the opposite -- its `amount` is signed to match
+  // efAmount's own polarity (positive = this pool gained, negative = this
+  // pool lost), which means a positive TRANSFER amount must REDUCE spentOf
+  // (raising expected) exactly like INCOME's positive amount already does.
+  // Deliberately not reusing the "+1, sign already baked into amount"
+  // shortcut a first draft of this used -- that version's polarity was the
+  // opposite of efAmount's, undocumented drift a future reader would have
+  // had no way to catch from the code alone.
+  const spentOf = relevantTx.reduce((s, t) => s + (t.bucket === "INCOME" || t.bucket === "TRANSFER" ? -1 : 1) * toUSDForMonth(t.amount, t.currency, t.date.slice(0, 7)), 0);
   const startingUSD = toUSDForMonth(tb.startingBalance, tb.currency, tb.startingDate.slice(0, 7));
   return Math.round((startingUSD - spentOf) * 100) / 100;
 }
@@ -636,7 +644,13 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     // INCOME transactions aren't spend -- they're already folded into
     // moIncome below via incomeForMonth. Summing them here too would
     // inflate the spend line by exactly what should be inflating income.
-    const txSpend = tx.filter((t) => t.bucket !== "INCOME").reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, mo), 0);
+    // TRANSFER (2.4.55) isn't spend either -- it's money moving between the
+    // owner's own pools, and inflating this line by its (possibly negative,
+    // for an incoming leg) amount would misrepresent both a transfer's
+    // outgoing leg (real money, but not spend) and its incoming leg (a
+    // negative amount, which would make the chart's own "spend" line
+    // absurdly negative).
+    const txSpend = tx.filter((t) => t.bucket !== "INCOME" && t.bucket !== "TRANSFER").reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, mo), 0);
     // Recurring payments (rent, subscriptions, etc.) don't create a
     // transaction row each month, so counting only logged transactions
     // understated every month's real spend — evaluate each recurring
@@ -692,8 +706,12 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
         // INCOME transactions already boosted moIncome via incomeForMonth
         // below — counting them here too (the old catch-all landed anything
         // that wasn't NEEDS/WANTS in "savings") would double-count them as
-        // both extra income AND extra savings rollover.
-        if (t.bucket === "INCOME") continue;
+        // both extra income AND extra savings rollover. TRANSFER (2.4.55)
+        // gets the same exclusion, for the same reason the catch-all is
+        // dangerous: it isn't a savings contribution just because it isn't
+        // NEEDS/WANTS, and its amount can be negative (an incoming leg),
+        // which would otherwise corrupt spend.savings with a negative term.
+        if (t.bucket === "INCOME" || t.bucket === "TRANSFER") continue;
         const amt = toUSDForMonth(t.amount, t.currency, ym);
         if (t.bucket === "NEEDS") spend.needs += amt;
         else if (t.bucket === "WANTS") spend.wants += amt;

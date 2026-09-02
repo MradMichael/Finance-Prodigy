@@ -23,11 +23,47 @@ export interface StoredTransaction {
   // withRate below for where this gets populated on new records, and
   // migrateFinancials for how it's backfilled on existing ones.
   lbpRateAtEntry?: number;
-  // INCOME is a one-off/incidental receipt (a gift, a reimbursement) logged as
-  // a dated transaction like any other -- distinct from the recurring salary
-  // set in Setup. StoredRecurring.bucket deliberately stays NEEDS/WANTS/SAVINGS
-  // only: recurring income already has its own home (the Setup income field).
-  bucket: "NEEDS" | "WANTS" | "SAVINGS" | "INCOME";
+  // INCOME is a one-off/incidental receipt (a gift, a genuine windfall) logged
+  // as a dated transaction like any other -- distinct from the recurring
+  // salary set in Setup. StoredRecurring.bucket deliberately stays
+  // NEEDS/WANTS/SAVINGS only: recurring income already has its own home (the
+  // Setup income field), and a recurring item can never sensibly be a transfer.
+  //
+  // TRANSFER (2.4.55, added 2026-09-01) -- money moving into or out of one of
+  // the owner's own pools that is neither real income nor real spend: a
+  // same-moment transfer between two of their own tracked balances (Cash to
+  // card, bank to Cash), or a reimbursement (a prior NEEDS/WANTS payment made
+  // on someone else's behalf, later repaid). Excluded from every
+  // needs/wants/savings/income aggregate in computeDashboard.ts, the same way
+  // INCOME already is -- see 2.4.55 in docs/AUDIT_2026-08.md for the full
+  // design and the list of sites this touches.
+  //
+  // `amount` is SIGNED only for this bucket (every other bucket keeps amount
+  // non-negative, as it always has): positive means this transaction's
+  // payment method GAINED money, negative means it LOST money -- the exact
+  // same polarity `efAmount` already uses (positive = added to EF, negative
+  // = drew from it), deliberately kept consistent rather than each signed
+  // field inventing its own direction. `expectedFromRelevantTx`
+  // (computeDashboard.ts) treats TRANSFER the same way it already treats
+  // INCOME (the `-1` multiplier branch, not the `+1` one NEEDS/WANTS/SAVINGS
+  // use) -- a positive TRANSFER amount reduces `spentOf`, raising `expected`,
+  // exactly like a positive INCOME amount already does. (An earlier version
+  // of this had the OPPOSITE polarity, reusing the "+1" branch unchanged --
+  // internally consistent with itself, but silently inconsistent with
+  // `efAmount`, and undocumented drift a future reader had no way to catch
+  // from the code alone. Caught and fixed before sub-phase 2 was built on
+  // top of it, not after.)
+  //
+  // A same-moment transfer is two TRANSFER-bucket transactions (one positive
+  // leg on the destination pool, one negative leg on the source pool),
+  // created together and linked via the EXISTING `linkedPaymentId` (Batch C)
+  // purely for display pairing -- no new linking mechanism. A reimbursement
+  // is one TRANSFER-bucket transaction (the repayment, positive, on whichever
+  // pool it landed in), optionally `linkedPaymentId`-linked back to the
+  // original spend for traceability -- the bucket alone is what keeps totals
+  // honest, the link is cosmetic, matching `linkedPaymentId`'s own existing
+  // display-only contract exactly (nothing in computeDashboard.ts may read it).
+  bucket: "NEEDS" | "WANTS" | "SAVINGS" | "INCOME" | "TRANSFER";
   // Optional, finer-grained than bucket (e.g. "Groceries" vs. the Needs
   // bucket it rolls up into) -- purely descriptive/for charting, never fed
   // into budget/EF/rollover/projection math, so it's safe to leave unset on
@@ -1506,6 +1542,55 @@ export function buildDebtPaymentTx(
     ...(opts.cardId ? { cardId: opts.cardId, cardLabel: opts.cardLabel } : {}),
     ...(opts.paymentMethod === "other" && opts.paymentNote ? { paymentNote: opts.paymentNote } : {}),
   };
+}
+
+/**
+ * 2.4.55, sub-phase 2 -- a same-moment transfer between two of the owner's
+ * own payment methods (Cash to a card, a card to Cash, etc.). Returns two
+ * TRANSFER-bucket transactions, not one: a negative (lost) leg on the
+ * source, a positive (gained) leg on the destination -- see
+ * StoredTransaction.bucket's own doc comment for why that polarity matches
+ * `efAmount`, not the reverse. Linked via a FRESH `linkedPaymentId` (not
+ * either leg's own id), purely for display pairing -- same precedent
+ * Batch C's dual-currency-single-payment split already established;
+ * nothing in computeDashboard.ts may read the link itself.
+ *
+ * `source`/`dest` are plain (paymentMethod, cardId, label) values, not
+ * TrackedBalance records -- a transfer's real identity is the payment
+ * method pair `expectedFromRelevantTx` already groups by, not whichever
+ * subset of payment methods happens to have a named TrackedBalance
+ * overlaying it. Deliberately does NOT block source === dest (a same-pool
+ * "transfer" is a no-op) -- that's a UI-level decision, not this pure
+ * function's job to guess at.
+ */
+export function buildTransferTx(
+  amount: number, currency: Currency,
+  source: { paymentMethod: PaymentMethod; cardId?: string; cardLabel?: string; label: string },
+  dest: { paymentMethod: PaymentMethod; cardId?: string; cardLabel?: string; label: string },
+  lbpRate: number,
+  opts: { date?: string; category?: string } = {},
+): [StoredTransaction, StoredTransaction] {
+  const now = new Date().toISOString();
+  const linkedPaymentId = uid();
+  const shared = {
+    currency, date: opts.date || todayISO(), bucket: "TRANSFER" as const,
+    createdAt: now, updatedAt: now, linkedPaymentId,
+    ...withRate(currency, lbpRate),
+    ...(opts.category ? { category: opts.category } : {}),
+  };
+  const outgoing: StoredTransaction = {
+    id: uid(), amount: -amount, description: `Transfer to ${dest.label}`,
+    paymentMethod: source.paymentMethod,
+    ...(source.cardId ? { cardId: source.cardId, cardLabel: source.cardLabel } : {}),
+    ...shared,
+  };
+  const incoming: StoredTransaction = {
+    id: uid(), amount, description: `Transfer from ${source.label}`,
+    paymentMethod: dest.paymentMethod,
+    ...(dest.cardId ? { cardId: dest.cardId, cardLabel: dest.cardLabel } : {}),
+    ...shared,
+  };
+  return [outgoing, incoming];
 }
 
 /**

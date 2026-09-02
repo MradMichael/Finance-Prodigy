@@ -1105,7 +1105,9 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                   // above (totalOut) and every other "spend" figure in the
                   // app -- this used to include it, inflating past months'
                   // totals for anyone who ever logged a gift/reimbursement.
-                  const total = txs.filter((t) => t.bucket !== "INCOME").reduce((s, t) => s + toUSD(t.amount, t.currency), 0);
+                  // TRANSFER (2.4.55) excluded too -- not spend, and its
+                  // amount can be negative (an incoming leg).
+                  const total = txs.filter((t) => t.bucket !== "INCOME" && t.bucket !== "TRANSFER").reduce((s, t) => s + toUSD(t.amount, t.currency), 0);
                   return (
                     <div key={ym}>
                       <div className="flex justify-between items-center mb-2">

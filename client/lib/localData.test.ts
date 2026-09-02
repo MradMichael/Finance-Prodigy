@@ -11,8 +11,9 @@ import {
   nextConfirmTarget, historizedRecurringContribution, pendingBackfillCycles,
   derivedEfBalance, derivedDebtBalance, activeTransactions, purgeTransaction, autoPurgeExpired,
   buildDebtPaymentTx, buildEfAdjustmentTx, buildDebtAdjustmentTx, applyGoalContribution,
-  mergeTransactions,
+  mergeTransactions, buildTransferTx, type TrackedBalance,
 } from "./localData";
+import { trackedBalanceExpected } from "./computeDashboard";
 
 // UTC midnight of a given local calendar date -- matches nextOccurrence's
 // own basis (localData.ts's own comment: date-only strings parse as UTC
@@ -967,6 +968,78 @@ describe("Phase 2.6.3c -- buildDebtPaymentTx and buildEfAdjustmentTx (tests-firs
     it("carries a real, past date when one is given", () => {
       const tx = buildDebtPaymentTx(debt, 100, "NEEDS", 89500, { date: "2026-08-20" });
       expect(tx.date).toBe("2026-08-20");
+    });
+  });
+
+  // 2.4.55, sub-phase 2, tests-first per Standing Rule 4. Written after the
+  // sign-polarity fix (see the flip commit), so these already assert the
+  // CORRECT convention: positive = this pool gained, matching efAmount.
+  describe("buildTransferTx", () => {
+    const source = { paymentMethod: "cash" as const, label: "Cash" };
+    const dest = { paymentMethod: "card" as const, cardId: "c1", cardLabel: "Visa •••• 4242", label: "Visa •••• 4242" };
+
+    it("returns two transactions: a negative (lost) leg on the source pool, a positive (gained) leg on the destination", () => {
+      const [outgoing, incoming] = buildTransferTx(50, "USD", source, dest, 89500);
+      expect(outgoing.amount).toBe(-50);
+      expect(outgoing.paymentMethod).toBe("cash");
+      expect(incoming.amount).toBe(50);
+      expect(incoming.paymentMethod).toBe("card");
+      expect(incoming.cardId).toBe("c1");
+      expect(incoming.cardLabel).toBe("Visa •••• 4242");
+    });
+
+    it("both legs are bucket TRANSFER, excluded from every budget total by construction", () => {
+      const [outgoing, incoming] = buildTransferTx(50, "USD", source, dest, 89500);
+      expect(outgoing.bucket).toBe("TRANSFER");
+      expect(incoming.bucket).toBe("TRANSFER");
+    });
+
+    it("both legs share the same linkedPaymentId, and it's a fresh id -- not either leg's own id (Batch C's own precedent)", () => {
+      const [outgoing, incoming] = buildTransferTx(50, "USD", source, dest, 89500);
+      expect(outgoing.linkedPaymentId).toBeTruthy();
+      expect(outgoing.linkedPaymentId).toBe(incoming.linkedPaymentId);
+      expect(outgoing.linkedPaymentId).not.toBe(outgoing.id);
+      expect(outgoing.linkedPaymentId).not.toBe(incoming.id);
+      expect(outgoing.id).not.toBe(incoming.id);
+    });
+
+    it("each leg's own description names the OTHER side, so either row is self-explanatory read alone in the ledger", () => {
+      const [outgoing, incoming] = buildTransferTx(50, "USD", source, dest, 89500);
+      expect(outgoing.description).toContain(dest.label);
+      expect(incoming.description).toContain(source.label);
+    });
+
+    it("correctly moves both tracked balances' expected figures in the real Balance Check formula -- not just isolated field assertions", () => {
+      const [outgoing, incoming] = buildTransferTx(50, "USD", source, dest, 89500);
+      const cashBalance: TrackedBalance = { id: "b1", name: "Cash", paymentMethod: "cash", startingBalance: 100, startingDate: "2026-07-01", currency: "USD" };
+      const cardBalance: TrackedBalance = { id: "b2", name: "Card", paymentMethod: "card", cardId: "c1", startingBalance: 20, startingDate: "2026-07-01", currency: "USD" };
+      const data = { ...DEFAULT_DATA, trackedBalances: [cashBalance, cardBalance], transactions: [outgoing, incoming] };
+      expect(trackedBalanceExpected(cashBalance, data)).toBe(50);  // 100 - 50 (source lost 50)
+      expect(trackedBalanceExpected(cardBalance, data)).toBe(70);  // 20 + 50 (destination gained 50)
+    });
+
+    it("an LBP transfer captures the current rate on both legs", () => {
+      const [outgoing, incoming] = buildTransferTx(100_000, "LBP", source, dest, 89500);
+      expect(outgoing.lbpRateAtEntry).toBe(89500);
+      expect(incoming.lbpRateAtEntry).toBe(89500);
+      expect(outgoing.currency).toBe("LBP");
+      expect(incoming.currency).toBe("LBP");
+    });
+
+    it("defaults to today when no date is given; carries a real past date when one is given", () => {
+      const [outgoing] = buildTransferTx(50, "USD", source, dest, 89500);
+      expect(outgoing.date).toBe(todayISO());
+      const [pastLeg] = buildTransferTx(50, "USD", source, dest, 89500, { date: "2026-08-20" });
+      expect(pastLeg.date).toBe("2026-08-20");
+    });
+
+    it("source and destination on the SAME payment method (not a real transfer) is left to the caller to block -- this function doesn't guess intent, it just builds what it's given", () => {
+      const samePool = { paymentMethod: "cash" as const, label: "Cash" };
+      const [outgoing, incoming] = buildTransferTx(50, "USD", samePool, samePool, 89500);
+      // Structurally valid (two real transactions), even though a same-pool
+      // "transfer" is a no-op the UI should prevent before calling this --
+      // documented here so that decision isn't silently assumed elsewhere.
+      expect(outgoing.paymentMethod).toBe(incoming.paymentMethod);
     });
   });
 

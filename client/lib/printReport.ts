@@ -34,7 +34,7 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
   // Statistics for the exact same transaction.
   const toUSDForMonth = (n: number, cur: string | undefined, ym: string) =>
     cur === "LBP" ? n / valueForMonth(data.lbpRateHistory, ym, lbpRate) : n;
-  const BL = { NEEDS: "Needs", WANTS: "Wants", SAVINGS: "Savings", INCOME: "Income" } as const;
+  const BL = { NEEDS: "Needs", WANTS: "Wants", SAVINGS: "Savings", INCOME: "Income", TRANSFER: "Transfer" } as const;
 
   const ledgerTx = options.detailed
     // Phase 2.6.3b: a soft-deleted transaction must not appear in the
@@ -46,7 +46,10 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
   // Excludes INCOME, matching what "Spent" means in the summary card above
   // (dash.month.totalSpend) -- otherwise a range containing a logged INCOME
   // transaction shows two different, contradicting totals in the same report.
-  const ledgerTotal = ledgerTx.filter((t) => t.bucket !== "INCOME").reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, t.date.slice(0, 7)), 0);
+  // TRANSFER (2.4.55) excluded for the same reason -- it isn't spend, and its
+  // amount can be negative (an incoming leg), which would otherwise corrupt
+  // this total rather than just under/over-counting it.
+  const ledgerTotal = ledgerTx.filter((t) => t.bucket !== "INCOME" && t.bucket !== "TRANSFER").reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, t.date.slice(0, 7)), 0);
   const ledgerRows = ledgerTx.map((t) => `
     <tr>
       <td>${t.date.split("-").reverse().join("/")}</td>
