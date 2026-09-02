@@ -11,7 +11,7 @@ import {
   nextConfirmTarget, historizedRecurringContribution, pendingBackfillCycles,
   derivedEfBalance, derivedDebtBalance, activeTransactions, purgeTransaction, autoPurgeExpired,
   buildDebtPaymentTx, buildEfAdjustmentTx, buildDebtAdjustmentTx, applyGoalContribution,
-  mergeTransactions, buildTransferTx, retagBucketAmount, type TrackedBalance,
+  mergeTransactions, buildTransferTx, retagBucketAmount, reanchorTrackedBalance, type TrackedBalance,
 } from "./localData";
 import { trackedBalanceExpected } from "./computeDashboard";
 
@@ -1082,6 +1082,75 @@ describe("Phase 2.6.3c -- buildDebtPaymentTx and buildEfAdjustmentTx (tests-firs
       const asTransfer = retagBucketAmount("NEEDS", "TRANSFER", original);
       const back = retagBucketAmount("TRANSFER", "NEEDS", asTransfer);
       expect(back).toBe(original);
+    });
+  });
+
+  describe("reanchorTrackedBalance (2.4.53)", () => {
+    // The bug this closes: "Update" only ever RECORDED a mismatch
+    // (actualBalance/expectedAtCheckUSD) -- startingBalance/startingDate
+    // stayed wherever they were, so a real, unexplained drift (an ATM
+    // withdrawal or card top-up never logged) compounded forever and no
+    // check-in could ever resolve it, only re-certify it.
+    const tb: TrackedBalance = {
+      id: "b1", name: "Cash", paymentMethod: "cash",
+      startingBalance: 100, startingDate: "2026-07-01", currency: "USD",
+    };
+
+    it("resets startingBalance to the newly confirmed actual figure, and startingDate to today", () => {
+      const result = reanchorTrackedBalance(tb, 42, 55, 89500);
+      expect(result.startingBalance).toBe(42);
+      expect(result.startingDate).toBe(todayISO());
+    });
+
+    it("records actualBalance and a fresh actualBalanceDate, same as before this fix", () => {
+      const result = reanchorTrackedBalance(tb, 42, 55, 89500);
+      expect(result.actualBalance).toBe(42);
+      expect(result.actualBalanceDate).toBeTruthy();
+    });
+
+    it("preserves the caller-supplied expectedAtCheckUSD (the OLD baseline's prediction) unchanged -- the discrepancy this check-in reveals must survive the re-anchor, not be erased by it", () => {
+      const result = reanchorTrackedBalance(tb, 42, 55, 89500);
+      expect(result.expectedAtCheckUSD).toBe(55);
+    });
+
+    it("re-captures the LBP rate at the new startingDate for an LBP-currency balance", () => {
+      const lbpTb: TrackedBalance = { ...tb, currency: "LBP", startingBalance: 1_000_000 };
+      const result = reanchorTrackedBalance(lbpTb, 500_000, 400_000, 91000);
+      expect(result.lbpRateAtEntry).toBe(91000);
+    });
+
+    it("a USD balance carries no lbpRateAtEntry, same as every other USD record", () => {
+      const result = reanchorTrackedBalance(tb, 42, 55, 89500);
+      expect(result.lbpRateAtEntry).toBeUndefined();
+    });
+
+    it("leaves every other field (id, name, paymentMethod, currency) untouched", () => {
+      const result = reanchorTrackedBalance(tb, 42, 55, 89500);
+      expect(result.id).toBe(tb.id);
+      expect(result.name).toBe(tb.name);
+      expect(result.paymentMethod).toBe(tb.paymentMethod);
+      expect(result.currency).toBe(tb.currency);
+    });
+
+    it("an explicit asOf date is used for BOTH actualBalanceDate and startingDate verbatim -- ImportStatement.tsx's own case, where a bank statement's closing balance was true as of the statement's own date, not whenever the file happened to be imported", () => {
+      const result = reanchorTrackedBalance(tb, 42, 55, 89500, "2026-08-15");
+      expect(result.actualBalanceDate).toBe("2026-08-15");
+      expect(result.startingDate).toBe("2026-08-15");
+    });
+
+    it("real-world case: a $50 untracked ATM withdrawal drifted expected to $150 against a real $100 balance -- re-anchoring makes the NEXT check-in start from the true $100, not keep comparing against the stale $150 prediction forever", () => {
+      const drifted: TrackedBalance = { ...tb, startingBalance: 200, startingDate: "2026-07-01" };
+      // Simulates: expected was $150 (drifted), owner confirms the real $100.
+      const reanchored = reanchorTrackedBalance(drifted, 100, 150, 89500);
+      const txAfterReanchor = [{
+        id: "t1", amount: 20, currency: "USD" as const, bucket: "NEEDS" as const,
+        description: "Groceries", date: todayISO(), paymentMethod: "cash" as const,
+      }];
+      const data = { ...DEFAULT_DATA, trackedBalances: [reanchored], transactions: txAfterReanchor };
+      // Correct going forward: $100 (the true, re-anchored balance) - $20 spent = $80.
+      // Before this fix, the stale $200 starting balance would have produced
+      // $180 instead -- still $50 too high, the exact undetected drift amount.
+      expect(trackedBalanceExpected(reanchored, data)).toBe(80);
     });
   });
 
