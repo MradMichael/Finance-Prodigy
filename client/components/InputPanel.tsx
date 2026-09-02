@@ -52,25 +52,28 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     { value: "WANTS",   label: "Wants",   icon: "✨", color: T.brass },
     { value: "SAVINGS", label: "Savings", icon: "💰", color: T.jade  },
   ];
-  // Transaction-only picker (adds Income) -- recurring pickers keep using
-  // BUCKETS above unchanged, since recurring income already has its own home
-  // in the Setup income field.
+  // Transaction-only picker (adds Income, Transfer) -- recurring pickers
+  // keep using BUCKETS above unchanged, since recurring income already has
+  // its own home in the Setup income field and a recurring item can never
+  // sensibly be a transfer.
+  //
+  // Transfer here (2.4.55, sub-phase 3) is deliberately the SINGLE-leg
+  // reimbursement-repayment case only -- "Dad paid me back for gas,"
+  // amount always positive (this pool gained money), reusing the exact
+  // same amount/date/description/payment-method fields every other type
+  // already has. A same-moment POOL-TO-POOL transfer (Cash to a card, an
+  // ATM withdrawal) still has its own dedicated two-leg form in the Manage
+  // tab (buildTransferTx) -- a single quick-entry leg here would be an
+  // unpaired half of one of those, which is exactly the case this entry
+  // point does NOT build. No gained/lost toggle: unlike
+  // EditTransactionSheet's retag (which can start from either a spend or
+  // an income transaction), a brand-new entry here only ever represents
+  // money arriving.
   const TX_BUCKETS: { value: TxBucket; label: string; icon: string; color: string }[] = [
     ...BUCKETS,
     { value: "INCOME", label: "Income", icon: "📥", color: T.jade },
+    { value: "TRANSFER", label: "Transfer", icon: "🔁", color: T.mute },
   ];
-  // Deliberately NOT in TX_BUCKETS above -- that array also drives the Daily
-  // quick-entry form's selectable "Type" picker (below), and Transfer isn't
-  // pickable there (it has its own dedicated Manage-tab form, which builds
-  // both linked legs correctly; a single quick-entry leg would be an
-  // unpaired, half-built transfer). This exists only so the two transaction
-  // list renders below (This month / History) can find an icon+color for a
-  // TRANSFER row without crashing -- they used to read
-  // `TX_BUCKETS.find(...)!`, which returned undefined and threw for any
-  // TRANSFER-bucket transaction the instant one existed (found live while
-  // building the Transfer form, 2.4.55 sub-phase 2). Matches
-  // EditTransactionSheet.tsx's own TX_BUCKETS entry for TRANSFER exactly.
-  const TRANSFER_META = { value: "TRANSFER" as const, label: "Transfer", icon: "🔁", color: T.mute };
   const update = (patch: Partial<LocalFinancials>) => onChange({ ...financials, ...patch });
 
   // Transaction form
@@ -293,7 +296,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
       ...(txPayMethod === "other" && txPayNote.trim() ? { paymentNote: txPayNote.trim() } : {}),
       ...(cardId ? { cardId, cardLabel } : {}),
       ...(txBucket === "SAVINGS" && txAddToEF ? { efAmount: roundMoney(efAmtUSD) } : {}),
-      ...(txBucket !== "SAVINGS" && txBucket !== "INCOME" && txFromEF ? { efAmount: roundMoney(-efAmtUSD) } : {}),
+      ...(txBucket !== "SAVINGS" && txBucket !== "INCOME" && txBucket !== "TRANSFER" && txFromEF ? { efAmount: roundMoney(-efAmtUSD) } : {}),
     };
     update({ transactions: [tx, ...financials.transactions] });
     setTxAmt(""); setTxDesc(""); setTxPayNote(""); setTxAddToEF(false); setTxFromEF(false); setTxEfAmt(""); setTxCategory("");
@@ -765,6 +768,13 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                 </button>
               ))}
             </div>
+            {txBucket === "TRANSFER" && (
+              <p className="text-[10px] mt-1.5 px-1" style={{ color: T.mute }}>
+                For money arriving that isn&apos;t real income — a reimbursement, a repayment. Not counted as
+                spending or income, excluded from every budget total. Moving money between your own Cash/Card/Other
+                pools has its own form in Manage → Transfer.
+              </p>
+            )}
           </div>
 
           <div>
@@ -859,8 +869,10 @@ export default function InputPanel({ financials, dashData, onChange, session, on
 
           {/* Needs/Wants: option to pay this from the Emergency Fund instead
               of new spending -- not shown in split mode, same reasoning as
-              the Savings/EF block above. */}
-          {!txSplitMode && txBucket !== "SAVINGS" && txBucket !== "INCOME" && dashData.emergencyFund.balance > 0 && (
+              the Savings/EF block above. Excludes Transfer too (2.4.55
+              sub-phase 3): a reimbursement receipt isn't an expense EF
+              could have paid. */}
+          {!txSplitMode && txBucket !== "SAVINGS" && txBucket !== "INCOME" && txBucket !== "TRANSFER" && dashData.emergencyFund.balance > 0 && (
             <>
               <button
                 onClick={() => setTxFromEF((v) => !v)}
@@ -895,7 +907,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
               id="tx-desc"
               value={txDesc}
               onChange={(e) => setTxDesc(e.target.value)}
-              placeholder={txBucket === "INCOME" ? "Bonus, freelance gig, gift…" : "Rent, groceries, gym…"}
+              placeholder={txBucket === "INCOME" ? "Bonus, freelance gig, gift…" : txBucket === "TRANSFER" ? "Dad paid me back for gas…" : "Rent, groceries, gym…"}
               onKeyDown={(e) => e.key === "Enter" && (txSplitMode ? commitSplitTransaction() : addTransaction())}
             />
             {!txSplitMode && txBucket !== "INCOME" && txBucket !== "TRANSFER" && looksRecurring(txDesc, txDate, activeTx, financials.recurring ?? []) && (
@@ -1073,7 +1085,10 @@ export default function InputPanel({ financials, dashData, onChange, session, on
             <>
               <div className="space-y-2 max-h-72 overflow-y-auto pr-0.5">
                 {monthTx.map((tx) => {
-                  const b = TX_BUCKETS.find((b) => b.value === tx.bucket) ?? TRANSFER_META;
+                  // Safe again now that TRANSFER is a real TX_BUCKETS member
+                  // (2.4.55 sub-phase 3) -- the ?? TRANSFER_META fallback
+                  // this replaced (2.4.56) is no longer reachable.
+                  const b = TX_BUCKETS.find((b) => b.value === tx.bucket)!;
                   const divergence = cycleMonthDivergence(tx, financials.recurring ?? []);
                   return (
                     <div key={tx.id}>
@@ -1200,7 +1215,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                       </div>
                       <div className="space-y-1.5">
                         {txs.sort((a, b) => b.date.localeCompare(a.date)).map((tx) => {
-                          const b = TX_BUCKETS.find((b) => b.value === tx.bucket) ?? TRANSFER_META;
+                          const b = TX_BUCKETS.find((b) => b.value === tx.bucket)!;
                           const divergence = cycleMonthDivergence(tx, financials.recurring ?? []);
                           return (
                             <div key={tx.id}>
