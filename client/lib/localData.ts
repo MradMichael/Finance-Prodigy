@@ -1630,6 +1630,43 @@ export function retagBucketAmount(
 }
 
 /**
+ * 2.4.53 -- "Update" used to only RECORD a mismatch (actualBalance,
+ * expectedAtCheckUSD), never correct it: startingBalance/startingDate
+ * stayed wherever they were, so a real, unexplained gap (an ATM withdrawal
+ * or card top-up never logged) compounded forever and no check-in could
+ * ever resolve it -- each one just re-certified the same drift as the new
+ * "expected," which is why this was the most visibly wrong figure on the
+ * owner's own screen.
+ *
+ * `expectedAtCheckUSD` is a caller-supplied parameter, not recomputed here
+ * -- it must be captured from the OLD startingBalance/startingDate (via
+ * trackedBalanceExpected, computeDashboard.ts) BEFORE this function's own
+ * re-anchor takes effect, so the discrepancy this check-in reveals is
+ * preserved for history, not silently erased by the correction. Re-anchors
+ * to today unconditionally: when there was no real drift, this is a
+ * no-op (starting was already correct); when there was, it's the fix.
+ *
+ * `asOf`, when given, is used verbatim for BOTH actualBalanceDate and
+ * startingDate -- ImportStatement.tsx's own case, where a bank statement's
+ * closing balance was true as of the statement's own date, not whenever
+ * the file happened to be imported. Omitted (InputPanel's live "Update"
+ * button), it means right now: a full ISO timestamp for actualBalanceDate,
+ * a plain YYYY-MM-DD for startingDate, matching each field's own existing
+ * convention.
+ */
+export function reanchorTrackedBalance(
+  tb: TrackedBalance, actualBalance: number, expectedAtCheckUSD: number | undefined, lbpRate: number,
+  asOf?: string,
+): TrackedBalance {
+  return {
+    ...tb,
+    actualBalance, actualBalanceDate: asOf ?? new Date().toISOString(), expectedAtCheckUSD,
+    startingBalance: actualBalance, startingDate: asOf ?? todayISO(),
+    ...withRate(tb.currency, lbpRate),
+  };
+}
+
+/**
  * Phase 2.6.3c -- SetupScreen's EF field is no longer an opening-balance
  * editor; it reads as "your real current balance." Saving computes
  * `delta = entered - derivedEfBalance(financials)` and this builds the one

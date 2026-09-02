@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import type { LocalFinancials, StoredCard, StoredTransaction, TrackedBalance } from "../lib/localData";
-import { uid, todayISO, allCategories, matchCategoryRule, activeTransactions } from "../lib/localData";
+import { uid, todayISO, allCategories, matchCategoryRule, activeTransactions, reanchorTrackedBalance, DEFAULT_LBP_RATE } from "../lib/localData";
 import { trackedBalanceExpected } from "../lib/computeDashboard";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, DateFieldDMY } from "./form/Primitives";
@@ -196,14 +196,6 @@ export default function ImportStatement({
       // false mismatch or masking a real one).
       const balanceDate = closingBalanceDate ?? todayISO();
       const existingTB = financials.trackedBalances.find((tb) => tb.cardId === card.id);
-      // Same as the transactions above -- hardcoded USD, no rate needed.
-      const tbBase: TrackedBalance = existingTB
-        ? { ...existingTB, actualBalance: closingBalance, actualBalanceDate: balanceDate }
-        : {
-            id: uid(), name: card.label, paymentMethod: "card", cardId: card.id,
-            startingBalance: closingBalance, startingDate: balanceDate, currency: "USD",
-            actualBalance: closingBalance, actualBalanceDate: balanceDate,
-          };
       // AUD-02 (external audit, 2026-08-28): expectedAtCheckUSD used to be
       // set to the bank's raw closing balance unconditionally -- correct
       // ONLY if every statement row actually got imported. A row left
@@ -218,7 +210,30 @@ export default function ImportStatement({
       // patched view of financials that includes the new transactions --
       // an excluded row now correctly produces a real, visible discrepancy.
       const patchedFinancials: LocalFinancials = { ...financials, transactions: patch.transactions! };
-      const tbPatch: TrackedBalance = { ...tbBase, expectedAtCheckUSD: trackedBalanceExpected(tbBase, patchedFinancials) };
+      // 2.4.53 -- re-anchoring an EXISTING tracked card's baseline is the
+      // exact same "confirm what you actually have" moment InputPanel's
+      // "Update" button handles, just sourced from a bank statement instead
+      // of a typed figure; asOf pins both dates to the statement's own
+      // closing date, not import time (see the comment this replaced,
+      // still true here). A brand-new tracked balance (no existingTB) has
+      // nothing to re-anchor from -- it's already correctly seeded fresh.
+      let tbPatch: TrackedBalance;
+      if (existingTB) {
+        tbPatch = reanchorTrackedBalance(
+          existingTB, closingBalance,
+          trackedBalanceExpected(existingTB, patchedFinancials),
+          financials.lbpRate ?? DEFAULT_LBP_RATE, balanceDate,
+        );
+      } else {
+        const freshTB: TrackedBalance = {
+          id: uid(), name: card.label, paymentMethod: "card", cardId: card.id,
+          startingBalance: closingBalance, startingDate: balanceDate, currency: "USD",
+          actualBalance: closingBalance, actualBalanceDate: balanceDate,
+        };
+        // AUD-02's fix still applies here too -- compute against what was
+        // ACTUALLY imported, not assume the raw closing balance.
+        tbPatch = { ...freshTB, expectedAtCheckUSD: trackedBalanceExpected(freshTB, patchedFinancials) };
+      }
       patch.trackedBalances = existingTB
         ? financials.trackedBalances.map((tb) => (tb.id === existingTB.id ? tbPatch : tb))
         : [...financials.trackedBalances, tbPatch];

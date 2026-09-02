@@ -7,7 +7,7 @@ import type {
 } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, toUSD as toUSDShared, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, roundMoney, derivedDebtBalance, activeTransactions, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
+import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, toUSD as toUSDShared, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, reanchorTrackedBalance, allCategories, categoryLabel, categoryIcon, matchCategoryRule, roundMoney, derivedDebtBalance, activeTransactions, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker, CardPicker } from "./form/Primitives";
@@ -414,17 +414,21 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     // the very first "what you actually have now" entry for a tracked
     // balance has nothing behind it yet.
     const tb = (financials.trackedBalances ?? []).find((t) => t.id === id);
-    if (tb?.actualBalance != null && !confirm(`Replace your last check (${fmtCur(tb.actualBalance, tb.currency)} on ${fmtDate(tb.actualBalanceDate ?? "")}) with this new figure? The old one won't be recoverable.`)) {
+    if (!tb) return;
+    if (tb.actualBalance != null && !confirm(`Replace your last check (${fmtCur(tb.actualBalance, tb.currency)} on ${fmtDate(tb.actualBalanceDate ?? "")}) with this new figure? This also resets the tracking baseline to today, so past drift won't keep affecting future checks. The old figure won't be recoverable.`)) {
       return;
     }
     // Snapshot the live expected total (from dashData, already computed as
     // of right now) at the exact moment of confirming -- see
     // computeDashboard.ts's balanceChecks for why this can't be
-    // reconstructed later from transaction dates.
+    // reconstructed later from transaction dates. This is the OLD
+    // baseline's prediction, captured before reanchorTrackedBalance resets
+    // startingBalance/startingDate below (2.4.53) -- preserved so the
+    // discrepancy this check-in reveals survives the re-anchor.
     const expectedNow = dashData.balanceChecks.find((b) => b.id === id)?.expected;
     update({
-      trackedBalances: (financials.trackedBalances ?? []).map((tb) =>
-        tb.id !== id ? tb : { ...tb, actualBalance: amt, actualBalanceDate: new Date().toISOString(), expectedAtCheckUSD: expectedNow }),
+      trackedBalances: (financials.trackedBalances ?? []).map((t) =>
+        t.id !== id ? t : reanchorTrackedBalance(t, amt, expectedNow, financials.lbpRate ?? DEFAULT_LBP_RATE)),
     });
     setActualInputs((prev) => ({ ...prev, [id]: "" }));
   }
@@ -2003,6 +2007,10 @@ export default function InputPanel({ financials, dashData, onChange, session, on
             method since then to tell you what you <em>should</em> have. Compare it to what you actually see, and a
             gap usually means a payment never got logged. (A recurring bill that hasn&apos;t been confirmed yet
             won&apos;t show up here — a known limit, not a bug.)
+          </p>
+          <p className="text-[10px] px-1" style={{ color: T.mute }}>
+            Entering what you actually have resets the baseline to that figure and today — so a gap you&apos;ve
+            already noticed and accounted for won&apos;t keep reappearing in every future check.
           </p>
           {(financials.trackedBalances ?? []).length > 0 && (
             <div className="space-y-2">
