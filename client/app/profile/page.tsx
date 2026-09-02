@@ -9,7 +9,7 @@ import type { Session } from "../../lib/auth";
 import { loadData, saveData, activeTransactions } from "../../lib/localData";
 import { computeDashboard } from "../../lib/computeDashboard";
 import { buildReportHtml } from "../../lib/printReport";
-import { pushToServer, pullFromServer, getLastSyncTime, confirmOverwriteIfNeeded } from "../../lib/syncService";
+import { pushToServer, pullFromServer, getLastSyncTime, confirmOverwriteIfNeeded, mergeAndPush, buildMergeNoticeText } from "../../lib/syncService";
 import type { LocalFinancials } from "../../lib/localData";
 import { isAnalyticsOptedIn, setAnalyticsOptIn } from "../../lib/analytics";
 import { useTheme, useThemeControl } from "../../contexts/ThemeContext";
@@ -96,6 +96,29 @@ export default function ProfilePage() {
       setSyncing(false);
       setSyncMsg("✗ " + result.error);
     }
+  }
+
+  // Phase 2.7 sub-phase 3 -- the primary action for a known conflict:
+  // merge instead of choosing a side. Push/Pull stay available below as
+  // manual overrides for when someone actually wants to discard a side
+  // (design note, docs/ROADMAP.md Phase 2.7).
+  async function handleMerge() {
+    if (!session) return;
+    setSyncing(true); setSyncMsg("");
+    const local = await loadData(session.userId);
+    const result = await mergeAndPush(session.email, local);
+    if (!result.ok) {
+      setSyncing(false);
+      setSyncMsg("✗ " + result.error);
+      return;
+    }
+    await saveData(result.mergedData, session.userId);
+    setLastSync(result.syncedAt);
+    const notice = buildMergeNoticeText(result.addedFromServer, result.conflictDetails);
+    setSyncMsg("✓ Merged. " + (notice.text || "Nothing new from your other device."));
+    // Same reload requirement as handlePull -- the dashboard only reads
+    // localStorage once, on its own mount.
+    setTimeout(() => { window.location.href = "/"; }, 900);
   }
 
   async function handlePush() {
@@ -436,7 +459,20 @@ export default function ProfilePage() {
           <div className="space-y-4">
             <div>
               <p className="text-xs mb-2" style={{ color: T.mute }}>
-                Push this device&apos;s data to the database now:
+                Merge this device with your other device&apos;s data (both sides&apos; transactions kept, edit conflicts resolved automatically):
+              </p>
+              <button
+                onClick={handleMerge}
+                disabled={syncing}
+                className="w-full px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
+                style={{ background: T.jade, color: T.ink }}
+              >
+                {syncing ? "⏳ Merging…" : "⇄ Merge"}
+              </button>
+            </div>
+            <div>
+              <p className="text-xs mb-2" style={{ color: T.mute }}>
+                Push this device&apos;s data to the database now (overwrites the server&apos;s copy entirely):
               </p>
               <button
                 onClick={handlePush}
@@ -449,7 +485,7 @@ export default function ProfilePage() {
             </div>
             <div>
               <p className="text-xs mb-2" style={{ color: T.mute }}>
-                Restore data from the database (e.g. on a new device):
+                Restore data from the database (overwrites this device&apos;s copy entirely; e.g. on a new device):
               </p>
               <button
                 onClick={handlePull}

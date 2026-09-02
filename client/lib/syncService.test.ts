@@ -3,7 +3,7 @@ import {
   pushToServer, pullFromServer, relinkSync, deleteFromServer, checkEmailExists,
   getLastSyncTime, hasAutoPulled, markAutoPulled,
   hasAnyLocalData, hasRealLocalData, confirmOverwriteIfNeeded,
-  mergeAndPush,
+  mergeAndPush, buildMergeNoticeText, type MergeConflictDetail,
 } from "./syncService";
 import { getSyncToken } from "./crypto";
 import { getRecoveryTokenForSync } from "./auth";
@@ -250,6 +250,27 @@ describe("mergeAndPush (Phase 2.7 sub-phase 2 -- wires mergeTransactions into th
     expect(result.conflicts).toHaveLength(1);
     expect(result.conflicts[0].amount).toBe(75);
     expect(result.conflicts[0].description).toBe("Groceries (corrected)");
+    // conflictDetails carries BOTH sides -- the toast wording needs "was
+    // $X", which the winner-only `conflicts` array can't provide alone.
+    expect(result.conflictDetails).toHaveLength(1);
+    expect(result.conflictDetails[0].winner.amount).toBe(75);
+    expect(result.conflictDetails[0].loser.amount).toBe(50);
+  });
+
+  it("conflictDetails correctly identifies the LOSER even when local wins (not just when server wins)", async () => {
+    const newerLocal = makeTx({ id: "shared", amount: 75, description: "Corrected here", updatedAt: "2026-08-10T00:00:00.000Z" });
+    const olderServer = makeTx({ id: "shared", amount: 50, description: "Stale elsewhere", updatedAt: "2026-08-01T00:00:00.000Z" });
+    const local: LocalFinancials = { ...DEFAULT_DATA, transactions: [newerLocal] };
+    const serverData: LocalFinancials = { ...DEFAULT_DATA, transactions: [olderServer] };
+    const fetchSpy = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ syncedAt: "2026-08-01T00:00:00.000Z", data: serverData, hasRecoveryCode: false }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ syncedAt: "2026-08-02T00:00:00.000Z" }) });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = await mergeAndPush("a@test.com", local);
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.conflictDetails[0].winner.amount).toBe(75);
+    expect(result.conflictDetails[0].loser.amount).toBe(50);
   });
 
   it("propagates a pull failure without ever attempting a push", async () => {
@@ -281,6 +302,51 @@ describe("mergeAndPush (Phase 2.7 sub-phase 2 -- wires mergeTransactions into th
     await mergeAndPush("a@test.com", { ...DEFAULT_DATA, transactions: [] });
     expect(fetchSpy.mock.calls[0][0]).toContain("/api/sync/pull");
     expect(fetchSpy.mock.calls[1][0]).toBe("/api/sync/push");
+  });
+});
+
+describe("buildMergeNoticeText (Phase 2.7 sub-phase 3 -- the exact wording rules the owner approved, 2026-09-01)", () => {
+  function detail(overrides: Partial<{ winnerAmount: number; loserAmount: number; description: string }> = {}): MergeConflictDetail {
+    const { winnerAmount = 75, loserAmount = 50, description = "Groceries" } = overrides;
+    return {
+      winner: { id: "w", amount: winnerAmount, currency: "USD", bucket: "NEEDS", description, date: "2026-08-01" },
+      loser:  { id: "w", amount: loserAmount,  currency: "USD", bucket: "NEEDS", description, date: "2026-08-01" },
+    };
+  }
+
+  it("nothing to report: empty text, no review link", () => {
+    expect(buildMergeNoticeText(0, [])).toEqual({ text: "", showReviewLink: false });
+  });
+
+  it("additions only, no conflicts", () => {
+    expect(buildMergeNoticeText(2, [])).toEqual({ text: "Merged with your other device — 2 new transactions added.", showReviewLink: false });
+    expect(buildMergeNoticeText(1, [])).toEqual({ text: "Merged with your other device — 1 new transaction added.", showReviewLink: false });
+  });
+
+  it("exactly 1 conflict: named inline with both values, no review link", () => {
+    const { text, showReviewLink } = buildMergeNoticeText(0, [detail({ winnerAmount: 75, loserAmount: 50, description: "Groceries" })]);
+    expect(text).toBe('Merged with your other device — kept the newer edit to "Groceries" ($75, was $50).');
+    expect(showReviewLink).toBe(false);
+  });
+
+  it("exactly 2 conflicts: BOTH named inline, same as the single case -- not collapsed to a count", () => {
+    const details = [detail({ description: "Groceries", winnerAmount: 75, loserAmount: 50 }), detail({ description: "Gas", winnerAmount: 40, loserAmount: 35 })];
+    const { text, showReviewLink } = buildMergeNoticeText(0, details);
+    expect(text).toContain('kept the newer edit to "Groceries" ($75, was $50)');
+    expect(text).toContain('kept the newer edit to "Gas" ($40, was $35)');
+    expect(showReviewLink).toBe(false);
+  });
+
+  it("3 or more conflicts: collapses to a count, sets showReviewLink -- no list in the toast", () => {
+    const details = [detail(), detail(), detail()];
+    const { text, showReviewLink } = buildMergeNoticeText(0, details);
+    expect(text).toBe("Merged with your other device — 3 edit conflicts resolved (kept the most recent edit each time).");
+    expect(showReviewLink).toBe(true);
+  });
+
+  it("combines additions and conflicts in one sentence", () => {
+    const { text } = buildMergeNoticeText(2, [detail({ winnerAmount: 75, loserAmount: 50, description: "Groceries" })]);
+    expect(text).toBe('Merged with your other device — 2 new transactions added, kept the newer edit to "Groceries" ($75, was $50).');
   });
 });
 
