@@ -70,8 +70,10 @@ export default function JourneyScreen({
     // This arc is specifically about the Needs/Wants/Savings spend mix --
     // one-off INCOME transactions aren't spend, and the old catch-all
     // (anything not NEEDS/WANTS landed in savings) would have miscounted
-    // them as extra savings.
-    if (t.bucket === "INCOME") continue;
+    // them as extra savings. TRANSFER (2.4.55) gets the same exclusion, for
+    // the same reason -- it isn't a savings contribution just because it
+    // isn't NEEDS/WANTS, and its amount can be negative (an incoming leg).
+    if (t.bucket === "INCOME" || t.bucket === "TRANSFER") continue;
     const k = t.date.slice(0, 7);
     const b = byMonth[k] ?? (byMonth[k] = { needs: 0, wants: 0, savings: 0 });
     const usd = toUSD(t.amount, t.currency);

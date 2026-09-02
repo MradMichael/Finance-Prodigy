@@ -19,7 +19,9 @@ export default function CurrencyScreen({ financials }: { financials: LocalFinanc
   // native currency (not converted) so this actually measures which
   // currency money is changing hands in, not just USD-equivalent totals. ──
   const currentYm = todayISO().slice(0, 7);
-  const monthTx = activeTransactions(financials.transactions).filter((t) => t.date.startsWith(currentYm) && t.bucket !== "INCOME");
+  // TRANSFER (2.4.55) excluded too -- not spend, and its amount can be
+  // negative (an incoming leg), which would corrupt this currency total.
+  const monthTx = activeTransactions(financials.transactions).filter((t) => t.date.startsWith(currentYm) && t.bucket !== "INCOME" && t.bucket !== "TRANSFER");
   const spendUSD = monthTx.filter((t) => (t.currency ?? "USD") === "USD").reduce((s, t) => s + t.amount, 0)
     + (financials.recurring ?? []).filter((r) => (r.currency ?? "USD") === "USD").reduce((s, r) => s + historizedRecurringContribution(r, currentYm, new Date()), 0);
   const spendLBP = monthTx.filter((t) => t.currency === "LBP").reduce((s, t) => s + t.amount, 0)

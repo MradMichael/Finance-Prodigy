@@ -9,7 +9,7 @@ import {
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY, CurrencyToggle, PM_OPTIONS, CardPicker } from "./form/Primitives";
 
-type TxBucket = "NEEDS" | "WANTS" | "SAVINGS" | "INCOME";
+type TxBucket = "NEEDS" | "WANTS" | "SAVINGS" | "INCOME" | "TRANSFER";
 
 /**
  * Shared edit surface for a transaction -- opened from InputPanel's Manage
@@ -52,6 +52,13 @@ export default function EditTransactionSheet({
     { value: "WANTS",   label: "Wants",   icon: "✨", color: T.brass },
     { value: "SAVINGS", label: "Savings", icon: "💰", color: T.jade  },
     { value: "INCOME",  label: "Income",  icon: "📥", color: T.jade  },
+    // 2.4.55 -- money moving between the owner's own pools (a transfer, or a
+    // reimbursement's repayment leg): not real income or spend, excluded
+    // from every budget total. Reclassifying an existing NEEDS/WANTS
+    // transaction to this bucket (e.g. once a reimbursement arrives for a
+    // payment made on someone else's behalf) is exactly what this picker
+    // being reachable here enables -- no separate mechanism needed.
+    { value: "TRANSFER", label: "Transfer", icon: "🔁", color: T.mute },
   ];
 
   const [amt,        setAmt]        = useState(String(transaction.amount));
@@ -79,12 +86,14 @@ export default function EditTransactionSheet({
   const [lbpConfirmAmount, setLbpConfirmAmount] = useState<number | null>(null);
 
   const divergence = cycleMonthDivergence(transaction, financials.recurring ?? []);
-  const showRecurringNudge = bucket !== "INCOME"
+  // A transfer, like income, doesn't fit "convert to a recurring bill" --
+  // StoredRecurring.bucket stays NEEDS/WANTS/SAVINGS only (2.4.55).
+  const showRecurringNudge = bucket !== "INCOME" && bucket !== "TRANSFER"
     && date.slice(0, 7) === new Date().toISOString().slice(0, 7)
     && looksRecurring(desc, date, financials.transactions.filter((t) => t.id !== transaction.id), financials.recurring ?? []);
 
   function convertToRecurring() {
-    const rec = buildQuickRecurring(desc, amt, currency, bucket === "INCOME" ? "NEEDS" : bucket, category);
+    const rec = buildQuickRecurring(desc, amt, currency, bucket === "INCOME" || bucket === "TRANSFER" ? "NEEDS" : bucket, category);
     if (!rec) return;
     update({ recurring: [...(financials.recurring ?? []), rec] });
   }

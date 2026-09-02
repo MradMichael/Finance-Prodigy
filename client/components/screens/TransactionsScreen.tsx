@@ -161,8 +161,8 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
     (acc[k] = acc[k] ?? []).push(t);
     return acc;
   }, {});
-  const BC = { NEEDS: T.sky, WANTS: T.brass, SAVINGS: T.jade, INCOME: T.jade } as const;
-  const BL = { NEEDS: "Needs", WANTS: "Wants", SAVINGS: "Savings", INCOME: "Income" } as const;
+  const BC = { NEEDS: T.sky, WANTS: T.brass, SAVINGS: T.jade, INCOME: T.jade, TRANSFER: T.mute } as const;
+  const BL = { NEEDS: "Needs", WANTS: "Wants", SAVINGS: "Savings", INCOME: "Income", TRANSFER: "Transfer" } as const;
 
   // Recurring items already fed the bucket-summary totals and category
   // trends above, but never appeared as rows here -- someone scanning the
@@ -236,8 +236,9 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
     for (const t of allTx) {
       // Trends are specifically the Needs/Wants/Savings spend mix -- INCOME
       // transactions aren't spend, and the old catch-all would have
-      // miscounted them as extra savings.
-      if (t.bucket === "INCOME") continue;
+      // miscounted them as extra savings. TRANSFER (2.4.55) excluded too --
+      // not spend, and its amount can be negative (an incoming leg).
+      if (t.bucket === "INCOME" || t.bucket === "TRANSFER") continue;
       const k = periodKey(t.date, trendPeriod);
       const b = byPeriod[k] ?? (byPeriod[k] = { needs: 0, wants: 0, savings: 0 });
       const usd = toUSD(t.amount, t.currency);
@@ -532,7 +533,9 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
           // Spend total for the header -- INCOME rows are shown in the list
           // below but excluded here, same as everywhere else on this page
           // that means "spend" (bucket-summary cards, the donut, trends).
-          const moTotal = txs.filter((t) => t.bucket !== "INCOME").reduce((s, t) => s + toUSD(t.amount, t.currency), 0) + recurRows.reduce((s, rr) => s + rr.usd, 0);
+          // TRANSFER (2.4.55) excluded too -- not spend, and its amount can
+          // be negative (an incoming leg).
+          const moTotal = txs.filter((t) => t.bucket !== "INCOME" && t.bucket !== "TRANSFER").reduce((s, t) => s + toUSD(t.amount, t.currency), 0) + recurRows.reduce((s, rr) => s + rr.usd, 0);
           return (
             <div key={mo}>
               <div className="flex justify-between items-baseline mb-2 px-1">

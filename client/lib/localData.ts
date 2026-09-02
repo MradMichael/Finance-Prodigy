@@ -23,11 +23,42 @@ export interface StoredTransaction {
   // withRate below for where this gets populated on new records, and
   // migrateFinancials for how it's backfilled on existing ones.
   lbpRateAtEntry?: number;
-  // INCOME is a one-off/incidental receipt (a gift, a reimbursement) logged as
-  // a dated transaction like any other -- distinct from the recurring salary
-  // set in Setup. StoredRecurring.bucket deliberately stays NEEDS/WANTS/SAVINGS
-  // only: recurring income already has its own home (the Setup income field).
-  bucket: "NEEDS" | "WANTS" | "SAVINGS" | "INCOME";
+  // INCOME is a one-off/incidental receipt (a gift, a genuine windfall) logged
+  // as a dated transaction like any other -- distinct from the recurring
+  // salary set in Setup. StoredRecurring.bucket deliberately stays
+  // NEEDS/WANTS/SAVINGS only: recurring income already has its own home (the
+  // Setup income field), and a recurring item can never sensibly be a transfer.
+  //
+  // TRANSFER (2.4.55, added 2026-09-01) -- money moving into or out of one of
+  // the owner's own pools that is neither real income nor real spend: a
+  // same-moment transfer between two of their own tracked balances (Cash to
+  // card, bank to Cash), or a reimbursement (a prior NEEDS/WANTS payment made
+  // on someone else's behalf, later repaid). Excluded from every
+  // needs/wants/savings/income aggregate in computeDashboard.ts, the same way
+  // INCOME already is -- see 2.4.55 in docs/AUDIT_2026-08.md for the full
+  // design and the list of sites this touches.
+  //
+  // `amount` is SIGNED only for this bucket (every other bucket keeps amount
+  // non-negative, as it always has): positive means money entered this
+  // transaction's payment method, negative means it left. This is what makes
+  // expectedFromRelevantTx's existing sign formula ((bucket === "INCOME" ?
+  // -1 : 1) * amount) already correct for TRANSFER with NO change to that
+  // formula -- TRANSFER falls into the same "+1 * amount" branch NEEDS/WANTS/
+  // SAVINGS already use, and a negative amount flowing through it naturally
+  // increases `expected` (money arrived) exactly the way INCOME's -1
+  // multiplier does, without a special case. Same signed-field precedent
+  // `efAmount`/`debtAdjustment` already established elsewhere on this type.
+  //
+  // A same-moment transfer is two TRANSFER-bucket transactions (one negative
+  // leg on the source pool, one positive leg on the destination pool),
+  // created together and linked via the EXISTING `linkedPaymentId` (Batch C)
+  // purely for display pairing -- no new linking mechanism. A reimbursement
+  // is one TRANSFER-bucket transaction (the repayment, positive, on whichever
+  // pool it landed in), optionally `linkedPaymentId`-linked back to the
+  // original spend for traceability -- the bucket alone is what keeps totals
+  // honest, the link is cosmetic, matching `linkedPaymentId`'s own existing
+  // display-only contract exactly (nothing in computeDashboard.ts may read it).
+  bucket: "NEEDS" | "WANTS" | "SAVINGS" | "INCOME" | "TRANSFER";
   // Optional, finer-grained than bucket (e.g. "Groceries" vs. the Needs
   // bucket it rolls up into) -- purely descriptive/for charting, never fed
   // into budget/EF/rollover/projection math, so it's safe to leave unset on

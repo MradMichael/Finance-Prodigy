@@ -738,6 +738,69 @@ describe("trackedBalanceExpected (AUD-02)", () => {
   });
 });
 
+// 2.4.55, tests-first per Standing Rule 4. TRANSFER is money moving into or
+// out of one of the owner's own pools that is neither real income nor real
+// spend (a same-moment transfer between two tracked balances, or a
+// reimbursement) -- see the bucket's own doc comment on StoredTransaction
+// for the full design. Written before the implementation.
+describe("TRANSFER bucket (2.4.55)", () => {
+  it("a TRANSFER's SIGNED amount moves a tracked balance's expected correctly, with NO change needed to expectedFromRelevantTx's own formula -- negative (incoming) increases it, positive (outgoing) decreases it, same as the design's own claim", () => {
+    const incoming = makeData({
+      trackedBalances: [{ id: "b1", name: "Wallet", paymentMethod: "cash", startingBalance: 100, startingDate: "2026-07-01", currency: "USD" }],
+      transactions: [{ id: "t1", amount: -50, currency: "USD", bucket: "TRANSFER", description: "Cash top-up from bank", date: "2026-07-05", paymentMethod: "cash" }],
+    });
+    expect(trackedBalanceExpected(incoming.trackedBalances[0], incoming)).toBe(150);
+
+    const outgoing = makeData({
+      trackedBalances: [{ id: "b1", name: "Wallet", paymentMethod: "cash", startingBalance: 100, startingDate: "2026-07-01", currency: "USD" }],
+      transactions: [{ id: "t1", amount: 30, currency: "USD", bucket: "TRANSFER", description: "Cash to card", date: "2026-07-05", paymentMethod: "cash" }],
+    });
+    expect(trackedBalanceExpected(outgoing.trackedBalances[0], outgoing)).toBe(70);
+  });
+
+  it("is excluded from needsSpend/wantsSpend/savingsContrib/income, same as INCOME already is -- a transfer is neither", () => {
+    const data = makeData({
+      income: 1000,
+      transactions: [
+        { id: "t1", amount: 200, currency: "USD", bucket: "TRANSFER", description: "Cash to card", date: "2026-07-05" },
+        { id: "t2", amount: -200, currency: "USD", bucket: "TRANSFER", description: "Cash to card (dest leg)", date: "2026-07-05" },
+      ],
+    });
+    const result = computeDashboard(data);
+    expect(result.month.needsSpend).toBe(0);
+    expect(result.month.wantsSpend).toBe(0);
+    expect(result.month.savingsContrib).toBe(0);
+    expect(result.month.income).toBe(1000); // the account's real income, not inflated by the transfer
+  });
+
+  it("sixMonthTrend's spend line excludes TRANSFER, the same way it already excludes INCOME -- a transfer must not inflate the trend chart", () => {
+    const withTransfer = makeData({
+      transactions: [{ id: "t1", amount: 500, currency: "USD", bucket: "TRANSFER", description: "Cash to card", date: "2026-07-10" }],
+    });
+    const result = computeDashboard(withTransfer);
+    const july = result.sixMonthTrend.find((t) => t.ymKey === 202607)!;
+    expect(july.spend).toBe(0);
+  });
+
+  it("budgetRollover doesn't miscount a past month's TRANSFER as a SAVINGS contribution -- the old catch-all (anything not NEEDS/WANTS lands in savings) would inflate the carried-forward target", () => {
+    // June 2026 (a past month relative to NOW = July 15, 2026): a single
+    // $200 TRANSFER, nothing else. If miscounted as savings.spend, June's
+    // rollover.savings would read 0 (target - wrongly-counted-200); fixed,
+    // it should read +200 (target - correctly-counted-0), carrying forward
+    // as real unspent savings headroom into July's effective target.
+    const data = makeData({
+      income: 1000, // 50/30/20 default rule -> savings target $200/mo
+      transactions: [{ id: "t1", amount: 200, currency: "USD", bucket: "TRANSFER", description: "Cash to card", date: "2026-06-15" }],
+    });
+    const result = computeDashboard(data);
+    // effectiveBudgetTargets.savings = this month's own $200 target + June's
+    // rollover. If the TRANSFER were wrongly counted as savings spend, June
+    // contributes 0 rollover -> effective target stays $200. Fixed, June
+    // contributes +$200 rollover -> effective target is $400.
+    expect(result.effectiveBudgetTargets.savings).toBe(400);
+  });
+});
+
 describe("net worth trend", () => {
   it("merges today's value into history, replacing any existing entry for the current month", () => {
     const data = makeData({
