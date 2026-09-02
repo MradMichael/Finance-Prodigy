@@ -1594,6 +1594,42 @@ export function buildTransferTx(
 }
 
 /**
+ * 2.4.56 -- reclassifying an existing transaction's bucket to/from TRANSFER
+ * via the edit form needs to adjust its sign, not just its label. TRANSFER's
+ * `amount` is signed (positive = this pool gained money, negative = lost --
+ * see StoredTransaction's own comment); every other bucket keeps `amount`
+ * non-negative, always. Retagging without this adjustment is exactly the
+ * bug: a real $400 NEEDS payment retagged to TRANSFER (the documented
+ * reimbursement workflow -- see EditTransactionSheet.tsx's own TX_BUCKETS
+ * comment) stayed +400, silently reading as the pool GAINING $400 instead
+ * of losing it, with no error and no warning.
+ *
+ * The direction depends on which side of "did money leave or enter this
+ * pool" the FROM bucket represents, not a blanket negate:
+ * - NEEDS/WANTS/SAVINGS (money left the pool, stored positive as "spent")
+ *   -> TRANSFER: negate. The pool lost that amount; TRANSFER must say so.
+ * - INCOME (money entered the pool, stored positive as "received")
+ *   -> TRANSFER: unchanged. The pool genuinely gained it -- e.g. a
+ *   repayment first logged as one-off Income, now correctly reclassified;
+ *   flipping this to negative would be its own inverted-sign bug.
+ * - TRANSFER -> any normal bucket: absolute value. Every other bucket's
+ *   amount must stay non-negative, same as it always has.
+ * - Any other transition (including a no-op reselect): amount already has
+ *   the right sign on both sides, left untouched.
+ */
+export function retagBucketAmount(
+  fromBucket: StoredTransaction["bucket"], toBucket: StoredTransaction["bucket"], amount: number,
+): number {
+  if (toBucket === "TRANSFER" && fromBucket !== "TRANSFER") {
+    return fromBucket === "INCOME" ? Math.abs(amount) : -Math.abs(amount);
+  }
+  if (fromBucket === "TRANSFER" && toBucket !== "TRANSFER") {
+    return Math.abs(amount);
+  }
+  return amount;
+}
+
+/**
  * Phase 2.6.3c -- SetupScreen's EF field is no longer an opening-balance
  * editor; it reads as "your real current balance." Saving computes
  * `delta = entered - derivedEfBalance(financials)` and this builds the one

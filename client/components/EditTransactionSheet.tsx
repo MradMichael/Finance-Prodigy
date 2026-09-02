@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { LocalFinancials, StoredTransaction, StoredCard, Currency, PaymentMethod } from "../lib/localData";
 import {
   fmtDate, allCategories, looksRecurring, buildQuickRecurring, cycleMonthDivergence,
-  roundMoney, uid, DEFAULT_LBP_RATE,
+  roundMoney, uid, DEFAULT_LBP_RATE, retagBucketAmount,
 } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY, CurrencyToggle, PM_OPTIONS, CardPicker } from "./form/Primitives";
@@ -61,7 +61,14 @@ export default function EditTransactionSheet({
     { value: "TRANSFER", label: "Transfer", icon: "🔁", color: T.mute },
   ];
 
-  const [amt,        setAmt]        = useState(String(transaction.amount));
+  // 2.4.56 -- amt is always a magnitude (non-negative), even for an
+  // existing TRANSFER transaction's own negative amount, matching every
+  // other bucket. MoneyInput strips any "-" the user types, so a signed
+  // value could never be re-entered by hand once touched -- direction is
+  // tracked separately (transferGained) and only combined back into a
+  // signed number at commit(), never stored in the typed field itself.
+  const [amt,        setAmt]        = useState(String(Math.abs(transaction.amount)));
+  const [transferGained, setTransferGained] = useState<boolean>(transaction.amount >= 0);
   const [desc,       setDesc]       = useState(transaction.description);
   const [date,       setDate]       = useState(transaction.date);
   const [bucket,     setBucket]     = useState<TxBucket>(transaction.bucket);
@@ -92,6 +99,23 @@ export default function EditTransactionSheet({
     && date.slice(0, 7) === new Date().toISOString().slice(0, 7)
     && looksRecurring(desc, date, financials.transactions.filter((t) => t.id !== transaction.id), financials.recurring ?? []);
 
+  // 2.4.56 -- picking a new bucket here used to just relabel the
+  // transaction, leaving TRANSFER's signed amount however it happened to be
+  // typed under its old (always-non-negative) bucket. retagBucketAmount
+  // decides the correct DIRECTION for the transition (amt itself, a
+  // magnitude, never changes -- the function never alters magnitude, only
+  // sign) -- so the picker is safe by construction, no separate "guided
+  // retag" surface needed, matching its own original design (see the
+  // TRANSFER entry's comment above).
+  function selectBucket(newBucket: TxBucket) {
+    const magnitude = parseFloat(amt.replace(/,/g, ""));
+    if (!isNaN(magnitude)) {
+      const currentSigned = bucket === "TRANSFER" && !transferGained ? -magnitude : magnitude;
+      setTransferGained(retagBucketAmount(bucket, newBucket, currentSigned) >= 0);
+    }
+    setBucket(newBucket);
+  }
+
   function convertToRecurring() {
     const rec = buildQuickRecurring(desc, amt, currency, bucket === "INCOME" || bucket === "TRANSFER" ? "NEEDS" : bucket, category);
     if (!rec) return;
@@ -121,9 +145,12 @@ export default function EditTransactionSheet({
     );
     const debtAdjustmentNum = debtAdjustment == null ? debtAdjustment
       : roundMoney(parseFloat(debtAdjustment.replace(/,/g, "")) || 0);
+    // 2.4.56 -- amtNum is a magnitude; TRANSFER is the one bucket whose
+    // stored amount is signed (see retagBucketAmount's own doc comment).
+    const signedAmt = bucket === "TRANSFER" ? (transferGained ? amtNum : -amtNum) : amtNum;
     update({
       transactions: financials.transactions.map((t) => t.id !== transaction.id ? t : {
-        ...t, amount: amtNum, description: desc.trim(),
+        ...t, amount: signedAmt, description: desc.trim(),
         date, bucket, category: category || undefined, currency,
         paymentMethod: payMethod,
         paymentNote: payMethod === "other" && payNote.trim() ? payNote.trim() : undefined,
@@ -187,13 +214,39 @@ export default function EditTransactionSheet({
           </div>
           <div className="grid grid-cols-2 gap-1.5">
             {TX_BUCKETS.map((bkt) => (
-              <button key={bkt.value} onClick={() => setBucket(bkt.value)}
+              <button key={bkt.value} onClick={() => selectBucket(bkt.value)}
                 className="py-1.5 rounded-lg text-[10px] font-medium transition-all"
                 style={{ background: bucket === bkt.value ? bkt.color + "22" : T.ink, border: `1px solid ${bucket === bkt.value ? bkt.color : T.line}`, color: bucket === bkt.value ? bkt.color : T.mute }}>
                 {bkt.icon} {bkt.label}
               </button>
             ))}
           </div>
+          {bucket === "TRANSFER" && (
+            <div className="space-y-1.5">
+              {/* 2.4.56 -- amt above is always a magnitude; direction is this
+                  explicit toggle, never a typed sign (MoneyInput strips any
+                  "-" the user enters, so a signed field could never hold
+                  one on re-edit). selectBucket already set a sensible
+                  default when this bucket was just picked -- this lets the
+                  user override it, e.g. a same-moment transfer entered on
+                  the destination side instead of the source. */}
+              <div className="grid grid-cols-2 gap-1.5">
+                <button type="button" onClick={() => setTransferGained(true)} aria-pressed={transferGained}
+                  className="py-1.5 rounded-lg text-[10px] font-medium transition-all"
+                  style={{ background: transferGained ? T.jade + "22" : T.ink, border: `1px solid ${transferGained ? T.jade : T.line}`, color: transferGained ? T.jade : T.mute }}>
+                  📥 Pool gained this
+                </button>
+                <button type="button" onClick={() => setTransferGained(false)} aria-pressed={!transferGained}
+                  className="py-1.5 rounded-lg text-[10px] font-medium transition-all"
+                  style={{ background: !transferGained ? T.coral + "22" : T.ink, border: `1px solid ${!transferGained ? T.coral : T.line}`, color: !transferGained ? T.coral : T.mute }}>
+                  📤 Pool lost this
+                </button>
+              </div>
+              <p className="text-[10px] px-1" style={{ color: T.mute }}>
+                Not counted as spending or income. Excluded from every budget total.
+              </p>
+            </div>
+          )}
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value)}

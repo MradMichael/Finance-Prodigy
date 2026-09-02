@@ -11,7 +11,7 @@ import {
   nextConfirmTarget, historizedRecurringContribution, pendingBackfillCycles,
   derivedEfBalance, derivedDebtBalance, activeTransactions, purgeTransaction, autoPurgeExpired,
   buildDebtPaymentTx, buildEfAdjustmentTx, buildDebtAdjustmentTx, applyGoalContribution,
-  mergeTransactions, buildTransferTx, type TrackedBalance,
+  mergeTransactions, buildTransferTx, retagBucketAmount, type TrackedBalance,
 } from "./localData";
 import { trackedBalanceExpected } from "./computeDashboard";
 
@@ -1040,6 +1040,48 @@ describe("Phase 2.6.3c -- buildDebtPaymentTx and buildEfAdjustmentTx (tests-firs
       // "transfer" is a no-op the UI should prevent before calling this --
       // documented here so that decision isn't silently assumed elsewhere.
       expect(outgoing.paymentMethod).toBe(incoming.paymentMethod);
+    });
+  });
+
+  describe("retagBucketAmount (2.4.56)", () => {
+    // The bug this closes: EditTransactionSheet.tsx lets a user reclassify
+    // an existing transaction's bucket to TRANSFER (the documented,
+    // intended reimbursement workflow), but TRANSFER's amount is signed
+    // (positive = this pool gained money, negative = lost -- matching
+    // efAmount's convention) while every other bucket's amount is always
+    // non-negative. Retagging without adjusting the sign silently produces
+    // a backwards-signed transaction with no error and no warning.
+    it("retagging FROM a spend bucket (NEEDS/WANTS/SAVINGS) TO TRANSFER negates the amount -- the pool LOST that money, it didn't gain it", () => {
+      expect(retagBucketAmount("NEEDS", "TRANSFER", 400)).toBe(-400);
+      expect(retagBucketAmount("WANTS", "TRANSFER", 20)).toBe(-20);
+      expect(retagBucketAmount("SAVINGS", "TRANSFER", 100)).toBe(-100);
+    });
+
+    it("retagging FROM INCOME TO TRANSFER does NOT flip the sign -- the pool genuinely gained that money (e.g. a repayment first logged as one-off Income, now correctly reclassified)", () => {
+      expect(retagBucketAmount("INCOME", "TRANSFER", 400)).toBe(400);
+    });
+
+    it("retagging OUT of TRANSFER back to a normal bucket always returns a non-negative amount, matching every other bucket's own convention", () => {
+      expect(retagBucketAmount("TRANSFER", "NEEDS", -400)).toBe(400);
+      expect(retagBucketAmount("TRANSFER", "INCOME", -400)).toBe(400);
+      expect(retagBucketAmount("TRANSFER", "WANTS", 400)).toBe(400);
+    });
+
+    it("switching between two non-TRANSFER buckets leaves the amount untouched -- both sides are already non-negative by construction", () => {
+      expect(retagBucketAmount("NEEDS", "WANTS", 50)).toBe(50);
+      expect(retagBucketAmount("WANTS", "INCOME", 50)).toBe(50);
+    });
+
+    it("re-selecting the same bucket (including TRANSFER twice) is a no-op", () => {
+      expect(retagBucketAmount("TRANSFER", "TRANSFER", -75)).toBe(-75);
+      expect(retagBucketAmount("NEEDS", "NEEDS", 75)).toBe(75);
+    });
+
+    it("is idempotent under a round trip -- retag to TRANSFER then immediately back recovers the original magnitude", () => {
+      const original = 250;
+      const asTransfer = retagBucketAmount("NEEDS", "TRANSFER", original);
+      const back = retagBucketAmount("TRANSFER", "NEEDS", asTransfer);
+      expect(back).toBe(original);
     });
   });
 
