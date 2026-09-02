@@ -544,6 +544,8 @@ Phase 9  Generalized currency  — unscheduled, Phase-1-sized, not before cohort
 
 **Critical path to launch: Phase 0 → Phase 1 → real-device check → ship.** Everything after Phase 2 waits on evidence from real users.
 
+**Note (2026-09-02): the diagram above predates several completed phases (2.6, 2.6.4, 2.7 are all merged and live; Phase 9 was re-split into 9-N, approved before cohort) and is not being rewritten here — not in scope for this note.** Current sequencing authority is `docs/AUDIT_2026-08.md`'s Amendment 13: the owner reframed the launch goal from "pre-cohort polish" to "daily-use completeness" (never needing a spreadsheet or mental arithmetic to correct a number ESSA shows), triggering a full re-triage. Approved build order, ahead of Phase 9-N and the deferred backlog above: (1) TRANSFER retag sign bug [2.4.56], (2) Balance Check re-anchoring [2.4.53], (3) reimbursement repayment quick-entry [2.4.55 remainder], (4) goal `currentAmount` derivation [2.4.57, scope before building], (5) Overview past-month view [scope before building], (6) cross-device non-transaction merge detection [2.4.52, detection-only]. The original 9-item pre-cohort queue, Phase 9-N, and F4-F7 stay explicitly logged, not abandoned, sequenced behind this list.
+
 ---
 
 ## Session protocol
