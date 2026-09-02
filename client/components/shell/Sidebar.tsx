@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { Session } from "../../lib/auth";
 import { useTheme } from "../../contexts/ThemeContext";
 import { Signet } from "../EssaBrand";
@@ -24,8 +24,26 @@ export default function Sidebar({
     return localStorage.getItem(SIDEBAR_PIN_KEY) === "1";
   });
   const [hovered, setHovered] = useState(false);
+  const asideRef = useRef<HTMLElement>(null);
 
   const expanded = pinned || hovered;
+
+  // Root cause of a real nav bug (2026-09): every nav button's onBlur called
+  // setHovered(false) unconditionally, collapsing the whole sidebar the
+  // instant ANY button lost focus -- including when focus was just moving to
+  // a SIBLING button inside this same sidebar (e.g. clicking one nav item
+  // right after another, which blurs the old one before focusing the new
+  // one). That mid-click collapse shrinks the button widths, and if the
+  // click's mouseup lands at a coordinate the now-collapsed button no longer
+  // covers, the browser never synthesizes a `click` at all -- the button's
+  // onClick silently never fires. `relatedTarget` on blur/focusout is the
+  // element ABOUT to receive focus; only collapse when it's truly outside
+  // this sidebar, not when it's another button within it.
+  function handleBlurWithinSidebar(e: React.FocusEvent) {
+    if (!asideRef.current?.contains(e.relatedTarget as Node | null)) {
+      setHovered(false);
+    }
+  }
 
   function togglePin(e: React.MouseEvent) {
     e.stopPropagation();
@@ -38,6 +56,7 @@ export default function Sidebar({
 
   return (
     <aside
+      ref={asideRef}
       className="hidden md:flex flex-col flex-shrink-0"
       style={{
         width: expanded ? 220 : 60,
@@ -87,7 +106,7 @@ export default function Sidebar({
               key={key}
               onClick={() => setScreen(key)}
               onFocus={() => setHovered(true)}
-              onBlur={() => setHovered(false)}
+              onBlur={handleBlurWithinSidebar}
               aria-label={label}
               aria-current={active ? "page" : undefined}
               className="w-full flex items-center gap-3 px-2.5 py-2.5 rounded-xl text-sm font-medium transition-all"
@@ -109,7 +128,7 @@ export default function Sidebar({
         <button
           onClick={onProfile}
           onFocus={() => setHovered(true)}
-          onBlur={() => setHovered(false)}
+          onBlur={handleBlurWithinSidebar}
           aria-label={`${session.name}: account settings`}
           className="w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-xl transition-all hover:opacity-80"
           style={{ whiteSpace: "nowrap" }}
