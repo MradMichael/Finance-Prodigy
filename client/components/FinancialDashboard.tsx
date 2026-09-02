@@ -27,9 +27,9 @@ import {
   LineChart, Line,
 } from "recharts";
 import { useTheme } from "../contexts/ThemeContext";
-import { fmtDate, moneyEquals } from "../lib/localData";
+import { fmtDate, moneyEquals, type LocalFinancials } from "../lib/localData";
 import { getLastSyncTime } from "../lib/syncService";
-import type { DashboardPayload } from "../lib/computeDashboard";
+import { periodTotals, type DashboardPayload } from "../lib/computeDashboard";
 import OnboardingChecklist from "./OnboardingChecklist";
 import { fmtCur, type Screen } from "./screens/shared";
 const SERIF: React.CSSProperties = { fontFamily: "Georgia, 'Times New Roman', serif" };
@@ -207,9 +207,15 @@ function Panel({ title, children, className = "" }: { title?: string; children: 
 // ---------------------------- screen ----------------------------- //
 
 export default function FinancialDashboard({
-  data: propData, onNavigate, onConfirmRecurring, loggingRecurringIds, justConfirmedIds,
+  data: propData, financials, onNavigate, onConfirmRecurring, loggingRecurringIds, justConfirmedIds,
 }: {
   data?: DashboardPayload;
+  /** 2.4.55 sub-phase 3 -- the raw ledger, needed only for the past-month
+      review card below (periodTotals takes LocalFinancials, not the
+      already-computed DashboardPayload). Optional, like `data`, for the
+      same standalone/demo-mode reason -- the past-month card simply
+      doesn't render without it. */
+  financials?: LocalFinancials;
   onNavigate?: (screen: Screen) => void;
   /** Confirms a recurring item's oldest outstanding cycle -- see the "Confirm" button on Renewing soon. Quick-confirm only here (defaults to the due date); date-override lives in My Finances' Recurring section. */
   onConfirmRecurring?: (recurringId: string) => void;
@@ -236,6 +242,16 @@ export default function FinancialDashboard({
     setNeverSynced(getLastSyncTime() === null);
   }, []);
 
+  // 2.4.55 sub-phase 3 -- past-month review. Deliberately NOT a
+  // parameterized version of this whole live dashboard: health score,
+  // alerts, upcoming renewals, and Balance Check are all now-concepts
+  // (is EF currently funded, what's due next) that don't mean anything
+  // for a closed past month, and reconstructing them historically would be
+  // a much bigger, different feature nobody asked for. Empty string = no
+  // selection, nothing extra shown -- Overview stays exactly as it always
+  // has by default.
+  const [selectedPastMonth, setSelectedPastMonth] = useState("");
+
   if (!data) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: T.ink, color: T.mute }}>
@@ -248,6 +264,22 @@ export default function FinancialDashboard({
   const monthName = ["", "January","February","March","April","May","June","July","August","September","October","November","December"][period.month];
   const targets     = data.budgetTargets;
   const budgetLabel = data.budgetRule === "custom" ? "Custom split" : data.budgetRule.replace(/-/g, " / ");
+
+  // Every month with a real logged transaction, most recent first, current
+  // month excluded (already shown live above). A month whose only activity
+  // was grandfathered recurring accrual with zero actual transactions
+  // logged won't appear here -- a narrow, pre-Phase-2.5 case, not worth the
+  // extra complexity of also walking recurring history for this list.
+  const currentYm = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+  const pastMonths = financials
+    ? Array.from(new Set((financials.transactions ?? []).filter((t) => t.deletedAt == null).map((t) => t.date.slice(0, 7))))
+        .filter((ym) => ym !== currentYm)
+        .sort()
+        .reverse()
+    : [];
+  const pastMonthReview = financials && selectedPastMonth
+    ? periodTotals(financials, selectedPastMonth, new Date(`${selectedPastMonth}-01T00:00:00`))
+    : null;
   const budgetPct   = {
     needs:   Math.round(targets.needs   / Math.max(month.income, 1) * 100),
     wants:   Math.round(targets.wants   / Math.max(month.income, 1) * 100),
@@ -355,6 +387,52 @@ export default function FinancialDashboard({
                 <p className="text-[10px] mt-1" style={{ color: T.mute }}>{sub}</p>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Past-month review (2.4.55 sub-phase 3) -- a closed month's own
+            Income/Spent/Saved, reusing periodTotals (shared with
+            Statistics' own this-month-vs-last-month comparison). Not a
+            historical version of the cards above: health score, alerts,
+            upcoming renewals, and Balance Check all describe a NOW state,
+            not a specific month, so they stay exactly as they are and
+            aren't reachable from here. */}
+        {pastMonths.length > 0 && (
+          <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <label htmlFor="past-month-select" className="text-xs uppercase tracking-widest" style={{ color: T.mute }}>
+                Review a past month
+              </label>
+              <select
+                id="past-month-select"
+                value={selectedPastMonth}
+                onChange={(e) => setSelectedPastMonth(e.target.value)}
+                className="rounded-xl px-3 py-2 text-sm"
+                style={{ background: T.panelSoft, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
+              >
+                <option value="">Select a month…</option>
+                {pastMonths.map((ym) => (
+                  <option key={ym} value={ym}>{ymStrLabel(ym)}</option>
+                ))}
+              </select>
+            </div>
+            {pastMonthReview && (
+              <div className="grid grid-cols-3 gap-3 mt-4">
+                {[
+                  { label: "Income", value: money(pastMonthReview.income), color: T.text },
+                  { label: "Spent",  value: money(pastMonthReview.needs + pastMonthReview.wants), color: T.mute },
+                  { label: "Saved",  value: money(pastMonthReview.savings), color: T.jade },
+                ].map(({ label, value, color }) => (
+                  <div key={label} className="rounded-2xl px-4 py-4" style={{ background: T.panelSoft, border: `1px solid ${T.line}` }}>
+                    <p className="text-[10px] uppercase tracking-widest mb-2" style={{ color: T.mute }}>{label}</p>
+                    <p className="text-xl font-medium tabular-nums" style={{ ...SERIF, color }}>{value}</p>
+                  </div>
+                ))}
+                <p className="col-span-3 text-[10px]" style={{ color: T.mute }}>
+                  Net: {money(pastMonthReview.income - pastMonthReview.needs - pastMonthReview.wants - pastMonthReview.savings)} · {ymStrLabel(selectedPastMonth)}
+                </p>
+              </div>
+            )}
           </div>
         )}
 
