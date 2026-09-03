@@ -3,7 +3,7 @@ import {
   pushToServer, pullFromServer, relinkSync, deleteFromServer, checkEmailExists,
   getLastSyncTime, hasAutoPulled, markAutoPulled,
   hasAnyLocalData, hasRealLocalData, confirmOverwriteIfNeeded,
-  mergeAndPush, buildMergeNoticeText, type MergeConflictDetail,
+  mergeAndPush, buildMergeNoticeText, detectNonTransactionDivergence, type MergeConflictDetail,
 } from "./syncService";
 import { getSyncToken } from "./crypto";
 import { getRecoveryTokenForSync } from "./auth";
@@ -347,6 +347,88 @@ describe("buildMergeNoticeText (Phase 2.7 sub-phase 3 -- the exact wording rules
   it("combines additions and conflicts in one sentence", () => {
     const { text } = buildMergeNoticeText(2, [detail({ winnerAmount: 75, loserAmount: 50, description: "Groceries" })]);
     expect(text).toBe('Merged with your other device — 2 new transactions added, kept the newer edit to "Groceries" ($75, was $50).');
+  });
+
+  // 2.4.52, detection-only -- appended when detectNonTransactionDivergence
+  // (below) found a non-transaction entity array that differs from the
+  // server's copy. Deliberately does NOT set showReviewLink -- that flag
+  // means "there's a filtered Transactions view to link to," which has no
+  // equivalent for a diverged debt/goal/etc.
+  it("nothing to report and no divergence: still empty, unchanged from before this finding", () => {
+    expect(buildMergeNoticeText(0, [], [])).toEqual({ text: "", showReviewLink: false });
+  });
+
+  it("divergence alone (no transaction activity at all) still produces a notice -- the exact silent case 2.4.52 closes", () => {
+    const { text, showReviewLink } = buildMergeNoticeText(0, [], ["debts"]);
+    expect(text).toBe("Your debts may differ from your other device — this device's copy was kept automatically. Check Profile if something looks off.");
+    expect(showReviewLink).toBe(false);
+  });
+
+  it("multiple diverged entity types are named together in one sentence", () => {
+    const { text } = buildMergeNoticeText(0, [], ["debts", "goals", "recurring items"]);
+    expect(text).toContain("Your debts, goals, recurring items may differ from your other device");
+  });
+
+  it("combines with real transaction activity in one message, divergence sentence appended after", () => {
+    const { text } = buildMergeNoticeText(2, [], ["goals"]);
+    expect(text).toBe("Merged with your other device — 2 new transactions added. Your goals may differ from your other device — this device's copy was kept automatically. Check Profile if something looks off.");
+  });
+
+  it("3+ conflicts still sets showReviewLink even when divergence is also present -- the two signals are independent", () => {
+    const details = [detail(), detail(), detail()];
+    const { showReviewLink } = buildMergeNoticeText(0, details, ["cards"]);
+    expect(showReviewLink).toBe(true);
+  });
+});
+
+describe("detectNonTransactionDivergence (2.4.52, detection-only)", () => {
+  function financials(overrides: Partial<LocalFinancials> = {}): LocalFinancials {
+    return { ...DEFAULT_DATA, ...overrides };
+  }
+
+  it("reports nothing when every non-transaction array matches exactly", () => {
+    const local = financials({ goals: [{ id: "g1", name: "Trip", emoji: "✈️", targetAmount: 1000, currentAmount: 200, currency: "USD", targetDate: "2027-01-01", createdAt: "2026-01-01T00:00:00.000Z" }] });
+    const server = financials({ goals: [{ id: "g1", name: "Trip", emoji: "✈️", targetAmount: 1000, currentAmount: 200, currency: "USD", targetDate: "2027-01-01", createdAt: "2026-01-01T00:00:00.000Z" }] });
+    expect(detectNonTransactionDivergence(local, server)).toEqual([]);
+  });
+
+  it("flags goals when the same goal has a different currentAmount on each side -- the exact silent-overwrite case this closes", () => {
+    const local = financials({ goals: [{ id: "g1", name: "Trip", emoji: "✈️", targetAmount: 1000, currentAmount: 200, currency: "USD", targetDate: "2027-01-01", createdAt: "2026-01-01T00:00:00.000Z" }] });
+    const server = financials({ goals: [{ id: "g1", name: "Trip", emoji: "✈️", targetAmount: 1000, currentAmount: 350, currency: "USD", targetDate: "2027-01-01", createdAt: "2026-01-01T00:00:00.000Z" }] });
+    expect(detectNonTransactionDivergence(local, server)).toEqual(["goals"]);
+  });
+
+  it("is order-independent for object keys -- the same record reconstructed with keys in a different order must NOT be flagged as diverged", () => {
+    const local = financials({ debts: [{ id: "d1", name: "Card", balance: 500, openingBalance: 500, apr: 10, minPayment: 25, currency: "USD", createdAt: "2026-01-01T00:00:00.000Z" }] });
+    // Same debt, same values, keys spelled out in a different order --
+    // simulates a spread-reconstructed object landing with different key
+    // insertion order, which JSON.stringify alone would wrongly flag.
+    const server = financials({ debts: [{ currency: "USD", minPayment: 25, apr: 10, openingBalance: 500, balance: 500, name: "Card", id: "d1", createdAt: "2026-01-01T00:00:00.000Z" }] });
+    expect(detectNonTransactionDivergence(local, server)).toEqual([]);
+  });
+
+  it("flags multiple diverged entity types at once, in the fields' own declared order", () => {
+    const local = financials({
+      goals: [{ id: "g1", name: "Trip", emoji: "✈️", targetAmount: 1000, currentAmount: 200, currency: "USD", targetDate: "2027-01-01", createdAt: "2026-01-01T00:00:00.000Z" }],
+      debts: [{ id: "d1", name: "Card", balance: 500, openingBalance: 500, apr: 10, minPayment: 25, currency: "USD", createdAt: "2026-01-01T00:00:00.000Z" }],
+    });
+    const server = financials({
+      goals: [{ id: "g1", name: "Trip", emoji: "✈️", targetAmount: 1000, currentAmount: 999, currency: "USD", targetDate: "2027-01-01", createdAt: "2026-01-01T00:00:00.000Z" }],
+      debts: [{ id: "d1", name: "Card", balance: 100, openingBalance: 500, apr: 10, minPayment: 25, currency: "USD", createdAt: "2026-01-01T00:00:00.000Z" }],
+    });
+    expect(detectNonTransactionDivergence(local, server)).toEqual(["goals", "debts"]);
+  });
+
+  it("flags a record added on one side and missing on the other (not just a same-id content change)", () => {
+    const local = financials({ cards: [] });
+    const server = financials({ cards: [{ id: "c1", type: "Visa", last4: "1234", label: "Visa •••• 1234" }] });
+    expect(detectNonTransactionDivergence(local, server)).toEqual(["cards"]);
+  });
+
+  it("does NOT inspect transactions -- that is mergeAndPush's own already-solved job, not this function's", () => {
+    const local = financials({ transactions: [{ id: "t1", amount: 50, currency: "USD", bucket: "NEEDS", description: "A", date: "2026-08-01" }] });
+    const server = financials({ transactions: [{ id: "t1", amount: 999, currency: "USD", bucket: "NEEDS", description: "B", date: "2026-08-01" }] });
+    expect(detectNonTransactionDivergence(local, server)).toEqual([]);
   });
 });
 
