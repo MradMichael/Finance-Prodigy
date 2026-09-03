@@ -186,6 +186,57 @@ export async function pullFromServer(email: string): Promise<{ ok: true; data: L
   }
 }
 
+// 2.4.52, detection-only. Field -> the human-readable label used in the
+// notice sentence, listed in the order they should appear if several
+// diverge at once. Deliberately just these six -- the finding's own scope
+// -- not the broader "settings" fields (income, lbpRate, budgetRule, etc.)
+// that same finding also names; those are a separate, vaguer category with
+// a real risk of noisy false positives (e.g. a rate the user is actively
+// updating on two devices), left for whenever non-transaction data gets a
+// real merge design, not this half-day detection pass.
+const NON_TRANSACTION_ENTITY_FIELDS = [
+  ["goals", "goals"],
+  ["debts", "debts"],
+  ["recurring", "recurring items"],
+  ["assets", "other assets"],
+  ["cards", "cards"],
+  ["trackedBalances", "tracked balances"],
+] as const satisfies readonly (readonly [keyof LocalFinancials, string])[];
+
+// Order-independent structural equality -- a record rebuilt via `{...x,
+// field: y}` can land with its keys in a different insertion order than
+// the original even when every value is identical, which a plain
+// JSON.stringify comparison would wrongly read as a real difference.
+// Sorting object keys before stringifying makes the comparison depend only
+// on content, not on how either side happened to construct the object.
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  const keys = Object.keys(value as Record<string, unknown>).sort();
+  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify((value as Record<string, unknown>)[k])}`).join(",")}}`;
+}
+
+/**
+ * 2.4.52, detection-only -- mergeAndPush merges transactions (Phase 2.7);
+ * every other entity array still silently resolves "local wins," with no
+ * signal to the user that a real divergence happened. This function does
+ * NOT change that resolution -- a genuine per-entity merge is real,
+ * undesigned future work (see mergeAndPush's own doc comment) -- it only
+ * notices when local's pre-merge copy of one of these arrays differs from
+ * what was actually on the server, so a silent overwrite becomes a visible
+ * one instead of never being found out. A coarse whole-array comparison,
+ * not a per-record diff: detecting IS the entire scope of this pass.
+ */
+export function detectNonTransactionDivergence(local: LocalFinancials, server: LocalFinancials): string[] {
+  const diverged: string[] = [];
+  for (const [field, label] of NON_TRANSACTION_ENTITY_FIELDS) {
+    const localVal = local[field] ?? [];
+    const serverVal = server[field] ?? [];
+    if (stableStringify(localVal) !== stableStringify(serverVal)) diverged.push(label);
+  }
+  return diverged;
+}
+
 export interface MergeConflictDetail {
   /** What the merge kept -- same object as mergeTransactions' own conflicts array. */
   winner: StoredTransaction;
@@ -194,7 +245,7 @@ export interface MergeConflictDetail {
 }
 
 export type MergeAndPushResult =
-  | { ok: true; syncedAt: string; addedFromServer: number; conflictsResolved: number; conflicts: StoredTransaction[]; conflictDetails: MergeConflictDetail[]; mergedData: LocalFinancials }
+  | { ok: true; syncedAt: string; addedFromServer: number; conflictsResolved: number; conflicts: StoredTransaction[]; conflictDetails: MergeConflictDetail[]; nonTransactionDivergence: string[]; mergedData: LocalFinancials }
   | { ok: false; error: string; conflict?: boolean };
 
 /**
@@ -212,13 +263,15 @@ export type MergeAndPushResult =
  * hard-deleted, the same class of bug 2.6.3(b) exists to prevent. They
  * keep today's pick-a-side resolution -- local's own values, since local
  * is the side initiating the merge -- with the transaction merge layered
- * on top. A real divergence in those fields (e.g. a debt edited on one
- * device, a different edit to the same debt on the other) is NOT detected
- * or specially surfaced by this sub-phase; it's silently resolved as
- * "local wins," same as it would have been before this phase existed.
- * Flagged here rather than silently assumed solved -- a genuine non-
- * transaction merge is real, undesigned future work, not implied by this
- * function's name.
+ * on top.
+ *
+ * 2.4.52, detection-only (added after this sub-phase, its own separate
+ * pass): a real divergence in those fields (e.g. a debt edited on one
+ * device, a different edit to the same debt on the other) is now at least
+ * DETECTED (nonTransactionDivergence, via detectNonTransactionDivergence)
+ * -- it is still resolved as "local wins," exactly as before; detecting is
+ * not resolving. A genuine non-transaction merge remains real, undesigned
+ * future work, not implied by this function's name.
  *
  * No server-side change: the server stores one opaque blob with zero
  * merge awareness (confirmed by reading server/src/routes/sync.ts), so
@@ -230,6 +283,10 @@ export async function mergeAndPush(email: string, local: LocalFinancials): Promi
 
   const merged = mergeTransactions(local.transactions, pulled.data.transactions);
   const mergedData: LocalFinancials = { ...local, transactions: merged.transactions };
+  // Detected against local's PRE-merge copy vs. the server's copy -- what
+  // actually diverged between the two devices, not the merged result
+  // (which always equals local's own copy for these fields regardless).
+  const nonTransactionDivergence = detectNonTransactionDivergence(local, pulled.data);
 
   const pushed = await pushToServer(email, mergedData);
   if (!pushed.ok) return { ok: false, error: pushed.error ?? "Merge succeeded locally, but push failed.", conflict: pushed.conflict };
@@ -253,6 +310,7 @@ export async function mergeAndPush(email: string, local: LocalFinancials): Promi
     conflictsResolved: merged.conflictsResolved,
     conflicts: merged.conflicts,
     conflictDetails,
+    nonTransactionDivergence,
     mergedData,
   };
 }
@@ -276,6 +334,14 @@ function fmtMoney(n: number): string {
 export function buildMergeNoticeText(
   addedFromServer: number,
   conflictDetails: MergeConflictDetail[],
+  // 2.4.52, detection-only -- labels from detectNonTransactionDivergence.
+  // Appended as its own sentence, not folded into the transaction-conflict
+  // wording above: it's a different kind of signal (a possible divergence
+  // that was never inspected, not a resolved conflict with a known winner
+  // and loser), and it must be able to appear even when addedFromServer is
+  // 0 and conflictDetails is empty -- a debt-only edit conflict with zero
+  // transaction activity is exactly the silent case this closes.
+  nonTransactionDivergence: string[] = [],
 ): { text: string; showReviewLink: boolean } {
   const parts: string[] = [];
   if (addedFromServer > 0) {
@@ -293,8 +359,13 @@ export function buildMergeNoticeText(
     parts.push(`${n} edit conflicts resolved (kept the most recent edit each time)`);
     showReviewLink = true;
   }
-  if (parts.length === 0) return { text: "", showReviewLink: false };
-  return { text: `Merged with your other device — ${parts.join(", ")}.`, showReviewLink };
+  const mainText = parts.length > 0 ? `Merged with your other device — ${parts.join(", ")}.` : "";
+
+  if (nonTransactionDivergence.length === 0) {
+    return mainText ? { text: mainText, showReviewLink } : { text: "", showReviewLink: false };
+  }
+  const divergedSentence = `Your ${nonTransactionDivergence.join(", ")} may differ from your other device — this device's copy was kept automatically. Check Profile if something looks off.`;
+  return { text: mainText ? `${mainText} ${divergedSentence}` : divergedSentence, showReviewLink };
 }
 
 export function getLastSyncTime(): string | null {

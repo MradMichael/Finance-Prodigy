@@ -115,7 +115,7 @@ export default function Home() {
         await saveData(merged.mergedData, userId);
         setFinancials(merged.mergedData);
       }
-      const notice = buildMergeNoticeText(merged.addedFromServer, merged.conflictDetails);
+      const notice = buildMergeNoticeText(merged.addedFromServer, merged.conflictDetails, merged.nonTransactionDivergence);
       if (notice.text) setMergeNotice(notice);
       setSyncStatus("synced");
       setTimeout(() => setSyncStatus((s) => s !== "syncing" ? "idle" : s), 4000);

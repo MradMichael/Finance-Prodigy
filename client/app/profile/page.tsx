@@ -114,7 +114,7 @@ export default function ProfilePage() {
     }
     await saveData(result.mergedData, session.userId);
     setLastSync(result.syncedAt);
-    const notice = buildMergeNoticeText(result.addedFromServer, result.conflictDetails);
+    const notice = buildMergeNoticeText(result.addedFromServer, result.conflictDetails, result.nonTransactionDivergence);
     setSyncMsg("✓ Merged. " + (notice.text || "Nothing new from your other device."));
     // Same reload requirement as handlePull -- the dashboard only reads
     // localStorage once, on its own mount.
