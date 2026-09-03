@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { computeDashboard, computeHoldingsByCurrency, trackedBalanceExpected } from "./computeDashboard";
+import { computeDashboard, computeHoldingsByCurrency, trackedBalanceExpected, periodTotals } from "./computeDashboard";
 import { DEFAULT_DATA, buildDebtPaymentTx, type LocalFinancials, type BudgetRuleKey, type StoredDebt, type StoredTransaction } from "./localData";
 
 function makeData(overrides: Partial<LocalFinancials> = {}): LocalFinancials {
@@ -735,6 +735,115 @@ describe("trackedBalanceExpected (AUD-02)", () => {
     const realExpected = trackedBalanceExpected(existingTB, data);
     expect(realExpected).toBe(550); // 1000 - 450, NOT the bank's raw $500-spent closing claim
     expect(realExpected).not.toBe(1000 - 500); // the bank's own implied total, which the old code trusted unconditionally
+  });
+});
+
+describe("periodTotals (2.4.55 sub-phase 3 -- Overview past-month view)", () => {
+  // Extracted from StatisticsScreen.tsx's own local copy so Overview's new
+  // past-month card can reuse the same, already-correct per-month math
+  // instead of a third independent reimplementation. Deliberately uses
+  // toUSDForMonth (historized) rather than StatisticsScreen's original
+  // flat current-rate conversion -- a real correctness fix that comes
+  // along for free once this is shared, not a silent behavior change to
+  // hide: a past LBP transaction should convert at the rate in effect
+  // then, matching every other historized total in this file (sixMonthTrend,
+  // budgetRollover) exactly.
+  it("sums Needs/Wants/Savings/Income for the given month only, ignoring other months", () => {
+    const data = makeData({
+      income: 3000,
+      transactions: [
+        { id: "t1", amount: 1000, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-08-01" },
+        { id: "t2", amount: 500, currency: "USD", bucket: "WANTS", description: "Fun", date: "2026-08-02" },
+        { id: "t3", amount: 300, currency: "USD", bucket: "SAVINGS", description: "Save", date: "2026-08-03" },
+        { id: "t4", amount: 9999, currency: "USD", bucket: "NEEDS", description: "July, not August", date: "2026-07-15" },
+      ],
+    });
+    const result = periodTotals(data, "2026-08", new Date("2026-08-01"));
+    expect(result).toEqual({ income: 3000, needs: 1000, wants: 500, savings: 300 });
+  });
+
+  it("converts a past LBP transaction at the rate in effect THEN, not today's rate -- the fix over StatisticsScreen's original flat-rate version", () => {
+    const data = makeData({
+      income: 0,
+      lbpRate: 100000, // today's rate
+      lbpRateHistory: [{ ym: "2026-02", value: 50000 }], // rate back in February
+      transactions: [{ id: "t1", amount: 5_000_000, currency: "LBP", bucket: "NEEDS", description: "Groceries", date: "2026-02-10" }],
+    });
+    const result = periodTotals(data, "2026-02", new Date("2026-02-01"));
+    // 5,000,000 LBP at the historical 50,000 rate = $100, not $50 at today's 100,000 rate.
+    expect(result.needs).toBeCloseTo(100, 5);
+  });
+
+  it("income blends historized salary (incomeHistory) with any one-off INCOME transactions that month, matching every other screen's own definition of a month's income", () => {
+    const data = makeData({
+      income: 3000, // today's salary
+      incomeHistory: [{ ym: "2026-06", value: 2500 }], // salary back in June
+      transactions: [{ id: "t1", amount: 200, currency: "USD", bucket: "INCOME", description: "Gift", date: "2026-06-15" }],
+    });
+    const result = periodTotals(data, "2026-06", new Date("2026-06-01"));
+    expect(result.income).toBe(2700); // 2500 historized salary + 200 one-off
+  });
+
+  it("blends a grandfathered (pre-cutover) recurring item's historized accrual into the month it's due", () => {
+    const data = makeData({
+      recurring: [{
+        id: "r1", name: "Rent", emoji: "🏠", amount: 750, currency: "USD",
+        frequency: "monthly", startDate: "2026-01-01", endDate: null, totalAmount: null,
+        createdAt: "2026-01-01T00:00:00.000Z", bucket: "NEEDS",
+        confirmCutoverDate: "2026-09-01", // this account migrated Sep 1
+      }],
+    });
+    // August is BEFORE the cutover -- grandfathered, old live-estimate accrual applies.
+    const result = periodTotals(data, "2026-08", new Date("2026-08-01"));
+    expect(result.needs).toBe(750);
+  });
+
+  it("does NOT double-count a post-cutover recurring item -- a confirmed cycle is already a real transaction, counted via the ordinary transaction sum", () => {
+    const data = makeData({
+      recurring: [{
+        id: "r1", name: "Rent", emoji: "🏠", amount: 750, currency: "USD",
+        frequency: "monthly", startDate: "2026-01-01", endDate: null, totalAmount: null,
+        createdAt: "2026-01-01T00:00:00.000Z", bucket: "NEEDS",
+        confirmCutoverDate: "2026-08-01",
+      }],
+      transactions: [{
+        id: "t1", amount: 750, currency: "USD", bucket: "NEEDS", description: "Rent",
+        date: "2026-09-01", recurringId: "r1",
+      }],
+    });
+    // September is ON/AFTER cutover -- historizedRecurringContribution
+    // contributes 0; the confirmed transaction is what counts.
+    const result = periodTotals(data, "2026-09", new Date("2026-09-01"));
+    expect(result.needs).toBe(750); // not 1500
+  });
+
+  it("excludes a soft-deleted transaction from every bucket, same as every other total in this file", () => {
+    const data = makeData({
+      transactions: [{
+        id: "t1", amount: 500, currency: "USD", bucket: "NEEDS", description: "Reversed",
+        date: "2026-08-05", deletedAt: "2026-08-06T00:00:00.000Z",
+      }],
+    });
+    const result = periodTotals(data, "2026-08", new Date("2026-08-01"));
+    expect(result.needs).toBe(0);
+  });
+
+  it("matches StatisticsScreen's own established call convention for 'this month' -- same result computeDashboard.month already reports, for a USD-only fixture where the historized-rate fix makes no difference", () => {
+    vi.setSystemTime(new Date(2026, 7, 15)); // Aug 15, 2026 -- so "this month" really is August
+    const data = makeData({
+      income: 3000,
+      transactions: [
+        { id: "t1", amount: 1000, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-08-01" },
+        { id: "t2", amount: 500, currency: "USD", bucket: "WANTS", description: "Fun", date: "2026-08-02" },
+        { id: "t3", amount: 300, currency: "USD", bucket: "SAVINGS", description: "Save", date: "2026-08-03" },
+      ],
+    });
+    const dashResult = computeDashboard(data);
+    const result = periodTotals(data, "2026-08", new Date("2026-08-15"));
+    expect(result.needs).toBe(dashResult.month.needsSpend);
+    expect(result.wants).toBe(dashResult.month.wantsSpend);
+    expect(result.savings).toBe(dashResult.month.savingsContrib);
+    expect(result.income).toBe(dashResult.month.income);
   });
 });
 

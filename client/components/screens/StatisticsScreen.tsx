@@ -1,8 +1,8 @@
 "use client";
 
 import type { LocalFinancials } from "../../lib/localData";
-import { nextOccurrence, isRecurringActive, historizedRecurringContribution, valueForMonth, toUSD as toUSDShared, activeTransactions, DEFAULT_LBP_RATE } from "../../lib/localData";
-import type { computeDashboard } from "../../lib/computeDashboard";
+import { nextOccurrence, isRecurringActive, toUSD as toUSDShared, DEFAULT_LBP_RATE } from "../../lib/localData";
+import { periodTotals, type computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money } from "./shared";
 
@@ -23,8 +23,6 @@ export default function StatisticsScreen({
   const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
   const toUSD = (n: number, cur?: string) => toUSDShared(n, cur as "USD" | "LBP" | undefined, lbpRate);
   const now = new Date();
-  // Phase 2.6.3b: soft-deleted transactions excluded from every total below.
-  const activeTx = activeTransactions(financials.transactions);
 
   // ── Cash flow trend + table (same underlying data, two views) ──────
   const trend = dashData.sixMonthTrend;
@@ -44,34 +42,15 @@ export default function StatisticsScreen({
   const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const lastYm = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, "0")}`;
 
-  // Salary (valueForMonth(incomeHistory, ...), same historized lookup
-  // computeDashboard.ts's own incomeForMonth uses) plus any one-off INCOME
-  // transactions that month -- summing only logged INCOME-bucket
-  // transactions would show $0 for anyone paid via the Setup income field
-  // instead of logging each paycheck as a transaction, disagreeing with
-  // the trend chart right above this on the same page.
-  function incomeForMonth(ym: string): number {
-    const salary = valueForMonth(financials.incomeHistory, ym, financials.income);
-    const txIncome = activeTx
-      .filter((t) => t.bucket === "INCOME" && t.date.startsWith(ym))
-      .reduce((s, t) => s + toUSD(t.amount, t.currency), 0);
-    return salary + txIncome;
-  }
-
-  function periodTotals(ym: string, recurAsOf: Date) {
-    const tx = activeTx.filter((t) => t.date.startsWith(ym));
-    const txSum = (bucket: string) => tx.filter((t) => t.bucket === bucket).reduce((s, t) => s + toUSD(t.amount, t.currency), 0);
-    const out = { income: incomeForMonth(ym), needs: txSum("NEEDS"), wants: txSum("WANTS"), savings: txSum("SAVINGS") };
-    for (const r of financials.recurring ?? []) {
-      const usd = toUSD(historizedRecurringContribution(r, ym, recurAsOf), r.currency);
-      if (r.bucket === "NEEDS") out.needs += usd;
-      else if (r.bucket === "WANTS") out.wants += usd;
-      else out.savings += usd;
-    }
-    return out;
-  }
-  const thisMonth = periodTotals(thisYm, now);
-  const lastMonth = periodTotals(lastYm, lastMonthDate);
+  // 2.4.55 sub-phase 3: periodTotals moved to computeDashboard.ts (shared
+  // with Overview's new past-month card) -- a genuine, deliberate behavior
+  // change comes with it, not a like-for-like extraction: LBP transactions
+  // now convert at the rate in effect during the reviewed month, not
+  // today's flat rate, matching every other historized total on this same
+  // screen (the trend chart right above). See periodTotals's own doc
+  // comment in computeDashboard.ts.
+  const thisMonth = periodTotals(financials, thisYm, now);
+  const lastMonth = periodTotals(financials, lastYm, lastMonthDate);
   const delta = (a: number, b: number) => a - b;
   const comparisonRows: { label: string; a: number; b: number }[] = [
     { label: "Income", a: thisMonth.income, b: lastMonth.income },

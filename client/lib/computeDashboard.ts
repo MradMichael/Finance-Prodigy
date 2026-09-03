@@ -178,6 +178,45 @@ export function trackedBalanceExpected(
 }
 
 /**
+ * 2.4.55 sub-phase 3 -- Overview's past-month review card, extracted from
+ * StatisticsScreen.tsx's own local `periodTotals` so a third screen doesn't
+ * grow a third independent copy of this exact math. One deliberate
+ * improvement over the version this replaces: StatisticsScreen's original
+ * converted LBP transactions at TODAY's flat `lbpRate`, not the rate in
+ * effect during the reviewed month -- every other historized total in this
+ * file (sixMonthTrend, budgetRollover) already uses `toUSDForMonth`, and a
+ * past month's own review should be no less accurate than those. A genuine
+ * behavior change for StatisticsScreen's own comparison table once it's
+ * wired to call this instead of its local copy, not a silent one -- flagged
+ * here and in the commit, not hidden.
+ *
+ * `recurAsOf` is the caller's call, same as it always was: StatisticsScreen
+ * passes `now` for the current month and the 1st of last month for its
+ * comparison row; Overview's past-month selector passes the 1st of
+ * whichever month was chosen, since by definition a "review a past month"
+ * selection is already closed.
+ */
+export function periodTotals(
+  data: LocalFinancials, ym: string, recurAsOf: Date,
+): { income: number; needs: number; wants: number; savings: number } {
+  const lbpRate = data.lbpRate ?? DEFAULT_LBP_RATE;
+  const toUSDForMonth = (amount: number, currency: string | undefined, ymFor: string) =>
+    currency === "LBP" ? amount / valueForMonth(data.lbpRateHistory, ymFor, lbpRate) : amount;
+  const tx = activeTransactions(data.transactions ?? []).filter((t) => t.date.startsWith(ym));
+  const txSum = (bucket: string) => tx.filter((t) => t.bucket === bucket).reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, ym), 0);
+  const salary = valueForMonth(data.incomeHistory, ym, data.income);
+  const txIncome = tx.filter((t) => t.bucket === "INCOME").reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, ym), 0);
+  const out = { income: salary + txIncome, needs: txSum("NEEDS"), wants: txSum("WANTS"), savings: txSum("SAVINGS") };
+  for (const r of data.recurring ?? []) {
+    const usd = toUSDForMonth(historizedRecurringContribution(r, ym, recurAsOf), r.currency, ym);
+    if (r.bucket === "NEEDS") out.needs += usd;
+    else if (r.bucket === "WANTS") out.wants += usd;
+    else out.savings += usd;
+  }
+  return out;
+}
+
+/**
  * Converts StoredDebt[] to the currency-blind DebtInput[] debtEngine.ts
  * expects -- the ONE place this conversion happens (Phase 1.4). Previously
  * two independent, near-identical construction sites existed here and in
