@@ -7,7 +7,7 @@ import {
   matchCategoryRule, type CategoryRule,
   roundMoney, moneyEquals, isEmptyFinancials, type LocalFinancials,
   migrateFinancials, schemaVersionOf, withRate, CURRENT_SCHEMA_VERSION, todayISO,
-  dueCycles, isCycleConfirmed, isCycleOverdue, buildRecurringConfirmLog, cycleMonthDivergence,
+  dueCycles, remainingInstallments, isCycleConfirmed, isCycleOverdue, buildRecurringConfirmLog, cycleMonthDivergence,
   nextConfirmTarget, historizedRecurringContribution, pendingBackfillCycles,
   derivedEfBalance, derivedDebtBalance, activeTransactions, purgeTransaction, autoPurgeExpired,
   buildDebtPaymentTx, buildEfAdjustmentTx, buildDebtAdjustmentTx, applyGoalContribution,
@@ -427,6 +427,76 @@ describe("dueCycles", () => {
   it("from after to: returns no cycles rather than looping forever or throwing", () => {
     const r = makeRecurring({ frequency: "monthly", startDate: "2026-01-01" });
     expect(dueCycles(r, utcMidnight(2026, 7, 1), utcMidnight(2026, 5, 1))).toEqual([]);
+  });
+});
+
+describe("remainingInstallments", () => {
+  it("neither endDate nor totalAmount set: null -- indefinite items have nothing to report", () => {
+    const r = makeRecurring({ endDate: null, totalAmount: null });
+    expect(remainingInstallments(r, [], utcMidnight(2026, 2, 1))).toBeNull();
+  });
+
+  it("endDate-only: count and endsOn come straight from dueCycles, no transactions needed", () => {
+    const r = makeRecurring({ frequency: "monthly", startDate: "2026-01-01", endDate: "2026-06-15" });
+    // asOf March 1 -> due cycles Mar 1, Apr 1, May 1, Jun 1 (Jun 1 <= Jun 15, next would be Jul 1 > Jun 15)
+    const result = remainingInstallments(r, [], utcMidnight(2026, 2, 1));
+    expect(result).not.toBeNull();
+    expect(result!.count).toBe(4);
+    expect(result!.endsOn.toISOString().slice(0, 10)).toBe("2026-06-01");
+  });
+
+  it("endDate-only, already past the end date: null, same as an exhausted item", () => {
+    const r = makeRecurring({ frequency: "monthly", startDate: "2026-01-01", endDate: "2026-03-15" });
+    expect(remainingInstallments(r, [], utcMidnight(2026, 5, 1))).toBeNull(); // Jun 1, well past Mar 15
+  });
+
+  it("totalAmount-only, nothing paid yet: remaining count derived from totalAmount / amount, not a calendar-position guess", () => {
+    // $750/mo, $6750 cap -> 9 payments total, nothing confirmed yet.
+    const r = makeRecurring({ amount: 750, frequency: "monthly", startDate: "2026-01-01", totalAmount: 6750, endDate: null });
+    const result = remainingInstallments(r, [], utcMidnight(2026, 0, 1));
+    expect(result).not.toBeNull();
+    expect(result!.count).toBe(9);
+  });
+
+  it("totalAmount-only, some real transactions already confirmed: remaining reflects actual dollars paid (recurringPaidSoFar), not an elapsed-time or cycle-index assumption", () => {
+    // $750/mo, $6750 cap (9 total). Only 2 real payments confirmed so far,
+    // even though calendar position (asOf) is much later than that --
+    // remaining must be based on the real $1,500 paid, i.e. 7 left, not on
+    // how many months have elapsed since start.
+    const r = makeRecurring({ id: "uni", amount: 750, frequency: "monthly", startDate: "2026-01-01", totalAmount: 6750, endDate: null });
+    const tx = (date: string): StoredTransaction => ({ id: `t-${date}`, amount: 750, currency: "USD", bucket: "NEEDS", description: "Uni", date, recurringId: "uni" });
+    const transactions = [tx("2026-01-01"), tx("2026-02-01")];
+    const result = remainingInstallments(r, transactions, utcMidnight(2026, 7, 1)); // Aug 1 -- 7 real months elapsed, only 2 confirmed
+    expect(result).not.toBeNull();
+    expect(result!.count).toBe(7); // (6750 - 1500) / 750, not 9 - 7-elapsed = 2
+  });
+
+  it("totalAmount-only, fully paid off: null, same as any other exhausted item", () => {
+    const r = makeRecurring({ id: "uni", amount: 750, frequency: "monthly", startDate: "2026-01-01", totalAmount: 1500, endDate: null });
+    const tx = (date: string): StoredTransaction => ({ id: `t-${date}`, amount: 750, currency: "USD", bucket: "NEEDS", description: "Uni", date, recurringId: "uni" });
+    expect(remainingInstallments(r, [tx("2026-01-01"), tx("2026-02-01")], utcMidnight(2026, 2, 1))).toBeNull();
+  });
+
+  it("both endDate and totalAmount set, totalAmount is the binding constraint: reports the earlier/smaller of the two", () => {
+    // $500/mo, $2000 cap (4 payments) but endDate is 2 years out -- the
+    // totalAmount cap binds first, both via dueCycles' own bound-checking
+    // (nextOccurrence stops at cycle 4 regardless of endDate) and via the
+    // money-based count, so both paths should agree at exactly 4.
+    const r = makeRecurring({ amount: 500, frequency: "monthly", startDate: "2026-01-01", totalAmount: 2000, endDate: "2028-01-01" });
+    const result = remainingInstallments(r, [], utcMidnight(2026, 0, 1));
+    expect(result).not.toBeNull();
+    expect(result!.count).toBe(4);
+    expect(result!.endsOn.toISOString().slice(0, 10)).toBe("2026-04-01");
+  });
+
+  it("both set, endDate is the binding constraint: reports the earlier/smaller of the two, not the fuller totalAmount count", () => {
+    // $100/mo, $10,000 cap (100 payments -- far more than will ever be
+    // reached) but endDate is only 3 cycles out -- endDate must win.
+    const r = makeRecurring({ amount: 100, frequency: "monthly", startDate: "2026-01-01", totalAmount: 10_000, endDate: "2026-03-15" });
+    const result = remainingInstallments(r, [], utcMidnight(2026, 0, 1));
+    expect(result).not.toBeNull();
+    expect(result!.count).toBe(3); // Jan 1, Feb 1, Mar 1 -- not 100
+    expect(result!.endsOn.toISOString().slice(0, 10)).toBe("2026-03-01");
   });
 });
 

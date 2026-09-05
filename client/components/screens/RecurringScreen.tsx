@@ -1,7 +1,7 @@
 "use client";
 
 import type { LocalFinancials } from "../../lib/localData";
-import { nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, FREQ_LABELS, toUSD as toUSDShared, categoryLabel, categoryIcon, DEFAULT_LBP_RATE } from "../../lib/localData";
+import { nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, remainingInstallments, FREQ_LABELS, toUSD as toUSDShared, categoryLabel, categoryIcon, DEFAULT_LBP_RATE, fmtDate } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
 
@@ -63,6 +63,7 @@ export default function RecurringScreen({ financials, onEdit }: { financials: Lo
                     const target = nextConfirmTarget(r, financials.transactions, todayMidnight);
                     const overdue = (target?.overdueCount ?? 0) > 0;
                     const paidThisCycle = target ? isCycleConfirmed(r, target.dueDate, financials.transactions) : false;
+                    const remaining = remainingInstallments(r, financials.transactions, now);
                     return (
                       <div
                         key={r.id}
@@ -89,6 +90,7 @@ export default function RecurringScreen({ financials, onEdit }: { financials: Lo
                           <p className="text-[10px]" style={{ color: T.mute }}>
                             {fmtCur(r.amount, r.currency)} · {FREQ_LABELS[r.frequency]}
                             {r.category && ` · ${categoryIcon(r.category, financials.customCategories)} ${categoryLabel(r.category, financials.customCategories)}`}
+                            {remaining && ` · ${remaining.count} left, ends ${fmtDate(remaining.endsOn.toISOString().slice(0, 10))}`}
                           </p>
                         </div>
                         <p className="text-sm font-medium tabular-nums" style={{ color: BC[bucket] }}>

@@ -321,21 +321,23 @@ Once live, **Rule 8 activates**: the ordering below becomes provisional and subj
 
 ## Phase 3 — F2 Recurring obligations with end dates
 
-**Status:** not started · **Depends on:** Phase 1, Phase 2.5 · **Blocks:** nothing (see 2026-09-01 note)
+**Status:** partially built · **Depends on:** Phase 1, Phase 2.5 · **Blocks:** nothing (see 2026-09-01 note)
 
 **2026-09-01 — owner's explicit decision (path B, F3 design session):** Phase 4 (F3) no longer waits on this phase. F3 needs only the *capacity step-change* this phase would eventually surface — computable directly from the already-existing `StoredRecurring.endDate`/`isRecurringActive()` as F3's own internal sub-phase 0, without building this phase's product surface first. **This phase stays explicitly open, with its own acceptance criteria intact — partially satisfied by F3's internal capacity math, product surface (remaining-installments UI, a dedicated forward view screen) still unbuilt.** Deliberately visible as unfinished, not quietly absorbed into F3.
 
 **Dependency note added 2026-08-22:** Phase 2.5 now sits between Phase 1 and this one, and both touch `StoredRecurring` directly. Building this phase's forward-capacity view on the live-estimate model would mean redoing it once 2.5 lands — plan this against the confirm-on-due model, not the one described below.
+
+**2026-09-05 — remaining-installments UI built and merged**, closing the "UI surfaces remaining installments and total remaining commitment" requirement below. New pure function `remainingInstallments(r, transactions, asOf)` (`client/lib/localData.ts`, tests-first: endDate-only, totalAmount-only, both, neither, already-ended) reuses `dueCycles`/`nextOccurrence` for an endDate-bounded item and anchors to `recurringPaidSoFar` (not a calendar-position assumption) when `totalAmount` is set — the same real-confirmed-dollars figure the existing progress bar already shows, since the naive calendar-position count silently disagreed with it the moment a payment was missed or confirmed late (caught by the tests, not shipped). Displayed on both `InputPanel.tsx`'s Recurring section and `RecurringScreen.tsx`. **The forward-capacity view screen — the other half of this phase's requirements — remains unbuilt**, scoped as a separate, larger follow-up, not attempted here.
 
 The owner's own dominant financial fact is a fixed monthly installment with a known termination date. Modelling recurring obligations as indefinite understates future capacity and produces a misleading forward picture. `StoredRecurring` already supports an optional `endDate` and `isRecurringActive()` enforces it — this phase surfaces it in the product rather than building it from nothing.
 
 **Requirements**
 - An obligation has amount, currency, frequency, start date, optional end date.
 - Excluded from projections beyond its end date.
-- UI surfaces remaining installments and total remaining commitment.
-- A forward view shows monthly disposable capacity, **including the step change when an obligation terminates.**
+- UI surfaces remaining installments and total remaining commitment. ✅ **2026-09-05**
+- A forward view shows monthly disposable capacity, **including the step change when an obligation terminates.** Still not started.
 
-**Acceptance:** given the owner's real installment schedule, the forward view correctly shows capacity increasing at termination.
+**Acceptance:** given the owner's real installment schedule, the forward view correctly shows capacity increasing at termination. **Not yet met** — the forward view itself doesn't exist yet; only the remaining-installments half of this phase is done.
 
 **SAFE STOP.**
 

@@ -1262,6 +1262,57 @@ export function dueCycles(r: StoredRecurring, from: Date, to: Date): Date[] {
 }
 
 /**
+ * How many future payments remain for a bounded recurring item, and the
+ * date of the last one -- null for an indefinite item (neither endDate nor
+ * totalAmount set) or one that's already ended, since there's nothing to
+ * show in either case. F2's own product-surface gap (docs/ROADMAP.md):
+ * endDate exclusion and the totalAmount cap were already built and tested,
+ * this is the first thing that reads "how many are left" back out of them.
+ *
+ * endDate-only is a pure calendar question -- dueCycles already has the
+ * exact answer, no transactions needed. When totalAmount is set (alone or
+ * alongside endDate), "how many remain" is anchored to recurringPaidSoFar
+ * -- the SAME real, confirmed-dollars figure InputPanel's own "$X of $Y
+ * paid" progress bar already shows -- rather than nextOccurrence's own
+ * calendar-position totalAmount check (withinRecurringBounds), which
+ * assumes every past cycle landed exactly on schedule and undercounts the
+ * moment a real payment is missed, late, or (2.4.31) pre-cutover history
+ * was never backfilled -- confirmed live (RED before this fix): 2 of 9
+ * cycles actually confirmed reads "7 remain," not the "2 remain" a naive
+ * elapsed-time walk from `asOf` would report. The walk to find where the
+ * real remaining count ENDS therefore uses an UNCAPPED copy (totalAmount
+ * stripped) for exactly the same reason `pendingBackfillCycles` already
+ * does -- a real `endDate`, if also set, is an independent cutoff and
+ * stays in effect either way.
+ */
+export function remainingInstallments(
+  r: StoredRecurring, transactions: StoredTransaction[], asOf: Date = new Date(),
+): { count: number; endsOn: Date } | null {
+  if (!r.endDate && !r.totalAmount) return null;
+
+  if (!r.totalAmount) {
+    const from = nextOccurrence(r, asOf) ?? asOf;
+    const cycles = dueCycles(r, from, new Date(r.endDate!));
+    return cycles.length ? { count: cycles.length, endsOn: cycles[cycles.length - 1] } : null;
+  }
+
+  const remainingAmount = r.totalAmount - recurringPaidSoFar(r, transactions);
+  if (remainingAmount <= 0) return null;
+  const byAmount = Math.ceil(remainingAmount / r.amount);
+
+  const uncapped: StoredRecurring = { ...r, totalAmount: null };
+  const from = nextOccurrence(uncapped, asOf) ?? asOf;
+  // No real endDate to bound the walk -- 100 years out is far past anything
+  // a real remaining balance could realistically reach; this is a
+  // placeholder ceiling for the walk, not a claim about the item itself.
+  const to = r.endDate ? new Date(r.endDate) : new Date(Date.UTC(asOf.getUTCFullYear() + 100, 0, 1));
+  const cycles = dueCycles(uncapped, from, to);
+  if (cycles.length === 0) return null; // endDate already passed
+  const count = Math.min(byAmount, cycles.length);
+  return { count, endsOn: cycles[count - 1] };
+}
+
+/**
  * Whether a real, confirmed transaction exists for this exact cycle --
  * keyed by the cycle's own due DATE (YYYY-MM-DD), not its month. A weekly
  * or biweekly item can have several distinct due dates within the same

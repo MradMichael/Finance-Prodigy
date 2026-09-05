@@ -7,7 +7,7 @@ import type {
 } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, toUSD as toUSDShared, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, reanchorTrackedBalance, allCategories, categoryLabel, categoryIcon, matchCategoryRule, roundMoney, derivedDebtBalance, activeTransactions, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
+import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, remainingInstallments, toUSD as toUSDShared, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, reanchorTrackedBalance, allCategories, categoryLabel, categoryIcon, matchCategoryRule, roundMoney, derivedDebtBalance, activeTransactions, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker, CardPicker } from "./form/Primitives";
@@ -1449,6 +1449,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                       const paidThisCycle = target ? isCycleConfirmed(r, target.dueDate, financials.transactions) : false;
                       const paid   = r.totalAmount ? recurringPaidSoFar(r, financials.transactions) : null;
                       const pct    = paid != null && r.totalAmount ? Math.min(100, (paid / r.totalAmount) * 100) : null;
+                      const remaining = !ended ? remainingInstallments(r, financials.transactions, now) : null;
                       const isAddingExtra = extraRecId === r.id;
                       const isConfirming  = confirmingRecId === r.id;
                       const justConfirmed = justConfirmedIds?.has(r.id);
@@ -1487,10 +1488,16 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                                     <div className="h-1 rounded-full overflow-hidden" style={{ background: T.line }}>
                                       <div className="h-full rounded-full transition-all" style={{ width: `${pct ?? 0}%`, background: ended ? T.mute : b.color }} />
                                     </div>
+                                    {remaining && (
+                                      <p className="text-[9px] mt-1" style={{ color: T.mute }}>
+                                        {remaining.count} payment{remaining.count === 1 ? "" : "s"} left · ends {fmtDate(remaining.endsOn.toISOString().slice(0, 10))}
+                                      </p>
+                                    )}
                                   </div>
                                 ) : (
                                   <p className="text-[10px] mt-0.5" style={{ color: T.mute }}>
                                     {fmtDate(r.startDate)} → {r.endDate ? fmtDate(r.endDate) : <span style={{ color: T.jade }}>∞ ongoing</span>}
+                                    {remaining && ` · ${remaining.count} left`}
                                   </p>
                                 )}
                               </div>
