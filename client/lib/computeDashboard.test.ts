@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { computeDashboard, computeHoldingsByCurrency, trackedBalanceExpected, periodTotals } from "./computeDashboard";
+import { computeDashboard, computeHoldingsByCurrency, trackedBalanceExpected, periodTotals, bucketDisplayState } from "./computeDashboard";
 import { DEFAULT_DATA, buildDebtPaymentTx, type LocalFinancials, type BudgetRuleKey, type StoredDebt, type StoredTransaction } from "./localData";
 
 function makeData(overrides: Partial<LocalFinancials> = {}): LocalFinancials {
@@ -1734,5 +1734,46 @@ describe("dual-currency single transaction — linkedPaymentId is display-only",
     // of a double-count (would read ~$22.23) or a drop (would read ~$10 or
     // ~$2.23) equally.
     expect(result.month.needsSpend).toBeCloseTo(10 + 200000 / 89500, 5);
+  });
+});
+
+describe("bucketDisplayState -- the Savings floor-not-ceiling and zeroed-target carve-outs budgetPace already has, now shared with the display components that never had them", () => {
+  it("a target rolled to $0 or below reads 'zeroed' for every bucket, regardless of actual spend/contribution", () => {
+    expect(bucketDisplayState("NEEDS", 0, 500)).toEqual({ kind: "zeroed" });
+    expect(bucketDisplayState("WANTS", 0, 500)).toEqual({ kind: "zeroed" });
+    expect(bucketDisplayState("SAVINGS", 0, 500)).toEqual({ kind: "zeroed" });
+  });
+
+  it("a negative target (defensive -- rollover math could in principle produce one before the final floor) also reads 'zeroed'", () => {
+    expect(bucketDisplayState("SAVINGS", -50, 10)).toEqual({ kind: "zeroed" });
+  });
+
+  it("Savings below target reads 'under' with the real headroom, never 'over'", () => {
+    expect(bucketDisplayState("SAVINGS", 100, 60)).toEqual({ kind: "under", headroom: 40 });
+  });
+
+  it("Savings exactly at target reads 'met', not 'under' -- matches budgetPace's own pctOfBudgetUsed >= 100 boundary", () => {
+    expect(bucketDisplayState("SAVINGS", 100, 100)).toEqual({ kind: "met" });
+  });
+
+  it("Savings above target reads 'met' -- the floor-not-ceiling carve-out: Savings can never read 'over', no matter how far past target", () => {
+    expect(bucketDisplayState("SAVINGS", 100, 500)).toEqual({ kind: "met" });
+  });
+
+  it("Needs below target reads 'under' with the real headroom", () => {
+    expect(bucketDisplayState("NEEDS", 1000, 800)).toEqual({ kind: "under", headroom: 200 });
+  });
+
+  it("Needs exactly at target reads 'under' (headroom 0), not 'over' -- matches the display sites' existing strict '>' boundary, deliberately NOT budgetPace's own '>=' (out of scope for this fix: only the Savings/zeroed carve-outs are being added, not a change to the Needs/Wants boundary itself)", () => {
+    expect(bucketDisplayState("NEEDS", 1000, 1000)).toEqual({ kind: "under", headroom: 0 });
+  });
+
+  it("Needs above target reads 'over' with the real overage amount", () => {
+    expect(bucketDisplayState("NEEDS", 1000, 1200)).toEqual({ kind: "over", over: 200 });
+  });
+
+  it("Wants mirrors Needs' over/under behavior exactly -- only Savings gets different treatment", () => {
+    expect(bucketDisplayState("WANTS", 500, 400)).toEqual({ kind: "under", headroom: 100 });
+    expect(bucketDisplayState("WANTS", 500, 600)).toEqual({ kind: "over", over: 100 });
   });
 });

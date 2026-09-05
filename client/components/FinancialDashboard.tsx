@@ -29,7 +29,7 @@ import {
 import { useTheme } from "../contexts/ThemeContext";
 import { fmtDate, moneyEquals, type LocalFinancials } from "../lib/localData";
 import { getLastSyncTime } from "../lib/syncService";
-import { periodTotals, type DashboardPayload } from "../lib/computeDashboard";
+import { periodTotals, bucketDisplayState, type DashboardPayload } from "../lib/computeDashboard";
 import OnboardingChecklist from "./OnboardingChecklist";
 import { fmtCur, type Screen } from "./screens/shared";
 const SERIF: React.CSSProperties = { fontFamily: "Georgia, 'Times New Roman', serif" };
@@ -174,10 +174,14 @@ function Bar({ pct, color }: { pct: number; color: string }) {
   );
 }
 
-function BucketRow({ label, actual, target, color }: { label: string; actual: number; target: number; color: string }) {
+function BucketRow({ label, actual, target, color, bucket }: { label: string; actual: number; target: number; color: string; bucket: "NEEDS" | "WANTS" | "SAVINGS" }) {
   const T = useTheme();
   const pct = target > 0 ? (actual / target) * 100 : 0;
-  const headroom = target - actual;
+  // budgetPace's own carve-outs (computeDashboard.ts), applied here too: a
+  // target rolled to $0 by rollover isn't a real ceiling, and Savings is a
+  // floor, not a ceiling -- it never reads "over".
+  const state = bucketDisplayState(bucket, target, actual);
+  const alarmed = state.kind === "over";
   return (
     <div>
       <div className="flex justify-between text-sm mb-1.5">
@@ -186,9 +190,15 @@ function BucketRow({ label, actual, target, color }: { label: string; actual: nu
           {money(actual)} <span style={{ color: T.line }}>/</span> {money(target)}
         </span>
       </div>
-      <Bar pct={pct} color={pct > 100 ? T.coral : color} />
-      <p className="text-xs mt-1" style={{ color: headroom >= 0 ? T.mute : T.coral }}>
-        {headroom >= 0 ? `${money(headroom)} of room left` : `${money(-headroom)} over — carries into next month's target`}
+      <Bar pct={pct} color={alarmed ? T.coral : color} />
+      <p className="text-xs mt-1" style={{ color: alarmed ? T.coral : T.mute }}>
+        {state.kind === "zeroed"
+          ? `target rolled to $0 this month`
+          : state.kind === "met"
+          ? `target met`
+          : state.kind === "over"
+          ? `${money(state.over)} over — carries into next month's target`
+          : `${money(state.headroom)} ${bucket === "SAVINGS" ? "to go" : "of room left"}`}
       </p>
     </div>
   );
@@ -575,9 +585,9 @@ export default function FinancialDashboard({
 
           <Panel title={`Budget · ${budgetLabel}`}>
             <div className="space-y-5">
-              <BucketRow label={`Needs · ${budgetPct.needs}%`}   actual={month.needsSpend}    target={data.effectiveBudgetTargets.needs}   color={T.sky} />
-              <BucketRow label={`Wants · ${budgetPct.wants}%`}   actual={month.wantsSpend}    target={data.effectiveBudgetTargets.wants}   color={T.brass} />
-              <BucketRow label={`Savings · ${budgetPct.savings}%`} actual={month.savingsContrib} target={data.effectiveBudgetTargets.savings} color={T.jade} />
+              <BucketRow label={`Needs · ${budgetPct.needs}%`}   actual={month.needsSpend}    target={data.effectiveBudgetTargets.needs}   color={T.sky}   bucket="NEEDS" />
+              <BucketRow label={`Wants · ${budgetPct.wants}%`}   actual={month.wantsSpend}    target={data.effectiveBudgetTargets.wants}   color={T.brass} bucket="WANTS" />
+              <BucketRow label={`Savings · ${budgetPct.savings}%`} actual={month.savingsContrib} target={data.effectiveBudgetTargets.savings} color={T.jade}  bucket="SAVINGS" />
             </div>
 
             {/* Pace warnings — Copilot-style "on track to exceed" heads-up */}

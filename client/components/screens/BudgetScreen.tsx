@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import type { LocalFinancials, BudgetRuleKey } from "../../lib/localData";
 import { BUDGET_RULES, MIN_SPLIT_PCT, floorCustomSplit, moneyEquals } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
+import { bucketDisplayState } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money } from "./shared";
 
@@ -68,9 +69,9 @@ export default function BudgetScreen({
   }
 
   const buckets = [
-    { key: "needs"   as const, label: "Needs",   color: T.sky,   actual: actual.needs,   target: targetAmt.needs,   pct: targetPct.needs   },
-    { key: "wants"   as const, label: "Wants",   color: T.brass, actual: actual.wants,   target: targetAmt.wants,   pct: targetPct.wants   },
-    { key: "savings" as const, label: "Savings", color: T.jade,  actual: actual.savings, target: targetAmt.savings, pct: targetPct.savings },
+    { key: "needs"   as const, bucket: "NEEDS"   as const, label: "Needs",   color: T.sky,   actual: actual.needs,   target: targetAmt.needs,   pct: targetPct.needs   },
+    { key: "wants"   as const, bucket: "WANTS"   as const, label: "Wants",   color: T.brass, actual: actual.wants,   target: targetAmt.wants,   pct: targetPct.wants   },
+    { key: "savings" as const, bucket: "SAVINGS" as const, label: "Savings", color: T.jade,  actual: actual.savings, target: targetAmt.savings, pct: targetPct.savings },
   ];
 
   return (
@@ -220,10 +221,14 @@ export default function BudgetScreen({
           <div className="rounded-2xl p-5 space-y-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
             <h2 className="text-xs uppercase tracking-widest" style={{ color: T.mute }}>This month vs target</h2>
 
-            {buckets.map(({ key, label, color, actual: act, target: tgt, pct }) => {
-              const barPct   = tgt > 0 ? (act / tgt) * 100 : 0;
-              const over     = act > tgt;
-              const headroom = tgt - act;
+            {buckets.map(({ key, bucket, label, color, actual: act, target: tgt, pct }) => {
+              const barPct = tgt > 0 ? (act / tgt) * 100 : 0;
+              // budgetPace's own carve-outs (computeDashboard.ts), applied
+              // here too: a target rolled to $0 by rollover isn't a real
+              // ceiling, and Savings is a floor, not a ceiling -- it never
+              // reads "over".
+              const state = bucketDisplayState(bucket, tgt, act);
+              const alarmed = state.kind === "over";
               return (
                 <div key={key}>
                   <div className="flex justify-between items-baseline mb-1.5">
@@ -231,20 +236,26 @@ export default function BudgetScreen({
                       {label}
                       <span className="ml-1.5 text-[10px]" style={{ color: T.mute }}>target {pct}% · {money(tgt)}</span>
                     </span>
-                    <span className="text-sm tabular-nums font-medium" style={{ color: over ? T.coral : color }}>
+                    <span className="text-sm tabular-nums font-medium" style={{ color: alarmed ? T.coral : color }}>
                       {money(act)}
                     </span>
                   </div>
                   <div className="h-2.5 rounded-full overflow-hidden" style={{ background: T.line }}>
                     <div
                       className="h-full rounded-full transition-all duration-700"
-                      style={{ width: `${Math.min(100, barPct)}%`, background: barPct > 100 ? T.coral : color }}
+                      style={{ width: `${Math.min(100, barPct)}%`, background: alarmed ? T.coral : color }}
                     />
                   </div>
-                  <p className="text-[10px] mt-1" style={{ color: over ? T.coral : T.mute }}>
-                    {over
-                      ? `${money(-headroom)} over. Consider trimming ${label.toLowerCase()} or switching to a looser model`
-                      : `${money(headroom)} of headroom left`}
+                  <p className="text-[10px] mt-1" style={{ color: alarmed ? T.coral : T.mute }}>
+                    {state.kind === "zeroed"
+                      ? `Target rolled to $0 this month — no headroom carried in from prior months.`
+                      : state.kind === "met"
+                      ? `Savings target met for this month.`
+                      : state.kind === "over"
+                      ? `${money(state.over)} over. Consider trimming ${label.toLowerCase()} or switching to a looser model`
+                      : bucket === "SAVINGS"
+                      ? `${money(state.headroom)} to go to hit this month's savings target`
+                      : `${money(state.headroom)} of headroom left`}
                   </p>
                 </div>
               );
