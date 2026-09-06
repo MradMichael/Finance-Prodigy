@@ -1105,3 +1105,44 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     },
   };
 }
+
+/**
+ * Balance Check's "Mismatch" badge is driven by `discrepancy` -- a frozen
+ * snapshot from the moment of the last check-in that never changes
+ * afterward. `changeSinceCheck` is live and drifts as new transactions are
+ * logged, but right at the instant a reanchor completes (before any new
+ * activity), changeSinceCheck is numerically IDENTICAL to discrepancy --
+ * both are measuring the same reanchor jump from two different reference
+ * points (see reanchorTrackedBalance in localData.ts: startingBalance
+ * resets to actual, so the live `expected` and the frozen `expectedAsOfCheck`
+ * start out equal). Displaying that restated number as "$X added/spent
+ * since that check-in" reads as new information explaining the mismatch,
+ * when it's circular -- the same figure under a different name.
+ *
+ * This isolates the real, ledger-only activity since the check-in
+ * (netActivitySinceCheck = changeSinceCheck - discrepancy, which is exactly
+ * 0 the instant a reanchor completes) and derives how much of the original
+ * gap that real activity has offset (residual) -- clamped so it can shrink
+ * toward zero as offsetting activity accrues, but never overshoots past
+ * zero, and never grows beyond the original discrepancy even if activity
+ * keeps compounding in the same direction. That compounding is real,
+ * ledger-visible spending/income, not a bigger version of the original
+ * mystery -- conflating the two would just relocate the same
+ * self-contradiction the caller exists to remove.
+ *
+ * `explainedByActivity` narrowing toward true is a live re-estimate, not
+ * confirmation the original gap's cause was found -- `discrepancy` can be a
+ * forgotten cash withdrawal or a data-entry error that a coincidentally
+ * offsetting paycheck happens to numerically mask. Callers should word this
+ * as "would currently look resolved," not "was explained."
+ */
+export function balanceCheckReconciliation(
+  discrepancy: number, changeSinceCheck: number,
+): { sameSign: boolean; explainedByActivity: boolean; residual: number; netActivitySinceCheck: number } {
+  const sign = Math.sign(discrepancy);
+  const sameSign = Math.sign(changeSinceCheck) === sign;
+  const residual = Math.round((sameSign ? sign * Math.min(Math.abs(changeSinceCheck), Math.abs(discrepancy)) : 0) * 100) / 100;
+  const explainedByActivity = Math.abs(residual) < Math.abs(discrepancy);
+  const netActivitySinceCheck = Math.round((changeSinceCheck - discrepancy) * 100) / 100;
+  return { sameSign, explainedByActivity, residual, netActivitySinceCheck };
+}
