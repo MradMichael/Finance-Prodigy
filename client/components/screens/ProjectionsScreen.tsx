@@ -6,7 +6,7 @@ import { BUDGET_RULES, moneyEquals, toUSD as toUSDShared, DEFAULT_LBP_RATE } fro
 import { dateFmt, toDebtInputs, type computeDashboard } from "../../lib/computeDashboard";
 import { simulateDebtPayoff, addMonths, type DebtInput } from "../../lib/debtEngine";
 import { projectCompletion } from "../../lib/projections";
-import { allocateGoalCapacity, type GoalCapacityInput, type GoalAllocationReport, type GoalFeasibilityStatus } from "../../lib/goalFeasibility";
+import { allocateGoalCapacity, fastestGoalCompletion, type GoalCapacityInput, type GoalAllocationReport, type GoalFastestReport, type GoalFeasibilityStatus } from "../../lib/goalFeasibility";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money } from "./shared";
 
@@ -116,6 +116,11 @@ export default function ProjectionsScreen({
   // single realistic sequence instead of the same amount tested against
   // each goal independently (which is what shipped before this and was
   // confusing: "I can't put $150 toward three different things at once").
+  // 2.4.68: opt-in, default off. The plan is what this screen is for; the
+  // fastest view answers a different question ("how fast could I finish if
+  // everything went to goals in order") and showing both dates permanently
+  // is the specific misread this toggle exists to avoid.
+  const [showFastest, setShowFastest] = useState(false);
   const [priority, setPriority] = useState<PriorityKey[]>(["ef", "debt", "goals"]);
   function movePriority(index: number, dir: -1 | 1) {
     setPriority((prev) => {
@@ -144,6 +149,12 @@ export default function ProjectionsScreen({
   // plan timeline can never disagree about when goals actually start
   // competing for capacity.
   let goalAllocationReport: GoalAllocationReport | null = null;
+  // The asOf the goals stage actually starts at (cursor months from now,
+  // after EF/debt). Captured so the opt-in fastest view below can be
+  // computed at the SAME moment the plan's own goal dates are -- otherwise
+  // the two columns would silently be anchored to different start dates and
+  // the comparison between them would be meaningless.
+  let goalsStageStartDate: Date | null = null;
   for (const key of priority) {
     if (!feasible) { stages[key] = { months: null, startMonths: cursor, dateDisplay: null, skipped: true }; continue; }
     const startDate = addMonths(new Date(), cursor);
@@ -177,6 +188,7 @@ export default function ProjectionsScreen({
       // -- the same assumption the old single-pool call already made.
       const report = allocateGoalCapacity(goalCapacityInputs, testAmount, startDate);
       goalAllocationReport = report;
+      goalsStageStartDate = startDate;
       if (report.goals.length === 0) {
         stages.goals = { months: 0, startMonths: cursor, dateDisplay: dateFmt(startDate) };
       } else if (report.goals.some((g) => g.projectedMonths === null)) {
@@ -200,6 +212,14 @@ export default function ProjectionsScreen({
       }
     }
   }
+  // Computed only when asked for, and only once the plan actually reaches
+  // the goals stage -- same guard the per-goal rows below already use, so
+  // the toggle can never surface dates for a stage the plan never got to.
+  const fastestReport: GoalFastestReport | null =
+    showFastest && goalAllocationReport !== null && goalsStageStartDate !== null
+      ? fastestGoalCompletion(goalCapacityInputs, testAmount, goalsStageStartDate)
+      : null;
+
   const totalMonths = feasible ? cursor : null;
   const stabilityDateDisplay = totalMonths !== null ? dateFmt(addMonths(new Date(), totalMonths)) : null;
 
@@ -407,7 +427,24 @@ export default function ProjectionsScreen({
 
         {/* Goals -- F3 (Goal Feasibility Engine) sub-phase 3: per-goal breakdown + conflict banner, replacing the old lumped "combined" pair (2.4.44, live bug fixed as a side effect of this wiring). */}
         <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
-          <p className="text-xs uppercase tracking-widest mb-3" style={{ color: T.mute }}>Goals</p>
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <p className="text-xs uppercase tracking-widest" style={{ color: T.mute }}>Goals</p>
+            {goalAllocationReport && goalAllocationReport.goals.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowFastest((v) => !v)}
+                aria-pressed={showFastest}
+                className="text-[11px] font-medium px-2.5 py-1 rounded-lg transition-opacity hover:opacity-80 flex-shrink-0"
+                style={{
+                  background: showFastest ? T.brass + "22" : "transparent",
+                  border: `1px solid ${showFastest ? T.brass : T.line}`,
+                  color: showFastest ? T.brass : T.mute,
+                }}
+              >
+                {showFastest ? "✓ Fastest possible" : "Show fastest possible"}
+              </button>
+            )}
+          </div>
           {openGoalsWithId.length === 0 ? (
             <p className="text-sm" style={{ color: T.mute }}>{goals.length === 0 ? "No goals yet. Add one in Goals." : "All goals achieved. 🎉"}</p>
           ) : !hasIncome ? (
@@ -438,6 +475,7 @@ export default function ProjectionsScreen({
                 {goalAllocationReport.goals.map((result) => {
                   const dash = openGoalsWithId.find((x) => x.stored.id === result.id)!.dash;
                   const meta = GOAL_STATUS_META[result.status];
+                  const fastest = fastestReport?.goals.find((f) => f.id === result.id) ?? null;
                   return (
                     <div key={result.id} className="rounded-xl px-3 py-2" style={{ background: T.panelSoft }}>
                       <div className="flex items-center justify-between gap-3">
@@ -447,9 +485,24 @@ export default function ProjectionsScreen({
                       <div className="flex items-center justify-between gap-3 mt-1">
                         <span className="text-xs" style={{ color: T.mute }}>{dash.projection.pctComplete}% saved · target {dash.projection.targetDateDisplay}</span>
                         <span className="text-xs tabular-nums" style={{ color: meta.color(T) }}>
+                          {/* Prefixed only while the fastest row is visible
+                              beneath it: two bare dates with no labels is
+                              exactly the misread this toggle exists to
+                              avoid, but an unnecessary "Plan ·" on the
+                              default view would be noise. */}
+                          {showFastest && <span style={{ color: T.mute }}>Plan · </span>}
                           {result.projectedMonths === null ? "Not reachable" : result.projectedMonths === 0 ? "Already there" : `${result.projectedDateDisplay} (${result.projectedMonths} mo)`}
                         </span>
                       </div>
+                      {fastest && (
+                        <div className="flex items-center justify-between gap-3 mt-1 pt-1" style={{ borderTop: `1px dashed ${T.line}` }}>
+                          <span className="text-[11px]" style={{ color: T.mute }}>If everything went here first</span>
+                          <span className="text-xs tabular-nums" style={{ color: T.brass }}>
+                            <span style={{ color: T.mute }}>Fastest · </span>
+                            {fastest.monthsToComplete === null ? "Not reachable" : fastest.monthsToComplete === 0 ? "Already there" : `${fastest.dateDisplay} (${fastest.monthsToComplete} mo)`}
+                          </span>
+                        </div>
+                      )}
                       {result.shortfallMonthlyRateUSD > 0 && (
                         <p className="text-[11px] mt-1" style={{ color: T.mute }}>
                           Needs {money(result.shortfallMonthlyRateUSD)}/mo more to hit its own target date at this priority.
@@ -471,6 +524,20 @@ export default function ProjectionsScreen({
                   would be wrong about two of its three stages. */}
               <p className="text-[11px] mt-3 pt-3" style={{ color: T.mute, borderTop: `1px solid ${T.line}` }}>
                 Each goal is funded up to what it needs to arrive on its own target date, and anything left over passes to the next goal in priority order. Raising the monthly amount can rescue a goal that&apos;s behind — it won&apos;t pull one in ahead of its target date. Safety net and debt above do finish sooner as you raise it.
+                {/* The sentence above describes the plan and stays true
+                    whether or not the toggle is on. This one explains what
+                    the second date means, so the two read as one
+                    explanation rather than as a contradiction: the plan
+                    doesn't pull goals in early, and this is what it would
+                    take if it did. */}
+                {showFastest && (
+                  <>
+                    {" "}
+                    <span style={{ color: T.brass }}>
+                      The fastest line ignores target dates entirely: it puts every available dollar into the soonest goal until it&apos;s done, then the next. It&apos;s what this amount could do, not what the plan above does.
+                    </span>
+                  </>
+                )}
               </p>
             </>
           )}
