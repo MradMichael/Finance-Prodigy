@@ -459,6 +459,19 @@ export default function ProjectionsScreen({
                   );
                 })}
               </div>
+              {/* Scoped deliberately to goals, not to the control as a whole:
+                  the safety-net and debt stages above DO finish sooner as the
+                  monthly amount rises (they call projectCompletion/
+                  simulateDebtPayoff with the full testAmount, uncapped). It's
+                  the goals stage alone that can't accelerate --
+                  allocateGoalCapacity caps each goal at
+                  requiredMonthlyRateUSD, derived from that goal's own
+                  targetDate, and passes the surplus to the next goal rather
+                  than finishing any goal early. Disclaiming the whole slider
+                  would be wrong about two of its three stages. */}
+              <p className="text-[11px] mt-3 pt-3" style={{ color: T.mute, borderTop: `1px solid ${T.line}` }}>
+                Each goal is funded up to what it needs to arrive on its own target date, and anything left over passes to the next goal in priority order. Raising the monthly amount can rescue a goal that&apos;s behind — it won&apos;t pull one in ahead of its target date. Safety net and debt above do finish sooner as you raise it.
+              </p>
             </>
           )}
         </div>
