@@ -138,6 +138,73 @@ export function allocateGoalCapacity(
   return { conflict, goals: results };
 }
 
+export interface GoalFastestResult {
+  id: string;
+  name: string;
+  remainingUSD: number;
+  /** Months until this goal completes under waterfall allocation; null when capacity is 0 and a gap remains (projectCompletion's own convention). */
+  monthsToComplete: number | null;
+  dateDisplay: string | null;
+}
+
+export interface GoalFastestReport {
+  /** Priority order (soonest target date first) -- the same order allocateGoalCapacity walks, so the two views can be read side by side. */
+  goals: GoalFastestResult[];
+  /** Months until EVERY goal is complete. */
+  allCompleteMonths: number | null;
+  allCompleteDateDisplay: string | null;
+}
+
+/**
+ * 2.4.68 -- "how fast could I finish", the question allocateGoalCapacity
+ * deliberately does not answer.
+ *
+ * A SEPARATE engine, not a mode of allocateGoalCapacity. That one answers
+ * "can I afford this by that date" and caps every goal at
+ * requiredMonthlyRateUSD, derived from the goal's own targetDate, which is
+ * exactly what makes its conflict banner and its achievable /
+ * achievable_with_adjustment / not_achievable classification mean what they
+ * say. The cap is correct there and is untouched by this function -- they
+ * share only projectCompletion and the priority comparator, and
+ * goalFeasibility.test.ts carries a guard asserting allocateGoalCapacity's
+ * full output is unchanged.
+ *
+ * This engine has no notion of target dates at all. Waterfall allocation in
+ * the same priority order: every available dollar goes to the frontmost
+ * unfinished goal until it completes, then rolls to the next -- which is
+ * why reordering goals visibly changes the intermediate dates. Because
+ * capacity is never idle, goal i completes once the CUMULATIVE remaining
+ * through i has been contributed, so each goal is just
+ * projectCompletion(cumulative, capacity) rather than a month-by-month
+ * simulation.
+ *
+ * Note that follows from the same fact and is asserted in the tests: the
+ * all-complete date is ceil(totalRemaining / capacity) regardless of
+ * ordering. Priority order moves which goal finishes first, never when
+ * everything is done.
+ */
+export function fastestGoalCompletion(
+  goals: GoalCapacityInput[],
+  monthlyCapacityUSD: number,
+  asOf: Date = new Date(),
+): GoalFastestReport {
+  const prioritized = [...goals].sort((a, b) => new Date(a.targetDate).getTime() - new Date(b.targetDate).getTime());
+
+  let cumulativeUSD = 0;
+  const results: GoalFastestResult[] = prioritized.map((g) => {
+    const remainingUSD = Math.max(0, g.targetAmountUSD - g.currentAmountUSD);
+    cumulativeUSD += remainingUSD;
+    // An already-met goal is done now, not whenever the goals ahead of it
+    // finish -- it adds nothing to the cumulative total, so it also never
+    // pushes the goals behind it out.
+    const proj = projectCompletion(remainingUSD <= 0 ? 0 : cumulativeUSD, monthlyCapacityUSD, asOf);
+    return { id: g.id, name: g.name, remainingUSD, monthsToComplete: proj.months, dateDisplay: proj.dateDisplay };
+  });
+
+  const allComplete = projectCompletion(cumulativeUSD, monthlyCapacityUSD, asOf);
+  return { goals: results, allCompleteMonths: allComplete.months, allCompleteDateDisplay: allComplete.dateDisplay };
+}
+
 /**
  * F3 sub-phase 2 -- capacity input, including the step-change. Path B
  * (owner's decision, docs/ROADMAP.md, Phase 3/4): computed internally from

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { allocateGoalCapacity, capacityByMonth, type GoalCapacityInput, type RecurringCapacityInput } from "./goalFeasibility";
+import { allocateGoalCapacity, capacityByMonth, fastestGoalCompletion, type GoalCapacityInput, type RecurringCapacityInput } from "./goalFeasibility";
 
 const asOf = new Date(2026, 0, 15); // Jan 15, 2026
 
@@ -162,5 +162,150 @@ describe("capacityByMonth — the step-change (the acceptance criterion, written
     const months = capacityByMonth(500, [], 6, asOf);
     expect(months).toHaveLength(7);
     expect(months.map((m) => m.monthsFromNow)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// fastestGoalCompletion -- the "how fast could I finish" view (2.4.68).
+//
+// Deliberately a SEPARATE engine from allocateGoalCapacity, not a mode of
+// it. allocateGoalCapacity answers "can I afford this by that date" and
+// caps every goal at requiredMonthlyRateUSD (derived from that goal's own
+// targetDate) precisely so the conflict banner and the achievable /
+// achievable_with_adjustment / not_achievable classification mean what they
+// say. That cap is correct there and is not touched by any test below --
+// the guard test at the end locks it.
+//
+// This engine answers the other question, and has no notion of target dates
+// at all: waterfall allocation in the same priority order (soonest target
+// date first), every available dollar going to the frontmost unfinished
+// goal until it completes, then rolling to the next. Because capacity is
+// never idle, goal i completes once the CUMULATIVE remaining through i has
+// been contributed -- ceil(cumulative / capacity) -- which is what the
+// per-goal assertions below encode.
+describe("fastestGoalCompletion — applying surplus capacity instead of discarding it", () => {
+  it("ACCEPTANCE (2.4.68): a goal needing $80/mo completes in 1 month at $5,000/mo, where the feasibility engine still says 12", () => {
+    // $960 remaining against a 12-month target = $80/mo required.
+    const goals: GoalCapacityInput[] = [
+      { id: "g", name: "Laptop", targetAmountUSD: 960, currentAmountUSD: 0, targetDate: "2027-01-15" },
+    ];
+
+    // The gap this engine exists to close, asserted in the same test so the
+    // two can never silently converge: the feasibility engine caps at the
+    // required rate and reports the target date back, no matter the capacity.
+    const feasibility = allocateGoalCapacity(goals, 5000, asOf);
+    expect(feasibility.goals[0].requiredMonthlyRateUSD).toBeCloseTo(80, 5);
+    expect(feasibility.goals[0].allocatedMonthlyRateUSD).toBeCloseTo(80, 5);
+    expect(feasibility.goals[0].projectedMonths).toBe(12);
+
+    const fastest = fastestGoalCompletion(goals, 5000, asOf);
+    expect(fastest.goals[0].monthsToComplete).toBe(1);
+    expect(fastest.goals[0].dateDisplay).toBe("15-02-2026");
+    expect(fastest.allCompleteMonths).toBe(1);
+  });
+
+  it("no phantom acceleration: at exactly the required rate it reports the same 12 months the feasibility engine does", () => {
+    const goals: GoalCapacityInput[] = [
+      { id: "g", name: "Laptop", targetAmountUSD: 960, currentAmountUSD: 0, targetDate: "2027-01-15" },
+    ];
+    const fastest = fastestGoalCompletion(goals, 80, asOf);
+    expect(fastest.goals[0].monthsToComplete).toBe(12);
+    expect(fastest.goals[0].monthsToComplete).toBe(allocateGoalCapacity(goals, 80, asOf).goals[0].projectedMonths);
+  });
+
+  it("waterfall: the soonest-deadline goal takes the whole capacity and finishes first, the next starts only after it completes", () => {
+    const goals: GoalCapacityInput[] = [
+      { id: "later",  name: "Later",  targetAmountUSD: 1000, currentAmountUSD: 0, targetDate: "2026-11-15" },
+      { id: "sooner", name: "Sooner", targetAmountUSD: 600,  currentAmountUSD: 0, targetDate: "2026-07-15" },
+    ];
+    const fastest = fastestGoalCompletion(goals, 500, asOf);
+
+    // Priority order, same comparator the feasibility engine uses.
+    expect(fastest.goals.map((g) => g.id)).toEqual(["sooner", "later"]);
+    // Sooner: ceil(600/500) = 2. Later: funded only once Sooner is done, so
+    // ceil((600+1000)/500) = 4 -- NOT ceil(1000/500) = 2, which is what
+    // funding both simultaneously would have produced.
+    expect(fastest.goals[0].monthsToComplete).toBe(2);
+    expect(fastest.goals[1].monthsToComplete).toBe(4);
+  });
+
+  it("the all-complete date is capacity-bound and independent of ordering -- reordering the same goals cannot change it", () => {
+    const a: GoalCapacityInput = { id: "a", name: "A", targetAmountUSD: 600,  currentAmountUSD: 0, targetDate: "2026-07-15" };
+    const b: GoalCapacityInput = { id: "b", name: "B", targetAmountUSD: 1000, currentAmountUSD: 0, targetDate: "2026-11-15" };
+
+    const forward = fastestGoalCompletion([a, b], 500, asOf);
+    const reversed = fastestGoalCompletion([b, a], 500, asOf);
+
+    // ceil(totalRemaining / capacity) = ceil(1600/500) = 4, both ways: no
+    // capacity is ever idle, so the order only moves the intermediate
+    // per-goal dates, never the point at which everything is done.
+    expect(forward.allCompleteMonths).toBe(4);
+    expect(reversed.allCompleteMonths).toBe(4);
+    expect(forward.allCompleteMonths).toBe(Math.ceil(1600 / 500));
+  });
+
+  it("zero capacity: no finite completion exists, matching projectCompletion's own null convention", () => {
+    const goals: GoalCapacityInput[] = [
+      { id: "g", name: "Stalled", targetAmountUSD: 600, currentAmountUSD: 0, targetDate: "2026-07-15" },
+    ];
+    const fastest = fastestGoalCompletion(goals, 0, asOf);
+    expect(fastest.goals[0].monthsToComplete).toBeNull();
+    expect(fastest.goals[0].dateDisplay).toBeNull();
+    expect(fastest.allCompleteMonths).toBeNull();
+  });
+
+  it("an already-met goal completes at 0 months and consumes no capacity, so it never delays the goals behind it", () => {
+    const goals: GoalCapacityInput[] = [
+      { id: "done", name: "Done",   targetAmountUSD: 500,  currentAmountUSD: 500, targetDate: "2026-03-15" },
+      { id: "open", name: "Open",   targetAmountUSD: 1000, currentAmountUSD: 0,   targetDate: "2026-11-15" },
+    ];
+    const fastest = fastestGoalCompletion(goals, 500, asOf);
+    expect(fastest.goals[0].monthsToComplete).toBe(0);
+    // ceil(1000/500) = 2 -- the met goal contributed nothing to the
+    // cumulative total, so "open" is not pushed out behind it.
+    expect(fastest.goals[1].monthsToComplete).toBe(2);
+    expect(fastest.allCompleteMonths).toBe(2);
+  });
+
+  it("GUARD: allocateGoalCapacity's output is byte-identical for the existing conflict fixture -- this engine changes nothing about feasibility", () => {
+    // The exact fixture from the conflict test at the top of this file.
+    const goals: GoalCapacityInput[] = [
+      { id: "a", name: "Soonest",  targetAmountUSD: 600,  currentAmountUSD: 0, targetDate: "2026-07-15" },
+      { id: "b", name: "Middle",   targetAmountUSD: 1000, currentAmountUSD: 0, targetDate: "2026-11-15" },
+      { id: "c", name: "Furthest", targetAmountUSD: 1500, currentAmountUSD: 0, targetDate: "2027-04-15" },
+    ];
+    // Captured from the engine as it stands before fastestGoalCompletion
+    // existed, and asserted in full -- every field of every goal, not a
+    // spot-check, so any drift in the feasibility path fails here.
+    expect(allocateGoalCapacity(goals, 250, asOf)).toEqual({
+      conflict: {
+        hasConflict: true,
+        totalRequiredMonthlyRateUSD: 300,
+        totalCapacityUSD: 250,
+        shortfallUSD: 50,
+      },
+      goals: [
+        { id: "a", name: "Soonest",  status: "achievable",                 remainingUSD: 600,  requiredMonthlyRateUSD: 100, allocatedMonthlyRateUSD: 100, projectedMonths: 6,  projectedDateDisplay: "15-07-2026", shortfallMonthlyRateUSD: 0 },
+        { id: "b", name: "Middle",   status: "achievable",                 remainingUSD: 1000, requiredMonthlyRateUSD: 100, allocatedMonthlyRateUSD: 100, projectedMonths: 10, projectedDateDisplay: "15-11-2026", shortfallMonthlyRateUSD: 0 },
+        { id: "c", name: "Furthest", status: "achievable_with_adjustment", remainingUSD: 1500, requiredMonthlyRateUSD: 100, allocatedMonthlyRateUSD: 50,  projectedMonths: 30, projectedDateDisplay: "15-07-2028", shortfallMonthlyRateUSD: 50 },
+      ],
+    });
+  });
+
+  it("capacity below total required: the fastest view stays coherent and does not contradict the conflict the feasibility engine reports", () => {
+    const goals: GoalCapacityInput[] = [
+      { id: "a", name: "Soonest",  targetAmountUSD: 600,  currentAmountUSD: 0, targetDate: "2026-07-15" },
+      { id: "b", name: "Middle",   targetAmountUSD: 1000, currentAmountUSD: 0, targetDate: "2026-11-15" },
+      { id: "c", name: "Furthest", targetAmountUSD: 1500, currentAmountUSD: 0, targetDate: "2027-04-15" },
+    ];
+    // Same inputs the guard above proves still report hasConflict: true.
+    expect(allocateGoalCapacity(goals, 250, asOf).conflict.hasConflict).toBe(true);
+
+    const fastest = fastestGoalCompletion(goals, 250, asOf);
+    // Every goal still finishes eventually -- "can't hit the stated dates"
+    // and "will never finish" are different claims, and only the first is
+    // true here. Cumulative: 600 -> 3mo, 1600 -> 7mo, 3100 -> 13mo.
+    expect(fastest.goals.map((g) => g.monthsToComplete)).toEqual([3, 7, 13]);
+    expect(fastest.allCompleteMonths).toBe(Math.ceil(3100 / 250));
   });
 });
