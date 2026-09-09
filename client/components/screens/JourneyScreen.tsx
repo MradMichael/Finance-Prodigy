@@ -2,7 +2,7 @@
 
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import type { LocalFinancials } from "../../lib/localData";
-import { DEFAULT_LBP_RATE, activeTransactions } from "../../lib/localData";
+import { DEFAULT_LBP_RATE, activeTransactions, toUSD as toUSDShared } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { projectCompletion } from "../../lib/projections";
 import { useTheme } from "../../contexts/ThemeContext";
@@ -61,7 +61,10 @@ export default function JourneyScreen({
 
   // ── Category shift: earliest vs. latest calendar month with logged transactions ──
   const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
-  const toUSD = (n: number, cur?: string) => (cur === "LBP" ? n / lbpRate : n);
+  // 2.4.72: was a local redefinition dividing by the raw rate. The shared
+  // helper guards a 0/negative/NaN rate, which `?? DEFAULT_LBP_RATE` above
+  // does not (nullish coalescing leaves 0 intact).
+  const toUSD = (n: number, cur?: string) => toUSDShared(n, cur as "USD" | "LBP" | undefined, lbpRate);
   // Phase 2.6.3b: soft-deleted transactions excluded from both the
   // category-shift arc and the "transactions logged" milestone count below.
   const activeTx = activeTransactions(financials.transactions);

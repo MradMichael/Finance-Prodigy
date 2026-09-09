@@ -917,9 +917,59 @@ export function todayISO(): string {
  * plausible, and consistent, which a poisoned total is not.
  */
 export function toUSD(amount: number, currency: Currency | undefined, lbpRate: number): number {
-  if (currency !== "LBP") return amount;
-  const rate = lbpRate > 0 ? lbpRate : DEFAULT_LBP_RATE; // NaN > 0 is false, so NaN lands here too
-  return amount / rate;
+  return currency === "LBP" ? amount / rateOrDefault(lbpRate) : amount;
+}
+
+/**
+ * The single place that decides whether an LBP rate is usable. 0, negative, NaN and
+ * nullish all fall back to DEFAULT_LBP_RATE — `NaN > 0` is false, so NaN takes the
+ * fallback branch without a separate check.
+ *
+ * A tiny-but-positive rate (0.01) passes through deliberately. It is absurd and
+ * magnifies by 100x, but it is finite, and bounding it is the Setup field's job —
+ * clamping it here would blur which change fixed what.
+ */
+export function rateOrDefault(rate: number | null | undefined): number {
+  return typeof rate === "number" && rate > 0 ? rate : DEFAULT_LBP_RATE;
+}
+
+/**
+ * The rate in effect for a given month, guarded on both sides.
+ *
+ * The double `rateOrDefault` is not redundant: the live rate is the FALLBACK argument
+ * (used when the history has no entry for that month) and the stored entry is the
+ * RETURN value. Either can be zero independently — a poisoned history entry defeats
+ * any guard on the live rate, which is exactly why guarding `toUSD` alone left six
+ * sites exposed (2.4.72).
+ *
+ * Deliberately NOT folded into `valueForMonth` itself: that lookup also serves
+ * `incomeHistory`, where zero is legitimate (a genuinely unemployed month —
+ * computeDashboard keeps `income` raw so a $0 account reads as $0, with `incomeSafe`
+ * handling ratios separately). A guard inside the generic lookup would silently
+ * rewrite real data to fix a rate problem.
+ */
+export function rateForMonth(
+  history: { ym: string; value: number }[] | undefined, ym: string, liveRate: number,
+): number {
+  return rateOrDefault(valueForMonth(history, ym, rateOrDefault(liveRate)));
+}
+
+/**
+ * The historized LBP→USD converter, built once. Four files had independently declared
+ * this exact lambda (`computeDashboard.ts` x3, `printReport.ts`), each dividing by a raw
+ * `valueForMonth(...)` result. All four derive the rate identically —
+ * `data.lbpRate ?? DEFAULT_LBP_RATE`, verified at `computeDashboard.ts:169/202/313` and
+ * `printReport.ts:26` — so the factory derives it internally from `data` rather than
+ * taking it as a parameter.
+ *
+ * `currency: string | undefined` rather than the narrower `Currency` that `toUSD` takes:
+ * every existing call site passes a loose string, and widening them would mean a wave of
+ * casts for a defensive change.
+ */
+export function makeToUSDForMonth(data: LocalFinancials): (amount: number, currency: string | undefined, ym: string) => number {
+  const liveRate = data.lbpRate ?? DEFAULT_LBP_RATE;
+  return (amount, currency, ym) =>
+    currency === "LBP" ? amount / rateForMonth(data.lbpRateHistory, ym, liveRate) : amount;
 }
 
 /**

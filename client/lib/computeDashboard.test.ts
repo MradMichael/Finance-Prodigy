@@ -1736,3 +1736,54 @@ describe("dual-currency single transaction — linkedPaymentId is display-only",
     expect(result.month.needsSpend).toBeCloseTo(10 + 200000 / 89500, 5);
   });
 });
+
+// 2.4.72 consolidation: the three historized converters in this file used
+// to divide by valueForMonth(lbpRateHistory, ...) directly, so a ZERO
+// stored history entry produced Infinity regardless of how well the live
+// rate was guarded. Each now routes through makeToUSDForMonth. These
+// assert the poisoned-history case at each of the three sites.
+describe("historized LBP conversion — a zero history entry cannot poison a total (2.4.72)", () => {
+  const poisoned = [{ ym: "2026-01", value: 0 }];
+
+  it("trackedBalanceExpected stays finite with a zero rate in history", () => {
+    const data = makeData({
+      income: 3000,
+      lbpRate: 89_500,
+      lbpRateHistory: poisoned,
+      trackedBalances: [{ id: "tb1", name: "Cash", paymentMethod: "cash", currency: "LBP", startingBalance: 8_950_000, startingDate: "2026-07-01" }],
+      transactions: [{ id: "t1", amount: 895_000, currency: "LBP", bucket: "NEEDS", description: "Groceries", date: "2026-07-10", paymentMethod: "cash" }],
+    });
+    const expected = trackedBalanceExpected(data.trackedBalances[0], data);
+    expect(Number.isFinite(expected)).toBe(true);
+  });
+
+  it("periodTotals stays finite with a zero rate in history", () => {
+    const data = makeData({
+      income: 3000,
+      lbpRate: 89_500,
+      lbpRateHistory: poisoned,
+      transactions: [{ id: "t1", amount: 895_000, currency: "LBP", bucket: "NEEDS", description: "Groceries", date: "2026-07-10" }],
+    });
+    const totals = periodTotals(data, "2026-07", NOW);
+    // Exact, not just finite: L£895,000 at the DEFAULT fallback rate
+    // (89,500) is $10. Asserting the value proves the zero entry was
+    // REPLACED by the fallback, rather than the LBP branch being skipped
+    // or the amount silently zeroed.
+    expect(totals.needs).toBeCloseTo(10, 5);
+    expect(Number.isFinite(totals.income)).toBe(true);
+  });
+
+  it("computeDashboard's own month totals and trend stay finite with a zero rate in history", () => {
+    const data = makeData({
+      income: 3000,
+      lbpRate: 89_500,
+      lbpRateHistory: poisoned,
+      transactions: [{ id: "t1", amount: 895_000, currency: "LBP", bucket: "NEEDS", description: "Groceries", date: "2026-07-10" }],
+    });
+    const result = computeDashboard(data);
+    expect(result.month.needsSpend).toBeCloseTo(10, 5); // 895,000 / 89,500 (the fallback)
+    expect(Number.isFinite(result.month.totalSpend)).toBe(true);
+    expect(Number.isFinite(result.month.netCashFlow)).toBe(true);
+    expect(result.sixMonthTrend.every((m) => Number.isFinite(m.spend) && Number.isFinite(m.income))).toBe(true);
+  });
+});

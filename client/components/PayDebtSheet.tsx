@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, StoredDebt, PaymentMethod, StoredCard } from "../lib/localData";
-import { buildDebtPaymentTx, derivedDebtBalance, derivedEfBalance, moneyEquals, roundMoney, allCategories, todayISO, uid, DEFAULT_LBP_RATE } from "../lib/localData";
+import { buildDebtPaymentTx, derivedDebtBalance, derivedEfBalance, moneyEquals, roundMoney, allCategories, todayISO, uid, DEFAULT_LBP_RATE, toUSD as toUSDShared } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, MoneyInput, DateFieldDMY, PaymentMethodPicker } from "./form/Primitives";
 import { fmtCur } from "./screens/shared";
@@ -66,7 +66,10 @@ export default function PayDebtSheet({
     // convention the main transaction form's own EF field uses. A debt
     // payment only ever DRAWS from EF, never contributes to it.
     const efAmtRaw = fromEF ? (efAmt.trim() ? parseFloat(efAmt.replace(/,/g, "")) : amount) : null;
-    const efAmountUSD = efAmtRaw != null ? roundMoney(-(debt.currency === "LBP" ? efAmtRaw / lbpRate : efAmtRaw)) : undefined;
+    // 2.4.72: was an inline `efAmtRaw / lbpRate`. toUSDShared guards a
+    // 0/negative/NaN rate; the `?? DEFAULT_LBP_RATE` this rate comes from
+    // does not, since nullish coalescing leaves 0 intact.
+    const efAmountUSD = efAmtRaw != null ? roundMoney(-toUSDShared(efAmtRaw, debt.currency, lbpRate)) : undefined;
     const tx = buildDebtPaymentTx(debt, amount, bucket, lbpRate, {
       category: category || undefined,
       efAmount: efAmountUSD,

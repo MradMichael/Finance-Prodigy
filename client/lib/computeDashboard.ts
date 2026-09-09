@@ -1,5 +1,5 @@
 import type { LocalFinancials, BudgetRuleKey, StoredDebt, StoredTransaction, StoredRecurring, TrackedBalance, Currency } from "./localData";
-import { historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, valueForMonth, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, DEFAULT_LBP_RATE, derivedEfBalance, derivedDebtBalance, activeTransactions, parseLocalDate, isRecurringActive } from "./localData";
+import { historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, valueForMonth, makeToUSDForMonth, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, DEFAULT_LBP_RATE, derivedEfBalance, derivedDebtBalance, activeTransactions, parseLocalDate, isRecurringActive } from "./localData";
 import { simulateDebtPayoff, type DebtInput } from "./debtEngine";
 
 interface Projection {
@@ -166,9 +166,7 @@ export function trackedBalanceExpected(
   tb: Pick<TrackedBalance, "paymentMethod" | "cardId" | "startingBalance" | "startingDate" | "currency">,
   data: LocalFinancials,
 ): number {
-  const lbpRate = data.lbpRate ?? DEFAULT_LBP_RATE;
-  const toUSDForMonth = (amount: number, currency: string | undefined, ym: string) =>
-    currency === "LBP" ? amount / valueForMonth(data.lbpRateHistory, ym, lbpRate) : amount;
+  const toUSDForMonth = makeToUSDForMonth(data);
   const key = `${tb.paymentMethod}|${tb.paymentMethod === "card" ? (tb.cardId ?? "") : ""}`;
   const relevantTx = activeTransactions(data.transactions ?? []).filter((t) => {
     const tKey = `${t.paymentMethod ?? ""}|${t.paymentMethod === "card" ? (t.cardId ?? "") : ""}`;
@@ -199,9 +197,7 @@ export function trackedBalanceExpected(
 export function periodTotals(
   data: LocalFinancials, ym: string, recurAsOf: Date,
 ): { income: number; needs: number; wants: number; savings: number } {
-  const lbpRate = data.lbpRate ?? DEFAULT_LBP_RATE;
-  const toUSDForMonth = (amount: number, currency: string | undefined, ymFor: string) =>
-    currency === "LBP" ? amount / valueForMonth(data.lbpRateHistory, ymFor, lbpRate) : amount;
+  const toUSDForMonth = makeToUSDForMonth(data);
   const tx = activeTransactions(data.transactions ?? []).filter((t) => t.date.startsWith(ym));
   const txSum = (bucket: string) => tx.filter((t) => t.bucket === bucket).reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, ym), 0);
   const salary = valueForMonth(data.incomeHistory, ym, data.income);
@@ -324,8 +320,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   // Raw (unfloored) like the current-month income/incomeSafe split below —
   // display sites (e.g. sixMonthTrend) use this directly; only the one
   // division site (the savings-streak check) needs the floored version.
-  const toUSDForMonth = (amount: number, currency: string | undefined, ym: string) =>
-    currency === "LBP" ? amount / valueForMonth(data.lbpRateHistory, ym, lbpRate) : amount;
+  const toUSDForMonth = makeToUSDForMonth(data);
   // Base salary for that month plus any one-off INCOME transactions logged
   // in it (a gift, a reimbursement) -- both are real money that month, so
   // "effective income" for every downstream ratio/target/trend should

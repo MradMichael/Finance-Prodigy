@@ -1,5 +1,5 @@
 import type { LocalFinancials } from "./localData";
-import { BUDGET_RULES, nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, toUSD as toUSDShared, categoryLabel, derivedDebtBalance, activeTransactions, DEFAULT_LBP_RATE, valueForMonth } from "./localData";
+import { BUDGET_RULES, nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, toUSD as toUSDShared, categoryLabel, derivedDebtBalance, activeTransactions, DEFAULT_LBP_RATE, valueForMonth, makeToUSDForMonth } from "./localData";
 import type { computeDashboard } from "./computeDashboard";
 
 type DashboardPayload = ReturnType<typeof computeDashboard>;
@@ -32,8 +32,7 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
   // already uses everywhere else, or a rate change since the transaction
   // was logged silently reprices history and disagrees with Overview/
   // Statistics for the exact same transaction.
-  const toUSDForMonth = (n: number, cur: string | undefined, ym: string) =>
-    cur === "LBP" ? n / valueForMonth(data.lbpRateHistory, ym, lbpRate) : n;
+  const toUSDForMonth = makeToUSDForMonth(data);
   const BL = { NEEDS: "Needs", WANTS: "Wants", SAVINGS: "Savings", INCOME: "Income", TRANSFER: "Transfer" } as const;
 
   const ledgerTx = options.detailed
