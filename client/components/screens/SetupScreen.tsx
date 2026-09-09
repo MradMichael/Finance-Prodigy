@@ -7,6 +7,24 @@ import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF } from "./shared";
 
+/**
+ * Ceiling on monthly income. This field had a floor (`min="0"`, and a
+ * `Math.max(0, ...)` in its own handler) but no ceiling, and it is the
+ * root of a chain: ProjectionsScreen's own test-amount cap is
+ * `Math.max(200, Math.round(month.income * 2))`, so an unbounded income
+ * makes that cap unbounded too. Its input is correctly clamped against
+ * that cap and still admitted a value rendering as
+ * "$2,825,462,531,393,154,600,000,000/mo" -- the clamp was working, the
+ * bound it clamped to was meaningless. Bounding income fixes it at the
+ * source rather than adding a second guard downstream.
+ *
+ * Same figure Projections already falls back to when no income is set
+ * yet (`MAX_TEST_AMOUNT`'s `1_000_000` branch); deliberately not
+ * refactored into one shared constant here, which would be a wider
+ * change than this fix was scoped to.
+ */
+const MAX_INCOME = 1_000_000;
+
 // LBP is volatile enough that a stale rate silently undermines the app's
 // one real differentiator (accurate dual-currency tracking) — surface it
 // instead of letting it quietly go out of date unnoticed.
@@ -115,9 +133,14 @@ export default function SetupScreen({
               id="setup-income"
               className="w-full rounded-xl px-4 py-2.5 text-sm tabular-nums"
               style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
-              type="number" min="0" step="100"
+              type="number" min="0" max={MAX_INCOME} step="100"
               value={financials.income || ""}
-              onChange={(e) => update({ income: Math.max(0, parseFloat(e.target.value) || 0) })}
+              // Doubly enforced, matching the pattern already proven on
+              // Projections' own test-amount input: the HTML `max` handles
+              // spinner/stepper input, and the handler clamps anything that
+              // arrives by paste, autofill, or a browser that doesn't honour
+              // `max` on direct entry.
+              onChange={(e) => update({ income: Math.min(MAX_INCOME, Math.max(0, parseFloat(e.target.value) || 0)) })}
               placeholder="e.g. 3500"
             />
             <p className="text-[11px] mt-1.5 px-1" style={{ color: T.mute }}>
