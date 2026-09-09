@@ -1105,3 +1105,31 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     },
   };
 }
+
+/**
+ * How a single bucket's actual-vs-target should read for display -- shared
+ * by BudgetScreen.tsx and FinancialDashboard.tsx's BucketRow, both of which
+ * used to compute "over"/"headroom" locally and neither of which carried
+ * budgetPace's own two carve-outs above (inside computeDashboard): a target
+ * rolled to $0 (or below) by rollover math is "zeroed", not a real ceiling
+ * to compare against (matches budgetPace's own `bucketTargetAmt[b] > 0`
+ * exclusion); and SAVINGS is a floor, not a ceiling -- clearing it is "met",
+ * never "over", no matter by how much (matches budgetPace's own SAVINGS
+ * branch). NEEDS/WANTS keep the display sites' own existing strict
+ * `actual > target` boundary for "over" -- deliberately NOT budgetPace's
+ * own `>=`; unifying that boundary too was never asked for and isn't part
+ * of this fix.
+ */
+export function bucketDisplayState(
+  bucket: "NEEDS" | "WANTS" | "SAVINGS", target: number, actual: number,
+):
+  | { kind: "zeroed" }
+  | { kind: "met" }
+  | { kind: "under"; headroom: number }
+  | { kind: "over"; over: number } {
+  if (target <= 0) return { kind: "zeroed" };
+  if (bucket === "SAVINGS") {
+    return actual >= target ? { kind: "met" } : { kind: "under", headroom: target - actual };
+  }
+  return actual > target ? { kind: "over", over: actual - target } : { kind: "under", headroom: target - actual };
+}
