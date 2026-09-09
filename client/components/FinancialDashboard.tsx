@@ -29,7 +29,7 @@ import {
 import { useTheme } from "../contexts/ThemeContext";
 import { fmtDate, moneyEquals, type LocalFinancials } from "../lib/localData";
 import { getLastSyncTime } from "../lib/syncService";
-import { periodTotals, bucketDisplayState, type DashboardPayload } from "../lib/computeDashboard";
+import { periodTotals, bucketDisplayState, balanceCheckReconciliation, type DashboardPayload } from "../lib/computeDashboard";
 import OnboardingChecklist from "./OnboardingChecklist";
 import { fmtCur, type Screen } from "./screens/shared";
 const SERIF: React.CSSProperties = { fontFamily: "Georgia, 'Times New Roman', serif" };
@@ -503,15 +503,36 @@ export default function FinancialDashboard({
             <div className="grid gap-3 md:grid-cols-2">
               {balanceChecks.filter((b) => b.actual != null).map((b) => {
                 const gap = b.discrepancy ?? 0;
+                // The badge reads the frozen discrepancy, per 2.4.53's
+                // design and unchanged by this fix -- it verdicts on a
+                // fact captured at check-in time and only a fresh check-in
+                // is entitled to update it. changeSinceCheck starts out
+                // numerically identical to discrepancy (see
+                // balanceCheckReconciliation's own doc comment) and only
+                // diverges once real, ledger-visible activity has happened;
+                // residual/explainedByActivity separate "the original gap,
+                // still standing" from "real activity that's since
+                // narrowed or closed it" for the BODY COPY only -- an
+                // unreconciled balance keeps its Mismatch badge regardless
+                // of how well real activity happens to line up with it.
                 const mismatch = Math.abs(gap) >= 1;
                 const accent = mismatch ? T.coral : T.jade;
+                const { residual, explainedByActivity, netActivitySinceCheck } = balanceCheckReconciliation(gap, b.changeSinceCheck);
+                // Whether the original gap still reads as a live, sizable
+                // concern once real offsetting activity is netted out --
+                // independent of the (always frozen-discrepancy-driven) badge.
+                const residualStillOpen = Math.abs(residual) >= 1;
                 // Discrepancy is judged against what was expected AS OF the
                 // check-in (b.expected minus whatever's happened since), not
                 // today's live running total -- so this box shows that same
                 // as-of figure, matching what "Mismatch"/"Matches" is
                 // actually verdict-ing on.
                 const expectedAsOfCheck = Math.round((b.expected - b.changeSinceCheck) * 100) / 100;
-                const hasActivitySince = Math.abs(b.changeSinceCheck) >= 0.01;
+                // Gated on the isolated real activity, not the raw (still
+                // reanchor-jump-inclusive) changeSinceCheck -- right after a
+                // fresh check-in, with zero real activity, netActivitySinceCheck
+                // is exactly 0 even though changeSinceCheck itself is not.
+                const hasActivitySince = Math.abs(netActivitySinceCheck) >= 0.01;
                 return (
                   <div
                     key={b.id}
@@ -540,16 +561,21 @@ export default function FinancialDashboard({
                         <p className="text-lg tabular-nums" style={{ ...SERIF, color: T.text }}>{money(b.actual as number)}</p>
                       </div>
                     </div>
-                    {mismatch && (
+                    {mismatch && residualStillOpen && (
                       <p className="text-xs mt-3 pt-3" style={{ color: T.coral, borderTop: `1px solid ${T.coral}30` }}>
-                        {gap < 0
-                          ? `${money(Math.abs(gap))} unaccounted for as of that check-in — check for a missed entry.`
-                          : `${money(gap)} more than expected as of that check-in — got extra cash, or a transaction logged twice?`}
+                        {residual < 0
+                          ? `${money(Math.abs(residual))} unaccounted for as of that check-in${explainedByActivity ? ` (of an original ${money(Math.abs(gap))} gap — activity since has offset some of it)` : ""} — check for a missed entry.`
+                          : `${money(residual)} more than expected as of that check-in${explainedByActivity ? ` (of an original ${money(gap)} gap — activity since has offset some of it)` : ""} — got extra cash, or a transaction logged twice?`}
+                      </p>
+                    )}
+                    {mismatch && !residualStillOpen && explainedByActivity && (
+                      <p className="text-xs mt-3 pt-3" style={{ color: T.mute, borderTop: `1px solid ${T.line}` }}>
+                        There was a {money(Math.abs(gap))} gap at that check-in — activity since would offset it if checked today. Check in again to confirm.
                       </p>
                     )}
                     {hasActivitySince && (
                       <p className="text-xs mt-3 pt-3" style={{ color: T.mute, borderTop: `1px solid ${T.line}` }}>
-                        {b.changeSinceCheck < 0 ? money(Math.abs(b.changeSinceCheck)) + " spent" : money(b.changeSinceCheck) + " added"} since that check-in — current running balance: <span style={{ color: T.text }}>{money(b.expected)}</span>.
+                        {netActivitySinceCheck < 0 ? money(Math.abs(netActivitySinceCheck)) + " spent" : money(netActivitySinceCheck) + " added"} since that check-in — current running balance: <span style={{ color: T.text }}>{money(b.expected)}</span>.
                       </p>
                     )}
                   </div>

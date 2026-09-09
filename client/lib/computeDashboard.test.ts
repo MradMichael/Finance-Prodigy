@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { computeDashboard, computeHoldingsByCurrency, trackedBalanceExpected, periodTotals, bucketDisplayState } from "./computeDashboard";
+import { computeDashboard, computeHoldingsByCurrency, trackedBalanceExpected, periodTotals, bucketDisplayState, balanceCheckReconciliation } from "./computeDashboard";
 import { DEFAULT_DATA, buildDebtPaymentTx, type LocalFinancials, type BudgetRuleKey, type StoredDebt, type StoredTransaction } from "./localData";
 
 function makeData(overrides: Partial<LocalFinancials> = {}): LocalFinancials {
@@ -1775,5 +1775,108 @@ describe("bucketDisplayState -- the Savings floor-not-ceiling and zeroed-target 
   it("Wants mirrors Needs' over/under behavior exactly -- only Savings gets different treatment", () => {
     expect(bucketDisplayState("WANTS", 500, 400)).toEqual({ kind: "under", headroom: 100 });
     expect(bucketDisplayState("WANTS", 500, 600)).toEqual({ kind: "over", over: 100 });
+  });
+});
+
+// Balance Check's "Mismatch" badge (Math.abs(discrepancy) >= 1) is driven by
+// a frozen, permanent snapshot from the moment of the last check-in --
+// changeSinceCheck moves live as new transactions land, but discrepancy
+// itself never budges, so no amount of real activity could ever clear the
+// badge. Worse, changeSinceCheck starts out numerically IDENTICAL to
+// discrepancy right after a reanchor (see reanchorTrackedBalance --
+// startingBalance is reset to actual, so expected == expectedAsOfCheck the
+// moment nothing new has happened yet), which is exactly what made the old
+// "$X added since that check-in" line read as though it explained away a
+// mismatch it had nothing to do with.
+//
+// balanceCheckReconciliation isolates the real, ledger-only activity that's
+// happened since the check-in (netActivitySinceCheck = changeSinceCheck -
+// discrepancy, which is 0 the instant a reanchor completes) and derives how
+// much of the original gap that real activity has offset (residual),
+// clamped so it can shrink toward zero but never overshoot past it, and
+// never grow beyond the original discrepancy even if activity keeps
+// compounding in the same direction -- that compounding is known, ledger-
+// visible spending, never a bigger unexplained mystery than the one already
+// on record.
+describe("balanceCheckReconciliation -- residual/explainedByActivity/netActivitySinceCheck derivation", () => {
+  it("no real activity yet (fresh reanchor, missing-money direction): residual equals the full original gap, nothing explained", () => {
+    const r = balanceCheckReconciliation(-50, -50);
+    expect(r.sameSign).toBe(true);
+    expect(r.residual).toBe(-50);
+    expect(r.explainedByActivity).toBe(false);
+    expect(r.netActivitySinceCheck).toBe(0);
+  });
+
+  it("no real activity yet, excess-money direction: same shape, positive sign throughout", () => {
+    const r = balanceCheckReconciliation(50, 50);
+    expect(r.sameSign).toBe(true);
+    expect(r.residual).toBe(50);
+    expect(r.explainedByActivity).toBe(false);
+    expect(r.netActivitySinceCheck).toBe(0);
+  });
+
+  it("partial real activity narrows a missing-money gap without fully closing it", () => {
+    // $30 of real income since check-in narrows a $50 shortfall to $20.
+    const r = balanceCheckReconciliation(-50, -20);
+    expect(r.sameSign).toBe(true);
+    expect(r.residual).toBe(-20);
+    expect(r.explainedByActivity).toBe(true);
+    expect(r.netActivitySinceCheck).toBe(30);
+  });
+
+  it("partial real activity narrows an excess-money gap without fully closing it", () => {
+    // $30 of real spending since check-in narrows a $50 excess to $20.
+    const r = balanceCheckReconciliation(50, 20);
+    expect(r.sameSign).toBe(true);
+    expect(r.residual).toBe(20);
+    expect(r.explainedByActivity).toBe(true);
+    expect(r.netActivitySinceCheck).toBe(-30);
+  });
+
+  it("real activity exactly cancels the original gap: fully explained, residual zero", () => {
+    const r = balanceCheckReconciliation(50, 0);
+    expect(r.sameSign).toBe(false);
+    expect(r.residual).toBe(0);
+    expect(r.explainedByActivity).toBe(true);
+    expect(r.netActivitySinceCheck).toBe(-50);
+  });
+
+  it("real activity overshoots past cancellation: still fully explained, residual clamped at zero not negative", () => {
+    const r = balanceCheckReconciliation(50, -30);
+    expect(r.sameSign).toBe(false);
+    expect(r.residual).toBe(0);
+    expect(r.explainedByActivity).toBe(true);
+    expect(r.netActivitySinceCheck).toBe(-80);
+  });
+
+  it("real activity compounds in the SAME direction as a missing-money gap: residual clamps at the original discrepancy, does not grow", () => {
+    // $30 more has gone missing since check-in -- real, ledger-visible
+    // spending, not a bigger version of the original $50 mystery.
+    const r = balanceCheckReconciliation(-50, -80);
+    expect(r.sameSign).toBe(true);
+    expect(r.residual).toBe(-50);
+    expect(r.explainedByActivity).toBe(false);
+    expect(r.netActivitySinceCheck).toBe(-30);
+  });
+
+  it("real activity compounds in the SAME direction as an excess-money gap: residual clamps at the original discrepancy, does not grow", () => {
+    const r = balanceCheckReconciliation(50, 80);
+    expect(r.sameSign).toBe(true);
+    expect(r.residual).toBe(50);
+    expect(r.explainedByActivity).toBe(false);
+    expect(r.netActivitySinceCheck).toBe(30);
+  });
+
+  it("rounds residual and netActivitySinceCheck to the cent", () => {
+    const r = balanceCheckReconciliation(-10.5, -3.33);
+    expect(r.residual).toBe(-3.33);
+    expect(r.netActivitySinceCheck).toBe(7.17);
+  });
+
+  it("degenerate zero-discrepancy input (not a real calling case -- the mismatch gate requires |discrepancy| >= 1) does not crash and reports nothing to explain", () => {
+    const r = balanceCheckReconciliation(0, 0);
+    expect(r.residual).toBe(0);
+    expect(r.explainedByActivity).toBe(false);
+    expect(r.netActivitySinceCheck).toBe(0);
   });
 });
