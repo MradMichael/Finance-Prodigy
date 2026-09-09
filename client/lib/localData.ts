@@ -896,9 +896,30 @@ export function todayISO(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-/** Converts an amount to USD given its own currency and the current LBP rate — was independently redefined as the same one-liner in computeDashboard.ts, InputPanel.tsx, RecurringScreen.tsx, and TransactionsScreen.tsx. */
+/**
+ * Converts an amount to USD given its own currency and the current LBP rate — was
+ * independently redefined as the same one-liner in computeDashboard.ts, InputPanel.tsx,
+ * RecurringScreen.tsx, and TransactionsScreen.tsx.
+ *
+ * A rate of 0, a negative rate, or NaN falls back to DEFAULT_LBP_RATE rather than
+ * dividing. The field that writes `lbpRate` already refuses those (SetupScreen.tsx:163
+ * commits only when `parsed > 0` and not NaN), so this is unreachable through the UI --
+ * but it is reachable through the load path, which parses and migrates a stored payload
+ * without validating it, and the idiom every call site uses,
+ * `financials.lbpRate ?? DEFAULT_LBP_RATE`, does NOT rescue 0: nullish coalescing catches
+ * only null/undefined, and `0 ?? x` evaluates to 0. Without this guard, a restored or
+ * synced payload carrying `lbpRate: 0` makes this return Infinity (or NaN for 0/0), and
+ * nothing downstream checks isFinite -- `Infinity + x` is Infinity and `NaN + x` is NaN,
+ * so a single such amount silently poisons every total it enters.
+ *
+ * DEFAULT_LBP_RATE specifically, so an invalid rate behaves identically to an absent one
+ * rather than introducing a third behaviour. The figure is wrong either way; it is finite,
+ * plausible, and consistent, which a poisoned total is not.
+ */
 export function toUSD(amount: number, currency: Currency | undefined, lbpRate: number): number {
-  return currency === "LBP" ? amount / lbpRate : amount;
+  if (currency !== "LBP") return amount;
+  const rate = lbpRate > 0 ? lbpRate : DEFAULT_LBP_RATE; // NaN > 0 is false, so NaN lands here too
+  return amount / rate;
 }
 
 /**
