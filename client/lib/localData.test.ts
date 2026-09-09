@@ -5,7 +5,7 @@ import {
   loadData, saveData, DEFAULT_DATA, type StoredRecurring, type StoredGoal, type StoredTransaction, type StoredDebt,
   allCategories, categoryLabel, categoryIcon, CATEGORIES,
   matchCategoryRule, type CategoryRule,
-  roundMoney, moneyEquals, isEmptyFinancials, type LocalFinancials,
+  roundMoney, moneyEquals, isEmptyFinancials, type LocalFinancials, toUSD, DEFAULT_LBP_RATE,
   migrateFinancials, schemaVersionOf, withRate, CURRENT_SCHEMA_VERSION, todayISO,
   dueCycles, remainingInstallments, isCycleConfirmed, isCycleOverdue, buildRecurringConfirmLog, cycleMonthDivergence,
   nextConfirmTarget, historizedRecurringContribution, pendingBackfillCycles,
@@ -2267,5 +2267,50 @@ describe("migrateFinancials", () => {
         expect(derivedDebtBalance(makeDebt(), txs)).toBe(2000); // fully excluded, not just amount
       });
     });
+  });
+});
+
+// toUSD is the shared LBP->USD converter and is a bare division. The
+// SetupScreen field that writes lbpRate already refuses anything <= 0 or
+// NaN (SetupScreen.tsx:163), so the live value cannot reach here invalid
+// through the UI -- but the load path (loadData -> JSON.parse ->
+// migrateFinancials) validates no such thing, and the idiom used at every
+// call site, `financials.lbpRate ?? DEFAULT_LBP_RATE`, does NOT rescue 0:
+// nullish coalescing catches only null/undefined, and `0 ?? x` is 0. A
+// restored or synced payload carrying lbpRate: 0 therefore reaches this
+// function, where `amount / 0` is Infinity (or NaN for 0/0) -- and nothing
+// downstream checks isFinite, so one such value poisons every sum it
+// enters. These lock the guard that makes that unreachable.
+describe("toUSD — invalid exchange rates cannot produce Infinity or NaN", () => {
+  it("a rate of 0 falls back to the default rate instead of dividing by zero", () => {
+    const result = toUSD(89_500, "LBP", 0);
+    expect(Number.isFinite(result)).toBe(true);
+    expect(result).toBeCloseTo(1, 5); // 89,500 / 89,500 (the default)
+  });
+
+  it("a negative rate falls back rather than flipping the sign of real money", () => {
+    const result = toUSD(89_500, "LBP", -89_500);
+    expect(Number.isFinite(result)).toBe(true);
+    expect(result).toBeCloseTo(1, 5);
+  });
+
+  it("a NaN rate falls back instead of propagating NaN into every downstream total", () => {
+    const result = toUSD(89_500, "LBP", Number.NaN);
+    expect(Number.isNaN(result)).toBe(false);
+    expect(result).toBeCloseTo(1, 5);
+  });
+
+  it("USD amounts pass through untouched regardless of how broken the rate is", () => {
+    // The rate is irrelevant to a USD amount -- it must never be consulted,
+    // so a broken rate must not disturb it either.
+    expect(toUSD(250, "USD", 0)).toBe(250);
+    expect(toUSD(250, "USD", Number.NaN)).toBe(250);
+    expect(toUSD(250, undefined, 0)).toBe(250);
+  });
+
+  it("a valid rate still converts exactly as before -- the guard changes nothing in the normal case", () => {
+    expect(toUSD(179_000, "LBP", 89_500)).toBeCloseTo(2, 5);
+    expect(toUSD(150_000, "LBP", 100_000)).toBeCloseTo(1.5, 5);
+    expect(toUSD(89_500, "LBP", DEFAULT_LBP_RATE)).toBeCloseTo(1, 5);
   });
 });
