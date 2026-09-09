@@ -6,6 +6,7 @@ import {
   allCategories, categoryLabel, categoryIcon, CATEGORIES,
   matchCategoryRule, type CategoryRule,
   roundMoney, moneyEquals, isEmptyFinancials, type LocalFinancials, toUSD, DEFAULT_LBP_RATE,
+  rateOrDefault, rateForMonth, makeToUSDForMonth,
   migrateFinancials, schemaVersionOf, withRate, CURRENT_SCHEMA_VERSION, todayISO,
   dueCycles, remainingInstallments, isCycleConfirmed, isCycleOverdue, buildRecurringConfirmLog, cycleMonthDivergence,
   nextConfirmTarget, historizedRecurringContribution, pendingBackfillCycles,
@@ -2312,5 +2313,109 @@ describe("toUSD — invalid exchange rates cannot produce Infinity or NaN", () =
     expect(toUSD(179_000, "LBP", 89_500)).toBeCloseTo(2, 5);
     expect(toUSD(150_000, "LBP", 100_000)).toBeCloseTo(1.5, 5);
     expect(toUSD(89_500, "LBP", DEFAULT_LBP_RATE)).toBeCloseTo(1, 5);
+  });
+});
+
+// 2.4.72 consolidation: toUSD was guarded first, but six other places
+// divided by a rate independently -- three of them by
+// valueForMonth(lbpRateHistory, ...), which returns a stored entry
+// verbatim, so a zero IN THE HISTORY defeats any guard on the live rate.
+// These three helpers are the single place that knows the rule.
+//
+// Deliberately NOT inside valueForMonth: that lookup also serves
+// incomeHistory, where zero is legitimate (computeDashboard.ts keeps
+// `income` raw so a $0-income account reads as $0, with incomeSafe
+// existing separately for ratios). Guarding there would rewrite a real
+// unemployed month into the fallback income.
+describe("rateOrDefault — the single place that decides what a usable LBP rate is", () => {
+  it("replaces a zero rate with the default", () => {
+    expect(rateOrDefault(0)).toBe(DEFAULT_LBP_RATE);
+  });
+
+  it("replaces a negative rate with the default rather than flipping signs", () => {
+    expect(rateOrDefault(-89_500)).toBe(DEFAULT_LBP_RATE);
+  });
+
+  it("replaces NaN with the default", () => {
+    expect(rateOrDefault(Number.NaN)).toBe(DEFAULT_LBP_RATE);
+  });
+
+  it("replaces null and undefined with the default -- the `?? DEFAULT_LBP_RATE` idiom's own case, handled here too", () => {
+    expect(rateOrDefault(null)).toBe(DEFAULT_LBP_RATE);
+    expect(rateOrDefault(undefined)).toBe(DEFAULT_LBP_RATE);
+  });
+
+  it("passes a valid rate through untouched", () => {
+    expect(rateOrDefault(89_500)).toBe(89_500);
+    expect(rateOrDefault(15_000)).toBe(15_000);
+  });
+
+  it("passes a tiny BUT POSITIVE rate through unchanged -- bounding that is the input's job, not this guard's", () => {
+    // 0.01 is absurd and produces a 100x magnification, but it is not
+    // Infinity or NaN. Clamping it here would hide which change fixed
+    // what; the floor belongs on the Setup field.
+    expect(rateOrDefault(0.01)).toBe(0.01);
+  });
+});
+
+describe("rateForMonth — guards the stored history entry as well as the live fallback", () => {
+  const history = [{ ym: "2026-03", value: 100_000 }, { ym: "2026-06", value: 120_000 }];
+
+  it("returns the entry in effect for that month", () => {
+    expect(rateForMonth(history, "2026-04", 89_500)).toBe(100_000);
+    expect(rateForMonth(history, "2026-07", 89_500)).toBe(120_000);
+  });
+
+  it("falls back to the live rate for a month before any entry exists", () => {
+    expect(rateForMonth(history, "2026-01", 89_500)).toBe(89_500);
+  });
+
+  it("falls back to the default when the history is empty or absent", () => {
+    expect(rateForMonth([], "2026-04", 89_500)).toBe(89_500);
+    expect(rateForMonth(undefined, "2026-04", 89_500)).toBe(89_500);
+  });
+
+  it("a ZERO history entry is replaced by the default -- the case a live-rate guard alone can never catch", () => {
+    const poisoned = [{ ym: "2026-03", value: 0 }];
+    expect(rateForMonth(poisoned, "2026-04", 89_500)).toBe(DEFAULT_LBP_RATE);
+  });
+
+  it("a negative or NaN history entry is replaced by the default", () => {
+    expect(rateForMonth([{ ym: "2026-03", value: -5 }], "2026-04", 89_500)).toBe(DEFAULT_LBP_RATE);
+    expect(rateForMonth([{ ym: "2026-03", value: Number.NaN }], "2026-04", 89_500)).toBe(DEFAULT_LBP_RATE);
+  });
+
+  it("guards the live rate too when it is used as the fallback -- both inputs are hostile, so both are guarded", () => {
+    expect(rateForMonth([], "2026-04", 0)).toBe(DEFAULT_LBP_RATE);
+    expect(rateForMonth(undefined, "2026-04", Number.NaN)).toBe(DEFAULT_LBP_RATE);
+  });
+});
+
+describe("makeToUSDForMonth — the historized converter, built once instead of copied four times", () => {
+  const base = { ...DEFAULT_DATA, lbpRate: 89_500, lbpRateHistory: [{ ym: "2026-03", value: 100_000 }] } as LocalFinancials;
+
+  it("converts an LBP amount at the rate in effect for that month", () => {
+    const conv = makeToUSDForMonth(base);
+    expect(conv(200_000, "LBP", "2026-04")).toBeCloseTo(2, 5);
+  });
+
+  it("passes USD (and an absent currency) through untouched", () => {
+    const conv = makeToUSDForMonth(base);
+    expect(conv(250, "USD", "2026-04")).toBe(250);
+    expect(conv(250, undefined, "2026-04")).toBe(250);
+  });
+
+  it("stays finite when the history entry for that month is zero", () => {
+    const conv = makeToUSDForMonth({ ...base, lbpRateHistory: [{ ym: "2026-03", value: 0 }] } as LocalFinancials);
+    const result = conv(89_500, "LBP", "2026-04");
+    expect(Number.isFinite(result)).toBe(true);
+    expect(result).toBeCloseTo(1, 5);
+  });
+
+  it("stays finite when the live rate is zero and there is no history to fall back on", () => {
+    const conv = makeToUSDForMonth({ ...base, lbpRate: 0, lbpRateHistory: [] } as LocalFinancials);
+    const result = conv(89_500, "LBP", "2026-04");
+    expect(Number.isFinite(result)).toBe(true);
+    expect(result).toBeCloseTo(1, 5);
   });
 });
