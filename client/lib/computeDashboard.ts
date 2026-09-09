@@ -773,9 +773,14 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
       if (tx.length === 0 && !recurActive) continue;
       const moIncome = incomeForMonth(ym);
       const moTargetPct = budgetTargetPctForMonth(ym);
-      budgetRollover.needs   += (moIncome * moTargetPct.needs   / 100) - spend.needs;
-      budgetRollover.wants   += (moIncome * moTargetPct.wants   / 100) - spend.wants;
-      budgetRollover.savings += (moIncome * moTargetPct.savings / 100) - spend.savings;
+      const moTargetAmt = {
+        needs:   moIncome * moTargetPct.needs   / 100,
+        wants:   moIncome * moTargetPct.wants   / 100,
+        savings: moIncome * moTargetPct.savings / 100,
+      };
+      budgetRollover.needs   += clampMonthlyRolloverDelta(moTargetAmt.needs   - spend.needs,   moTargetAmt.needs);
+      budgetRollover.wants   += clampMonthlyRolloverDelta(moTargetAmt.wants   - spend.wants,   moTargetAmt.wants);
+      budgetRollover.savings += clampMonthlyRolloverDelta(moTargetAmt.savings - spend.savings, moTargetAmt.savings);
     }
   }
 
@@ -1173,4 +1178,30 @@ export function balanceCheckReconciliation(
   const explainedByActivity = Math.abs(residual) < Math.abs(discrepancy);
   const netActivitySinceCheck = Math.round((changeSinceCheck - discrepancy) * 100) / 100;
   return { sameSign, explainedByActivity, residual, netActivitySinceCheck };
+}
+
+/**
+ * Bounds a single past month's contribution to the running `budgetRollover`
+ * accumulator to [-monthlyTargetAmt, +monthlyTargetAmt] -- a month can never
+ * bank a credit or accrue a deficit larger than exactly one month's worth of
+ * its own target. Without this, a single extreme month (a huge one-off
+ * expense, or any real activity against a $0-target month) swings the
+ * running total by the full, uncapped amount, and that swing persists
+ * undamped for every later month -- concretely, a $0-target month (no
+ * income recorded, or 0% allocated to that bucket) with real spend against
+ * it used to drive the accumulator negative by the full spent amount,
+ * eventually crushing a later month's target to $0 and making a normal
+ * contribution read as "over" it.
+ *
+ * This bounds a single month's swing only -- it is not a decay or a reset.
+ * A genuine multi-month pattern of modest deltas (each individually within
+ * its own month's bound) still compounds additively across months exactly
+ * as before.
+ *
+ * `monthlyTargetAmt` is assumed non-negative (an income * pct / 100
+ * figure) -- callers never pass a negative target.
+ */
+export function clampMonthlyRolloverDelta(delta: number, monthlyTargetAmt: number): number {
+  const clamped = Math.max(-monthlyTargetAmt, Math.min(monthlyTargetAmt, delta));
+  return clamped === 0 ? 0 : clamped; // normalizes -0 (clamping a negative delta against a $0 target) to +0
 }

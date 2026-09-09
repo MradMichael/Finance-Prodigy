@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { computeDashboard, computeHoldingsByCurrency, trackedBalanceExpected, periodTotals, bucketDisplayState, balanceCheckReconciliation } from "./computeDashboard";
+import { computeDashboard, computeHoldingsByCurrency, trackedBalanceExpected, periodTotals, bucketDisplayState, balanceCheckReconciliation, clampMonthlyRolloverDelta } from "./computeDashboard";
 import { DEFAULT_DATA, buildDebtPaymentTx, type LocalFinancials, type BudgetRuleKey, type StoredDebt, type StoredTransaction } from "./localData";
 
 function makeData(overrides: Partial<LocalFinancials> = {}): LocalFinancials {
@@ -497,8 +497,13 @@ describe("budget pace", () => {
   });
 
   it("floors a rollover-deficit target at 0 instead of going negative", () => {
-    // 0%-savings custom rule this month, but a positive-savings month back in
-    // January means budgetRollover.savings goes negative -> should floor at 0.
+    // 0%-savings custom rule this month, and January's target was ALSO $0
+    // under that same rule (no historical rule entry -- today's rule applies
+    // retroactively), so January's $50 contribution against a $0 target is a
+    // month-with-no-declared-target case: clampMonthlyRolloverDelta collapses
+    // that month's contribution to exactly 0 (a $0-target month can neither
+    // bank a credit nor accrue a deficit) rather than carrying -$50 forward.
+    // Either way this month's effective target floors at 0 -- asserted below.
     const data = makeData({
       income: 1000, budgetRule: "custom", budgetCustomNeeds: 85, budgetCustomWants: 15, // savings target = 0%
       transactions: [{ id: "t1", amount: 50, currency: "USD", bucket: "SAVINGS", description: "Old saving", date: "2026-01-15" }],
@@ -1878,5 +1883,95 @@ describe("balanceCheckReconciliation -- residual/explainedByActivity/netActivity
     expect(r.residual).toBe(0);
     expect(r.explainedByActivity).toBe(false);
     expect(r.netActivitySinceCheck).toBe(0);
+  });
+});
+
+// budgetRollover accumulates (that month's target - that month's spend)
+// across up to 11 past months, unclamped -- a single extreme month (a huge
+// one-off expense, or a $0-target month with any real activity against it)
+// swings the running total by the full, uncapped amount, and that swing
+// persists undamped for every later month. This is the exact mechanism
+// behind a real reported bug: one $0-target month with real activity drove
+// a bucket's rollover deeply negative, crushing a later month's target to
+// $0 and making a normal contribution read as "over."
+//
+// clampMonthlyRolloverDelta bounds a single month's contribution to
+// [-that month's own target, +that month's own target] at the moment it's
+// folded into the accumulator -- a month can never bank or owe more than
+// exactly one month's worth of its own allowance. Multi-month patterns
+// still compound additively (not a decay/reset); only a single month's
+// outsized swing is bounded.
+describe("clampMonthlyRolloverDelta -- bounds a single month's rollover contribution to its own target", () => {
+  it("leaves a delta within bounds unchanged", () => {
+    expect(clampMonthlyRolloverDelta(100, 500)).toBe(100);
+    expect(clampMonthlyRolloverDelta(-100, 500)).toBe(-100);
+  });
+
+  it("clamps a delta that exceeds the positive bound (way underspent relative to target)", () => {
+    expect(clampMonthlyRolloverDelta(800, 500)).toBe(500);
+  });
+
+  it("clamps a delta that exceeds the negative bound (way overspent relative to target)", () => {
+    expect(clampMonthlyRolloverDelta(-800, 500)).toBe(-500);
+  });
+
+  it("leaves a delta exactly at the boundary unchanged (inclusive)", () => {
+    expect(clampMonthlyRolloverDelta(500, 500)).toBe(500);
+    expect(clampMonthlyRolloverDelta(-500, 500)).toBe(-500);
+  });
+
+  it("a $0-target month collapses to exactly 0 regardless of delta direction -- can neither bank a credit nor accrue a deficit", () => {
+    expect(clampMonthlyRolloverDelta(50, 0)).toBe(0);
+    expect(clampMonthlyRolloverDelta(-50, 0)).toBe(0);
+    expect(clampMonthlyRolloverDelta(0, 0)).toBe(0);
+  });
+});
+
+describe("budgetRollover — a single extreme month is clamped, not compounded unboundedly", () => {
+  it("a huge one-off overspend month contributes at most that month's own target as a deficit, not the full overspend", () => {
+    const data = makeData({
+      income: 1000, budgetRule: "50-30-20", // NEEDS target = $500/mo
+      transactions: [
+        // 6 months ago (a past month relative to NOW = July 15, 2026): a
+        // single $2,000 NEEDS expense against a $500 target.
+        { id: "t1", amount: 2000, currency: "USD", bucket: "NEEDS", description: "Emergency repair", date: "2026-01-15" },
+      ],
+    });
+    const result = computeDashboard(data);
+    // Unclamped, this would be 500 - 2000 = -1500. Clamped, a single month
+    // can never contribute more deficit than its own target.
+    expect(result.budgetRollover.needs).toBeCloseTo(-500, 5);
+  });
+
+  it("a huge one-off negative-amount entry (e.g. a savings withdrawal) contributes at most that month's own target as a credit, not the full swing", () => {
+    const data = makeData({
+      income: 1000, budgetRule: "50-30-20", // SAVINGS target = $200/mo
+      transactions: [
+        // A $2,000 withdrawal logged as a negative SAVINGS amount pushes
+        // spend.savings deeply negative, which would otherwise inflate
+        // that month's rollover credit far past its own $200 target.
+        { id: "t1", amount: -2000, currency: "USD", bucket: "SAVINGS", description: "Emergency withdrawal", date: "2026-01-15" },
+      ],
+    });
+    const result = computeDashboard(data);
+    // Unclamped, this would be 200 - (-2000) = 2200. Clamped, a single
+    // month can never contribute more credit than its own target.
+    expect(result.budgetRollover.savings).toBeCloseTo(200, 5);
+  });
+
+  it("a genuine multi-month pattern of MODEST deltas still compounds additively -- the clamp only bounds a single month's outsized swing, it isn't a decay", () => {
+    const data = makeData({
+      income: 1000, budgetRule: "50-30-20", // NEEDS target = $500/mo
+      transactions: [
+        // Three past months, each underspending Needs by a modest $100 --
+        // none individually exceeds the $500/mo bound, so all three should
+        // accumulate in full: 3 x 100 = 300.
+        { id: "t1", amount: 400, currency: "USD", bucket: "NEEDS", description: "Groceries", date: "2026-03-10" },
+        { id: "t2", amount: 400, currency: "USD", bucket: "NEEDS", description: "Groceries", date: "2026-04-10" },
+        { id: "t3", amount: 400, currency: "USD", bucket: "NEEDS", description: "Groceries", date: "2026-05-10" },
+      ],
+    });
+    const result = computeDashboard(data);
+    expect(result.budgetRollover.needs).toBeCloseTo(300, 5);
   });
 });
