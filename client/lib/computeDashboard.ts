@@ -1055,7 +1055,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
         // which is rollover-adjusted and floored at 0) -- the two can
         // legitimately disagree (100/100 here, $0 there), and previously said
         // nothing to indicate they're different numbers.
-        { key: "savings", label: "Savings rate", score: Math.round(savingsScore), weight: Math.round(W.savings * 100), detail: `${savingsRatePct.toFixed(1)}% of income saved (target ${targetSavingsPct}%, not rollover-adjusted — see Budget for that figure)` },
+        { key: "savings", label: "Savings rate", score: Math.round(savingsScore), weight: Math.round(W.savings * 100), detail: `${savingsRatePct.toFixed(1)}% of income saved (target ${targetSavingsPct}% of income)` },
         { key: "needs",   label: "Needs discipline", score: Math.round(needsScore), weight: Math.round(W.needs * 100), detail: `Essentials take ${Math.round(needsPct * 100)}% of income (target ≤${budgetTargetPct.needs}%)` },
         { key: "ef",      label: "Safety net", score: Math.round(efScore), weight: Math.round(W.ef * 100), detail: `Safety net ${Math.round(efPct)}% funded` },
         { key: "debt",    label: "Debt pressure", score: Math.round(debtScore), weight: Math.round(W.debt * 100), detail: `Debt payments are ${Math.round(debtPressurePct * 100)}% of income` },

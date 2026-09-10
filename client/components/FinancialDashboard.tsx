@@ -611,9 +611,14 @@ export default function FinancialDashboard({
 
           <Panel title={`Budget · ${budgetLabel}`}>
             <div className="space-y-5">
-              <BucketRow label={`Needs · ${budgetPct.needs}%`}   actual={month.needsSpend}    target={data.effectiveBudgetTargets.needs}   color={T.sky}   bucket="NEEDS" />
-              <BucketRow label={`Wants · ${budgetPct.wants}%`}   actual={month.wantsSpend}    target={data.effectiveBudgetTargets.wants}   color={T.brass} bucket="WANTS" />
-              <BucketRow label={`Savings · ${budgetPct.savings}%`} actual={month.savingsContrib} target={data.effectiveBudgetTargets.savings} color={T.jade}  bucket="SAVINGS" />
+              {/* 2.4.70: income * pct for this month, no rollover applied, so
+                  each dollar figure reconciles against the percentage in its own
+                  label and the three sum to income. Rollover is not removed --
+                  budgetPace and its alerts still judge spend against the
+                  rollover-adjusted target. */}
+              <BucketRow label={`Needs · ${budgetPct.needs}%`}   actual={month.needsSpend}    target={data.budgetTargets.needs}   color={T.sky}   bucket="NEEDS" />
+              <BucketRow label={`Wants · ${budgetPct.wants}%`}   actual={month.wantsSpend}    target={data.budgetTargets.wants}   color={T.brass} bucket="WANTS" />
+              <BucketRow label={`Savings · ${budgetPct.savings}%`} actual={month.savingsContrib} target={data.budgetTargets.savings} color={T.jade}  bucket="SAVINGS" />
             </div>
 
             {/* Pace warnings — Copilot-style "on track to exceed" heads-up */}

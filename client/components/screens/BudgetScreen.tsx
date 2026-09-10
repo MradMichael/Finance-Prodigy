@@ -41,13 +41,24 @@ export default function BudgetScreen({
     ? floorCustomSplit(customNeeds, customWants)
     : { needs: BUDGET_RULES[ruleKey].needs, wants: BUDGET_RULES[ruleKey].wants, savings: BUDGET_RULES[ruleKey].savings };
 
-  // dashData.effectiveBudgetTargets, not a local recompute -- this is the
-  // rollover-adjusted target that Overview's BucketRow (and budgetPace's
-  // "on track"/"over" status) actually judges spend against. Recomputing
-  // income * pct/100 here ignored rollover entirely, so this screen could
-  // show "healthy headroom" against a looser un-rolled-over target while
-  // Overview showed a "watch"/"over" warning for the identical spend.
-  const targetAmt = dashData.effectiveBudgetTargets;
+  // 2.4.70: the DISPLAYED target is income * pct for this month, with no
+  // rollover applied, so it reconciles against the percentage label shown
+  // beside it and the three sum to income. It previously used
+  // effectiveBudgetTargets (rollover-adjusted), which meant dividing the
+  // shown dollar figure by the shown percentage returned a number that was
+  // not the user's income -- and a different wrong number under each budget
+  // rule, since the rollover term gets scaled by 1/pct.
+  //
+  // dashData.budgetTargets, still not a local recompute: it is computed from
+  // the same effective income (including one-off INCOME transactions) that
+  // every other screen uses, which is why recomputing income * pct/100 here
+  // would NOT be equivalent.
+  //
+  // Rollover is not removed. budgetPace and its alerts deliberately keep
+  // judging spend against the rollover-adjusted target
+  // (effectiveBudgetTargets / bucketTargetAmt), so a bucket carrying a
+  // deficit still warns earlier than this row's headroom alone implies.
+  const targetAmt = dashData.budgetTargets;
 
   const actual = { needs: month.needsSpend, wants: month.wantsSpend, savings: month.savingsContrib };
 
