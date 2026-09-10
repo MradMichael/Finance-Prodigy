@@ -100,7 +100,13 @@ export default function JourneyScreen({
   const debtsPaidOff = financials.debts.filter((d) => d.paidOffAt).length;
 
   // ── What's next: same EF pace math as the Projections page ─────────
-  const efRate = dashData.effectiveBudgetTargets.savings;
+  // 2.4.70: budgetTargets (income * pct), the same basis Projections' own
+  // "At recommended pace" now uses. These two must not diverge: both run the
+  // identical projectCompletion call and both render a safety-net completion
+  // DATE, and the button directly below this one navigates the reader
+  // straight to Projections -- so any difference in basis would hand the user
+  // two different dates for the same question, one click apart.
+  const efRate = dashData.budgetTargets.savings;
   const efProjection = projectCompletion(dashData.emergencyFund.remaining, efRate);
 
   const started = hasNwArc || hasRateArc || hasCategoryArc || totalTx > 0;

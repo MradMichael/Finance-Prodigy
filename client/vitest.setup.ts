@@ -32,3 +32,20 @@ import { cleanup } from "@testing-library/react";
 afterEach(() => {
   cleanup();
 });
+
+// jsdom implements no ResizeObserver, and recharts' ResponsiveContainer
+// constructs one on mount -- so any component test rendering a chart throws
+// "ResizeObserver is not defined" before a single assertion runs. Hit first
+// by JourneyScreen.test.tsx (2.4.70), whose net-worth and savings-rate arcs
+// both use it. A no-op stub is sufficient: these tests assert on rendered
+// text and values, never on chart geometry, and jsdom reports zero-size
+// elements regardless, so a real implementation would measure nothing useful
+// anyway.
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+if (!("ResizeObserver" in globalThis)) {
+  (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = ResizeObserverStub;
+}
