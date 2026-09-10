@@ -60,7 +60,7 @@ export default function ProjectionsScreen({
   dashData: ReturnType<typeof computeDashboard>;
 }) {
   const T = useTheme();
-  const { emergencyFund, debt, goals, effectiveBudgetTargets, budgetTargetPct, budgetRule, month } = dashData;
+  const { emergencyFund, debt, goals, budgetTargets, budgetTargetPct, budgetRule, month } = dashData;
 
   const hasIncome = month.income > 0;
   const efRemaining = Math.max(0, emergencyFund.remaining);
@@ -96,7 +96,7 @@ export default function ProjectionsScreen({
   // read as a bug the first time it shipped: dial the slider to $150 and
   // the plan quietly used $425). Starts at the recommended savings figure
   // since that's a real, explained number, not zero.
-  const [testAmount, setTestAmount] = useState(() => Math.max(0, Math.round(effectiveBudgetTargets.savings)));
+  const [testAmount, setTestAmount] = useState(() => Math.max(0, Math.round(budgetTargets.savings)));
   const surplus = Math.max(0, Math.round(month.netCashFlow));
   const sliderMax = Math.max(200, testAmount * 2, surplus * 2);
   // The number input had no upper bound at all, so a mis-typed or
@@ -255,12 +255,20 @@ export default function ProjectionsScreen({
 
         {/* Recommended savings */}
         <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
+          {/* 2.4.70: budgetTargets (income * pct for the month), matching the
+              Budget screen and Overview's Budget card. This headline and the
+              three sites tied to it by the word "recommended" -- the plan
+              amount it seeds, the "Recommended savings" preset, and the "At
+              recommended pace" EF projection -- all read the same figure, or
+              the screen would show two different numbers under one word.
+              budgetPace and its alerts still use the rollover-adjusted
+              target; that is deliberate and unrelated to this display. */}
           <p className="text-xs uppercase tracking-widest mb-2" style={{ color: T.mute }}>Recommended monthly savings</p>
           {hasIncome ? (
             <>
-              <p className="text-4xl" style={{ ...SERIF, ...NUMS, color: T.jade }}>{money(effectiveBudgetTargets.savings)}<span className="text-base" style={{ color: T.mute }}>/mo</span></p>
+              <p className="text-4xl" style={{ ...SERIF, ...NUMS, color: T.jade }}>{money(budgetTargets.savings)}<span className="text-base" style={{ color: T.mute }}>/mo</span></p>
               <p className="text-xs mt-2" style={{ color: T.mute }}>
-                {budgetTargetPct.savings}% of income under your {BUDGET_RULES[budgetRule].label} rule, adjusted for last month&apos;s rollover.
+                {budgetTargetPct.savings}% of income under your {BUDGET_RULES[budgetRule].label} rule.
               </p>
             </>
           ) : (
@@ -300,7 +308,7 @@ export default function ProjectionsScreen({
             />
             <div className="flex flex-wrap gap-2 mt-2">
               {[
-                { label: "Recommended savings", v: Math.round(effectiveBudgetTargets.savings) },
+                { label: "Recommended savings", v: Math.round(budgetTargets.savings) },
                 { label: `My full surplus (${money(surplus)})`, v: surplus },
               ].map((p) => {
                 // moneyEquals, not === -- p.v for the surplus preset is
@@ -395,7 +403,7 @@ export default function ProjectionsScreen({
             <p className="text-sm mt-4" style={{ color: T.jade }}>Fully funded already. 🎉</p>
           ) : (
             <div className="grid grid-cols-2 gap-4 mt-4">
-              <PaceRow label="At recommended pace" months={projectCompletion(efRemaining, effectiveBudgetTargets.savings).months} dateDisplay={projectCompletion(efRemaining, effectiveBudgetTargets.savings).dateDisplay} color={T.text} T={T} />
+              <PaceRow label="At recommended pace" months={projectCompletion(efRemaining, budgetTargets.savings).months} dateDisplay={projectCompletion(efRemaining, budgetTargets.savings).dateDisplay} color={T.text} T={T} />
               <PaceRow label="In your plan" months={stages.ef.months} dateDisplay={stages.ef.dateDisplay} color={T.jade} T={T} />
             </div>
           )}
