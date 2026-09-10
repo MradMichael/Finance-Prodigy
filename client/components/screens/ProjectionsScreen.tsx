@@ -98,18 +98,27 @@ export default function ProjectionsScreen({
   // since that's a real, explained number, not zero.
   const [testAmount, setTestAmount] = useState(() => Math.max(0, Math.round(budgetTargets.savings)));
   const surplus = Math.max(0, Math.round(month.netCashFlow));
-  const sliderMax = Math.max(200, testAmount * 2, surplus * 2);
   // The number input had no upper bound at all, so a mis-typed or
   // exploratory entry (e.g. an extra digit or two) could land on something
   // like $789,200,024/mo with nothing to catch it. A flat $1,000,000 cap
   // caught that, but is meaningless as a guard for an account with a real
-  // income nowhere near that scale -- 2.4.43: income-relative instead (2x
-  // monthly income is already a generous "what if I saved double" ceiling
-  // for testing), floored at $200 so a very small income doesn't produce a
-  // degenerately tight cap. Falls back to the old flat figure only when no
-  // income is set yet at all (a fresh account, before Setup) -- income*2
-  // would be $0 there, which would block every test amount outright.
-  const MAX_TEST_AMOUNT = hasIncome ? Math.max(200, Math.round(month.income * 2)) : 1_000_000;
+  // income nowhere near that scale -- 2.4.43: income-relative instead,
+  // floored so a very small income doesn't produce a degenerately tight
+  // cap. Falls back to the old flat figure only when no income is set yet
+  // at all (a fresh account, before Setup) -- income * 3 would be $0 there,
+  // which would block every test amount outright.
+  //
+  // Declared BEFORE sliderMax: that bound is now clamped by this one, so
+  // the order is load-bearing, not stylistic.
+  const MAX_TEST_AMOUNT = hasIncome ? Math.max(3000, Math.round(month.income * 3)) : 1_000_000;
+  // Deliberately NOT derived from testAmount. It used to be
+  // Math.max(200, testAmount * 2, surplus * 2), which made the track's
+  // own bound a function of the value the track sets: every drag to the
+  // right edge roughly doubled the ceiling for the next drag, so the
+  // slider escaped MAX_TEST_AMOUNT after about three drags and then grew
+  // without limit. Bounded by the cap now, so the track is a fixed range
+  // with a real right edge instead of one that grows as you use it.
+  const sliderMax = Math.min(MAX_TEST_AMOUNT, Math.max(200, surplus * 2));
 
   // What order the plan tackles things in — user-controlled, not hardcoded.
   // A dollar can only be spent once: this is what makes the plan below a
@@ -301,7 +310,14 @@ export default function ProjectionsScreen({
               // -- round the same way the paired number input already does
               // so a drag can't leave testAmount at something like
               // $6.8909608.
-              onChange={(e) => setTestAmount(Math.max(0, Math.round(Number(e.target.value) / 10) * 10))}
+              //
+              // The Math.min(MAX_TEST_AMOUNT, ...) is the clamp the paired
+              // number input always had and this one never did. Both write
+              // the same state, so a bound enforced on only one of them is
+              // not enforced at all -- the element's own `max` is the track
+              // length, not the cap, and cannot be relied on for a value
+              // that arrives by keyboard, touch, or assistive input.
+              onChange={(e) => setTestAmount(Math.min(MAX_TEST_AMOUNT, Math.max(0, Math.round(Number(e.target.value) / 10) * 10)))}
               className="w-full"
               style={{ accentColor: T.brass }}
               aria-label="Monthly amount to plan with (slider)"

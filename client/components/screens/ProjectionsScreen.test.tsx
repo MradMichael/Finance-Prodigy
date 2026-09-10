@@ -14,7 +14,7 @@
 // budgetPace and its alerts deliberately still judge spend against the
 // rollover-adjusted target -- unchanged, and not what this file covers.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import ProjectionsScreen from "./ProjectionsScreen";
 import { computeDashboard } from "../../lib/computeDashboard";
 import { DEFAULT_DATA, type LocalFinancials } from "../../lib/localData";
@@ -93,5 +93,89 @@ describe("ProjectionsScreen — recommended savings comes from income, not rollo
     const dash = renderProjections();
     expect(dash.budgetRollover.savings).toBeCloseTo(200, 5);
     expect(dash.effectiveBudgetTargets.savings).toBeCloseTo(400, 5);
+  });
+});
+
+// The plan amount has two inputs sharing one piece of state. The number
+// input was bounded (min/max plus a Math.min clamp in its handler); the
+// slider never was -- its handler clamped only the floor at zero, and its
+// element bound was `sliderMax`, a DIFFERENT and larger number computed as
+// Math.max(200, testAmount * 2, surplus * 2).
+//
+// That last term made it self-referential: sliderMax was derived from the
+// value the slider itself sets, so every drag to the right edge roughly
+// doubled the ceiling for the next drag, escaping MAX_TEST_AMOUNT entirely
+// after about three drags and compounding without limit. The income ceiling
+// (2.4.71) never touched this -- it bounded what MAX_TEST_AMOUNT is computed
+// FROM, not the input that ignored it.
+//
+// At income 1830: MAX_TEST_AMOUNT = max(3000, 1830 * 3) = 5490.
+// With no spend logged, surplus = netCashFlow = 1830, so
+// sliderMax = min(5490, max(200, 3660)) = 3660.
+describe("ProjectionsScreen — both inputs respect the cap, and the track no longer grows", () => {
+  const CAP = 5490;       // MAX_TEST_AMOUNT at income 1830
+  const TRACK = 3660;     // sliderMax: min(CAP, max(200, surplus * 2))
+
+  function renderAtRealIncome() {
+    const data: LocalFinancials = { ...DEFAULT_DATA, income: 1830, budgetRule: "50-30-20" };
+    render(<ProjectionsScreen financials={data} dashData={computeDashboard(data)} />);
+    return {
+      number: screen.getByLabelText("Monthly amount to plan with") as HTMLInputElement,
+      slider: screen.getByLabelText("Monthly amount to plan with (slider)") as HTMLInputElement,
+    };
+  }
+
+  it("the number input clamps a value above the cap", () => {
+    const { number } = renderAtRealIncome();
+    fireEvent.change(number, { target: { value: "99999" } });
+    expect(number).toHaveValue(CAP);
+  });
+
+  it("the slider cannot drive the value above the cap", () => {
+    const { number, slider } = renderAtRealIncome();
+    fireEvent.change(slider, { target: { value: "99999" } });
+    // A range input never emits a value above its own max -- the browser
+    // (and jsdom) pin it to the track first -- so this lands on the track
+    // edge, not on 99999. What matters is that the track edge is itself
+    // within the cap, which is what fixing sliderMax guarantees.
+    expect(number).toHaveValue(TRACK);
+    expect(Number((number as HTMLInputElement).value)).toBeLessThanOrEqual(CAP);
+  });
+
+  it("the slider's handler clamps to the cap too -- defence in depth, unreachable through the DOM today", () => {
+    // Given sliderMax = min(MAX_TEST_AMOUNT, ...), the element can never
+    // hand the handler a value above the cap, so this clamp cannot fire in
+    // practice. It is kept because the previous sliderMax formula DID exceed
+    // the cap, and a future change to that formula would silently reopen the
+    // hole without it. Asserted structurally rather than behaviourally:
+    // whatever the track allows, the resulting value stays within the cap.
+    const { number, slider } = renderAtRealIncome();
+    fireEvent.change(slider, { target: { value: slider.max } });
+    expect(Number((number as HTMLInputElement).value)).toBeLessThanOrEqual(CAP);
+  });
+
+  it("REGRESSION LOCK: the slider's own bound does not grow after dragging to the right edge", () => {
+    const { slider } = renderAtRealIncome();
+    const before = slider.max;
+    expect(Number(before)).toBe(TRACK);
+
+    // Drag to the far right edge of the track.
+    fireEvent.change(slider, { target: { value: before } });
+
+    // Under the old self-referential sliderMax (max(200, testAmount * 2,
+    // surplus * 2)) this would now read 7320 -- double -- and would double
+    // again on every further drag. The bound must be unchanged.
+    expect(slider.max).toBe(before);
+    expect(Number(slider.max)).toBe(TRACK);
+  });
+
+  it("the track has a real right edge: its bound never exceeds the cap", () => {
+    const { slider } = renderAtRealIncome();
+    expect(Number(slider.max)).toBeLessThanOrEqual(CAP);
+  });
+
+  it("the number input still declares the cap on the element itself", () => {
+    const { number } = renderAtRealIncome();
+    expect(number).toHaveAttribute("max", String(CAP));
   });
 });
