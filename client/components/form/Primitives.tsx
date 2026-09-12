@@ -36,10 +36,24 @@ export function FocusInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
 }
 
 // Comma-formatted money input — stores raw number string, displays with commas
+/**
+ * 2.4.78: `max` is REQUIRED, not optional, and that is the point. This
+ * component backs 29 money fields; an optional bound would leave any site
+ * that forgot it silently unbounded -- the exact shape that produced the
+ * defect (a ceiling on `data.income` while `incomeTx` stayed open) and the
+ * shape found three times on ProjectionsScreen alone, where a bound enforced
+ * on some writers of shared state but not all is not a bound. Required means
+ * a missed call site fails to compile rather than failing silently.
+ *
+ * Callers resolve it with moneyMaxFor(currency, lbpRate) -- this component is
+ * currency-blind and cannot scale the ceiling itself.
+ */
 export function MoneyInput({
-  value, onChange, placeholder, style, id,
+  value, onChange, placeholder, style, id, max,
 }: {
   value: string; onChange: (raw: string) => void; placeholder?: string; style?: React.CSSProperties; id?: string;
+  /** Ceiling in this field's own currency. Enforced on blur, never mid-typing. */
+  max: number;
 }) {
   const T = useTheme();
   const [focused, setFocused] = useState(false);
@@ -66,7 +80,16 @@ export function MoneyInput({
       value={focused ? value : fmt(value)}
       onChange={handleChange}
       onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
+      // Clamped on blur, never per keystroke. 2.4.74 established that
+      // bounding a controlled field on every keystroke breaks entry outright:
+      // each prefix of a real figure fails the bound and the value snaps
+      // back, so the field becomes untypable. Typing stays unobstructed here;
+      // the finished value is corrected once, visibly, when the field is left.
+      onBlur={() => {
+        setFocused(false);
+        const n = parseFloat(value);
+        if (Number.isFinite(n) && n > max) onChange(String(max));
+      }}
       placeholder={placeholder}
       className="w-full rounded-xl px-3 py-2.5 text-sm transition-all duration-150"
       style={{

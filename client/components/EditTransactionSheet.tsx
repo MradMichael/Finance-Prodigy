@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { LocalFinancials, StoredTransaction, StoredCard, Currency, PaymentMethod } from "../lib/localData";
 import {
   fmtDate, allCategories, looksRecurring, buildQuickRecurring, cycleMonthDivergence,
-  roundMoney, uid, DEFAULT_LBP_RATE, retagBucketAmount,
+  roundMoney, uid, DEFAULT_LBP_RATE, retagBucketAmount, moneyMaxFor,
 } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY, CurrencyToggle, PM_OPTIONS, CardPicker } from "./form/Primitives";
@@ -188,7 +188,7 @@ export default function EditTransactionSheet({
           <div className="grid grid-cols-2 gap-2">
             <div>
               <Label htmlFor="edit-tx-amount">Amount</Label>
-              <MoneyInput id="edit-tx-amount" value={amt} onChange={setAmt} placeholder="0" />
+              <MoneyInput id="edit-tx-amount" value={amt} onChange={setAmt} placeholder="0" max={moneyMaxFor(currency, financials.lbpRate ?? DEFAULT_LBP_RATE)} />
             </div>
             <div>
               <Label htmlFor="edit-tx-date">Date</Label>
@@ -299,7 +299,7 @@ export default function EditTransactionSheet({
                 <p className="text-[10px]" style={{ color: T.mute }}>Emergency fund</p>
                 <button type="button" onClick={() => setEfAmount(null)} aria-label="Detach this transaction from the emergency fund" className="text-[10px] font-semibold px-2 py-1 rounded-lg transition-all hover:opacity-80 flex-shrink-0" style={{ color: T.coral, border: `1px solid ${T.coral}40` }}>Detach</button>
               </div>
-              <MoneyInput value={efAmount} onChange={setEfAmount} placeholder="0" />
+              <MoneyInput value={efAmount} onChange={setEfAmount} placeholder="0" max={moneyMaxFor(currency, financials.lbpRate ?? DEFAULT_LBP_RATE)} />
               <p className="text-[9px]" style={{ color: T.mute }}>Positive adds to it, negative draws from it.</p>
             </div>
           ) : (
@@ -331,7 +331,7 @@ export default function EditTransactionSheet({
                   <p className="text-[10px]" style={{ color: T.mute }}>Debt correction</p>
                   <button type="button" onClick={() => setDebtAdjustment(null)} aria-label="Detach this debt correction" className="text-[10px] font-semibold px-2 py-1 rounded-lg transition-all hover:opacity-80 flex-shrink-0" style={{ color: T.coral, border: `1px solid ${T.coral}40` }}>Detach</button>
                 </div>
-                <MoneyInput value={debtAdjustment} onChange={setDebtAdjustment} placeholder="0" />
+                <MoneyInput value={debtAdjustment} onChange={setDebtAdjustment} placeholder="0" max={moneyMaxFor(currency, financials.lbpRate ?? DEFAULT_LBP_RATE)} />
                 <p className="text-[9px]" style={{ color: T.mute }}>Positive increases the debt, negative reduces it further.</p>
               </div>
             ) : (
