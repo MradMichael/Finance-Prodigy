@@ -110,11 +110,15 @@ describe("ProjectionsScreen — recommended savings comes from income, not rollo
 // FROM, not the input that ignored it.
 //
 // At income 1830: MAX_TEST_AMOUNT = max(3000, 1830 * 3) = 5490.
-// With no spend logged, surplus = netCashFlow = 1830, so
-// sliderMax = min(5490, max(200, 3660)) = 3660.
+//
+// The track spans income, not surplus: sliderMax = min(CAP, max(200,
+// income)) = 1830. Deriving it from surplus made it collapse to a
+// uselessly narrow range on any month where little was left over --
+// at surplus $145 the whole track was $290, against a meaningful range
+// running to $5,490, and the cap never bound at all.
 describe("ProjectionsScreen — both inputs respect the cap, and the track no longer grows", () => {
   const CAP = 5490;       // MAX_TEST_AMOUNT at income 1830
-  const TRACK = 3660;     // sliderMax: min(CAP, max(200, surplus * 2))
+  const TRACK = 1830;     // sliderMax: min(CAP, max(200, income))
 
   function renderAtRealIncome() {
     const data: LocalFinancials = { ...DEFAULT_DATA, income: 1830, budgetRule: "50-30-20" };
@@ -177,5 +181,70 @@ describe("ProjectionsScreen — both inputs respect the cap, and the track no lo
   it("the number input still declares the cap on the element itself", () => {
     const { number } = renderAtRealIncome();
     expect(number).toHaveAttribute("max", String(CAP));
+  });
+});
+
+// The track spans income; the cap stays income * 3. They are different
+// numbers on purpose -- the track is the range worth dragging through, the
+// cap is the hard limit on what can be typed. The zero-income case is the
+// one where they diverge sharply, so it is pinned explicitly rather than
+// left to be discovered.
+describe("ProjectionsScreen — the slider track spans income", () => {
+  function renderAt(income: number) {
+    const data: LocalFinancials = { ...DEFAULT_DATA, income, budgetRule: "50-30-20" };
+    render(<ProjectionsScreen financials={data} dashData={computeDashboard(data)} />);
+    return {
+      number: screen.queryByLabelText("Monthly amount to plan with") as HTMLInputElement | null,
+      slider: screen.queryByLabelText("Monthly amount to plan with (slider)") as HTMLInputElement | null,
+    };
+  }
+
+  it("spans income when income sits between the floor and the cap", () => {
+    const { slider } = renderAt(1830);
+    expect(Number(slider!.max)).toBe(1830);
+  });
+
+  it("does not depend on surplus -- a month with almost nothing left over still gets the full track", () => {
+    // $1,700 of Needs against $1,830 income leaves a surplus of $130. Under
+    // the old surplus * 2 formula the track would have been $260; it must
+    // now still span income.
+    const data: LocalFinancials = {
+      ...DEFAULT_DATA, income: 1830, budgetRule: "50-30-20",
+      transactions: [
+        { id: "t1", amount: 1700, currency: "USD", bucket: "NEEDS", description: "This month", date: "2026-07-05" },
+      ],
+    };
+    const dash = computeDashboard(data);
+    render(<ProjectionsScreen financials={data} dashData={dash} />);
+    expect(Math.round(dash.month.netCashFlow)).toBeLessThan(200); // the premise: surplus really is tiny
+    expect(Number((screen.getByLabelText("Monthly amount to plan with (slider)") as HTMLInputElement).max)).toBe(1830);
+  });
+
+  it("floors at 200 when income is 0 -- and the cap stays at its own no-income fallback", () => {
+    // hasIncome is false, so MAX_TEST_AMOUNT falls back to 1,000,000 while
+    // max(200, 0) floors the track at 200. The two diverge hugely here by
+    // design: there is no meaningful plan to drag through before Setup.
+    // Asserted unconditionally, not behind an if: the hasIncome ternary
+    // (:287) gates only the "Recommended monthly savings" figure, so both
+    // controls render regardless of income. An either/or assertion here
+    // would pass whichever way it went and prove nothing.
+    const { slider, number } = renderAt(0);
+    expect(slider).not.toBeNull();
+    expect(Number(slider!.max)).toBe(200);
+    expect(number).toHaveAttribute("max", "1000000");
+  });
+
+  it("never exceeds the cap, whatever income is", () => {
+    for (const income of [0, 100, 1830, 50_000]) {
+      const data: LocalFinancials = { ...DEFAULT_DATA, income, budgetRule: "50-30-20" };
+      const dash = computeDashboard(data);
+      const { unmount } = render(<ProjectionsScreen financials={data} dashData={dash} />);
+      const slider = screen.queryByLabelText("Monthly amount to plan with (slider)") as HTMLInputElement | null;
+      const number = screen.queryByLabelText("Monthly amount to plan with") as HTMLInputElement | null;
+      if (slider && number) {
+        expect(Number(slider.max)).toBeLessThanOrEqual(Number(number.max));
+      }
+      unmount();
+    }
   });
 });

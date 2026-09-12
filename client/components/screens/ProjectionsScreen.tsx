@@ -111,14 +111,25 @@ export default function ProjectionsScreen({
   // Declared BEFORE sliderMax: that bound is now clamped by this one, so
   // the order is load-bearing, not stylistic.
   const MAX_TEST_AMOUNT = hasIncome ? Math.max(3000, Math.round(month.income * 3)) : 1_000_000;
-  // Deliberately NOT derived from testAmount. It used to be
-  // Math.max(200, testAmount * 2, surplus * 2), which made the track's
-  // own bound a function of the value the track sets: every drag to the
-  // right edge roughly doubled the ceiling for the next drag, so the
-  // slider escaped MAX_TEST_AMOUNT after about three drags and then grew
-  // without limit. Bounded by the cap now, so the track is a fixed range
-  // with a real right edge instead of one that grows as you use it.
-  const sliderMax = Math.min(MAX_TEST_AMOUNT, Math.max(200, surplus * 2));
+  // Spans income, and deliberately NOT derived from testAmount or surplus.
+  //
+  // testAmount (the original formula, Math.max(200, testAmount * 2,
+  // surplus * 2)) made the track's own bound a function of the value the
+  // track sets: every drag to the right edge roughly doubled the ceiling
+  // for the next drag, so it escaped MAX_TEST_AMOUNT after about three
+  // drags and grew without limit (2.4.75).
+  //
+  // surplus (the first fix) removed that, but tied the track to whatever
+  // happened to be left over this month -- at a surplus of $145 the whole
+  // track spanned $290, against a meaningful range running to the cap, and
+  // the cap never bound at all. Income is the stable figure the plan is
+  // actually about, so the track spans that: wide enough to be worth
+  // dragging, still fixed, still inside the cap.
+  //
+  // Floored at 200 so a zero/unset income (before Setup) doesn't produce a
+  // zero-length track; MAX_TEST_AMOUNT keeps its own separate no-income
+  // fallback, so the two diverge in that one case by design.
+  const sliderMax = Math.min(MAX_TEST_AMOUNT, Math.max(200, month.income));
 
   // What order the plan tackles things in — user-controlled, not hardcoded.
   // A dollar can only be spent once: this is what makes the plan below a
