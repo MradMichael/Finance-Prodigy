@@ -7,7 +7,7 @@ import type {
 } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, remainingInstallments, toUSD as toUSDShared, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, reanchorTrackedBalance, allCategories, categoryLabel, categoryIcon, matchCategoryRule, roundMoney, derivedDebtBalance, activeTransactions, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
+import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, remainingInstallments, toUSD as toUSDShared, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, reanchorTrackedBalance, allCategories, categoryLabel, categoryIcon, matchCategoryRule, roundMoney, moneyMaxFor, MONEY_MAX_USD, derivedDebtBalance, activeTransactions, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker, CardPicker } from "./form/Primitives";
@@ -709,6 +709,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                   value={txAmt}
                   onChange={setTxAmt}
                   placeholder="0"
+                  max={moneyMaxFor(txCurrency, lbpRate)}
                 />
               </div>
               <div>
@@ -721,11 +722,11 @@ export default function InputPanel({ financials, dashData, onChange, session, on
               <div className="grid grid-cols-2 gap-2.5">
                 <div>
                   <Label htmlFor="tx-split-usd">Amount (USD)</Label>
-                  <MoneyInput id="tx-split-usd" value={txSplitUSD} onChange={setTxSplitUSD} placeholder="0" />
+                  <MoneyInput id="tx-split-usd" value={txSplitUSD} onChange={setTxSplitUSD} placeholder="0" max={MONEY_MAX_USD} />
                 </div>
                 <div>
                   <Label htmlFor="tx-split-lbp">Amount (LBP)</Label>
-                  <MoneyInput id="tx-split-lbp" value={txSplitLBP} onChange={setTxSplitLBP} placeholder="0" />
+                  <MoneyInput id="tx-split-lbp" value={txSplitLBP} onChange={setTxSplitLBP} placeholder="0" max={moneyMaxFor("LBP", lbpRate)} />
                 </div>
               </div>
               <div>
@@ -855,7 +856,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                     {/* Blank = full transaction amount -- only needed to type
                         something here for a PARTIAL EF contribution. */}
                     {txAddToEF && (
-                      <MoneyInput value={txEfAmt} onChange={setTxEfAmt} placeholder={`Full amount (${txAmt || "0"})`} />
+                      <MoneyInput value={txEfAmt} onChange={setTxEfAmt} placeholder={`Full amount (${txAmt || "0"})`} max={moneyMaxFor(txCurrency, lbpRate)} />
                     )}
                   </>
                 ) : (
@@ -896,7 +897,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                   represent only PART of this payment coming from EF (2.4.27's
                   exact case: $300 of a $325 payment). */}
               {txFromEF && (
-                <MoneyInput value={txEfAmt} onChange={setTxEfAmt} placeholder={`Full amount (${txAmt || "0"})`} />
+                <MoneyInput value={txEfAmt} onChange={setTxEfAmt} placeholder={`Full amount (${txAmt || "0"})`} max={moneyMaxFor(txCurrency, lbpRate)} />
               )}
             </>
           )}
@@ -1351,7 +1352,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                     </p>
                     <div className="flex gap-2">
                       <div className="flex-1">
-                        <MoneyInput value={contributeGoalAmt} onChange={setContributeGoalAmt} placeholder="Amount" />
+                        <MoneyInput value={contributeGoalAmt} onChange={setContributeGoalAmt} placeholder="Amount" max={moneyMaxFor(g.currency, lbpRate)} />
                       </div>
                       <button
                         onClick={() => contributeToGoal(g.id)}
@@ -1401,11 +1402,11 @@ export default function InputPanel({ financials, dashData, onChange, session, on
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <Label htmlFor="new-goal-target">Target ({gCurrency === "LBP" ? "L£" : "$"})</Label>
-                <MoneyInput id="new-goal-target" value={gTarget} onChange={setGTarget} placeholder="5,000" />
+                <MoneyInput id="new-goal-target" value={gTarget} onChange={setGTarget} placeholder="5,000" max={moneyMaxFor(gCurrency, lbpRate)} />
               </div>
               <div>
                 <Label htmlFor="new-goal-saved">Saved ({gCurrency === "LBP" ? "L£" : "$"})</Label>
-                <MoneyInput id="new-goal-saved" value={gCurrent} onChange={setGCurrent} placeholder="0" />
+                <MoneyInput id="new-goal-saved" value={gCurrent} onChange={setGCurrent} placeholder="0" max={moneyMaxFor(gCurrency, lbpRate)} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2">
@@ -1568,6 +1569,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                                       value={extraRecAmt}
                                       onChange={setExtraRecAmt}
                                       placeholder="Extra amount"
+                                      max={moneyMaxFor(r.currency, lbpRate)}
                                     />
                                   </div>
                                   <button
@@ -1682,7 +1684,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <Label htmlFor="new-rec-amount">Amount</Label>
-                      <MoneyInput id="new-rec-amount" value={rAmount} onChange={setRAmount} placeholder="0" />
+                      <MoneyInput id="new-rec-amount" value={rAmount} onChange={setRAmount} placeholder="0" max={moneyMaxFor(rCurrency, lbpRate)} />
                     </div>
                     <div>
                       <Label htmlFor="new-rec-freq">Frequency</Label>
@@ -1774,6 +1776,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                           value={rTotalAmount}
                           onChange={setRTotalAmount}
                           placeholder="Total amount e.g. 10,000"
+                          max={moneyMaxFor(rCurrency, lbpRate)}
                         />
                         {rAmount && rTotalAmount && (
                           <p className="text-[10px] mt-1 px-1 tabular-nums" style={{ color: T.mute }}>
@@ -1879,7 +1882,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
             <div className="grid grid-cols-3 gap-2">
               <div>
                 <Label htmlFor="new-debt-balance">Balance ({dCurrency === "LBP" ? "L£" : "$"})</Label>
-                <MoneyInput id="new-debt-balance" value={dBalance} onChange={setDBalance} placeholder="0" />
+                <MoneyInput id="new-debt-balance" value={dBalance} onChange={setDBalance} placeholder="0" max={moneyMaxFor(dCurrency, lbpRate)} />
               </div>
               <div>
                 <Label htmlFor="new-debt-apr">APR (%)</Label>
@@ -1887,7 +1890,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
               </div>
               <div>
                 <Label htmlFor="new-debt-min">Min/mo</Label>
-                <MoneyInput id="new-debt-min" value={dMin} onChange={setDMin} placeholder="25" />
+                <MoneyInput id="new-debt-min" value={dMin} onChange={setDMin} placeholder="25" max={moneyMaxFor(dCurrency, lbpRate)} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2">
@@ -1943,7 +1946,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <Label htmlFor="new-asset-value">Value</Label>
-                <MoneyInput id="new-asset-value" value={aValue} onChange={setAValue} placeholder="0" />
+                <MoneyInput id="new-asset-value" value={aValue} onChange={setAValue} placeholder="0" max={moneyMaxFor(aCurrency, lbpRate)} />
               </div>
               <div>
                 <Label>Currency</Label>
@@ -2002,7 +2005,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <Label htmlFor="new-transfer-amount">Amount</Label>
-                <MoneyInput id="new-transfer-amount" value={trAmt} onChange={setTrAmt} placeholder="0" />
+                <MoneyInput id="new-transfer-amount" value={trAmt} onChange={setTrAmt} placeholder="0" max={moneyMaxFor(trCurrency, lbpRate)} />
               </div>
               <div>
                 <Label>Currency</Label>
@@ -2077,6 +2080,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                             value={actualInputs[tb.id] ?? ""}
                             onChange={(v) => setActualInputs((prev) => ({ ...prev, [tb.id]: v }))}
                             placeholder="What you actually have now"
+                            max={moneyMaxFor(tb.currency, lbpRate)}
                           />
                         </div>
                         <button
@@ -2131,7 +2135,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <Label htmlFor="new-tb-balance">Starting balance</Label>
-                <MoneyInput id="new-tb-balance" value={tbStartBal} onChange={setTbStartBal} placeholder="0" />
+                <MoneyInput id="new-tb-balance" value={tbStartBal} onChange={setTbStartBal} placeholder="0" max={moneyMaxFor(tbCurrency, lbpRate)} />
               </div>
               <div>
                 <Label>Currency</Label>

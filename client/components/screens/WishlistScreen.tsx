@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, WishlistItem, Currency, StoredGoal } from "../../lib/localData";
-import { uid, toUSD as toUSDShared, withRate, DEFAULT_LBP_RATE } from "../../lib/localData";
+import { uid, toUSD as toUSDShared, withRate, moneyMaxFor, DEFAULT_LBP_RATE } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, CurrencyToggle } from "../form/Primitives";
@@ -123,7 +123,7 @@ export default function WishlistScreen({
           <div className="grid grid-cols-2 gap-2">
             <div>
               <Label htmlFor="wish-price">Price</Label>
-              <MoneyInput id="wish-price" value={price} onChange={setPrice} placeholder="0" />
+              <MoneyInput id="wish-price" value={price} onChange={setPrice} placeholder="0" max={moneyMaxFor(currency, lbpRate)} />
             </div>
             <div>
               <Label>Currency</Label>

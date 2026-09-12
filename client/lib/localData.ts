@@ -533,6 +533,40 @@ export const CURRENT_SCHEMA_VERSION = 4;
 // truth -- see docs/ROADMAP.md Phase 1.3.
 export const DEFAULT_LBP_RATE = 89500;
 
+/**
+ * Ceiling on any single money amount entered through MoneyInput, in USD.
+ *
+ * The defect this bounds is magnitude absurdity, not implausibility: 2.4.78's
+ * live case was an INCOME transaction of ~10^15 that inflated `month.income`
+ * and every figure multiplied by it. $100,000,000 catches that by twenty-odd
+ * orders of magnitude while never obstructing a real entry -- MoneyInput backs
+ * asset values, debt balances and goal targets as well as day-to-day amounts,
+ * so a tighter cap (income's own $1,000,000, say) would block a legitimate
+ * property value or mortgage.
+ *
+ * Deliberately ONE ceiling rather than per-field semantic limits. A $1,000,000
+ * grocery transaction is absurd and a $1,000,000 mortgage is not, but telling
+ * those apart is a plausibility feature -- better served later by a soft
+ * warning than by a hard bound, and not what this closes.
+ */
+export const MONEY_MAX_USD = 100_000_000;
+
+/**
+ * The same ceiling expressed in whichever currency the field is holding.
+ *
+ * MoneyInput is currency-blind by design (it takes a string and never learns
+ * what it represents), so the caller resolves this and passes the result. A
+ * single fixed number cannot work: at 89,500 LBP/USD the same figure is either
+ * useless for USD or blocks legitimate LBP entry, a factor of ~10^5.
+ *
+ * Guarded by rateOrDefault so a 0/negative/NaN rate cannot collapse the LBP
+ * ceiling to 0 (or NaN) and lock the field -- the same reasoning as 2.4.72,
+ * which found seven places dividing by an unguarded rate.
+ */
+export function moneyMaxFor(currency: Currency | undefined, lbpRate: number): number {
+  return currency === "LBP" ? MONEY_MAX_USD * rateOrDefault(lbpRate) : MONEY_MAX_USD;
+}
+
 export const DEFAULT_DATA: LocalFinancials = {
   schemaVersion: CURRENT_SCHEMA_VERSION,
   userName: "You",

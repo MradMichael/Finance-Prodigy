@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, StoredRecurring, RecurringFrequency, Currency } from "../lib/localData";
-import { FREQ_LABELS, allCategories, fmtDate, pendingBackfillCycles } from "../lib/localData";
+import { FREQ_LABELS, allCategories, fmtDate, pendingBackfillCycles, moneyMaxFor, DEFAULT_LBP_RATE } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY, CurrencyToggle } from "./form/Primitives";
 
@@ -95,7 +95,7 @@ export default function EditRecurringSheet({
           <div className="grid grid-cols-2 gap-2">
             <div>
               <Label htmlFor="edit-rec-amount">Amount</Label>
-              <MoneyInput id="edit-rec-amount" value={amount} onChange={setAmount} placeholder="0" />
+              <MoneyInput id="edit-rec-amount" value={amount} onChange={setAmount} placeholder="0" max={moneyMaxFor(currency, financials.lbpRate ?? DEFAULT_LBP_RATE)} />
             </div>
             <div>
               <Label htmlFor="edit-rec-freq">Frequency</Label>
@@ -157,7 +157,7 @@ export default function EditRecurringSheet({
               ))}
             </div>
             {endType === "date" && <DateFieldDMY value={end} onChange={setEnd} />}
-            {endType === "amount" && <MoneyInput value={totalAmount} onChange={setTotalAmount} placeholder="Total amount" />}
+            {endType === "amount" && <MoneyInput value={totalAmount} onChange={setTotalAmount} placeholder="Total amount" max={moneyMaxFor(currency, financials.lbpRate ?? DEFAULT_LBP_RATE)} />}
           </div>
         </div>
 

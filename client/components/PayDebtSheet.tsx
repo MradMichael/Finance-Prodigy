@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, StoredDebt, PaymentMethod, StoredCard } from "../lib/localData";
-import { buildDebtPaymentTx, derivedDebtBalance, derivedEfBalance, moneyEquals, roundMoney, allCategories, todayISO, uid, DEFAULT_LBP_RATE, toUSD as toUSDShared } from "../lib/localData";
+import { buildDebtPaymentTx, derivedDebtBalance, derivedEfBalance, moneyEquals, roundMoney, moneyMaxFor, allCategories, todayISO, uid, DEFAULT_LBP_RATE, toUSD as toUSDShared } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, MoneyInput, DateFieldDMY, PaymentMethodPicker } from "./form/Primitives";
 import { fmtCur } from "./screens/shared";
@@ -107,7 +107,7 @@ export default function PayDebtSheet({
         <div className="space-y-2.5">
           <div>
             <Label htmlFor="pay-debt-amount">Amount</Label>
-            <MoneyInput id="pay-debt-amount" value={amt} onChange={setAmt} placeholder="Payment amount" />
+            <MoneyInput id="pay-debt-amount" value={amt} onChange={setAmt} placeholder="Payment amount" max={moneyMaxFor(debt.currency, financials.lbpRate ?? DEFAULT_LBP_RATE)} />
           </div>
           <div>
             <Label htmlFor="pay-debt-date">Date paid</Label>
@@ -160,7 +160,7 @@ export default function PayDebtSheet({
                 <span className="text-sm">{fromEF ? "✓" : "○"}</span>
               </button>
               {fromEF && (
-                <MoneyInput value={efAmt} onChange={setEfAmt} placeholder={`Full amount (${amt || "0"})`} />
+                <MoneyInput value={efAmt} onChange={setEfAmt} placeholder={`Full amount (${amt || "0"})`} max={moneyMaxFor(debt.currency, financials.lbpRate ?? DEFAULT_LBP_RATE)} />
               )}
             </>
           )}

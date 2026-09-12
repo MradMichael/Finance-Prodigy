@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import type { LocalFinancials, StoredCard, StoredTransaction, TrackedBalance } from "../lib/localData";
-import { uid, todayISO, allCategories, matchCategoryRule, activeTransactions, reanchorTrackedBalance, DEFAULT_LBP_RATE } from "../lib/localData";
+import { uid, todayISO, allCategories, matchCategoryRule, activeTransactions, reanchorTrackedBalance, DEFAULT_LBP_RATE, MONEY_MAX_USD } from "../lib/localData";
 import { trackedBalanceExpected } from "../lib/computeDashboard";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, DateFieldDMY } from "./form/Primitives";
@@ -378,7 +378,7 @@ export default function ImportStatement({
                         <DateFieldDMY value={r.date} onChange={(iso) => updateRow(r.key, { date: iso })} />
                       </div>
                       <div className="grid grid-cols-3 gap-2">
-                        <MoneyInput value={r.amount} onChange={(v) => updateRow(r.key, { amount: v })} placeholder="0.00" />
+                        <MoneyInput value={r.amount} onChange={(v) => updateRow(r.key, { amount: v })} placeholder="0.00" max={MONEY_MAX_USD} />
                         <select
                           value={r.bucket} onChange={(e) => updateRow(r.key, { bucket: e.target.value as Bucket })}
                           className="w-full rounded-xl px-3 py-2 text-sm"
