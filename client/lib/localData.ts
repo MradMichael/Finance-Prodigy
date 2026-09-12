@@ -1418,6 +1418,66 @@ export function remainingInstallments(
 }
 
 /**
+ * The date from which a bounded recurring obligation stops consuming
+ * monthly capacity -- null for an item that never will (indefinite, or
+ * already exhausted, in which case the capacity is already in hand and
+ * announcing a future step would promise it twice).
+ *
+ * F2's forward-capacity half (docs/ROADMAP.md, Phase 3). The reason this
+ * exists rather than callers just reading `r.endDate` is that
+ * `capacityByMonth` was built filtering on `endDate !== null` alone, which
+ * silently treats every `totalAmount`-capped item as indefinite -- and a
+ * university instalment plan capped at a total is exactly that shape. The
+ * owner's own Uni item (endDate null, totalAmount 6750) is the only bounded
+ * obligation in the real data, so the endDate-only filter produced a
+ * permanently flat capacity line while looking like it worked.
+ *
+ * The two bound types answer DIFFERENT questions and are deliberately not
+ * conflated here:
+ *
+ *   endDate     already means "the item terminates on this date," which is
+ *               itself a freed-from date. Passed through unchanged, so
+ *               every existing capacityByMonth expectation holds exactly
+ *               and this function adds no behaviour for endDate items.
+ *   totalAmount resolves via remainingInstallments to `endsOn`, which means
+ *               "the date of the LAST OWED payment" -- that payment is
+ *               still due, so capacity is NOT free that cycle. Freed-from
+ *               is the cycle that would have followed it.
+ *
+ * Treating `endsOn` as freed-from directly would put the step one cycle
+ * early: for Uni that is April 2027 instead of May 2027, in a month where
+ * $750 is genuinely still owed.
+ *
+ * The following cycle is read out of dueCycles rather than computed as
+ * "endsOn + 1 day, then query" on purpose. nextOccurrence normalizes its
+ * `asOf` with LOCAL getters, so a UTC-midnight date + 1 day can normalize
+ * back a calendar day for a negative-offset user -- the exact class of
+ * off-by-one this file's own comments already warn about. Taking index 1 of
+ * a walk anchored AT `endsOn` is immune to that drift: index 0 is `endsOn`
+ * itself whichever way the query point rounds, so index 1 is the next real
+ * cycle either way. It also keeps the offset on the item's own frequency,
+ * so a weekly item frees a week later rather than a month later.
+ */
+export function capacityFreedFrom(
+  r: StoredRecurring, transactions: StoredTransaction[], asOf: Date = new Date(),
+): Date | null {
+  if (r.endDate) return new Date(r.endDate);
+  if (!r.totalAmount) return null;
+
+  const remaining = remainingInstallments(r, transactions, asOf);
+  if (!remaining) return null;
+
+  // Uncapped for the same reason remainingInstallments strips it: the walk
+  // needs to reach the cycle PAST the cap, which the cap itself refuses to
+  // generate. No endDate is in play here -- the branch above returned.
+  const uncapped: StoredRecurring = { ...r, totalAmount: null };
+  const horizon = new Date(remaining.endsOn.getTime());
+  horizon.setUTCFullYear(horizon.getUTCFullYear() + 1);
+  const following = dueCycles(uncapped, remaining.endsOn, horizon);
+  return following[1] ?? null;
+}
+
+/**
  * Whether a real, confirmed transaction exists for this exact cycle --
  * keyed by the cycle's own due DATE (YYYY-MM-DD), not its month. A weekly
  * or biweekly item can have several distinct due dates within the same

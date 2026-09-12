@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   monthlyEquivalent, nominalMonthlyEquivalent, isRecurringActive, isPaidThisCycle,
-  nextOccurrence, recurringPaidSoFar, buildRecurringPaymentLog, buildGoalContributionTx, fmtDate, valueForMonth,
+  nextOccurrence, recurringPaidSoFar, capacityFreedFrom, buildRecurringPaymentLog, buildGoalContributionTx, fmtDate, valueForMonth,
   loadData, saveData, DEFAULT_DATA, type StoredRecurring, type StoredGoal, type StoredTransaction, type StoredDebt,
   allCategories, categoryLabel, categoryIcon, CATEGORIES,
   matchCategoryRule, type CategoryRule,
@@ -498,6 +498,87 @@ describe("remainingInstallments", () => {
     expect(result).not.toBeNull();
     expect(result!.count).toBe(3); // Jan 1, Feb 1, Mar 1 -- not 100
     expect(result!.endsOn.toISOString().slice(0, 10)).toBe("2026-03-01");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// capacityFreedFrom -- F2's forward-capacity half. Written before the
+// implementation, per Standing Rule 4.
+//
+// The question this answers is deliberately NOT "when does this item end."
+// It is "from what date does this obligation stop consuming monthly
+// capacity," which is a different date for the two bound types and is the
+// only one capacityByMonth can act on:
+//
+//   endDate     -- already means "the item terminates on this date," which
+//                  IS a freed-from date. Passed through unchanged, so every
+//                  existing capacityByMonth expectation still holds exactly.
+//   totalAmount -- remainingInstallments' `endsOn` means "the date of the
+//                  LAST payment," a different notion: that payment is still
+//                  owed, so capacity is not free that cycle. Freed-from is
+//                  the cycle that WOULD have followed it.
+//
+// Conflating those two would put a totalAmount item's step one cycle early,
+// which for the owner's real Uni item is the difference between April and
+// May 2027 -- the exact acceptance criterion in goalFeasibility.test.ts.
+describe("capacityFreedFrom", () => {
+  it("neither bound set: null -- an indefinite obligation never frees capacity", () => {
+    const r = makeRecurring({ endDate: null, totalAmount: null });
+    expect(capacityFreedFrom(r, [], utcMidnight(2026, 2, 1))).toBeNull();
+  });
+
+  it("endDate-only: passes r.endDate through unchanged, preserving capacityByMonth's existing contract", () => {
+    const r = makeRecurring({ frequency: "monthly", startDate: "2026-01-01", endDate: "2026-06-15" });
+    const freed = capacityFreedFrom(r, [], utcMidnight(2026, 2, 1));
+    expect(freed).not.toBeNull();
+    expect(freed!.toISOString().slice(0, 10)).toBe("2026-06-15");
+  });
+
+  it("totalAmount-only: freed from the cycle AFTER the last owed payment, not from the last payment itself", () => {
+    // $750/mo, $6,750 cap = 9 payments from 2026-01-01, so the last owed
+    // cycle is 2026-09-01 and capacity is free from 2026-10-01 -- NOT from
+    // September, in which $750 is still owed.
+    const r = makeRecurring({ id: "uni", amount: 750, frequency: "monthly", startDate: "2026-01-01", totalAmount: 6750, endDate: null });
+    const freed = capacityFreedFrom(r, [], utcMidnight(2026, 0, 1));
+    expect(freed).not.toBeNull();
+    expect(freed!.toISOString().slice(0, 10)).toBe("2026-10-01");
+  });
+
+  it("totalAmount-only: anchored to real confirmed payments, so a missed cycle pushes the freed date out rather than keeping a calendar-position guess", () => {
+    // Same 9-payment item, but only 2 cycles ever confirmed by Aug 1 --
+    // 7 remain. asOf IS Aug 1 and the cycle falls on the 1st, so Aug 1 is
+    // itself due and counts as the first of the seven: Aug, Sep, Oct, Nov,
+    // Dec 2026, Jan, Feb 2027. Last owed 2027-02-01, capacity free from
+    // 2027-03-01. A calendar-position count would instead have said 2
+    // remain and freed the capacity most of a year too early.
+    const r = makeRecurring({ id: "uni", amount: 750, frequency: "monthly", startDate: "2026-01-01", totalAmount: 6750, endDate: null });
+    const tx = (date: string): StoredTransaction => ({ id: `t-${date}`, amount: 750, currency: "USD", bucket: "NEEDS", description: "Uni", date, recurringId: "uni" });
+    const freed = capacityFreedFrom(r, [tx("2026-01-01"), tx("2026-02-01")], utcMidnight(2026, 7, 1));
+    expect(freed).not.toBeNull();
+    expect(freed!.toISOString().slice(0, 10)).toBe("2027-03-01");
+  });
+
+  it("both bounds set, endDate binding: endDate still wins and is passed through unchanged", () => {
+    const r = makeRecurring({ amount: 100, frequency: "monthly", startDate: "2026-01-01", totalAmount: 10_000, endDate: "2026-03-15" });
+    const freed = capacityFreedFrom(r, [], utcMidnight(2026, 0, 1));
+    expect(freed!.toISOString().slice(0, 10)).toBe("2026-03-15");
+  });
+
+  it("already exhausted: null -- nothing left to free, the capacity is already available today", () => {
+    // Fully paid off, so remainingInstallments returns null. Reporting a
+    // future step here would promise capacity that is already in hand.
+    const r = makeRecurring({ id: "uni", amount: 750, frequency: "monthly", startDate: "2026-01-01", totalAmount: 1500, endDate: null });
+    const tx = (date: string): StoredTransaction => ({ id: `t-${date}`, amount: 750, currency: "USD", bucket: "NEEDS", description: "Uni", date, recurringId: "uni" });
+    expect(capacityFreedFrom(r, [tx("2026-01-01"), tx("2026-02-01")], utcMidnight(2026, 2, 1))).toBeNull();
+  });
+
+  it("a weekly totalAmount item frees from the next WEEKLY cycle, not the next month -- the offset is one cycle, not one month", () => {
+    // $50/wk, $200 cap = 4 payments from 2026-01-01 (Jan 1, 8, 15, 22),
+    // so capacity frees from Jan 29 -- proving the +1 offset follows the
+    // item's own frequency rather than assuming monthly.
+    const r = makeRecurring({ amount: 50, frequency: "weekly", startDate: "2026-01-01", totalAmount: 200, endDate: null });
+    const freed = capacityFreedFrom(r, [], utcMidnight(2026, 0, 1));
+    expect(freed!.toISOString().slice(0, 10)).toBe("2026-01-29");
   });
 });
 

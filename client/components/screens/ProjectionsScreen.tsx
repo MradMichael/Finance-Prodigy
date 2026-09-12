@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
-import { BUDGET_RULES, moneyEquals, toUSD as toUSDShared, DEFAULT_LBP_RATE } from "../../lib/localData";
+import { BUDGET_RULES, moneyEquals, capacityFreedFrom, isRecurringActive, toUSD as toUSDShared, DEFAULT_LBP_RATE } from "../../lib/localData";
 import { dateFmt, toDebtInputs, type computeDashboard } from "../../lib/computeDashboard";
 import { simulateDebtPayoff, addMonths, type DebtInput } from "../../lib/debtEngine";
 import { projectCompletion } from "../../lib/projections";
-import { allocateGoalCapacity, fastestGoalCompletion, type GoalCapacityInput, type GoalAllocationReport, type GoalFastestReport, type GoalFeasibilityStatus } from "../../lib/goalFeasibility";
+import { allocateGoalCapacity, fastestGoalCompletion, capacityByMonth, type GoalCapacityInput, type GoalAllocationReport, type GoalFastestReport, type GoalFeasibilityStatus, type RecurringCapacityInput } from "../../lib/goalFeasibility";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money } from "./shared";
 
@@ -66,6 +66,62 @@ export default function ProjectionsScreen({
   const efRemaining = Math.max(0, emergencyFund.remaining);
   const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
   const liveDebts: DebtInput[] = toDebtInputs(financials.debts, lbpRate, financials.transactions);
+
+  // ── Looking ahead: bounded obligations that free capacity later ──
+  //
+  // F2's forward-capacity half (docs/ROADMAP.md, Phase 3). capacityByMonth
+  // has existed and been tested since 2026-09-01 but was called from
+  // nowhere; this is its first consumer.
+  //
+  // baseCapacityUSD is deliberately 0. The obvious-looking alternative --
+  // passing testAmount so the strip could say "you could plan with $842"
+  // -- is a category error: testAmount is a DIALED planning amount seeded
+  // from budgetTargets.savings (a percentage of income), while freed
+  // capacity is money that stops leaving the account. Income doesn't
+  // change when an instalment plan ends, so budgetTargets.savings doesn't
+  // either, and adding the two would produce a figure with no defined
+  // meaning. At base 0 the series IS the freed amount, and the strip can
+  // only ever report what it actually knows.
+  //
+  // Only currently-active obligations are considered: one that has already
+  // ended isn't a future step, its capacity is already in hand, and
+  // capacityFreedFrom would credit it from month 0 and read as a promise
+  // of money the user already has.
+  const CAPACITY_HORIZON_MONTHS = 36;
+  const capacityNow = new Date();
+  // Same UTC month-stepping capacityByMonth uses internally, so "inside the
+  // horizon" here and "counted in the series" there can't disagree.
+  const capacityHorizonEnd = new Date(Date.UTC(
+    capacityNow.getUTCFullYear(), capacityNow.getUTCMonth() + CAPACITY_HORIZON_MONTHS, capacityNow.getUTCDate(),
+  ));
+
+  const boundedObligations = (financials.recurring ?? [])
+    .filter((r) => isRecurringActive(r, capacityNow))
+    .map((r) => ({
+      r,
+      freed: capacityFreedFrom(r, financials.transactions, capacityNow),
+      monthlyAmountUSD: toUSDShared(r.amount, r.currency, lbpRate),
+    }))
+    .filter((o): o is typeof o & { freed: Date } => o.freed !== null)
+    .sort((a, b) => a.freed.getTime() - b.freed.getTime());
+
+  const capacitySeries = capacityByMonth(
+    0,
+    boundedObligations.map<RecurringCapacityInput>((o) => ({
+      id: o.r.id,
+      monthlyAmountUSD: o.monthlyAmountUSD,
+      freedFromDate: o.freed.toISOString().slice(0, 10),
+    })),
+    CAPACITY_HORIZON_MONTHS,
+    capacityNow,
+  );
+  // An obligation freeing up beyond the horizon is real but too far out to
+  // be worth a row. Counted rather than silently dropped -- a strip that
+  // quietly omits one reads as "this is all of them".
+  const capacitySteps = boundedObligations.filter((o) => o.freed <= capacityHorizonEnd);
+  const capacityStepsBeyondHorizon = boundedObligations.length - capacitySteps.length;
+  const totalFreedInHorizon = capacitySeries[CAPACITY_HORIZON_MONTHS].capacityUSD;
+  const monthYear = (d: Date) => d.toLocaleDateString("en-GB", { month: "short", year: "numeric", timeZone: "UTC" });
   const openGoals = goals.filter((g) => g.projection.pctComplete < 100 && !g.paused);
   const totalGoalsRemaining = openGoals.reduce((s, g) => {
     const remaining = Math.max(0, g.targetAmount - g.currentAmount);
@@ -380,6 +436,52 @@ export default function ProjectionsScreen({
             </p>
           </div>
         </div>
+
+        {/* ── Looking ahead: bounded obligations freeing capacity later ──
+
+            Sits BELOW the amount control and ABOVE the plan, and every
+            line of copy here is deliberately about the future rather than
+            about the plan underneath it.
+
+            The plan is computed on one flat monthly amount for every
+            month; it does not consume this. Saying "your goals will
+            arrive sooner" -- or even phrasing this as capacity the plan
+            has -- would be a claim the dates below don't support, and two
+            figures on one screen that don't reconcile is exactly the
+            failure this project has already logged once. So: state what
+            frees up and when, say plainly that the plan doesn't count it,
+            and stop there. Making the plan actually spend it is a separate,
+            much larger change (approach B) and an open product decision. */}
+        {capacitySteps.length > 0 && (
+          <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
+            <p className="text-xs uppercase tracking-widest mb-2" style={{ color: T.mute }}>Looking ahead</p>
+            <div className="space-y-1.5">
+              {capacitySteps.map((o) => (
+                <div key={o.r.id} className="flex items-center justify-between gap-3 text-sm">
+                  <span style={{ color: T.text }}>
+                    {o.r.emoji ? `${o.r.emoji} ` : ""}{o.r.name} finishes
+                  </span>
+                  <span className="tabular-nums flex-shrink-0" style={{ color: T.jade }}>
+                    +{money(o.monthlyAmountUSD)}/mo from {monthYear(o.freed)}
+                  </span>
+                </div>
+              ))}
+            </div>
+            {capacitySteps.length > 1 && (
+              <p className="text-xs mt-2 pt-2 tabular-nums" style={{ color: T.mute, borderTop: `1px solid ${T.line}` }}>
+                {money(totalFreedInHorizon)}/mo in total, once all of them have.
+              </p>
+            )}
+            {capacityStepsBeyondHorizon > 0 && (
+              <p className="text-[11px] mt-2" style={{ color: T.mute }}>
+                {capacityStepsBeyondHorizon === 1 ? "One more finishes" : `${capacityStepsBeyondHorizon} more finish`} beyond {CAPACITY_HORIZON_MONTHS / 12} years and {capacityStepsBeyondHorizon === 1 ? "isn't" : "aren't"} shown.
+              </p>
+            )}
+            <p className="text-[11px] mt-3 pt-3" style={{ color: T.mute, borderTop: `1px solid ${T.line}` }}>
+              This is what changes in your commitments, not in the plan below — that uses the single monthly amount you set above for every month, including these. Nothing below has been brought forward to account for it.
+            </p>
+          </div>
+        )}
 
         {/* The plan */}
         <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.brass}50` }}>
