@@ -1,5 +1,16 @@
 import { describe, it, expect } from "vitest";
 import { allocateGoalCapacity, capacityByMonth, fastestGoalCompletion, type GoalCapacityInput, type RecurringCapacityInput } from "./goalFeasibility";
+import { capacityFreedFrom, type StoredRecurring, type StoredTransaction } from "./localData";
+
+/** Minimal StoredRecurring, mirroring localData.test.ts's own helper. */
+function makeRecurring(overrides: Partial<StoredRecurring> = {}): StoredRecurring {
+  return {
+    id: "r1", name: "Rent", emoji: "R", amount: 100, currency: "USD",
+    frequency: "monthly", bucket: "NEEDS", startDate: "2026-01-01",
+    endDate: null, totalAmount: null, createdAt: "2026-01-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
 
 const asOf = new Date(2026, 0, 15); // Jan 15, 2026
 
@@ -121,7 +132,7 @@ describe("capacityByMonth — the step-change (the acceptance criterion, written
   it("capacity increases at the exact month an obligation with an endDate terminates, and stays elevated after", () => {
     // A $200/mo obligation ending exactly 3 months from asOf.
     const obligations: RecurringCapacityInput[] = [
-      { id: "loan", monthlyAmountUSD: 200, endDate: "2026-04-15" }, // 3 months from Jan 15
+      { id: "loan", monthlyAmountUSD: 200, freedFromDate: "2026-04-15" }, // 3 months from Jan 15
     ];
     const months = capacityByMonth(500, obligations, 6, asOf);
 
@@ -134,16 +145,58 @@ describe("capacityByMonth — the step-change (the acceptance criterion, written
     expect(months[6].capacityUSD).toBe(700); // Jul -- still elevated
   });
 
-  it("an obligation with no end date (endDate: null) never frees up capacity", () => {
-    const obligations: RecurringCapacityInput[] = [{ id: "rent", monthlyAmountUSD: 300, endDate: null }];
+  // REWRITTEN. The original read: "an obligation with no end date
+  // (endDate: null) never frees up capacity", with a single `rent` fixture.
+  // That assertion was true of rent and false as a general claim -- it
+  // encoded "no endDate" as a synonym for "unbounded," which stopped being
+  // true the moment StoredRecurring gained `totalAmount`. A university
+  // instalment plan capped at a total has endDate: null and is emphatically
+  // bounded, so the old test asserted the gap as intended behaviour and
+  // would have passed forever while the feature was blind to the owner's
+  // only bounded obligation.
+  //
+  // The fixture PAIR is the test: both items have no endDate, and they must
+  // come out on opposite sides. A single fixture cannot discriminate here,
+  // which is precisely how the original went unnoticed.
+  it("no endDate does NOT mean unbounded: a totalAmount-capped obligation frees capacity, a genuinely indefinite one never does", () => {
+    const indefinite = makeRecurring({ id: "rent", name: "Rent", amount: 300, startDate: "2026-01-01", endDate: null, totalAmount: null });
+    const capped = makeRecurring({ id: "uni", name: "Uni", amount: 300, startDate: "2026-01-01", endDate: null, totalAmount: 900 });
+
+    // Both resolve through the same path the product uses; only the second
+    // yields a freed-from date.
+    expect(capacityFreedFrom(indefinite, [], asOf)).toBeNull();
+    const cappedFreed = capacityFreedFrom(capped, [], asOf);
+    expect(cappedFreed).not.toBeNull();
+
+    const obligations: RecurringCapacityInput[] = [
+      { id: "rent", monthlyAmountUSD: 300, freedFromDate: null },
+      { id: "uni", monthlyAmountUSD: 300, freedFromDate: cappedFreed!.toISOString().slice(0, 10) },
+    ];
     const months = capacityByMonth(400, obligations, 12, asOf);
-    expect(months.every((m) => m.capacityUSD === 400)).toBe(true);
+
+    // Derivation, stated so the expected date is reasoned to rather than
+    // read off the implementation: $900 cap at $300/mo = 3 payments, none
+    // of them confirmed, so all 3 remain. remainingInstallments anchors to
+    // the NEXT due date (2026-02-01, since asOf is Jan 15 and the cycle is
+    // the 1st), giving Feb / Mar / Apr 2026 and a last owed cycle of
+    // 2026-04-01. Capacity is therefore free from 2026-05-01 -- the cycle
+    // that would have followed -- not from April, in which $300 is owed.
+    expect(cappedFreed!.toISOString().slice(0, 10)).toBe("2026-05-01");
+    expect(months[3].capacityUSD).toBe(400); // Apr -- Uni's final payment still owed
+    expect(months[4].capacityUSD).toBe(700); // May -- Uni's $300 freed, rent's never
+    expect(months[12].capacityUSD).toBe(700); // and rent's $300 is still never freed, a year out
+
+    // The discriminator, stated as an assertion rather than left implicit:
+    // had the capped item been treated as unbounded (the old premise), every
+    // month would read 400 and this test would be indistinguishable from
+    // the one it replaced.
+    expect(months.every((m) => m.capacityUSD === 400)).toBe(false);
   });
 
   it("multiple obligations terminating in different months each contribute their own step", () => {
     const obligations: RecurringCapacityInput[] = [
-      { id: "a", monthlyAmountUSD: 100, endDate: "2026-03-15" }, // 2 months out
-      { id: "b", monthlyAmountUSD: 50,  endDate: "2026-06-15" }, // 5 months out
+      { id: "a", monthlyAmountUSD: 100, freedFromDate: "2026-03-15" }, // 2 months out
+      { id: "b", monthlyAmountUSD: 50,  freedFromDate: "2026-06-15" }, // 5 months out
     ];
     const months = capacityByMonth(300, obligations, 6, asOf);
     expect(months[1].capacityUSD).toBe(300); // Feb -- neither terminated yet
@@ -153,9 +206,51 @@ describe("capacityByMonth — the step-change (the acceptance criterion, written
   });
 
   it("an obligation that already ended before asOf is already freed from month 0", () => {
-    const obligations: RecurringCapacityInput[] = [{ id: "old", monthlyAmountUSD: 150, endDate: "2025-12-01" }];
+    const obligations: RecurringCapacityInput[] = [{ id: "old", monthlyAmountUSD: 150, freedFromDate: "2025-12-01" }];
     const months = capacityByMonth(500, obligations, 2, asOf);
     expect(months[0].capacityUSD).toBe(650);
+  });
+
+  // ACCEPTANCE (F2/Phase 3): the owner's real Uni item, from the
+  // 2026-09-05 export, not a synthetic fixture. $750/mo, $6,750 total,
+  // endDate null, two cycles confirmed (Aug 1 and Sep 1). This is the only
+  // bounded obligation in the real data, and under the pre-existing
+  // endDate-only filter it produced a permanently flat capacity line --
+  // the feature would have looked like it worked while reporting nothing.
+  it("the owner's real Uni item: capacity steps up in May 2027, and NOT in April, when its final payment is still owed", () => {
+    const uni = makeRecurring({
+      id: "e2qthrxw", name: "Uni", amount: 750, currency: "USD",
+      frequency: "monthly", startDate: "2026-08-01", endDate: null,
+      totalAmount: 6750, confirmCutoverDate: "2026-08-24", bucket: "NEEDS",
+    });
+    const tx = (date: string): StoredTransaction => ({
+      id: `t-${date}`, amount: 750, currency: "USD", bucket: "NEEDS",
+      description: "Uni", date, recurringId: "e2qthrxw",
+    });
+    const confirmed = [tx("2026-08-01"), tx("2026-09-01")];
+    const today = new Date(Date.UTC(2026, 8, 13)); // 2026-09-13
+
+    // $1,500 of $6,750 confirmed -> $5,250 left = 7 payments, Oct 2026
+    // through Apr 2027. April's $750 is owed, so the step is May.
+    const freed = capacityFreedFrom(uni, confirmed, today);
+    expect(freed).not.toBeNull();
+    expect(freed!.toISOString().slice(0, 10)).toBe("2027-05-01");
+
+    // Base 0: the strip reports freed capacity on its own, deliberately not
+    // added to any planning figure -- see ProjectionsScreen's own note.
+    const months = capacityByMonth(0, [
+      { id: uni.id, monthlyAmountUSD: 750, freedFromDate: freed!.toISOString().slice(0, 10) },
+    ], 12, today);
+
+    expect(months[7].capacityUSD).toBe(0);   // Apr 2027 -- final payment still owed
+    expect(months[8].capacityUSD).toBe(750); // May 2027 -- the step
+    expect(months[12].capacityUSD).toBe(750); // and it stays freed
+
+    // The regression lock on the actual defect: had Uni been passed through
+    // the old endDate-only path (endDate is null on this item), every month
+    // would read 0 and no step would ever appear.
+    const oldPath = capacityByMonth(0, [{ id: uni.id, monthlyAmountUSD: 750, freedFromDate: uni.endDate }], 12, today);
+    expect(oldPath.every((m) => m.capacityUSD === 0)).toBe(true);
   });
 
   it("returns monthsAhead + 1 entries (this month plus each month ahead), indexed by monthsFromNow", () => {

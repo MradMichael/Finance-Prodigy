@@ -248,3 +248,51 @@ describe("ProjectionsScreen — the slider track spans income", () => {
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// F2 forward capacity: the "Looking ahead" strip.
+//
+// Two things are asserted here that the pure-function tests can't reach:
+// that a totalAmount-bounded item actually SURFACES in the product (the
+// whole defect was that it silently didn't), and that the copy stays a
+// statement about commitments rather than a claim about the plan below it.
+// The second matters because the plan is still computed on one flat monthly
+// amount -- a strip that implied otherwise would put two irreconcilable
+// figures on one screen.
+describe("Looking ahead — bounded obligations that free capacity later", () => {
+  const UNI = {
+    id: "uni", name: "Uni", emoji: "", amount: 750, currency: "USD" as const,
+    frequency: "monthly" as const, bucket: "NEEDS" as const,
+    startDate: "2026-01-01", endDate: null, totalAmount: 6750,
+    createdAt: "2026-01-01T00:00:00.000Z",
+  };
+  const RENT = { ...UNI, id: "rent", name: "Rent", amount: 300, totalAmount: null };
+
+  it("a totalAmount-capped item with no endDate appears, with its freed amount and month", () => {
+    renderProjections({ recurring: [UNI] });
+    // 9 payments of $750 from 2026-01-01; NOW is 2026-07-15 with nothing
+    // confirmed, so all 9 remain from the next cycle (Aug 1) -> last owed
+    // Apr 2027, freed from May 2027.
+    expect(screen.getByText(/Uni finishes/)).toBeTruthy();
+    expect(screen.getByText(/\+\$750\/mo from May 2027/)).toBeTruthy();
+  });
+
+  it("an indefinite item never appears — the pair, so the assertion above isn't just 'any recurring item renders'", () => {
+    renderProjections({ recurring: [RENT] });
+    expect(screen.queryByText(/Looking ahead/)).toBeNull();
+    expect(screen.queryByText(/Rent finishes/)).toBeNull();
+  });
+
+  it("the copy states the plan does NOT account for the step", () => {
+    renderProjections({ recurring: [UNI] });
+    const note = screen.getByText(/Nothing below has been brought forward/);
+    expect(note.textContent).toMatch(/not in the plan below/);
+    // And it must not promise the opposite anywhere in the strip.
+    expect(screen.queryByText(/sooner because/i)).toBeNull();
+  });
+
+  it("the strip is absent entirely when there are no recurring items at all", () => {
+    renderProjections({ recurring: [] });
+    expect(screen.queryByText(/Looking ahead/)).toBeNull();
+  });
+});

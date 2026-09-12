@@ -215,18 +215,36 @@ export function fastestGoalCompletion(
  *
  * baseCapacityUSD is assumed to already have every currently-active
  * obligation netted out (today's real, current monthly capacity) --
- * capacityByMonth adds each obligation's amount BACK once its own endDate
- * passes, which is what produces the step change. Which obligations are
- * "currently active" (and thus already reflected in baseCapacityUSD) is a
- * wiring-stage decision (isRecurringActive), not this pure function's --
- * same division of responsibility as GoalCapacityInput/allocateGoalCapacity
- * above.
+ * capacityByMonth adds each obligation's amount BACK once its own
+ * freedFromDate passes, which is what produces the step change. Which
+ * obligations are "currently active" (and thus already reflected in
+ * baseCapacityUSD) is a wiring-stage decision (isRecurringActive), not this
+ * pure function's -- same division of responsibility as
+ * GoalCapacityInput/allocateGoalCapacity above.
+ *
+ * This function is bound-type-agnostic by design: it takes an already
+ * resolved freedFromDate and never inspects endDate or totalAmount itself.
+ * Resolving those is capacityFreedFrom's job (localData.ts), which keeps
+ * this one pure and currency/storage-agnostic like its siblings above.
  */
 export interface RecurringCapacityInput {
   id: string;
   monthlyAmountUSD: number;
-  /** ISO date (YYYY-MM-DD), or null for an obligation with no end date -- never frees capacity. */
-  endDate: string | null;
+  /**
+   * ISO date (YYYY-MM-DD) from which this obligation stops consuming
+   * capacity, or null for one that never does.
+   *
+   * Named for what it means rather than for where it came from, and
+   * deliberately NOT `endDate`. That was the original field name, and it
+   * caused the defect this replaces: callers built it from
+   * `StoredRecurring.endDate` alone, so every `totalAmount`-capped item --
+   * an instalment plan, a loan, the owner's own Uni item -- arrived here as
+   * `null` and was treated as indefinite. A field called `endDate` invites
+   * exactly that; one called `freedFromDate` has no obvious wrong thing to
+   * pass. Build it with `capacityFreedFrom` (localData.ts), which resolves
+   * both bound types and is where the one-cycle offset between them lives.
+   */
+  freedFromDate: string | null;
 }
 
 export interface MonthlyCapacity {
@@ -260,7 +278,7 @@ export function capacityByMonth(
   for (let m = 0; m <= monthsAhead; m++) {
     const monthDate = addMonthsUTC(asOf, m);
     const freedUpUSD = obligations
-      .filter((o) => o.endDate !== null && new Date(o.endDate) <= monthDate)
+      .filter((o) => o.freedFromDate !== null && new Date(o.freedFromDate) <= monthDate)
       .reduce((s, o) => s + o.monthlyAmountUSD, 0);
     results.push({ monthsFromNow: m, capacityUSD: baseCapacityUSD + freedUpUSD });
   }
