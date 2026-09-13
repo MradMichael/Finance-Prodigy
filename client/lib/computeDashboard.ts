@@ -1058,7 +1058,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     // a real mismatch worth flagging -- $5 is small enough to catch a real
     // missed transaction, large enough to ignore currency-conversion noise.
     if (bc.discrepancy != null && Math.abs(bc.discrepancy) >= 5) {
-      alerts.push({ id: `balance-${bc.id}`, severity: "warning", message: `${bc.name} doesn't match what you logged`, screen: "finances" });
+      alerts.push({ id: `balance-${bc.id}`, severity: "warning", message: `${bc.name} doesn't match what you logged`, screen: "balancecheck" });
     }
   }
   // Critical first, otherwise keep each category's own natural order

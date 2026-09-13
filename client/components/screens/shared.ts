@@ -6,7 +6,7 @@ import type { Currency } from "../../lib/localData";
 // distinct from "offline" (which a plain retry can resolve on its own).
 export type SyncStatus = "idle" | "syncing" | "synced" | "offline" | "conflict";
 
-export type Screen = "overview" | "budget" | "setup" | "finances" | "transactions" | "categories" | "goals" | "debts" | "recurring" | "projections" | "journey" | "currency" | "wishlist" | "statistics";
+export type Screen = "overview" | "budget" | "setup" | "finances" | "transactions" | "categories" | "goals" | "debts" | "recurring" | "projections" | "journey" | "currency" | "balancecheck" | "wishlist" | "statistics";
 
 export const NAV: { key: Screen; label: string; icon: string }[] = [
   { key: "overview",     label: "Overview",     icon: "◉" },
@@ -23,6 +23,7 @@ export const NAV: { key: Screen; label: string; icon: string }[] = [
   { key: "statistics",   label: "Statistics",   icon: "▤" },
   { key: "journey",      label: "Journey",      icon: "✦" },
   { key: "currency",     label: "Currency",     icon: "⇄" },
+  { key: "balancecheck", label: "Balance Check", icon: "🔍" },
 ];
 
 export const SERIF: CSSProperties = { fontFamily: "Spectral, Georgia, serif" };

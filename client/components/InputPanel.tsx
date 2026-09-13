@@ -150,14 +150,6 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   const [aValue,    setAValue]    = useState("");
   const [aCurrency, setACurrency] = useState<Currency>("USD");
 
-  // Tracked balance (reconciliation) form
-  const [tbName,        setTbName]        = useState("");
-  const [tbMethod,      setTbMethod]      = useState<PaymentMethod>("cash");
-  const [tbCardId,      setTbCardId]      = useState("");
-  const [tbStartBal,    setTbStartBal]    = useState("");
-  const [tbStartDate,   setTbStartDate]   = useState(todayISO());
-  const [tbCurrency,    setTbCurrency]    = useState<Currency>("USD");
-  const [actualInputs,  setActualInputs]  = useState<Record<string, string>>({});
 
   // Transfer form (2.4.55 sub-phase 2) -- source pool -> destination pool.
   // Both sides reuse PaymentMethodPicker (cash/card/other), not a
@@ -391,54 +383,6 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   function deleteAsset(id: string) {
     if (!confirm("Remove this asset?")) return;
     update({ assets: (financials.assets ?? []).filter((a) => a.id !== id) });
-  }
-
-  function addTrackedBalance() {
-    if (!tbName.trim() || !tbStartBal) return;
-    if (tbMethod === "card" && !tbCardId) return;
-    const tb: TrackedBalance = {
-      id: uid(), name: tbName.trim(), paymentMethod: tbMethod,
-      ...(tbMethod === "card" ? { cardId: tbCardId } : {}),
-      startingBalance: parseFloat(tbStartBal.replace(/,/g, "")),
-      startingDate: tbStartDate, currency: tbCurrency,
-      ...withRate(tbCurrency, financials.lbpRate ?? DEFAULT_LBP_RATE),
-    };
-    update({ trackedBalances: [...(financials.trackedBalances ?? []), tb] });
-    setTbName(""); setTbMethod("cash"); setTbCardId(""); setTbStartBal(""); setTbStartDate(todayISO()); setTbCurrency("USD");
-  }
-
-  function updateActualBalance(id: string) {
-    const raw = actualInputs[id];
-    const amt = parseFloat((raw ?? "").replace(/,/g, ""));
-    if (isNaN(amt)) return;
-    // 2.4.42: this replaces the previous check in place, with no history
-    // kept -- a mistyped figure silently destroys the last real snapshot.
-    // Only worth confirming when there's actually a prior check to lose;
-    // the very first "what you actually have now" entry for a tracked
-    // balance has nothing behind it yet.
-    const tb = (financials.trackedBalances ?? []).find((t) => t.id === id);
-    if (!tb) return;
-    if (tb.actualBalance != null && !confirm(`Replace your last check (${fmtCur(tb.actualBalance, tb.currency)} on ${fmtDate(tb.actualBalanceDate ?? "")}) with this new figure? This also resets the tracking baseline to today, so past drift won't keep affecting future checks. The old figure won't be recoverable.`)) {
-      return;
-    }
-    // Snapshot the live expected total (from dashData, already computed as
-    // of right now) at the exact moment of confirming -- see
-    // computeDashboard.ts's balanceChecks for why this can't be
-    // reconstructed later from transaction dates. This is the OLD
-    // baseline's prediction, captured before reanchorTrackedBalance resets
-    // startingBalance/startingDate below (2.4.53) -- preserved so the
-    // discrepancy this check-in reveals survives the re-anchor.
-    const expectedNow = dashData.balanceChecks.find((b) => b.id === id)?.expected;
-    update({
-      trackedBalances: (financials.trackedBalances ?? []).map((t) =>
-        t.id !== id ? t : reanchorTrackedBalance(t, amt, expectedNow, financials.lbpRate ?? DEFAULT_LBP_RATE)),
-    });
-    setActualInputs((prev) => ({ ...prev, [id]: "" }));
-  }
-
-  function deleteTrackedBalance(id: string) {
-    if (!confirm("Remove this tracked balance?")) return;
-    update({ trackedBalances: (financials.trackedBalances ?? []).filter((tb) => tb.id !== id) });
   }
 
   // Human-readable pool name for a transfer leg's own "Transfer to/from X"
@@ -2026,129 +1970,11 @@ export default function InputPanel({ financials, dashData, onChange, session, on
           </div>
         </Section>
 
-        <Section title="Balance Check" icon="🔍" badge={(financials.trackedBalances ?? []).length} defaultOpen={false}>
-          <p className="text-xs" style={{ color: T.mute }}>
-            Set a starting balance for your cash or a card. ESSA subtracts every transaction logged on that payment
-            method since then to tell you what you <em>should</em> have. Compare it to what you actually see, and a
-            gap usually means a payment never got logged. (A recurring bill that hasn&apos;t been confirmed yet
-            won&apos;t show up here — a known limit, not a bug.)
-          </p>
-          <p className="text-[10px] px-1" style={{ color: T.mute }}>
-            Entering what you actually have resets the baseline to that figure and today — so a gap you&apos;ve
-            already noticed and accounted for won&apos;t keep reappearing in every future check.
-          </p>
-          {(financials.trackedBalances ?? []).length > 0 && (
-            <div className="space-y-2">
-              {(financials.trackedBalances ?? []).map((tb) => {
-                const card = tb.cardId ? financials.cards.find((c) => c.id === tb.cardId) : null;
-                return (
-                  <div key={tb.id} className="rounded-xl p-3 space-y-2" style={{ background: T.panelSoft, border: `1px solid ${T.line}` }}>
-                    <div className="flex items-center justify-between gap-2">
-                      <div>
-                        <p className="text-sm font-medium" style={{ color: T.text }}>{tb.name}</p>
-                        <p className="text-[10px]" style={{ color: T.mute }}>
-                          {tb.paymentMethod === "cash" ? "💵 Cash" : tb.paymentMethod === "card" ? `💳 ${card?.label ?? "Card"}` : "🤝 Other"}
-                          {" · since "}{fmtDate(tb.startingDate)}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => deleteTrackedBalance(tb.id)}
-                        className="text-xs px-2 py-1 rounded-lg hover:opacity-70 transition-opacity flex-shrink-0"
-                        style={{ color: T.coral }}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                    <div className="pt-2 space-y-1.5" style={{ borderTop: `1px solid ${T.line}` }}>
-                      {tb.actualBalance != null && (
-                        <p className="text-[10px]" style={{ color: T.mute }}>
-                          Last checked: <span style={{ color: T.text }}>{tb.currency === "LBP" ? "L£" : "$"}{tb.actualBalance.toLocaleString()}</span>
-                          {tb.actualBalanceDate && ` on ${fmtDate(tb.actualBalanceDate)}`}
-                        </p>
-                      )}
-                      {(() => {
-                        const check = dashData.balanceChecks.find((b) => b.id === tb.id);
-                        return check ? (
-                          <p className="text-[10px]" style={{ color: T.mute }}>
-                            Expected now: <span style={{ color: T.text }}>{fmtCur(check.expected, "USD")}</span>
-                          </p>
-                        ) : null;
-                      })()}
-                      <div className="flex gap-2">
-                        <div className="flex-1">
-                          <MoneyInput
-                            value={actualInputs[tb.id] ?? ""}
-                            onChange={(v) => setActualInputs((prev) => ({ ...prev, [tb.id]: v }))}
-                            placeholder="What you actually have now"
-                            max={moneyMaxFor(tb.currency, lbpRate)}
-                          />
-                        </div>
-                        <button
-                          onClick={() => updateActualBalance(tb.id)}
-                          className="px-3 py-1.5 rounded-xl text-xs font-semibold hover:opacity-90 flex-shrink-0"
-                          style={{ background: T.jade, color: T.ink }}
-                        >
-                          Update
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          <div
-            className="rounded-xl p-4 space-y-3"
-            style={{ background: T.ink, border: `1px solid ${T.line}` }}
-          >
-            <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.jade }}>
-              Track a new balance
-            </p>
-            <div>
-              <Label htmlFor="new-tb-name">Name</Label>
-              <FocusInput id="new-tb-name" value={tbName} onChange={(e) => setTbName(e.target.value)} placeholder="Cash, Chase Checking…" />
-            </div>
-            <div>
-              <Label>Payment method</Label>
-              <div className="grid grid-cols-3 gap-1.5">
-                {(["cash", "card", "other"] as PaymentMethod[]).map((m) => (
-                  <button key={m} onClick={() => setTbMethod(m)}
-                    aria-pressed={tbMethod === m}
-                    className="py-1.5 rounded-lg text-[10px] font-medium transition-all"
-                    style={{ background: tbMethod === m ? T.jade + "22" : T.panelSoft, border: `1px solid ${tbMethod === m ? T.jade : T.line}`, color: tbMethod === m ? T.jade : T.mute }}>
-                    {m === "cash" ? "💵 Cash" : m === "card" ? "💳 Card" : "🤝 Other"}
-                  </button>
-                ))}
-              </div>
-            </div>
-            {tbMethod === "card" && (
-              <div>
-                <Label>Which card</Label>
-                {/* 2.4.40: was a static "No saved cards yet" message with no
-                    action -- CardPicker gives this form the same inline
-                    "+ New card" affordance the main transaction form has
-                    always had, instead of forcing a trip to a different
-                    screen and losing whatever was already typed here. */}
-                <CardPicker cardId={tbCardId || null} onCardIdChange={(id) => setTbCardId(id ?? "")} cards={cards} onSaveCard={saveCard} />
-              </div>
-            )}
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <Label htmlFor="new-tb-balance">Starting balance</Label>
-                <MoneyInput id="new-tb-balance" value={tbStartBal} onChange={setTbStartBal} placeholder="0" max={moneyMaxFor(tbCurrency, lbpRate)} />
-              </div>
-              <div>
-                <Label>Currency</Label>
-                <CurrencyToggle value={tbCurrency} onChange={setTbCurrency} />
-              </div>
-            </div>
-            <div>
-              <Label htmlFor="new-tb-date">As of date</Label>
-              <DateFieldDMY id="new-tb-date" value={tbStartDate} onChange={setTbStartDate} />
-            </div>
-            <PrimaryBtn onClick={addTrackedBalance} color={T.jade} disabled={!tbName.trim() || !tbStartBal || (tbMethod === "card" && !tbCardId)}>+ Track this balance</PrimaryBtn>
-          </div>
-        </Section>
+        {/* Balance Check moved to its own page (BalanceCheckScreen,
+            2026-09-13) -- list, check-in, add and remove together, so a
+            single surface owns the feature rather than splitting creation
+            from reconciliation. Reached from the sidebar, and from the
+            balance-check alert on Overview. */}
 
         </>}
 
