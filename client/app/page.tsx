@@ -189,7 +189,29 @@ export default function Home() {
       if (superseded()) return;
       setFinancials({ ...data, userName: s.name });
     });
-  }, [router]);
+  // Mount-only, and deliberately NOT keyed on `router`.
+  //
+  // This is a one-shot bootstrap: read the session, load the account, and (for
+  // a brand-new one) try the server once. Re-running it is never useful, and
+  // `router` is used here only to redirect away when there is no session at
+  // all -- a path that ends the effect immediately.
+  //
+  // Keying on it made correctness depend on useRouter() returning a
+  // referentially stable object. next/navigation does, but nothing in this
+  // repo enforces that, and the failure mode is silent and unbounded: a new
+  // identity per render re-runs the bootstrap on every render, each run
+  // replacing financials with a freshly loaded (history-less) snapshot that
+  // the monthly-snapshot effect then correctly writes back, re-rendering and
+  // starting again. Measured with a hostile mock: 1039 persists in seven
+  // seconds, versus 1 with a stable object. Worse, it would be quiet --
+  // handleChange re-arms the 2500ms sync debounce on every call, so at loop
+  // speed the timer resets faster than it can fire and sync is starved
+  // rather than flooded: no push, no error, nothing to notice.
+  //
+  // page.load-effect-deps.test.tsx mocks useRouter hostilely on purpose and
+  // fails if this dependency ever comes back.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleChange(updated: LocalFinancials) {
     if (!session) return;

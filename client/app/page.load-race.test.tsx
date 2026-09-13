@@ -36,7 +36,11 @@ let releasePull: (v: unknown) => void;
 let pullPending: Promise<unknown>;
 let pullCalls = 0;
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn(), push: vi.fn() }) }));
+// One stable object, not a fresh one per call. next/navigation returns a
+// stable reference, and a mock that does not model that puts the page into a
+// render/persist loop that has nothing to do with what this file tests.
+const ROUTER = { replace: vi.fn(), push: vi.fn() };
+vi.mock("next/navigation", () => ({ useRouter: () => ROUTER }));
 
 vi.mock("../lib/auth", () => ({
   getSession: () => SESSION,
@@ -114,12 +118,17 @@ describe("2.4.69 — a write during the first-load window survives the pull reso
     // reason the window above no longer exists.
     expect(pullCalls).toBe(1);
 
-    // Deliberately NOT asserting here that a subsequent edit sticks. Under
-    // jsdom this page's monthly-snapshot effect writes repeatedly (126
-    // saveData calls were observed in one run of this very test), which
-    // churns state for reasons that have nothing to do with the load race
-    // and would make such an assertion measure that loop instead. Noted
-    // rather than worked around: see the report for this branch.
+    // Not asserting here that a subsequent edit sticks -- that is a different
+    // invariant, covered where the write path is the subject.
+    //
+    // CORRECTION to what this comment previously said. It claimed the page's
+    // monthly-snapshot effect "writes repeatedly (126 saveData calls)". That
+    // was a false attribution: the 126 came from this file's own useRouter
+    // mock returning a new object per render, which churned the load effect's
+    // then-`[router]` dependency. The snapshot effect was writing correctly in
+    // response. Measured afterwards in real browsers: one persist per load in
+    // both dev and production builds. The mock is fixed above and the
+    // dependency is gone (page.load-effect-deps.test.tsx locks it).
   });
 
   it("a legitimate pull is still adopted — the guard must block a STALE run, not the pull itself", { timeout: 20000 }, async () => {
