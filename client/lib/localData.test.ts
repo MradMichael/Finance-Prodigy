@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { monthlyEquivalent, nominalMonthlyEquivalent, isRecurringActive, isPaidThisCycle, nextOccurrence, recurringPaidSoFar, capacityFreedFrom, buildRecurringPaymentLog, buildGoalContributionTx, fmtDate, valueForMonth, loadData, saveData, DEFAULT_DATA, type StoredRecurring, type StoredGoal, type StoredTransaction, type StoredDebt, allCategories, categoryLabel, categoryIcon, CATEGORIES, matchCategoryRule, type CategoryRule, roundMoney, moneyEquals, isEmptyFinancials, type LocalFinancials, toUSD, DEFAULT_LBP_RATE, rateOrDefault, rateForMonth, makeToUSDForMonth, migrateFinancials, CURRENT_SCHEMA_VERSION, todayISO, dueCycles, remainingInstallments, isCycleConfirmed, isCycleOverdue, buildRecurringConfirmLog, cycleMonthDivergence, nextConfirmTarget, historizedRecurringContribution, pendingBackfillCycles, derivedEfBalance, derivedDebtBalance, activeTransactions, purgeTransaction, autoPurgeExpired, buildDebtPaymentTx, buildEfAdjustmentTx, buildDebtAdjustmentTx, applyGoalContribution, mergeTransactions, buildTransferTx, retagBucketAmount, reanchorTrackedBalance, type TrackedBalance } from "./localData";
 import { trackedBalanceExpected } from "./computeDashboard";
+import { asCycleKey, asCalendarKey } from "./period";
 
 // UTC midnight of a given local calendar date -- matches nextOccurrence's
 // own basis (localData.ts's own comment: date-only strings parse as UTC
@@ -816,26 +817,26 @@ describe("historizedRecurringContribution", () => {
     // created after the account was already on schema v3 has no history to
     // grandfather at all.
     const r = makeRecurring({ amount: 100, startDate: "2026-03-01" }); // no confirmCutoverDate
-    expect(historizedRecurringContribution(r, "2026-03", utcMidnight(2026, 2, 15))).toBe(0);
+    expect(historizedRecurringContribution(r, asCycleKey("2026-03"), utcMidnight(2026, 2, 15))).toBe(0);
   });
 
   it("returns the old monthlyEquivalent accrual for a month strictly before the item's own cutover", () => {
     const r = makeRecurring({ amount: 100, startDate: "2026-01-01", confirmCutoverDate: "2026-04-01" });
     const asOf = utcMidnight(2026, 1, 15); // Feb 15 -- before the Apr 1 cutover
-    expect(historizedRecurringContribution(r, "2026-02", asOf)).toBe(monthlyEquivalent(r, asOf));
-    expect(historizedRecurringContribution(r, "2026-02", asOf)).toBe(100);
+    expect(historizedRecurringContribution(r, asCycleKey("2026-02"), asOf)).toBe(monthlyEquivalent(r, asOf));
+    expect(historizedRecurringContribution(r, asCycleKey("2026-02"), asOf)).toBe(100);
   });
 
   it("returns 0 for the cutover's own month, not the old accrual -- the cutover month itself is NOT grandfathered", () => {
     const r = makeRecurring({ amount: 100, startDate: "2026-01-01", confirmCutoverDate: "2026-04-01" });
-    expect(historizedRecurringContribution(r, "2026-04", utcMidnight(2026, 3, 15))).toBe(0);
+    expect(historizedRecurringContribution(r, asCycleKey("2026-04"), utcMidnight(2026, 3, 15))).toBe(0);
   });
 
   it("returns 0 for a month well after the cutover, even though monthlyEquivalent alone would still report a nonzero accrual", () => {
     const r = makeRecurring({ amount: 100, startDate: "2026-01-01", confirmCutoverDate: "2026-04-01" });
     const asOf = utcMidnight(2026, 5, 15); // Jun 15, well past cutover
     expect(monthlyEquivalent(r, asOf)).toBe(100); // the old estimate would still say $100...
-    expect(historizedRecurringContribution(r, "2026-06", asOf)).toBe(0); // ...but the new rule says 0 -- confirmed cycles are already real transactions, counted elsewhere
+    expect(historizedRecurringContribution(r, asCycleKey("2026-06"), asOf)).toBe(0); // ...but the new rule says 0 -- confirmed cycles are already real transactions, counted elsewhere
   });
 });
 
@@ -1366,25 +1367,25 @@ describe("Phase 2.6.3c -- buildDebtPaymentTx and buildEfAdjustmentTx (tests-firs
 
 describe("valueForMonth", () => {
   it("returns the fallback when there's no history yet", () => {
-    expect(valueForMonth(undefined, "2026-07", 500)).toBe(500);
-    expect(valueForMonth([], "2026-07", 500)).toBe(500);
+    expect(valueForMonth(undefined, asCycleKey("2026-07"), 500)).toBe(500);
+    expect(valueForMonth([], asCycleKey("2026-07"), 500)).toBe(500);
   });
 
   it("returns the most recent entry at or before the target month", () => {
-    const history = [{ ym: "2026-01", value: 1000 }, { ym: "2026-05", value: 2000 }];
-    expect(valueForMonth(history, "2026-07", 999)).toBe(2000);
-    expect(valueForMonth(history, "2026-05", 999)).toBe(2000); // exact match
-    expect(valueForMonth(history, "2026-03", 999)).toBe(1000); // between entries -> most recent past one
+    const history = [{ ym: asCycleKey("2026-01"), value: 1000 }, { ym: asCycleKey("2026-05"), value: 2000 }];
+    expect(valueForMonth(history, asCycleKey("2026-07"), 999)).toBe(2000);
+    expect(valueForMonth(history, asCycleKey("2026-05"), 999)).toBe(2000); // exact match
+    expect(valueForMonth(history, asCycleKey("2026-03"), 999)).toBe(1000); // between entries -> most recent past one
   });
 
   it("falls back when the target month is before any recorded history", () => {
-    const history = [{ ym: "2026-06", value: 2000 }];
-    expect(valueForMonth(history, "2026-01", 999)).toBe(999);
+    const history = [{ ym: asCycleKey("2026-06"), value: 2000 }];
+    expect(valueForMonth(history, asCycleKey("2026-01"), 999)).toBe(999);
   });
 
   it("is unaffected by history entries out of chronological order", () => {
-    const history = [{ ym: "2026-05", value: 2000 }, { ym: "2026-01", value: 1000 }];
-    expect(valueForMonth(history, "2026-07", 999)).toBe(2000);
+    const history = [{ ym: asCycleKey("2026-05"), value: 2000 }, { ym: asCycleKey("2026-01"), value: 1000 }];
+    expect(valueForMonth(history, asCycleKey("2026-07"), 999)).toBe(2000);
   });
 });
 
@@ -1703,10 +1704,10 @@ describe("migrateFinancials", () => {
       customCategories: [{ value: "gym", label: "Gym", icon: "💪" }],
       categoryRules: [],
       wishlist: [],
-      netWorthHistory: [{ ym: "2026-08", value: 500 }],
-      incomeHistory: [{ ym: "2026-08", value: 2000 }],
-      lbpRateHistory: [{ ym: "2026-08", value: 89500 }],
-      budgetRuleHistory: [{ ym: "2026-08", needs: 60, wants: 25, savings: 15 }],
+      netWorthHistory: [{ ym: asCalendarKey("2026-08"), value: 500 }],
+      incomeHistory: [{ ym: asCycleKey("2026-08"), value: 2000 }],
+      lbpRateHistory: [{ ym: asCycleKey("2026-08"), value: 89500 }],
+      budgetRuleHistory: [{ ym: asCycleKey("2026-08"), needs: 60, wants: 25, savings: 15 }],
       budgetRule: "custom",
       budgetCustomNeeds: 60,
       budgetCustomWants: 25,
@@ -1744,7 +1745,7 @@ describe("migrateFinancials", () => {
     expect(migrated.emergencyFundOpeningBalance).toBe(500);
 
     // Transactions: the LBP one (t2) gets lbpRateAtEntry backfilled from
-    // valueForMonth(lbpRateHistory, "2026-08", lbpRate) -- the fixture's
+    // valueForMonth(lbpRateHistory, asCycleKey("2026-08"), lbpRate) -- the fixture's
     // history has an exact "2026-08" entry (89500), so that's the value.
     // Both USD transactions are byte-identical, untouched.
     expect(migrated.transactions).toEqual([
@@ -2426,62 +2427,62 @@ describe("rateOrDefault — the single place that decides what a usable LBP rate
 });
 
 describe("rateForMonth — guards the stored history entry as well as the live fallback", () => {
-  const history = [{ ym: "2026-03", value: 100_000 }, { ym: "2026-06", value: 120_000 }];
+  const history = [{ ym: asCycleKey("2026-03"), value: 100_000 }, { ym: asCycleKey("2026-06"), value: 120_000 }];
 
   it("returns the entry in effect for that month", () => {
-    expect(rateForMonth(history, "2026-04", 89_500)).toBe(100_000);
-    expect(rateForMonth(history, "2026-07", 89_500)).toBe(120_000);
+    expect(rateForMonth(history, asCycleKey("2026-04"), 89_500)).toBe(100_000);
+    expect(rateForMonth(history, asCycleKey("2026-07"), 89_500)).toBe(120_000);
   });
 
   it("falls back to the live rate for a month before any entry exists", () => {
-    expect(rateForMonth(history, "2026-01", 89_500)).toBe(89_500);
+    expect(rateForMonth(history, asCycleKey("2026-01"), 89_500)).toBe(89_500);
   });
 
   it("falls back to the default when the history is empty or absent", () => {
-    expect(rateForMonth([], "2026-04", 89_500)).toBe(89_500);
-    expect(rateForMonth(undefined, "2026-04", 89_500)).toBe(89_500);
+    expect(rateForMonth([], asCycleKey("2026-04"), 89_500)).toBe(89_500);
+    expect(rateForMonth(undefined, asCycleKey("2026-04"), 89_500)).toBe(89_500);
   });
 
   it("a ZERO history entry is replaced by the default -- the case a live-rate guard alone can never catch", () => {
-    const poisoned = [{ ym: "2026-03", value: 0 }];
-    expect(rateForMonth(poisoned, "2026-04", 89_500)).toBe(DEFAULT_LBP_RATE);
+    const poisoned = [{ ym: asCycleKey("2026-03"), value: 0 }];
+    expect(rateForMonth(poisoned, asCycleKey("2026-04"), 89_500)).toBe(DEFAULT_LBP_RATE);
   });
 
   it("a negative or NaN history entry is replaced by the default", () => {
-    expect(rateForMonth([{ ym: "2026-03", value: -5 }], "2026-04", 89_500)).toBe(DEFAULT_LBP_RATE);
-    expect(rateForMonth([{ ym: "2026-03", value: Number.NaN }], "2026-04", 89_500)).toBe(DEFAULT_LBP_RATE);
+    expect(rateForMonth([{ ym: asCycleKey("2026-03"), value: -5 }], asCycleKey("2026-04"), 89_500)).toBe(DEFAULT_LBP_RATE);
+    expect(rateForMonth([{ ym: asCycleKey("2026-03"), value: Number.NaN }], asCycleKey("2026-04"), 89_500)).toBe(DEFAULT_LBP_RATE);
   });
 
   it("guards the live rate too when it is used as the fallback -- both inputs are hostile, so both are guarded", () => {
-    expect(rateForMonth([], "2026-04", 0)).toBe(DEFAULT_LBP_RATE);
-    expect(rateForMonth(undefined, "2026-04", Number.NaN)).toBe(DEFAULT_LBP_RATE);
+    expect(rateForMonth([], asCycleKey("2026-04"), 0)).toBe(DEFAULT_LBP_RATE);
+    expect(rateForMonth(undefined, asCycleKey("2026-04"), Number.NaN)).toBe(DEFAULT_LBP_RATE);
   });
 });
 
 describe("makeToUSDForMonth — the historized converter, built once instead of copied four times", () => {
-  const base = { ...DEFAULT_DATA, lbpRate: 89_500, lbpRateHistory: [{ ym: "2026-03", value: 100_000 }] } as LocalFinancials;
+  const base = { ...DEFAULT_DATA, lbpRate: 89_500, lbpRateHistory: [{ ym: asCycleKey("2026-03"), value: 100_000 }] } as LocalFinancials;
 
   it("converts an LBP amount at the rate in effect for that month", () => {
     const conv = makeToUSDForMonth(base);
-    expect(conv(200_000, "LBP", "2026-04")).toBeCloseTo(2, 5);
+    expect(conv(200_000, "LBP", asCycleKey("2026-04"))).toBeCloseTo(2, 5);
   });
 
   it("passes USD (and an absent currency) through untouched", () => {
     const conv = makeToUSDForMonth(base);
-    expect(conv(250, "USD", "2026-04")).toBe(250);
-    expect(conv(250, undefined, "2026-04")).toBe(250);
+    expect(conv(250, "USD", asCycleKey("2026-04"))).toBe(250);
+    expect(conv(250, undefined, asCycleKey("2026-04"))).toBe(250);
   });
 
   it("stays finite when the history entry for that month is zero", () => {
-    const conv = makeToUSDForMonth({ ...base, lbpRateHistory: [{ ym: "2026-03", value: 0 }] } as LocalFinancials);
-    const result = conv(89_500, "LBP", "2026-04");
+    const conv = makeToUSDForMonth({ ...base, lbpRateHistory: [{ ym: asCycleKey("2026-03"), value: 0 }] } as LocalFinancials);
+    const result = conv(89_500, "LBP", asCycleKey("2026-04"));
     expect(Number.isFinite(result)).toBe(true);
     expect(result).toBeCloseTo(1, 5);
   });
 
   it("stays finite when the live rate is zero and there is no history to fall back on", () => {
     const conv = makeToUSDForMonth({ ...base, lbpRate: 0, lbpRateHistory: [] } as LocalFinancials);
-    const result = conv(89_500, "LBP", "2026-04");
+    const result = conv(89_500, "LBP", asCycleKey("2026-04"));
     expect(Number.isFinite(result)).toBe(true);
     expect(result).toBeCloseTo(1, 5);
   });

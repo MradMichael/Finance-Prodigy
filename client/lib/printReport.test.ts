@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { buildReportHtml } from "./printReport";
 import { computeDashboard } from "./computeDashboard";
 import { DEFAULT_DATA, type LocalFinancials, type StoredTransaction } from "./localData";
+import { asCycleKey } from "./period";
 
 const NOW = new Date(2026, 7, 15); // August 15, 2026
 
@@ -34,7 +35,7 @@ describe("buildReportHtml -- detailed ledger LBP historization (2.4.22)", () => 
     };
     const data = makeData({
       lbpRate: 90000,
-      lbpRateHistory: [{ ym: "2026-01", value: 80000 }],
+      lbpRateHistory: [{ ym: asCycleKey("2026-01"), value: 80000 }],
       transactions: [tx],
     });
     const dash = computeDashboard(data);
@@ -66,7 +67,7 @@ describe("buildReportHtml -- a zero rate in history cannot render Infinity into 
     };
     const data = makeData({
       lbpRate: 89_500,
-      lbpRateHistory: [{ ym: "2026-01", value: 0 }],
+      lbpRateHistory: [{ ym: asCycleKey("2026-01"), value: 0 }],
       transactions: [tx],
     });
     const html = buildReportHtml("Test", data, computeDashboard(data), { detailed: true });

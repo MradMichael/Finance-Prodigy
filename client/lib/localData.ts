@@ -1,5 +1,9 @@
 "use client";
 
+import type { CycleKey, CycleHistory, CalendarHistory } from "./period";
+import { cycleKeyForISO } from "./period";
+export type { CycleKey, CalendarKey, CycleHistory, CalendarHistory } from "./period";
+
 export type Currency = "USD" | "LBP";
 export type PaymentMethod = "cash" | "card" | "other";
 
@@ -500,13 +504,13 @@ export interface LocalFinancials {
   assets: StoredAsset[];
   trackedBalances: TrackedBalance[];
   /** One entry per calendar month (YYYY-MM), appended/updated as the dashboard is computed — powers the net worth trend chart. */
-  netWorthHistory: { ym: string; value: number }[];
+  netWorthHistory: CalendarHistory;
   /** One entry per calendar month (YYYY-MM) that `income` actually changed in — lets past months be judged against what income was *then*, not whatever it is today. Absent/empty on accounts predating this field. */
-  incomeHistory?: { ym: string; value: number }[];
+  incomeHistory?: CycleHistory;
   /** Same idea as incomeHistory, for `lbpRate` — LBP is volatile enough that using today's rate to re-convert a past month's LBP transactions silently rewrites history every time the rate is updated. */
-  lbpRateHistory?: { ym: string; value: number }[];
+  lbpRateHistory?: CycleHistory;
   /** Same idea as incomeHistory/lbpRateHistory, for the resolved budget-rule percentages — otherwise switching budget rules silently rewrites what every past month "should have saved" (budgetRollover) and which past months count toward a savings streak. */
-  budgetRuleHistory?: { ym: string; needs: number; wants: number; savings: number }[];
+  budgetRuleHistory?: CycleHistory<{ needs: number; wants: number; savings: number }>;
   /** ISO timestamp of the last time `lbpRate` was actually edited — powers the staleness indicator in SetupScreen (day-level precision; lbpRateHistory above only tracks month granularity). Absent on accounts predating this field, or if the rate has never been edited since. */
   lbpRateUpdatedAt?: string;
   budgetRule?: BudgetRuleKey;
@@ -642,7 +646,7 @@ export const DEFAULT_DATA: LocalFinancials = {
  * lbpRateAtEntry comment for why a template shouldn't get one at all.
  */
 function addCurrencyAndRate(d: LocalFinancials): LocalFinancials {
-  const rateForDate = (dateOrIso: string) => valueForMonth(d.lbpRateHistory, dateOrIso.slice(0, 7), d.lbpRate);
+  const rateForDate = (dateOrIso: string) => valueForMonth(d.lbpRateHistory, cycleKeyForISO(dateOrIso), d.lbpRate);
   return {
     ...d,
     schemaVersion: 2,
@@ -819,12 +823,12 @@ export function isEmptyFinancials(data: LocalFinancials): boolean {
  * "a flat current setting that can change over time" with the same shape.
  */
 export function valueForMonth(
-  history: { ym: string; value: number }[] | undefined,
-  ym: string,
+  history: CycleHistory | undefined,
+  ym: CycleKey,
   fallback: number,
 ): number {
   if (!history || history.length === 0) return fallback;
-  let best: { ym: string; value: number } | null = null;
+  let best: { ym: CycleKey; value: number } | null = null;
   for (const h of history) {
     if (h.ym <= ym && (best === null || h.ym > best.ym)) best = h;
   }
@@ -833,12 +837,12 @@ export function valueForMonth(
 
 /** Same lookup as valueForMonth, but for the {needs, wants, savings} shape budgetRuleHistory snapshots. */
 export function budgetPctForMonth(
-  history: { ym: string; needs: number; wants: number; savings: number }[] | undefined,
-  ym: string,
+  history: CycleHistory<{ needs: number; wants: number; savings: number }> | undefined,
+  ym: CycleKey,
   fallback: { needs: number; wants: number; savings: number },
 ): { needs: number; wants: number; savings: number } {
   if (!history || history.length === 0) return fallback;
-  let best: { ym: string; needs: number; wants: number; savings: number } | null = null;
+  let best: { ym: CycleKey; needs: number; wants: number; savings: number } | null = null;
   for (const h of history) {
     if (h.ym <= ym && (best === null || h.ym > best.ym)) best = h;
   }
@@ -983,7 +987,7 @@ export function rateOrDefault(rate: number | null | undefined): number {
  * rewrite real data to fix a rate problem.
  */
 export function rateForMonth(
-  history: { ym: string; value: number }[] | undefined, ym: string, liveRate: number,
+  history: CycleHistory | undefined, ym: CycleKey, liveRate: number,
 ): number {
   return rateOrDefault(valueForMonth(history, ym, rateOrDefault(liveRate)));
 }
@@ -1000,7 +1004,7 @@ export function rateForMonth(
  * every existing call site passes a loose string, and widening them would mean a wave of
  * casts for a defensive change.
  */
-export function makeToUSDForMonth(data: LocalFinancials): (amount: number, currency: string | undefined, ym: string) => number {
+export function makeToUSDForMonth(data: LocalFinancials): (amount: number, currency: string | undefined, ym: CycleKey) => number {
   const liveRate = data.lbpRate ?? DEFAULT_LBP_RATE;
   return (amount, currency, ym) =>
     currency === "LBP" ? amount / rateForMonth(data.lbpRateHistory, ym, liveRate) : amount;
@@ -1645,7 +1649,7 @@ export function nextConfirmTarget(r: StoredRecurring, transactions: StoredTransa
  * ym < cutoverYm` would read as "no cutover -> always old rule," which is
  * backwards; the condition below is deliberately the other way around.
  */
-export function historizedRecurringContribution(r: StoredRecurring, ym: string, asOf: Date): number {
+export function historizedRecurringContribution(r: StoredRecurring, ym: CycleKey, asOf: Date): number {
   if (r.confirmCutoverDate && ym < r.confirmCutoverDate.slice(0, 7)) {
     return monthlyEquivalent(r, asOf);
   }

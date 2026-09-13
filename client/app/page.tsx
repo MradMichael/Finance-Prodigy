@@ -24,6 +24,7 @@ import type { Screen, SyncStatus } from "../components/screens/shared";
 import { loadData, saveData, isEmptyFinancials, buildRecurringConfirmLog, nextConfirmTarget, autoPurgeExpired, DEFAULT_LBP_RATE } from "../lib/localData";
 import type { LocalFinancials } from "../lib/localData";
 import { computeDashboard } from "../lib/computeDashboard";
+import { currentCycleKey, calendarKeyForDate, type CycleKey, type CycleHistory } from "../lib/period";
 import { getSession, hasValidSession, signOut } from "../lib/auth";
 import type { Session } from "../lib/auth";
 import { pushToServer, pullFromServer, hasAutoPulled, markAutoPulled, mergeAndPush, buildMergeNoticeText } from "../lib/syncService";
@@ -317,9 +318,14 @@ export default function Home() {
   useEffect(() => {
     if (!financials || !dashboardData) return;
     const now = new Date();
-    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    // The one write path for all four histories, and now the one place their
+    // two key spaces are distinguished. Identical strings at startDay 1; the
+    // TYPES differ, which is what stops a future edit from keying
+    // netWorthHistory by cycle or the other three by calendar (2.4.87).
+    const cycleYm = currentCycleKey(now);
+    const calendarYm = calendarKeyForDate(now);
 
-    function snapshot(history: { ym: string; value: number }[] | undefined, value: number) {
+    function snapshot<K extends string>(history: { ym: K; value: number }[] | undefined, ym: K, value: number) {
       const h = history ?? [];
       if (h.find((e) => e.ym === ym)?.value === value) return h;
       return [...h.filter((e) => e.ym !== ym), { ym, value }]
@@ -328,7 +334,8 @@ export default function Home() {
     }
 
     function snapshotBudgetPct(
-      history: { ym: string; needs: number; wants: number; savings: number }[] | undefined,
+      history: CycleHistory<{ needs: number; wants: number; savings: number }> | undefined,
+      ym: CycleKey,
       pct: { needs: number; wants: number; savings: number },
     ) {
       const h = history ?? [];
@@ -339,10 +346,10 @@ export default function Home() {
         .slice(-24);
     }
 
-    const updatedNetWorth  = snapshot(financials.netWorthHistory, dashboardData.netWorth.total);
-    const updatedIncome    = snapshot(financials.incomeHistory, financials.income);
-    const updatedLbpRate   = snapshot(financials.lbpRateHistory, financials.lbpRate);
-    const updatedBudgetPct = snapshotBudgetPct(financials.budgetRuleHistory, dashboardData.budgetTargetPct);
+    const updatedNetWorth  = snapshot(financials.netWorthHistory, calendarYm, dashboardData.netWorth.total);
+    const updatedIncome    = snapshot(financials.incomeHistory, cycleYm, financials.income);
+    const updatedLbpRate   = snapshot(financials.lbpRateHistory, cycleYm, financials.lbpRate);
+    const updatedBudgetPct = snapshotBudgetPct(financials.budgetRuleHistory, cycleYm, dashboardData.budgetTargetPct);
 
     if (updatedNetWorth === financials.netWorthHistory
       && updatedIncome === financials.incomeHistory

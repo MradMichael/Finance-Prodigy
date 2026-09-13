@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
-import { historizedRecurringContribution, toUSD as toUSDShared, todayISO, moneyEquals, activeTransactions, DEFAULT_LBP_RATE } from "../../lib/localData";
+import { historizedRecurringContribution, toUSD as toUSDShared, moneyEquals, activeTransactions, DEFAULT_LBP_RATE } from "../../lib/localData";
 import { computeHoldingsByCurrency } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
 import Donut from "../charts/Donut";
+import { currentCycleKey } from "../../lib/period";
 
 export default function CurrencyScreen({ financials }: { financials: LocalFinancials }) {
   const T = useTheme();
@@ -18,7 +19,7 @@ export default function CurrencyScreen({ financials }: { financials: LocalFinanc
   // ── Spend by currency: this month's transactions + active recurring,
   // native currency (not converted) so this actually measures which
   // currency money is changing hands in, not just USD-equivalent totals. ──
-  const currentYm = todayISO().slice(0, 7);
+  const currentYm = currentCycleKey(new Date());
   // TRANSFER (2.4.55) excluded too -- not spend, and its amount can be
   // negative (an incoming leg), which would corrupt this currency total.
   const monthTx = activeTransactions(financials.transactions).filter((t) => t.date.startsWith(currentYm) && t.bucket !== "INCOME" && t.bucket !== "TRANSFER");

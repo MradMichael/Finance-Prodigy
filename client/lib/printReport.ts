@@ -1,5 +1,6 @@
 import type { LocalFinancials } from "./localData";
 import { BUDGET_RULES, nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, toUSD as toUSDShared, categoryLabel, derivedDebtBalance, activeTransactions, DEFAULT_LBP_RATE, makeToUSDForMonth } from "./localData";
+import { cycleKeyForISO } from "./period";
 import type { computeDashboard } from "./computeDashboard";
 
 type DashboardPayload = ReturnType<typeof computeDashboard>;
@@ -48,14 +49,14 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
   // TRANSFER (2.4.55) excluded for the same reason -- it isn't spend, and its
   // amount can be negative (an incoming leg), which would otherwise corrupt
   // this total rather than just under/over-counting it.
-  const ledgerTotal = ledgerTx.filter((t) => t.bucket !== "INCOME" && t.bucket !== "TRANSFER").reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, t.date.slice(0, 7)), 0);
+  const ledgerTotal = ledgerTx.filter((t) => t.bucket !== "INCOME" && t.bucket !== "TRANSFER").reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, cycleKeyForISO(t.date)), 0);
   const ledgerRows = ledgerTx.map((t) => `
     <tr>
       <td>${t.date.split("-").reverse().join("/")}</td>
       <td>${escapeHtml(t.description)}</td>
       <td>${BL[t.bucket]}</td>
       <td>${t.category ? escapeHtml(categoryLabel(t.category, data.customCategories)) : "—"}</td>
-      <td class="num">${money(toUSDForMonth(t.amount, t.currency, t.date.slice(0, 7)))}</td>
+      <td class="num">${money(toUSDForMonth(t.amount, t.currency, cycleKeyForISO(t.date)))}</td>
     </tr>`).join("");
   const rangeLabel = options.dateFrom || options.dateTo
     ? `${options.dateFrom ? options.dateFrom.split("-").reverse().join("/") : "the start"} to ${options.dateTo ? options.dateTo.split("-").reverse().join("/") : "today"}`
