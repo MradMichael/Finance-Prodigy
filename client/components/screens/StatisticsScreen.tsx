@@ -5,6 +5,7 @@ import { nextOccurrence, isRecurringActive, toUSD as toUSDShared, DEFAULT_LBP_RA
 import { periodTotals, type computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money } from "./shared";
+import { currentCycleKey, cycleKeyMinus } from "../../lib/period";
 
 const MONTH_NAMES = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -38,9 +39,9 @@ export default function StatisticsScreen({
   // ── Period comparison: this month vs last month, transactions +
   // recurring blended in (matching how every other screen treats "this
   // month's real numbers"). ──
-  const thisYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const thisYm = currentCycleKey(now);
   const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const lastYm = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, "0")}`;
+  const lastYm = cycleKeyMinus(thisYm, 1);
 
   // 2.4.55 sub-phase 3: periodTotals moved to computeDashboard.ts (shared
   // with Overview's new past-month card) -- a genuine, deliberate behavior

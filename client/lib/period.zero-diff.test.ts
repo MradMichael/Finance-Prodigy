@@ -22,6 +22,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { computeDashboard } from "./computeDashboard";
 import { DEFAULT_DATA, type LocalFinancials, type StoredTransaction } from "./localData";
+import { asCycleKey, asCalendarKey } from "./period";
 
 // Mid-month on purpose: a boundary bug that only shows up away from the 1st
 // would be invisible on the 1st, and day-of-month drives budgetPace.
@@ -58,22 +59,22 @@ function makeData(): LocalFinancials {
     emergencyFundOpeningBalance: 1000,
     emergencyFundTargetMonths: 3,
     incomeHistory: [
-      { ym: "2026-02", value: 2400 },
-      { ym: "2026-06", value: 3000 },
+      { ym: asCycleKey("2026-02"), value: 2400 },
+      { ym: asCycleKey("2026-06"), value: 3000 },
     ],
     lbpRateHistory: [
-      { ym: "2026-02", value: 86000 },
-      { ym: "2026-07", value: 89500 },
+      { ym: asCycleKey("2026-02"), value: 86000 },
+      { ym: asCycleKey("2026-07"), value: 89500 },
     ],
     budgetRuleHistory: [
-      { ym: "2026-02", needs: 60, wants: 20, savings: 20 },
-      { ym: "2026-06", needs: 50, wants: 30, savings: 20 },
+      { ym: asCycleKey("2026-02"), needs: 60, wants: 20, savings: 20 },
+      { ym: asCycleKey("2026-06"), needs: 50, wants: 30, savings: 20 },
     ],
     netWorthHistory: [
-      { ym: "2026-05", value: 400 },
-      { ym: "2026-06", value: 700 },
-      { ym: "2026-07", value: 900 },
-      { ym: "2026-08", value: 1100 },
+      { ym: asCalendarKey("2026-05"), value: 400 },
+      { ym: asCalendarKey("2026-06"), value: 700 },
+      { ym: asCalendarKey("2026-07"), value: 900 },
+      { ym: asCalendarKey("2026-08"), value: 1100 },
     ],
     transactions: [
       tx("t01", "2026-03-04", 900, "NEEDS"),

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { computeDashboard, computeHoldingsByCurrency, trackedBalanceExpected, periodTotals, bucketDisplayState, balanceCheckReconciliation, clampMonthlyRolloverDelta } from "./computeDashboard";
 import { DEFAULT_DATA, buildDebtPaymentTx, type LocalFinancials, type BudgetRuleKey, type StoredDebt, type StoredTransaction } from "./localData";
+import { asCycleKey, asCalendarKey } from "./period";
 
 function makeData(overrides: Partial<LocalFinancials> = {}): LocalFinancials {
   return {
@@ -763,7 +764,7 @@ describe("periodTotals (2.4.55 sub-phase 3 -- Overview past-month view)", () => 
         { id: "t4", amount: 9999, currency: "USD", bucket: "NEEDS", description: "July, not August", date: "2026-07-15" },
       ],
     });
-    const result = periodTotals(data, "2026-08", new Date("2026-08-01"));
+    const result = periodTotals(data, asCycleKey("2026-08"), new Date("2026-08-01"));
     expect(result).toEqual({ income: 3000, needs: 1000, wants: 500, savings: 300 });
   });
 
@@ -771,10 +772,10 @@ describe("periodTotals (2.4.55 sub-phase 3 -- Overview past-month view)", () => 
     const data = makeData({
       income: 0,
       lbpRate: 100000, // today's rate
-      lbpRateHistory: [{ ym: "2026-02", value: 50000 }], // rate back in February
+      lbpRateHistory: [{ ym: asCycleKey("2026-02"), value: 50000 }], // rate back in February
       transactions: [{ id: "t1", amount: 5_000_000, currency: "LBP", bucket: "NEEDS", description: "Groceries", date: "2026-02-10" }],
     });
-    const result = periodTotals(data, "2026-02", new Date("2026-02-01"));
+    const result = periodTotals(data, asCycleKey("2026-02"), new Date("2026-02-01"));
     // 5,000,000 LBP at the historical 50,000 rate = $100, not $50 at today's 100,000 rate.
     expect(result.needs).toBeCloseTo(100, 5);
   });
@@ -782,10 +783,10 @@ describe("periodTotals (2.4.55 sub-phase 3 -- Overview past-month view)", () => 
   it("income blends historized salary (incomeHistory) with any one-off INCOME transactions that month, matching every other screen's own definition of a month's income", () => {
     const data = makeData({
       income: 3000, // today's salary
-      incomeHistory: [{ ym: "2026-06", value: 2500 }], // salary back in June
+      incomeHistory: [{ ym: asCycleKey("2026-06"), value: 2500 }], // salary back in June
       transactions: [{ id: "t1", amount: 200, currency: "USD", bucket: "INCOME", description: "Gift", date: "2026-06-15" }],
     });
-    const result = periodTotals(data, "2026-06", new Date("2026-06-01"));
+    const result = periodTotals(data, asCycleKey("2026-06"), new Date("2026-06-01"));
     expect(result.income).toBe(2700); // 2500 historized salary + 200 one-off
   });
 
@@ -799,7 +800,7 @@ describe("periodTotals (2.4.55 sub-phase 3 -- Overview past-month view)", () => 
       }],
     });
     // August is BEFORE the cutover -- grandfathered, old live-estimate accrual applies.
-    const result = periodTotals(data, "2026-08", new Date("2026-08-01"));
+    const result = periodTotals(data, asCycleKey("2026-08"), new Date("2026-08-01"));
     expect(result.needs).toBe(750);
   });
 
@@ -818,7 +819,7 @@ describe("periodTotals (2.4.55 sub-phase 3 -- Overview past-month view)", () => 
     });
     // September is ON/AFTER cutover -- historizedRecurringContribution
     // contributes 0; the confirmed transaction is what counts.
-    const result = periodTotals(data, "2026-09", new Date("2026-09-01"));
+    const result = periodTotals(data, asCycleKey("2026-09"), new Date("2026-09-01"));
     expect(result.needs).toBe(750); // not 1500
   });
 
@@ -829,7 +830,7 @@ describe("periodTotals (2.4.55 sub-phase 3 -- Overview past-month view)", () => 
         date: "2026-08-05", deletedAt: "2026-08-06T00:00:00.000Z",
       }],
     });
-    const result = periodTotals(data, "2026-08", new Date("2026-08-01"));
+    const result = periodTotals(data, asCycleKey("2026-08"), new Date("2026-08-01"));
     expect(result.needs).toBe(0);
   });
 
@@ -844,7 +845,7 @@ describe("periodTotals (2.4.55 sub-phase 3 -- Overview past-month view)", () => 
       ],
     });
     const dashResult = computeDashboard(data);
-    const result = periodTotals(data, "2026-08", new Date("2026-08-15"));
+    const result = periodTotals(data, asCycleKey("2026-08"), new Date("2026-08-15"));
     expect(result.needs).toBe(dashResult.month.needsSpend);
     expect(result.wants).toBe(dashResult.month.wantsSpend);
     expect(result.savings).toBe(dashResult.month.savingsContrib);
@@ -920,9 +921,9 @@ describe("net worth trend", () => {
     const data = makeData({
       income: 3000,
       netWorthHistory: [
-        { ym: "2026-05", value: 1000 },
-        { ym: "2026-06", value: 1200 },
-        { ym: "2026-07", value: 999 }, // stale — should be replaced by today's computed value
+        { ym: asCalendarKey("2026-05"), value: 1000 },
+        { ym: asCalendarKey("2026-06"), value: 1200 },
+        { ym: asCalendarKey("2026-07"), value: 999 }, // stale — should be replaced by today's computed value
       ],
     });
     const result = computeDashboard(data);
@@ -932,7 +933,7 @@ describe("net worth trend", () => {
   });
 
   it("keeps only the most recent 12 months", () => {
-    const history = Array.from({ length: 15 }, (_, i) => ({ ym: `2025-${String(i + 1).padStart(2, "0")}`, value: i }))
+    const history = Array.from({ length: 15 }, (_, i) => ({ ym: asCalendarKey(`2025-${String(i + 1).padStart(2, "0")}`), value: i }))
       .filter((h) => Number(h.ym.split("-")[1]) <= 12);
     const data = makeData({ income: 3000, netWorthHistory: history });
     const result = computeDashboard(data);
@@ -942,7 +943,7 @@ describe("net worth trend", () => {
   it("is sorted ascending by year-month", () => {
     const data = makeData({
       income: 3000,
-      netWorthHistory: [{ ym: "2026-03", value: 1 }, { ym: "2026-01", value: 2 }, { ym: "2026-02", value: 3 }],
+      netWorthHistory: [{ ym: asCalendarKey("2026-03"), value: 1 }, { ym: asCalendarKey("2026-01"), value: 2 }, { ym: asCalendarKey("2026-02"), value: 3 }],
     });
     const result = computeDashboard(data);
     const yms = result.netWorthTrend.map((h) => h.ym);
@@ -954,7 +955,7 @@ describe("income history — past months judged against income at the time, not 
   it("sixMonthTrend uses the historical income for a past month, not the current (raised) one", () => {
     const data = makeData({
       income: 3000, // "after the raise"
-      incomeHistory: [{ ym: "2026-02", value: 1000 }], // income was 1000 back in February
+      incomeHistory: [{ ym: asCycleKey("2026-02"), value: 1000 }], // income was 1000 back in February
       transactions: [{ id: "t1", amount: 50, currency: "USD", bucket: "NEEDS", description: "Groceries", date: "2026-02-10" }],
     });
     const result = computeDashboard(data);
@@ -965,7 +966,7 @@ describe("income history — past months judged against income at the time, not 
   it("current month always uses live income regardless of history", () => {
     const data = makeData({
       income: 3000,
-      incomeHistory: [{ ym: "2026-02", value: 1000 }],
+      incomeHistory: [{ ym: asCycleKey("2026-02"), value: 1000 }],
       transactions: [{ id: "t1", amount: 50, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-07-05" }],
     });
     const result = computeDashboard(data);
@@ -988,7 +989,7 @@ describe("income history — past months judged against income at the time, not 
     // relative to a target it never actually had to hit.
     const data = makeData({
       income: 5000,
-      incomeHistory: [{ ym: "2026-01", value: 1000 }],
+      incomeHistory: [{ ym: asCycleKey("2026-01"), value: 1000 }],
       budgetRule: "50-30-20",
       transactions: [{ id: "t1", amount: 200, currency: "USD", bucket: "SAVINGS", description: "Old saving", date: "2026-01-15" }],
     });
@@ -1017,7 +1018,7 @@ describe("LBP exchange-rate history — past LBP transactions convert at the rat
     const data = makeData({
       income: 1000,
       lbpRate: 100000, // today's rate
-      lbpRateHistory: [{ ym: "2026-02", value: 50000 }], // rate back in February
+      lbpRateHistory: [{ ym: asCycleKey("2026-02"), value: 50000 }], // rate back in February
       transactions: [{ id: "t1", amount: 5_000_000, currency: "LBP", bucket: "NEEDS", description: "Groceries", date: "2026-02-10" }],
     });
     const result = computeDashboard(data);
@@ -1177,7 +1178,7 @@ describe("sixMonthTrend income display — the incomeForMonth floor must not lea
   it("shows $0, not $1, for a past month with genuinely $0 income and real spend", () => {
     const data = makeData({
       income: 3000, // today's income
-      incomeHistory: [{ ym: "2026-03", value: 0 }], // income was $0 back in March
+      incomeHistory: [{ ym: asCycleKey("2026-03"), value: 0 }], // income was $0 back in March
       transactions: [{ id: "t1", amount: 50, currency: "USD", bucket: "NEEDS", description: "Groceries", date: "2026-03-10" }],
     });
     const result = computeDashboard(data);
@@ -1191,7 +1192,7 @@ describe("budget-rule history — past months judged against the rule that was a
     const data = makeData({
       income: 1000,
       budgetRule: "80-15-5", // today's rule: high needs, low savings
-      budgetRuleHistory: [{ ym: "2026-03", needs: 50, wants: 30, savings: 20 }], // rule was 50/30/20 in March
+      budgetRuleHistory: [{ ym: asCycleKey("2026-03"), needs: 50, wants: 30, savings: 20 }], // rule was 50/30/20 in March
       transactions: [{ id: "t1", amount: 200, currency: "USD", bucket: "SAVINGS", description: "Old saving", date: "2026-03-15" }],
     });
     const result = computeDashboard(data);
@@ -1242,7 +1243,7 @@ describe("budget-rule history — past months judged against the rule that was a
     const data = makeData({
       income: 1000,
       budgetRule: "40-30-30", // today: 30% savings target
-      budgetRuleHistory: [{ ym: "2026-05", needs: 50, wants: 30, savings: 20 }, { ym: "2026-06", needs: 50, wants: 30, savings: 20 }], // May & June: 20% target
+      budgetRuleHistory: [{ ym: asCycleKey("2026-05"), needs: 50, wants: 30, savings: 20 }, { ym: asCycleKey("2026-06"), needs: 50, wants: 30, savings: 20 }], // May & June: 20% target
       transactions: [
         { id: "t1", amount: 200, currency: "USD", bucket: "SAVINGS", description: "May saving", date: "2026-05-15" }, // exactly 20% of $1000
         { id: "t2", amount: 200, currency: "USD", bucket: "SAVINGS", description: "June saving", date: "2026-06-15" }, // exactly 20% of $1000
@@ -1257,7 +1258,7 @@ describe("budget-rule history — past months judged against the rule that was a
   it("savingsStreak is not gated on today's income being nonzero — a real historical streak survives a $0 current income", () => {
     const data = makeData({
       income: 0, // between jobs / not yet re-entered
-      incomeHistory: [{ ym: "2026-06", value: 1000 }, { ym: "2026-05", value: 1000 }],
+      incomeHistory: [{ ym: asCycleKey("2026-06"), value: 1000 }, { ym: asCycleKey("2026-05"), value: 1000 }],
       budgetRule: "40-30-30", // 30% savings target, same in history (no override needed for this test)
       transactions: [
         { id: "t1", amount: 300, currency: "USD", bucket: "SAVINGS", description: "May saving", date: "2026-05-15" },
@@ -1560,7 +1561,7 @@ describe("INCOME transactions — one-off receipts boost effective income withou
   it("is excluded from budgetRollover's savings bucket for a past month (no catch-all double-count)", () => {
     const data = makeData({
       income: 1000,
-      incomeHistory: [{ ym: "2026-06", value: 1000 }],
+      incomeHistory: [{ ym: asCycleKey("2026-06"), value: 1000 }],
       transactions: [
         { id: "t1", amount: 500, currency: "USD", bucket: "INCOME", description: "Bonus", date: "2026-06-10" },
       ],
@@ -1982,7 +1983,7 @@ describe("budgetRollover — a single extreme month is clamped, not compounded u
 // rate was guarded. Each now routes through makeToUSDForMonth. These
 // assert the poisoned-history case at each of the three sites.
 describe("historized LBP conversion — a zero history entry cannot poison a total (2.4.72)", () => {
-  const poisoned = [{ ym: "2026-01", value: 0 }];
+  const poisoned = [{ ym: asCycleKey("2026-01"), value: 0 }];
 
   it("trackedBalanceExpected stays finite with a zero rate in history", () => {
     const data = makeData({
@@ -2003,7 +2004,7 @@ describe("historized LBP conversion — a zero history entry cannot poison a tot
       lbpRateHistory: poisoned,
       transactions: [{ id: "t1", amount: 895_000, currency: "LBP", bucket: "NEEDS", description: "Groceries", date: "2026-07-10" }],
     });
-    const totals = periodTotals(data, "2026-07", NOW);
+    const totals = periodTotals(data, asCycleKey("2026-07"), NOW);
     // Exact, not just finite: L£895,000 at the DEFAULT fallback rate
     // (89,500) is $10. Asserting the value proves the zero entry was
     // REPLACED by the fallback, rather than the LBP branch being skipped

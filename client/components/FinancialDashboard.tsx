@@ -32,6 +32,7 @@ import { getLastSyncTime } from "../lib/syncService";
 import { periodTotals, bucketDisplayState, type DashboardPayload } from "../lib/computeDashboard";
 import OnboardingChecklist from "./OnboardingChecklist";
 import { fmtCur, type Screen } from "./screens/shared";
+import { currentCycleKey, cycleKeyForISO, asCalendarKey, asCycleKey, type CycleKey } from "../lib/period";
 const SERIF: React.CSSProperties = { fontFamily: "Georgia, 'Times New Roman', serif" };
 const NUMS: React.CSSProperties = { fontVariantNumeric: "tabular-nums" };
 
@@ -103,8 +104,8 @@ const MOCK: DashboardPayload = {
     { bucket: "SAVINGS", label: "Savings", pctOfMonthElapsed: 50, pctOfBudgetUsed: 69, projectedPct: 96, status: "watch", message: "On pace for 96% of this month's savings target." },
   ],
   netWorthTrend: [
-    { ym: "2026-01", value: -8100 }, { ym: "2026-02", value: -7820 }, { ym: "2026-03", value: -7400 },
-    { ym: "2026-04", value: -7050 }, { ym: "2026-05", value: -6820 }, { ym: "2026-06", value: -6640 },
+    { ym: asCalendarKey("2026-01"), value: -8100 }, { ym: asCalendarKey("2026-02"), value: -7820 }, { ym: asCalendarKey("2026-03"), value: -7400 },
+    { ym: asCalendarKey("2026-04"), value: -7050 }, { ym: asCalendarKey("2026-05"), value: -6820 }, { ym: asCalendarKey("2026-06"), value: -6640 },
   ],
   upcomingRenewals: [
     { id: "1", name: "Netflix", emoji: "🎬", amount: 15.49, currency: "USD", dueDate: "2026-06-20", dueInDays: 3, overdueCount: 0 },
@@ -263,7 +264,7 @@ export default function FinancialDashboard({
   // a much bigger, different feature nobody asked for. Empty string = no
   // selection, nothing extra shown -- Overview stays exactly as it always
   // has by default.
-  const [selectedPastMonth, setSelectedPastMonth] = useState("");
+  const [selectedPastMonth, setSelectedPastMonth] = useState<CycleKey | "">("");
 
   if (!data) {
     return (
@@ -283,9 +284,9 @@ export default function FinancialDashboard({
   // was grandfathered recurring accrual with zero actual transactions
   // logged won't appear here -- a narrow, pre-Phase-2.5 case, not worth the
   // extra complexity of also walking recurring history for this list.
-  const currentYm = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+  const currentYm = currentCycleKey(new Date());
   const pastMonths = financials
-    ? Array.from(new Set((financials.transactions ?? []).filter((t) => t.deletedAt == null).map((t) => t.date.slice(0, 7))))
+    ? Array.from(new Set((financials.transactions ?? []).filter((t) => t.deletedAt == null).map((t) => cycleKeyForISO(t.date))))
         .filter((ym) => ym !== currentYm)
         .sort()
         .reverse()
@@ -419,7 +420,9 @@ export default function FinancialDashboard({
               <select
                 id="past-month-select"
                 value={selectedPastMonth}
-                onChange={(e) => setSelectedPastMonth(e.target.value)}
+                // A <select> yields a plain string; the option values are cycle keys
+                // built from the transaction list, so this is a boundary cast.
+                onChange={(e) => setSelectedPastMonth(e.target.value === "" ? "" : asCycleKey(e.target.value))}
                 className="rounded-xl px-3 py-2 text-sm"
                 style={{ background: T.panelSoft, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
               >

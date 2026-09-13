@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import type { LocalFinancials, CategoryRule } from "../../lib/localData";
-import { CATEGORIES, allCategories, categoryLabel, categoryIcon, matchCategoryRule, historizedRecurringContribution, toUSD as toUSDShared, uid, todayISO, moneyEquals, activeTransactions, DEFAULT_LBP_RATE } from "../../lib/localData";
+import { CATEGORIES, allCategories, categoryLabel, categoryIcon, matchCategoryRule, historizedRecurringContribution, toUSD as toUSDShared, uid, moneyEquals, activeTransactions, DEFAULT_LBP_RATE } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money } from "./shared";
 import { Label, FocusInput, PrimaryBtn } from "../form/Primitives";
 import Donut from "../charts/Donut";
+import { currentCycleKey } from "../../lib/period";
 
 function slugify(name: string): string {
   return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "category";
@@ -115,7 +116,7 @@ export default function CategoriesScreen({
   // donut uses: INCOME excluded, recurring blended in only for "this month"
   // (summing a recurring item across all of history is a different, fuzzier
   // question than "what did this month cost").
-  const currentYm = todayISO().slice(0, 7);
+  const currentYm = currentCycleKey(new Date());
   // Phase 2.6.3b: excludes soft-deleted transactions from the category
   // breakdown, same as every other total.
   const activeTx = activeTransactions(financials.transactions);

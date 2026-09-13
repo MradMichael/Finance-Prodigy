@@ -10,6 +10,7 @@ import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker } from "./form/Primitives";
 import { fmtCur } from "./screens/shared";
 import ImportStatement from "./ImportStatement";
+import { currentCycleKey } from "../lib/period";
 
 type Bucket = "NEEDS" | "WANTS" | "SAVINGS";
 // Transactions (not recurring items) can also be logged as one-off INCOME --
@@ -528,7 +529,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
 
   // ── derived ───────────────────────────────────────────────────── //
 
-  const prefix   = todayISO().slice(0, 7);
+  const prefix   = currentCycleKey(new Date());
   // Phase 2.6.3b: a soft-deleted transaction must not keep counting toward
   // this month's totals or appear in "This month"'s list -- deleting is
   // meant to behave exactly like the old hard-delete from here on.

@@ -1,5 +1,6 @@
 import type { LocalFinancials, BudgetRuleKey, StoredDebt, StoredTransaction, StoredRecurring, TrackedBalance, Currency } from "./localData";
 import { historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, valueForMonth, makeToUSDForMonth, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, DEFAULT_LBP_RATE, derivedEfBalance, derivedDebtBalance, activeTransactions, parseLocalDate, isRecurringActive } from "./localData";
+import { cycleKeyForDate, cycleKeyForISO, currentCycleKey, calendarKeyForDate, isInCycle, cycleProgress, type CycleKey, type CalendarKey, type CalendarHistory } from "./period";
 import { simulateDebtPayoff, type DebtInput } from "./debtEngine";
 
 interface Projection {
@@ -77,7 +78,8 @@ export interface DashboardPayload {
     paused: boolean;
   }[];
   sixMonthTrend: { ymKey: number; income: number; spend: number; savingsContrib: number }[];
-  netWorthTrend: { ym: string; value: number }[];
+  /** CALENDAR-keyed, unlike every other history (2.4.87). */
+  netWorthTrend: CalendarHistory;
   upcomingRenewals: {
     id: string; name: string; emoji: string; amount: number; currency: Currency;
     dueDate: string; dueInDays: number;
@@ -153,7 +155,7 @@ function historizedRecurAsOf(r: StoredRecurring, monthStart: Date): Date {
 function expectedFromRelevantTx(
   tb: Pick<TrackedBalance, "startingBalance" | "startingDate" | "currency">,
   relevantTx: StoredTransaction[],
-  toUSDForMonth: (amount: number, currency: string | undefined, ym: string) => number,
+  toUSDForMonth: (amount: number, currency: string | undefined, ym: CycleKey) => number,
 ): number {
   // INCOME transactions received on this same payment method put money IN,
   // so they subtract from "spent" (raising the expected balance) instead
@@ -166,8 +168,8 @@ function expectedFromRelevantTx(
   // shortcut a first draft of this used -- that version's polarity was the
   // opposite of efAmount's, undocumented drift a future reader would have
   // had no way to catch from the code alone.
-  const spentOf = relevantTx.reduce((s, t) => s + (t.bucket === "INCOME" || t.bucket === "TRANSFER" ? -1 : 1) * toUSDForMonth(t.amount, t.currency, t.date.slice(0, 7)), 0);
-  const startingUSD = toUSDForMonth(tb.startingBalance, tb.currency, tb.startingDate.slice(0, 7));
+  const spentOf = relevantTx.reduce((s, t) => s + (t.bucket === "INCOME" || t.bucket === "TRANSFER" ? -1 : 1) * toUSDForMonth(t.amount, t.currency, cycleKeyForISO(t.date)), 0);
+  const startingUSD = toUSDForMonth(tb.startingBalance, tb.currency, cycleKeyForISO(tb.startingDate));
   return Math.round((startingUSD - spentOf) * 100) / 100;
 }
 
@@ -216,10 +218,10 @@ export function trackedBalanceExpected(
  * selection is already closed.
  */
 export function periodTotals(
-  data: LocalFinancials, ym: string, recurAsOf: Date,
+  data: LocalFinancials, ym: CycleKey, recurAsOf: Date,
 ): { income: number; needs: number; wants: number; savings: number } {
   const toUSDForMonth = makeToUSDForMonth(data);
-  const tx = activeTransactions(data.transactions ?? []).filter((t) => t.date.startsWith(ym));
+  const tx = activeTransactions(data.transactions ?? []).filter((t) => isInCycle(t.date, ym));
   const txSum = (bucket: string) => tx.filter((t) => t.bucket === bucket).reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, ym), 0);
   const salary = valueForMonth(data.incomeHistory, ym, data.income);
   const txIncome = tx.filter((t) => t.bucket === "INCOME").reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, ym), 0);
@@ -321,13 +323,13 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     ? floorCustomSplit(data.budgetCustomNeeds ?? 50, data.budgetCustomWants ?? 30)
     : { needs: baseRule.needs, wants: baseRule.wants, savings: baseRule.savings };
   const month = now.getMonth() + 1;
-  const prefix = `${year}-${String(month).padStart(2, "0")}`;
+  const prefix = currentCycleKey(now);
 
   // Same historized-lookup pattern as incomeForMonth/toUSDForMonth, for the
   // budget-rule split — otherwise changing your budget rule today silently
   // rewrites which past months' rollover/savings-streak judged themselves
   // against, using a target they were never actually held to at the time.
-  const budgetTargetPctForMonth = (ym: string) => budgetPctForMonth(data.budgetRuleHistory, ym, budgetTargetPct);
+  const budgetTargetPctForMonth = (ym: CycleKey) => budgetPctForMonth(data.budgetRuleHistory, ym, budgetTargetPct);
 
   const lbpRate = data.lbpRate ?? DEFAULT_LBP_RATE;
   const toUSD = (amount: number, currency?: string) => toUSDShared(amount, currency as "USD" | "LBP" | undefined, lbpRate);
@@ -350,13 +352,13 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   // reflect both, not just the fixed Setup figure. No caller of
   // incomeForMonth wants the un-boosted salary alone, so this is folded in
   // at the source instead of threading a second figure through every site.
-  const incomeTxForMonth = (ym: string) => (data.transactions ?? [])
+  const incomeTxForMonth = (ym: CycleKey) => (data.transactions ?? [])
     .filter((t) => t.date.startsWith(ym) && t.bucket === "INCOME")
     .reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, ym), 0);
-  const incomeForMonth = (ym: string) => valueForMonth(data.incomeHistory, ym, data.income) + incomeTxForMonth(ym);
-  const incomeForMonthSafe = (ym: string) => Math.max(incomeForMonth(ym), 1);
+  const incomeForMonth = (ym: CycleKey) => valueForMonth(data.incomeHistory, ym, data.income) + incomeTxForMonth(ym);
+  const incomeForMonthSafe = (ym: CycleKey) => Math.max(incomeForMonth(ym), 1);
 
-  const monthTx = (data.transactions ?? []).filter((t) => t.date.startsWith(prefix));
+  const monthTx = (data.transactions ?? []).filter((t) => isInCycle(t.date, prefix));
 
   // Recurring contributions this month -- historized (Phase 2.5): a
   // grandfathered pre-cutover item still uses the old live-estimate
@@ -696,8 +698,8 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     const d = new Date(year, month - 1 - (5 - i), 1);
     const ymKey = d.getFullYear() * 100 + (d.getMonth() + 1);
     const isCurrent = i === 5;
-    const mo = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    const tx = data.transactions.filter((t) => t.date.startsWith(mo));
+    const mo = cycleKeyForDate(d);
+    const tx = data.transactions.filter((t) => isInCycle(t.date, mo));
     // INCOME transactions aren't spend -- they're already folded into
     // moIncome below via incomeForMonth. Summing them here too would
     // inflate the spend line by exactly what should be inflating income.
@@ -736,7 +738,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     return { ymKey, income: isCurrent ? income : (sp > 0 ? moIncome : 0), spend: sp, savingsContrib };
   });
 
-  const monthKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const monthKey = (d: Date): CycleKey => cycleKeyForDate(d);
   const ordinal = (n: number) => {
     const s = ["th", "st", "nd", "rd"], v = n % 100;
     return n + (s[(v - 20) % 10] || s[v] || s[0]);
@@ -757,7 +759,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     for (let i = monthsBack; i >= 1; i--) {
       const d = new Date(year, month - 1 - i, 1);
       const ym = monthKey(d);
-      const tx = data.transactions.filter((t) => t.date.startsWith(ym));
+      const tx = data.transactions.filter((t) => isInCycle(t.date, ym));
       const spend = { needs: 0, wants: 0, savings: 0 };
       for (const t of tx) {
         // INCOME transactions already boosted moIncome via incomeForMonth
@@ -803,8 +805,10 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   }
 
   // ── Budget pace — proactive "on track to exceed" warnings ──────────
-  const daysInMonth = new Date(year, month, 0).getDate();
-  const daysElapsed = Math.max(1, now.getDate());
+  // Phase 1: cycleProgress at startDay 1 returns exactly these two values.
+  // Phase 2 is where they stop being day-of-calendar-month -- routed through
+  // the primitive now so that change is a constant, not a rewrite here.
+  const { daysInto: daysElapsed, daysInCycle: daysInMonth } = cycleProgress(now);
   const BUCKET_LABEL = { NEEDS: "Needs", WANTS: "Wants", SAVINGS: "Savings" } as const;
   const bucketSpend = { NEEDS: needsSpend, WANTS: wantsSpend, SAVINGS: savingsContrib };
   // Floored at 0 — a deficit rolling in from past months (or a 0%-allocated
@@ -888,7 +892,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     for (let i = 1; i <= 12; i++) {
       const d = new Date(year, month - 1 - i, 1);
       const ym = monthKey(d);
-      const tx = data.transactions.filter((t) => t.date.startsWith(ym));
+      const tx = data.transactions.filter((t) => isInCycle(t.date, ym));
       let monthSavings = tx.filter((t) => t.bucket === "SAVINGS").reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, ym), 0);
       // Recurring bills don't create a transaction row, so a past month's
       // real savings contribution was understated (sometimes all the way to
@@ -981,7 +985,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     const relevantTx = (txByPaymentKey.get(key) ?? []).filter((t) => t.date >= tb.startingDate);
     const expected = expectedFromRelevantTx(tb, relevantTx, toUSDForMonth);
     const actual = tb.actualBalance != null
-      ? toUSDForMonth(tb.actualBalance, tb.currency, (tb.actualBalanceDate ?? tb.startingDate).slice(0, 7))
+      ? toUSDForMonth(tb.actualBalance, tb.currency, cycleKeyForISO(tb.actualBalanceDate ?? tb.startingDate))
       : null;
     // A transaction logged AFTER the last actual check-in moves `expected`
     // forward without touching `actual` (a fixed snapshot from whenever the
@@ -1013,7 +1017,10 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   // ── Net worth trend — today's value merged into the persisted history ──
   // (Persisting the snapshot back into storage happens in the caller —
   // this function stays pure/side-effect-free.)
-  const currentYm = monthKey(now);
+  // netWorthHistory is the one CALENDAR-keyed series (2.4.87) -- point-in-time
+  // snapshots, not as-of values. Different constructor on purpose; the two
+  // key spaces do not mix, and the compiler now enforces that.
+  const currentYm: CalendarKey = calendarKeyForDate(now);
   const netWorthTrend = [...data.netWorthHistory.filter((h) => h.ym !== currentYm), { ym: currentYm, value: Math.round(nwTotal) }]
     .sort((a, b) => a.ym.localeCompare(b.ym))
     .slice(-12);
