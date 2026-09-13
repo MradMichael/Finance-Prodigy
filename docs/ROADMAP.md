@@ -66,9 +66,9 @@ The decisive argument for doing it now rather than later is migration scope. Tod
 
 ### Design requirements
 
-- Every monetary record stores: **amount**, **currency code**, and **the exchange rate applied at the time of the transaction**.
+- Every monetary record stores: **amount**, **currency code**, and **the reference rate captured when the record was entered** (`lbpRateAtEntry`). **Correction, 2026-09-13:** that captured rate is stored but deliberately **not** used for conversion — see the requirement below and finding 2.4.90. It records the rate at the moment of *typing*, which for a backdated entry is not the rate that was in effect on the transaction's own date.
 - A single configurable reference rate, defaulting to **89,500 LBP per USD**, stored as data — never in code.
-- Historical records retain the rate at which they were entered. Changing the reference rate must not retroactively alter past reports.
+- **Changing the reference rate must not retroactively alter past reports.** This is the requirement; it is met, and met by the *period* rate rather than a per-record one. `lbpRateHistory` records the rate in effect for each period and `valueForMonth` resolves a past record against the period it belongs to. **Corrected 2026-09-13** — this line previously read *"Historical records retain the rate at which they were entered"*, which described a mechanism that was never wired up and is, on inspection, the less accurate of the two: `withRate` captures the live rate at entry time regardless of the record's own date, so backdating an entry captures today's rate, while the period history gives the rate that actually applied. Owner's decision, 2026-09-13: no switch. See finding 2.4.90 for the full flow/stock reasoning and for the residual (a mid-month rate change still moves the *current* month's already-entered spend).
 - Every displayed total states its currency. No unlabelled amounts anywhere.
 - A user can enter in either currency and view any report in either.
 - Grep for and eliminate any hardcoded `1500` or `15000` rate. The audit found three matches, all confirmed false positives — re-verify after this change.
