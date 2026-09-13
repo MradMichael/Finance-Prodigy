@@ -1,9 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { simulateDebtPayoff, type DebtInput } from "./debtEngine";
 
+// Required since 2.4.81 -- the engine no longer defaults its start date.
+// Fixed so month counts stay deterministic; these tests assert counts, not
+// calendar dates, so the exact value is arbitrary but must not be "now".
+const START = new Date(2026, 0, 15);
+
 describe("simulateDebtPayoff", () => {
   it("returns a feasible zero-month plan when there are no debts", () => {
-    const result = simulateDebtPayoff([], 0, "AVALANCHE");
+    const result = simulateDebtPayoff([], 0, "AVALANCHE", START);
     expect(result.feasible).toBe(true);
     expect(result.months).toBe(0);
     expect(result.totalInterest).toBe(0);
@@ -11,7 +16,7 @@ describe("simulateDebtPayoff", () => {
 
   it("is infeasible when the monthly commitment doesn't cover first-month interest", () => {
     const debts: DebtInput[] = [{ id: "d1", name: "Loan", balance: 10000, aprPct: 99, minimumPayment: 1 }];
-    const result = simulateDebtPayoff(debts, 0, "AVALANCHE");
+    const result = simulateDebtPayoff(debts, 0, "AVALANCHE", START);
     expect(result.feasible).toBe(false);
     expect(result.months).toBe(-1);
     expect(result.debtFreeDate).toBeNull();
@@ -21,7 +26,7 @@ describe("simulateDebtPayoff", () => {
 
   it("a 0%-APR debt with $0 committed is infeasible but its warning doesn't claim balances would grow (there's no interest to outpace)", () => {
     const debts: DebtInput[] = [{ id: "d1", name: "Interest-free loan", balance: 500, aprPct: 0, minimumPayment: 0 }];
-    const result = simulateDebtPayoff(debts, 0, "AVALANCHE");
+    const result = simulateDebtPayoff(debts, 0, "AVALANCHE", START);
     expect(result.feasible).toBe(false);
     expect(result.warning).toBeTruthy();
     expect(result.warning).not.toMatch(/would grow/i);
@@ -32,8 +37,8 @@ describe("simulateDebtPayoff", () => {
       { id: "d1", name: "A", balance: 500, aprPct: 10, minimumPayment: 30 },
       { id: "d2", name: "B", balance: 300, aprPct: 15, minimumPayment: 20 },
     ];
-    const snowball = simulateDebtPayoff(debts, 100, "SNOWBALL");
-    const avalanche = simulateDebtPayoff(debts, 100, "AVALANCHE");
+    const snowball = simulateDebtPayoff(debts, 100, "SNOWBALL", START);
+    const avalanche = simulateDebtPayoff(debts, 100, "AVALANCHE", START);
     expect(snowball.monthlyCommitment).toBe(150); // 30 + 20 + 100
     expect(avalanche.monthlyCommitment).toBe(150);
   });
@@ -45,8 +50,8 @@ describe("simulateDebtPayoff", () => {
       { id: "small-low-apr", name: "A", balance: 200, aprPct: 5, minimumPayment: 10 },
       { id: "large-high-apr", name: "B", balance: 1000, aprPct: 25, minimumPayment: 20 },
     ];
-    const snowball = simulateDebtPayoff(debts, 100, "SNOWBALL");
-    const avalanche = simulateDebtPayoff(debts, 100, "AVALANCHE");
+    const snowball = simulateDebtPayoff(debts, 100, "SNOWBALL", START);
+    const avalanche = simulateDebtPayoff(debts, 100, "AVALANCHE", START);
     expect(avalanche.totalInterest).toBeLessThan(snowball.totalInterest);
   });
 
@@ -55,7 +60,7 @@ describe("simulateDebtPayoff", () => {
       { id: "d1", name: "A", balance: 500, aprPct: 12, minimumPayment: 25 },
       { id: "d2", name: "B", balance: 300, aprPct: 8, minimumPayment: 15 },
     ];
-    const result = simulateDebtPayoff(debts, 50, "AVALANCHE");
+    const result = simulateDebtPayoff(debts, 50, "AVALANCHE", START);
     expect(result.feasible).toBe(true);
     expect(result.months).toBeGreaterThan(0);
     expect(result.months).toBeLessThan(600);
@@ -68,7 +73,7 @@ describe("simulateDebtPayoff", () => {
     // balance still outstanding. Reporting feasible:true with a concrete
     // debt-free date here would show a wrong payoff date as a real one.
     const debts: DebtInput[] = [{ id: "d1", name: "Mortgage-ish", balance: 1_000_000, aprPct: 1, minimumPayment: 1000 }];
-    const result = simulateDebtPayoff(debts, 0, "AVALANCHE");
+    const result = simulateDebtPayoff(debts, 0, "AVALANCHE", START);
     expect(result.feasible).toBe(false);
     expect(result.months).toBe(-1);
     expect(result.debtFreeDate).toBeNull();
@@ -91,7 +96,7 @@ describe("simulateDebtPayoff", () => {
 
   it("rounds totalInterest to 2 decimal places", () => {
     const debts: DebtInput[] = [{ id: "d1", name: "A", balance: 333.33, aprPct: 17, minimumPayment: 40 }];
-    const result = simulateDebtPayoff(debts, 0, "AVALANCHE");
+    const result = simulateDebtPayoff(debts, 0, "AVALANCHE", START);
     const decimals = (result.totalInterest.toString().split(".")[1] ?? "").length;
     expect(decimals).toBeLessThanOrEqual(2);
   });
@@ -118,7 +123,7 @@ describe("simulateDebtPayoff", () => {
       { id: "d1", name: "Active", balance: 500, aprPct: 10, minimumPayment: 100 },
       { id: "d2", name: "Paid off", balance: 0, aprPct: 20, minimumPayment: 200 },
     ];
-    const result = simulateDebtPayoff(debts, 50, "AVALANCHE");
+    const result = simulateDebtPayoff(debts, 50, "AVALANCHE", START);
     expect(result.monthlyCommitment).toBe(150); // 100 + 50, not 300 + 50
   });
 });

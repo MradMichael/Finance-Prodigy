@@ -50,6 +50,9 @@ const ymStrLabel = (ym: string) => {
 const MOCK: DashboardPayload = {
   user: { name: "Demo User", currency: "USD", payoffStrategy: "AVALANCHE" },
   period: { year: 2026, month: 6 },
+  // Fixed, matching this mock's own period -- a live `new Date()` here would
+  // make the dev-only mock drift against its own hardcoded dates.
+  anchor: new Date(2026, 6, 14),
   hasLoggedTransactions: true,
   health: {
     score: 68, grade: "Building momentum",

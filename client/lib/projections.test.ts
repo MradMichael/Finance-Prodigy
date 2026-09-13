@@ -17,8 +17,11 @@ describe("projectCompletion", () => {
   });
 
   it("returns null when there's still a gap but no positive monthly rate", () => {
-    expect(projectCompletion(1000, 0)).toEqual({ months: null, dateDisplay: null });
-    expect(projectCompletion(1000, -50)).toEqual({ months: null, dateDisplay: null });
+    // The anchor is irrelevant to this branch (no finite date exists at a
+    // non-positive rate) but is now required, so it is passed explicitly.
+    const asOf = new Date(2026, 6, 15);
+    expect(projectCompletion(1000, 0, asOf)).toEqual({ months: null, dateDisplay: null });
+    expect(projectCompletion(1000, -50, asOf)).toEqual({ months: null, dateDisplay: null });
   });
 
   it("rounds up to the next whole month and lands on the matching calendar date", () => {

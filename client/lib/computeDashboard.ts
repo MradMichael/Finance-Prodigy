@@ -10,6 +10,27 @@ interface Projection {
 export interface DashboardPayload {
   user: { name: string; currency: string; payoffStrategy: "SNOWBALL" | "AVALANCHE" };
   period: { year: number; month: number };
+  /**
+   * 2.4.81 -- the single instant every forward-looking figure in the app is
+   * measured from. Computed once here and read by every consumer instead of
+   * each one calling `new Date()` for itself.
+   *
+   * This exists because three separate mechanisms used to produce the dates
+   * in Projections' two side-by-side comparison grids -- the cascade's own
+   * `addMonths(new Date(), cursor)`, `projectCompletion`'s defaulted `asOf`,
+   * and this file's `now` behind `debt.plan` -- and they coincided only by
+   * accident of all resolving to today. Any change to when projections start
+   * would have moved one column of a `grid-cols-2` and left the other,
+   * putting two dates a month apart side by side under a layout that asserts
+   * they are comparable. Sourcing it from the payload makes cross-screen
+   * agreement (Projections, Journey, Overview, Debts) structural rather than
+   * coincidental: they all read the same field off the same object.
+   *
+   * Deliberately still "now". Whether projections should instead start next
+   * month is an open product decision and is NOT settled by this field --
+   * only made changeable in one place.
+   */
+  anchor: Date;
   /** Any transaction ever logged, not scoped to this month — distinct from month.totalSpend, which also counts pro-rated recurring payments even when nothing's actually been logged. */
   hasLoggedTransactions: boolean;
   budgetRule: BudgetRuleKey;
@@ -283,6 +304,8 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     netWorthHistory:  data.netWorthHistory  ?? [],
   };
 
+  // The one anchor -- see DashboardPayload.anchor. Everything time-relative
+  // in this file, and every consumer of the payload, measures from this.
   const now = new Date();
   const year = now.getFullYear();
 
@@ -1096,6 +1119,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     budgetRollover,
     effectiveBudgetTargets: { needs: bucketTargetAmt.NEEDS, wants: bucketTargetAmt.WANTS, savings: bucketTargetAmt.SAVINGS },
     netWorth: { assets: Math.round(nwAssets), liabilities: Math.round(nwLiabilities), total: Math.round(nwTotal), ...nwData },
+    anchor: now,
     budgetRule: ruleKey,
     budgetTargetPct,
     budgetTargets: {

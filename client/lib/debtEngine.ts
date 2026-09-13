@@ -213,7 +213,7 @@ export function simulateDebtPayoff(
   debts: DebtInput[],
   extraMonthly = 0,
   strategy: "SNOWBALL" | "AVALANCHE" = "AVALANCHE",
-  start: Date = new Date(),
+  start: Date,
 ): PayoffPlan {
   const key = fingerprint(debts, extraMonthly, strategy, start);
   const hit = cache.find((e) => e.key === key);
