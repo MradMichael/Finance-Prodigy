@@ -14,6 +14,7 @@ import RecurringScreen from "../components/screens/RecurringScreen";
 import ProjectionsScreen from "../components/screens/ProjectionsScreen";
 import JourneyScreen from "../components/screens/JourneyScreen";
 import CurrencyScreen from "../components/screens/CurrencyScreen";
+import BalanceCheckScreen from "../components/screens/BalanceCheckScreen";
 import WishlistScreen from "../components/screens/WishlistScreen";
 import StatisticsScreen from "../components/screens/StatisticsScreen";
 import Sidebar from "../components/shell/Sidebar";
@@ -455,6 +456,7 @@ export default function Home() {
           {screen === "projections"  && <ProjectionsScreen financials={financials} dashData={dashboardData} />}
           {screen === "journey"      && <JourneyScreen financials={financials} dashData={dashboardData} onNavigate={setScreen} />}
           {screen === "currency"     && <CurrencyScreen financials={financials} />}
+          {screen === "balancecheck" && <BalanceCheckScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
           {screen === "wishlist"     && <WishlistScreen financials={financials} onChange={handleChange} />}
           {screen === "statistics"   && <StatisticsScreen financials={financials} dashData={dashboardData} />}
         </div>
