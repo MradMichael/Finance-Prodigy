@@ -27,7 +27,7 @@ import {
   LineChart, Line,
 } from "recharts";
 import { useTheme } from "../contexts/ThemeContext";
-import { fmtDate, moneyEquals, type LocalFinancials } from "../lib/localData";
+import { moneyEquals, type LocalFinancials } from "../lib/localData";
 import { getLastSyncTime } from "../lib/syncService";
 import { periodTotals, bucketDisplayState, type DashboardPayload } from "../lib/computeDashboard";
 import OnboardingChecklist from "./OnboardingChecklist";

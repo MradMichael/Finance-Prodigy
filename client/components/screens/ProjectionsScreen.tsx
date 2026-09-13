@@ -313,8 +313,6 @@ export default function ProjectionsScreen({
   // of the plan above: EF's remaining gap + total debt balance + every open
   // goal's remaining amount. What it would take, today, in one lump sum.
   const totalNeededNow = efRemaining + debt.totalBalance + totalGoalsRemaining;
-  const planTotal = efRemaining + debt.totalBalance + totalGoalsRemaining || 1;
-  const efShare = liveDebts.length + openGoals.length + (efRemaining > 0 ? 1 : 0) > 0 ? efRemaining / planTotal : 0;
 
   return (
     <main className="min-h-screen px-4 py-8 md:px-10" style={{ background: T.ink }}>
