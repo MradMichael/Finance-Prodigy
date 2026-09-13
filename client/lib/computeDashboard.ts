@@ -1,5 +1,5 @@
 import type { LocalFinancials, BudgetRuleKey, StoredDebt, StoredTransaction, StoredRecurring, TrackedBalance, Currency } from "./localData";
-import { historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, valueForMonth, makeToUSDForMonth, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, DEFAULT_LBP_RATE, derivedEfBalance, derivedDebtBalance, activeTransactions, parseLocalDate, isRecurringActive } from "./localData";
+import { historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, LBP_RATE_STALE_DAYS, valueForMonth, makeToUSDForMonth, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, DEFAULT_LBP_RATE, derivedEfBalance, derivedDebtBalance, activeTransactions, parseLocalDate, isRecurringActive } from "./localData";
 import { cycleKeyForDate, cycleKeyForISO, currentCycleKey, calendarKeyForDate, isInCycle, cycleProgress, type CycleKey, type CalendarKey, type CalendarHistory } from "./period";
 import { simulateDebtPayoff, type DebtInput } from "./debtEngine";
 
@@ -1058,6 +1058,17 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
       alerts.push({ id: `renewal-${r.id}`, severity: "critical", message: `${r.name} is due today`, screen: "overview" });
     } else if (r.dueInDays <= 3) {
       alerts.push({ id: `renewal-${r.id}`, severity: "warning", message: `${r.name} is due in ${r.dueInDays} day${r.dueInDays === 1 ? "" : "s"}`, screen: "overview" });
+    }
+  }
+  // Rate staleness. Mirrors the indicator on CurrencyScreen exactly -- same
+  // threshold, same "never edited means nothing to call stale" rule -- and
+  // exists because rate editing moved off Setup: without it the warning
+  // would only be visible on the screen a user opens when they are already
+  // thinking about the rate, which is when it is least likely to be stale.
+  if (data.lbpRateUpdatedAt) {
+    const daysSinceRateEdit = Math.floor((now.getTime() - new Date(data.lbpRateUpdatedAt).getTime()) / 86_400_000);
+    if (daysSinceRateEdit >= LBP_RATE_STALE_DAYS) {
+      alerts.push({ id: "rate-stale", severity: "warning", message: `LBP rate hasn't been updated in ${daysSinceRateEdit} days`, screen: "currency" });
     }
   }
   for (const bc of balanceChecks) {

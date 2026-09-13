@@ -2,16 +2,68 @@
 
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
-import { historizedRecurringContribution, toUSD as toUSDShared, moneyEquals, activeTransactions, DEFAULT_LBP_RATE } from "../../lib/localData";
+import { historizedRecurringContribution, toUSD as toUSDShared, moneyEquals, activeTransactions, LBP_RATE_STALE_DAYS, DEFAULT_LBP_RATE } from "../../lib/localData";
 import { computeHoldingsByCurrency } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
 import Donut from "../charts/Donut";
 import { currentCycleKey } from "../../lib/period";
 
-export default function CurrencyScreen({ financials }: { financials: LocalFinancials }) {
+/**
+ * Moved here from SetupScreen 2026-09-13, behaviour unchanged. The rate is
+ * not one-time configuration -- it needs periodic maintenance, which is what
+ * RateStaleness exists to prompt -- so it belongs on the screen that shows
+ * what the rate does, next to the figures it moves.
+ *
+ * Bounds on the LBP/USD rate. This is a DIVISOR on every dual-currency figure
+ * in the app, so an absurd value magnifies rather than merely offsets: at a
+ * rate of 0.01, L£100 reads as $10,000. The field previously accepted any
+ * positive number, so the entire fractional range was reachable by typing.
+ *
+ * Floor 100: far below any rate this app has ever seen (1,500 / 15,000 /
+ * 89,500 across its history) while eliminating the fractional range entirely.
+ * Ceiling 10,000,000: over 100x the current rate, ample room for further
+ * devaluation without admitting a mistyped extra six digits.
+ */
+const LBP_RATE_MIN = 100;
+const LBP_RATE_MAX = 10_000_000;
+
+// LBP is volatile enough that a stale rate silently undermines the app's
+// one real differentiator (accurate dual-currency tracking) — surface it
+// instead of letting it quietly go out of date unnoticed.
+function RateStaleness({ updatedAt }: { updatedAt?: string }) {
+  const T = useTheme();
+  if (!updatedAt) return null;
+  const days = Math.floor((Date.now() - new Date(updatedAt).getTime()) / 86_400_000);
+  if (days < 3) return null; // recently updated — no need to nag
+  const stale = days >= LBP_RATE_STALE_DAYS;
+  const color = stale ? T.coral : T.brass;
+  const label = `${days} days ago`; // never 1 (unreachable, gated above at days < 3)
+  return (
+    <p className="text-[11px] mt-1.5 px-1 font-medium" style={{ color }}>
+      ⚠ Rate last updated {label}{stale ? ". LBP moves fast, double-check it's still accurate" : ""}.
+    </p>
+  );
+}
+
+export default function CurrencyScreen({ financials, onChange }: { financials: LocalFinancials; onChange: (updated: LocalFinancials) => void }) {
   const T = useTheme();
   const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
+
+  // Draft state, committed on blur. Bounding per keystroke would rewrite the
+  // display back mid-entry and make a rate impossible to type; bounds are
+  // applied once, on blur, against the finished value.
+  const [lbpRateInput, setLbpRateInput] = useState<string | null>(null);
+  function commitLbpRate(raw: string) {
+    const parsed = parseFloat(raw);
+    // An empty or unparseable field is discarded, never committed and never
+    // stamped as "just updated" -- a rejected edit must not read as verified.
+    if (!isNaN(parsed)) {
+      const clamped = Math.min(LBP_RATE_MAX, Math.max(LBP_RATE_MIN, parsed));
+      onChange({ ...financials, lbpRate: clamped, lbpRateUpdatedAt: new Date().toISOString() });
+    }
+    setLbpRateInput(null);
+  }
   const toUSD = (n: number, cur?: string) => toUSDShared(n, cur as "USD" | "LBP" | undefined, lbpRate);
   const [stressRate, setStressRate] = useState(lbpRate);
   const [showAllRateHistory, setShowAllRateHistory] = useState(false);
@@ -64,6 +116,29 @@ export default function CurrencyScreen({ financials }: { financials: LocalFinanc
           <p className="text-[10px] uppercase tracking-widest" style={{ color: T.mute }}>ESSA</p>
           <h1 className="text-3xl mt-1" style={SERIF}>Currency</h1>
           <p className="text-sm mt-2" style={{ color: T.mute }}>How much of your money moves in Lebanese Pounds, and what a further devaluation would mean for it.</p>
+        </div>
+
+        {/* Reference rate — moved from Setup 2026-09-13, behaviour unchanged */}
+        <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
+          <label htmlFor="currency-lbp-rate" className="block text-xs uppercase tracking-widest mb-2" style={{ color: T.mute }}>LBP / USD exchange rate</label>
+          <input
+            id="currency-lbp-rate"
+            className="w-full rounded-xl px-4 py-2.5 text-sm tabular-nums"
+            style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
+            // Doubly enforced, as far as the element type allows: the HTML
+            // min/max constrain the stepper and mark the field invalid, and
+            // commitLbpRate clamps the finished value on blur for anything
+            // typed, pasted, or autofilled past them.
+            type="number" min={LBP_RATE_MIN} max={LBP_RATE_MAX} step="500"
+            value={lbpRateInput ?? (financials.lbpRate ?? DEFAULT_LBP_RATE)}
+            onChange={(e) => setLbpRateInput(e.target.value)}
+            onBlur={(e) => commitLbpRate(e.target.value)}
+            placeholder="89500"
+          />
+          <p className="text-[11px] mt-1.5 px-1" style={{ color: T.mute }}>
+            Used to convert L£ amounts to $ across the app. Every figure on this page depends on it.
+          </p>
+          <RateStaleness updatedAt={financials.lbpRateUpdatedAt} />
         </div>
 
         {/* Spend by currency */}
