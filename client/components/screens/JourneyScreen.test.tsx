@@ -56,20 +56,20 @@ describe("JourneyScreen — safety-net pace agrees with Projections", () => {
     expect(dash.budgetTargets.savings).toBeCloseTo(200, 5);
     expect(dash.effectiveBudgetTargets.savings).toBeCloseTo(400, 5);
 
-    const fromRaw = projectCompletion(remaining, dash.budgetTargets.savings).dateDisplay;
-    const fromAdjusted = projectCompletion(remaining, dash.effectiveBudgetTargets.savings).dateDisplay;
+    const fromRaw = projectCompletion(remaining, dash.budgetTargets.savings, dash.anchor).dateDisplay;
+    const fromAdjusted = projectCompletion(remaining, dash.effectiveBudgetTargets.savings, dash.anchor).dateDisplay;
     expect(fromRaw).not.toEqual(fromAdjusted);
   });
 
   it("renders the date the raw income * pct rate produces, matching Projections", () => {
     const dash = renderJourney();
-    const expected = projectCompletion(dash.emergencyFund.remaining, dash.budgetTargets.savings).dateDisplay!;
+    const expected = projectCompletion(dash.emergencyFund.remaining, dash.budgetTargets.savings, dash.anchor).dateDisplay!;
     expect(screen.getByText(expected)).toBeInTheDocument();
   });
 
   it("does not render the date the rollover-adjusted rate produces", () => {
     const dash = renderJourney();
-    const wrong = projectCompletion(dash.emergencyFund.remaining, dash.effectiveBudgetTargets.savings).dateDisplay!;
+    const wrong = projectCompletion(dash.emergencyFund.remaining, dash.effectiveBudgetTargets.savings, dash.anchor).dateDisplay!;
     expect(screen.queryByText(wrong)).not.toBeInTheDocument();
   });
 

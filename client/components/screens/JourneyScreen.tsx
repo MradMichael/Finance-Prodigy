@@ -107,7 +107,12 @@ export default function JourneyScreen({
   // straight to Projections -- so any difference in basis would hand the user
   // two different dates for the same question, one click apart.
   const efRate = dashData.budgetTargets.savings;
-  const efProjection = projectCompletion(dashData.emergencyFund.remaining, efRate);
+  // 2.4.81: dashData.anchor, not projectCompletion's defaulted `new Date()`.
+  // This screen and Projections must answer the safety-net question from the
+  // same instant as well as the same basis -- the button below navigates
+  // straight there, so a drifted anchor would hand the reader two dates for
+  // one question, one click apart.
+  const efProjection = projectCompletion(dashData.emergencyFund.remaining, efRate, dashData.anchor);
 
   const started = hasNwArc || hasRateArc || hasCategoryArc || totalTx > 0;
 

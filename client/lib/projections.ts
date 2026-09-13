@@ -14,7 +14,7 @@ export interface PaceProjection {
  * numbers. Already-met (remaining <= 0) reads as 0 months, today, rather
  * than running the division.
  */
-export function projectCompletion(remaining: number, monthlyRate: number, asOf: Date = new Date()): PaceProjection {
+export function projectCompletion(remaining: number, monthlyRate: number, asOf: Date): PaceProjection {
   if (remaining <= 0) return { months: 0, dateDisplay: dateFmt(asOf) };
   if (monthlyRate <= 0) return { months: null, dateDisplay: null };
   const months = Math.ceil(remaining / monthlyRate);

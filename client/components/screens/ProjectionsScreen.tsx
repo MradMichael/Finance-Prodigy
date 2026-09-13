@@ -60,10 +60,19 @@ export default function ProjectionsScreen({
   dashData: ReturnType<typeof computeDashboard>;
 }) {
   const T = useTheme();
-  const { emergencyFund, debt, goals, budgetTargets, budgetTargetPct, budgetRule, month } = dashData;
+  const { emergencyFund, debt, goals, budgetTargets, budgetTargetPct, budgetRule, month, anchor } = dashData;
 
   const hasIncome = month.income > 0;
   const efRemaining = Math.max(0, emergencyFund.remaining);
+  // 2.4.81: one call, one anchor. This was two identical inline
+  // projectCompletion calls on the same JSX line -- one for .months, one for
+  // .dateDisplay -- each evaluating its own defaulted `new Date()`, so in
+  // principle the two halves of a single readout could straddle midnight and
+  // disagree. It is also the LEFT column of a grid-cols-2 whose right column
+  // comes from the cascade, which is the pair 2.4.81 is about: both now read
+  // the same anchor, and naming the value gives the screen's own tests
+  // something to assert against (2.4.82).
+  const efRecommendedPace = projectCompletion(efRemaining, budgetTargets.savings, anchor);
   const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
   const liveDebts: DebtInput[] = toDebtInputs(financials.debts, lbpRate, financials.transactions);
 
@@ -88,7 +97,8 @@ export default function ProjectionsScreen({
   // capacityFreedFrom would credit it from month 0 and read as a promise
   // of money the user already has.
   const CAPACITY_HORIZON_MONTHS = 36;
-  const capacityNow = new Date();
+  // 2.4.81: the shared anchor, not a local new Date().
+  const capacityNow = anchor;
   // Same UTC month-stepping capacityByMonth uses internally, so "inside the
   // horizon" here and "counted in the series" there can't disagree.
   const capacityHorizonEnd = new Date(Date.UTC(
@@ -233,7 +243,7 @@ export default function ProjectionsScreen({
   let goalsStageStartDate: Date | null = null;
   for (const key of priority) {
     if (!feasible) { stages[key] = { months: null, startMonths: cursor, dateDisplay: null, skipped: true }; continue; }
-    const startDate = addMonths(new Date(), cursor);
+    const startDate = addMonths(anchor, cursor);
     if (key === "ef") {
       const proj = projectCompletion(efRemaining, testAmount, startDate);
       stages.ef = { months: proj.months, startMonths: cursor, dateDisplay: proj.dateDisplay };
@@ -297,7 +307,7 @@ export default function ProjectionsScreen({
       : null;
 
   const totalMonths = feasible ? cursor : null;
-  const stabilityDateDisplay = totalMonths !== null ? dateFmt(addMonths(new Date(), totalMonths)) : null;
+  const stabilityDateDisplay = totalMonths !== null ? dateFmt(addMonths(anchor, totalMonths)) : null;
 
   // Straight sum of what's actually still owed/short right now, independent
   // of the plan above: EF's remaining gap + total debt balance + every open
@@ -532,7 +542,7 @@ export default function ProjectionsScreen({
             <p className="text-sm mt-4" style={{ color: T.jade }}>Fully funded already. 🎉</p>
           ) : (
             <div className="grid grid-cols-2 gap-4 mt-4">
-              <PaceRow label="At recommended pace" months={projectCompletion(efRemaining, budgetTargets.savings).months} dateDisplay={projectCompletion(efRemaining, budgetTargets.savings).dateDisplay} color={T.text} T={T} />
+              <PaceRow label="At recommended pace" months={efRecommendedPace.months} dateDisplay={efRecommendedPace.dateDisplay} color={T.text} T={T} />
               <PaceRow label="In your plan" months={stages.ef.months} dateDisplay={stages.ef.dateDisplay} color={T.jade} T={T} />
             </div>
           )}

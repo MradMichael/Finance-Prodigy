@@ -79,7 +79,7 @@ function monthsUntil(targetDate: string, asOf: Date): number {
 export function allocateGoalCapacity(
   goals: GoalCapacityInput[],
   monthlyCapacityUSD: number,
-  asOf: Date = new Date(),
+  asOf: Date,
 ): GoalAllocationReport {
   const withRates = goals.map((g) => {
     const remainingUSD = Math.max(0, g.targetAmountUSD - g.currentAmountUSD);
@@ -186,7 +186,7 @@ export interface GoalFastestReport {
 export function fastestGoalCompletion(
   goals: GoalCapacityInput[],
   monthlyCapacityUSD: number,
-  asOf: Date = new Date(),
+  asOf: Date,
 ): GoalFastestReport {
   const prioritized = [...goals].sort((a, b) => new Date(a.targetDate).getTime() - new Date(b.targetDate).getTime());
 
@@ -272,7 +272,7 @@ export function capacityByMonth(
   baseCapacityUSD: number,
   obligations: RecurringCapacityInput[],
   monthsAhead: number,
-  asOf: Date = new Date(),
+  asOf: Date,
 ): MonthlyCapacity[] {
   const results: MonthlyCapacity[] = [];
   for (let m = 0; m <= monthsAhead; m++) {
