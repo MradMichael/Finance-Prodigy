@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, BudgetRuleKey } from "../../lib/localData";
-import { BUDGET_RULES, MIN_SPLIT_PCT, floorCustomSplit, buildEfAdjustmentTx, roundMoney, DEFAULT_LBP_RATE } from "../../lib/localData";
+import { BUDGET_RULES, MIN_SPLIT_PCT, floorCustomSplit, buildEfAdjustmentTx, roundMoney } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF } from "./shared";
@@ -24,38 +24,6 @@ import { SERIF } from "./shared";
  * change than this fix was scoped to.
  */
 const MAX_INCOME = 1_000_000;
-
-/**
- * Bounds on the LBP/USD rate. This is a DIVISOR on every dual-currency figure
- * in the app, so an absurd value magnifies rather than merely offsets: at a
- * rate of 0.01, L£100 reads as $10,000. The field previously accepted any
- * positive number, so the entire fractional range was reachable by typing.
- *
- * Floor 100: far below any rate this app has ever seen (1,500 / 15,000 /
- * 89,500 across its history) while eliminating the fractional range entirely.
- * Ceiling 10,000,000: over 100x the current rate, ample room for further
- * devaluation without admitting a mistyped extra six digits.
- */
-const LBP_RATE_MIN = 100;
-const LBP_RATE_MAX = 10_000_000;
-
-// LBP is volatile enough that a stale rate silently undermines the app's
-// one real differentiator (accurate dual-currency tracking) — surface it
-// instead of letting it quietly go out of date unnoticed.
-function RateStaleness({ updatedAt }: { updatedAt?: string }) {
-  const T = useTheme();
-  if (!updatedAt) return null;
-  const days = Math.floor((Date.now() - new Date(updatedAt).getTime()) / 86_400_000);
-  if (days < 3) return null; // recently updated — no need to nag
-  const stale = days >= 14;
-  const color = stale ? T.coral : T.brass;
-  const label = `${days} days ago`; // never 1 (unreachable, gated above at days < 3)
-  return (
-    <p className="text-[11px] mt-1.5 px-1 font-medium" style={{ color }}>
-      ⚠ Rate last updated {label}{stale ? ". LBP moves fast, double-check it's still accurate" : ""}.
-    </p>
-  );
-}
 
 export default function SetupScreen({
   financials,
@@ -86,25 +54,6 @@ export default function SetupScreen({
   // in, clicked out, nothing changed) creates nothing.
   const [efBalanceInput, setEfBalanceInput] = useState<string | null>(null);
 
-  // Draft-while-typing, commit-on-blur — the same shape efBalanceInput below
-  // already uses, and required rather than stylistic here. The field is
-  // controlled by the stored rate, so a per-keystroke bound check would
-  // reject every prefix of a real rate ("8", "89", "895"...) and snap the
-  // display back, making a rate impossible to type. Bounds are applied once,
-  // on blur, against the finished value.
-  const [lbpRateInput, setLbpRateInput] = useState<string | null>(null);
-  function commitLbpRate(raw: string) {
-    const parsed = parseFloat(raw);
-    // Unchanged from the previous handler's intent: an empty or unparseable
-    // field is discarded, never committed and never stamped as "just
-    // updated". Only a real number is accepted — now clamped into range
-    // rather than accepted at any positive magnitude.
-    if (!isNaN(parsed)) {
-      const clamped = Math.min(LBP_RATE_MAX, Math.max(LBP_RATE_MIN, parsed));
-      update({ lbpRate: clamped, lbpRateUpdatedAt: new Date().toISOString() });
-    }
-    setLbpRateInput(null);
-  }
   function commitEfBalance(raw: string) {
     const entered = Math.max(0, parseFloat(raw) || 0);
     const delta = roundMoney(entered - efBalance);
@@ -194,40 +143,13 @@ export default function SetupScreen({
           </div>
         </div>
 
-        {/* Currency */}
-        <div className="rounded-2xl p-6 space-y-4" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
-          <p className="text-xs uppercase tracking-widest font-semibold" style={{ color: T.mute }}>Currency</p>
-          <div>
-            <label htmlFor="setup-lbp-rate" className="block text-xs mb-1.5" style={{ color: T.mute }}>LBP / USD exchange rate</label>
-            <input
-              id="setup-lbp-rate"
-              className="w-full rounded-xl px-4 py-2.5 text-sm tabular-nums"
-              style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
-              // Doubly enforced, as far as the element type allows: the HTML
-              // min/max constrain the stepper and mark the field invalid, and
-              // commitLbpRate clamps the finished value on blur for anything
-              // typed, pasted, or autofilled past them.
-              //
-              // The previous handler's reasoning still holds and is preserved
-              // in commitLbpRate: only a real number is committed, and
-              // lbpRateUpdatedAt is only stamped when one is — the older
-              // `parseFloat(...) || 89500` snapped the rate back to the
-              // hardcoded default on an empty keystroke while still stamping
-              // it "just verified", reporting a discarded edit as an accepted
-              // one. What changes here is that a positive-but-absurd rate is
-              // no longer accepted at face value.
-              type="number" min={LBP_RATE_MIN} max={LBP_RATE_MAX} step="500"
-              value={lbpRateInput ?? (financials.lbpRate ?? DEFAULT_LBP_RATE)}
-              onChange={(e) => setLbpRateInput(e.target.value)}
-              onBlur={(e) => commitLbpRate(e.target.value)}
-              placeholder="89500"
-            />
-            <p className="text-[11px] mt-1.5 px-1" style={{ color: T.mute }}>
-              Used to convert L£ amounts to $ across the app. Update this when the rate changes.
-            </p>
-            <RateStaleness updatedAt={financials.lbpRateUpdatedAt} />
-          </div>
-        </div>
+        {/* The LBP rate field and its staleness indicator moved to
+            CurrencyScreen on 2026-09-13. Deliberately no copy and no link
+            left here: the field WRITES (rate + lbpRateUpdatedAt), so a
+            second editable copy would mean two surfaces stamping "just
+            verified" and a staleness indicator reporting on whichever was
+            touched last. Reach is preserved by the `rate-stale` alert
+            (computeDashboard.ts), which routes to the Currency screen. */}
 
         {/* Safety net */}
         <div className="rounded-2xl p-6 space-y-4" style={{ background: T.panel, border: `1px solid ${T.line}` }}>

@@ -2027,3 +2027,57 @@ describe("historized LBP conversion — a zero history entry cannot poison a tot
     expect(result.sixMonthTrend.every((m) => Number.isFinite(m.spend) && Number.isFinite(m.income))).toBe(true);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// rate-stale alert.
+//
+// Rate editing moved from Setup to the Currency screen. Without this alert
+// the move would be a net REDUCTION in reach: the staleness warning would go
+// from a screen a user configures on to one they only open when already
+// thinking about currency — which is exactly when the rate is least likely
+// to be stale.
+//
+// Scoped deliberately to the balance-* shape and nothing more: one warning,
+// the same 14-day threshold the indicator already uses, routing to the screen
+// that can fix it. No new thresholds, no severity tiers.
+describe("rate-stale alert", () => {
+  const NOW = new Date(2026, 8, 13);
+  const daysAgo = (n: number) => new Date(NOW.getTime() - n * 86_400_000).toISOString();
+  const withRateAge = (updatedAt?: string) =>
+    computeDashboard(makeData({ income: 3000, lbpRate: 89_500, ...(updatedAt ? { lbpRateUpdatedAt: updatedAt } : {}) }));
+
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(NOW); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  const rateAlert = (d: ReturnType<typeof computeDashboard>) => d.alerts.find((a) => a.id === "rate-stale");
+
+  it("does not fire at 13 days — one day under the threshold", () => {
+    expect(rateAlert(withRateAge(daysAgo(13)))).toBeUndefined();
+  });
+
+  it("fires at exactly 14 days, the same threshold the indicator already uses", () => {
+    expect(rateAlert(withRateAge(daysAgo(14)))).toBeTruthy();
+  });
+
+  it("routes to the screen that can fix it", () => {
+    expect(rateAlert(withRateAge(daysAgo(30)))!.screen).toBe("currency");
+  });
+
+  it("is a warning, matching balance-* rather than introducing a new tier", () => {
+    expect(rateAlert(withRateAge(daysAgo(30)))!.severity).toBe("warning");
+  });
+
+  it("does not fire when the rate has never been edited — nothing to call stale", () => {
+    // lbpRateUpdatedAt absent: a fresh account has not neglected anything,
+    // and RateStaleness itself returns null in the same case.
+    expect(rateAlert(withRateAge(undefined))).toBeUndefined();
+  });
+
+  it("adds exactly one alert and disturbs no other", () => {
+    const fresh = withRateAge(daysAgo(1));
+    const stale = withRateAge(daysAgo(30));
+    const others = (d: ReturnType<typeof computeDashboard>) => d.alerts.filter((a) => a.id !== "rate-stale").map((a) => a.id).sort();
+    expect(others(stale)).toEqual(others(fresh));
+    expect(stale.alerts.length).toBe(fresh.alerts.length + 1);
+  });
+});

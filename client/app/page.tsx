@@ -462,7 +462,7 @@ export default function Home() {
           {screen === "recurring"    && <RecurringScreen financials={financials} onEdit={(id) => handleEdit("recurring", id)} />}
           {screen === "projections"  && <ProjectionsScreen financials={financials} dashData={dashboardData} />}
           {screen === "journey"      && <JourneyScreen financials={financials} dashData={dashboardData} onNavigate={setScreen} />}
-          {screen === "currency"     && <CurrencyScreen financials={financials} />}
+          {screen === "currency"     && <CurrencyScreen financials={financials} onChange={handleChange} />}
           {screen === "balancecheck" && <BalanceCheckScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
           {screen === "wishlist"     && <WishlistScreen financials={financials} onChange={handleChange} />}
           {screen === "statistics"   && <StatisticsScreen financials={financials} dashData={dashboardData} />}

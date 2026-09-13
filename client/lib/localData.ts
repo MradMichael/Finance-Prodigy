@@ -591,6 +591,17 @@ export const MONEY_MAX_USD = 100_000_000;
  * ceiling to 0 (or NaN) and lock the field -- the same reasoning as 2.4.72,
  * which found seven places dividing by an unguarded rate.
  */
+/**
+ * Days without a rate edit before the LBP rate counts as stale.
+ *
+ * Shared by CurrencyScreen's RateStaleness indicator and computeDashboard's
+ * `rate-stale` alert. One constant rather than two 14s, because the alert
+ * exists precisely to say the same thing as the indicator on a screen the
+ * user is more likely to be looking at -- two literals that mean "the same
+ * threshold" and can drift apart is the shape this project keeps logging.
+ */
+export const LBP_RATE_STALE_DAYS = 14;
+
 export function moneyMaxFor(currency: Currency | undefined, lbpRate: number): number {
   return currency === "LBP" ? MONEY_MAX_USD * rateOrDefault(lbpRate) : MONEY_MAX_USD;
 }
