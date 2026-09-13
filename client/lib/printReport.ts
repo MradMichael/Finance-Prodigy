@@ -1,5 +1,5 @@
 import type { LocalFinancials } from "./localData";
-import { BUDGET_RULES, nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, toUSD as toUSDShared, categoryLabel, derivedDebtBalance, activeTransactions, DEFAULT_LBP_RATE, valueForMonth, makeToUSDForMonth } from "./localData";
+import { BUDGET_RULES, nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, toUSD as toUSDShared, categoryLabel, derivedDebtBalance, activeTransactions, DEFAULT_LBP_RATE, makeToUSDForMonth } from "./localData";
 import type { computeDashboard } from "./computeDashboard";
 
 type DashboardPayload = ReturnType<typeof computeDashboard>;

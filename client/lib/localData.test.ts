@@ -1,19 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import {
-  monthlyEquivalent, nominalMonthlyEquivalent, isRecurringActive, isPaidThisCycle,
-  nextOccurrence, recurringPaidSoFar, capacityFreedFrom, buildRecurringPaymentLog, buildGoalContributionTx, fmtDate, valueForMonth,
-  loadData, saveData, DEFAULT_DATA, type StoredRecurring, type StoredGoal, type StoredTransaction, type StoredDebt,
-  allCategories, categoryLabel, categoryIcon, CATEGORIES,
-  matchCategoryRule, type CategoryRule,
-  roundMoney, moneyEquals, isEmptyFinancials, type LocalFinancials, toUSD, DEFAULT_LBP_RATE,
-  rateOrDefault, rateForMonth, makeToUSDForMonth,
-  migrateFinancials, schemaVersionOf, withRate, CURRENT_SCHEMA_VERSION, todayISO,
-  dueCycles, remainingInstallments, isCycleConfirmed, isCycleOverdue, buildRecurringConfirmLog, cycleMonthDivergence,
-  nextConfirmTarget, historizedRecurringContribution, pendingBackfillCycles,
-  derivedEfBalance, derivedDebtBalance, activeTransactions, purgeTransaction, autoPurgeExpired,
-  buildDebtPaymentTx, buildEfAdjustmentTx, buildDebtAdjustmentTx, applyGoalContribution,
-  mergeTransactions, buildTransferTx, retagBucketAmount, reanchorTrackedBalance, type TrackedBalance,
-} from "./localData";
+import { monthlyEquivalent, nominalMonthlyEquivalent, isRecurringActive, isPaidThisCycle, nextOccurrence, recurringPaidSoFar, capacityFreedFrom, buildRecurringPaymentLog, buildGoalContributionTx, fmtDate, valueForMonth, loadData, saveData, DEFAULT_DATA, type StoredRecurring, type StoredGoal, type StoredTransaction, type StoredDebt, allCategories, categoryLabel, categoryIcon, CATEGORIES, matchCategoryRule, type CategoryRule, roundMoney, moneyEquals, isEmptyFinancials, type LocalFinancials, toUSD, DEFAULT_LBP_RATE, rateOrDefault, rateForMonth, makeToUSDForMonth, migrateFinancials, CURRENT_SCHEMA_VERSION, todayISO, dueCycles, remainingInstallments, isCycleConfirmed, isCycleOverdue, buildRecurringConfirmLog, cycleMonthDivergence, nextConfirmTarget, historizedRecurringContribution, pendingBackfillCycles, derivedEfBalance, derivedDebtBalance, activeTransactions, purgeTransaction, autoPurgeExpired, buildDebtPaymentTx, buildEfAdjustmentTx, buildDebtAdjustmentTx, applyGoalContribution, mergeTransactions, buildTransferTx, retagBucketAmount, reanchorTrackedBalance, type TrackedBalance } from "./localData";
 import { trackedBalanceExpected } from "./computeDashboard";
 
 // UTC midnight of a given local calendar date -- matches nextOccurrence's

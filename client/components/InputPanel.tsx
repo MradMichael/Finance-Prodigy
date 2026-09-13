@@ -1,16 +1,13 @@
 "use client";
 
 import { useState, useRef } from "react";
-import type {
-  LocalFinancials, StoredTransaction, StoredGoal, StoredDebt,
-  StoredRecurring, StoredCard, RecurringFrequency, Currency, PaymentMethod, BudgetRuleKey, TrackedBalance,
-} from "../lib/localData";
+import type { LocalFinancials, StoredTransaction, StoredGoal, StoredDebt, StoredRecurring, StoredCard, RecurringFrequency, Currency, PaymentMethod, BudgetRuleKey } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, remainingInstallments, toUSD as toUSDShared, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, reanchorTrackedBalance, allCategories, categoryLabel, categoryIcon, matchCategoryRule, roundMoney, moneyMaxFor, MONEY_MAX_USD, derivedDebtBalance, activeTransactions, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
+import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, remainingInstallments, toUSD as toUSDShared, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, roundMoney, moneyMaxFor, MONEY_MAX_USD, derivedDebtBalance, activeTransactions, DEFAULT_DATA, DEFAULT_LBP_RATE } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
-import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker, CardPicker } from "./form/Primitives";
+import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker } from "./form/Primitives";
 import { fmtCur } from "./screens/shared";
 import ImportStatement from "./ImportStatement";
 
@@ -35,17 +32,13 @@ interface Props {
   loggingRecurringIds?: Set<string>;
   /** Recurring item ids that just finished confirming, briefly, before their target moves on to the next cycle (2.4.30, finding 3). */
   justConfirmedIds?: Set<string>;
-  /** Confirms one specific pre-cutover cycle (2.4.31 backfill) -- dated to that cycle's own historical due date, not today. */
-  onBackfillRecurring?: (recurringId: string, dueDate: Date) => void;
-  /** `${recurringId}:${dueISO}` keys whose backfill write is currently in flight. */
-  backfillingIds?: Set<string>;
   /** Opens the shared edit surface (page.tsx) for the given entity -- one implementation per kind, shared with each entity's own standalone screen. */
   onEdit: (kind: "transaction" | "debt" | "recurring" | "goal", id: string) => void;
   /** Opens the shared "record a payment" surface (page.tsx) for a debt -- shared with DebtsScreen. */
   onPay: (debtId: string) => void;
 }
 
-export default function InputPanel({ financials, dashData, onChange, session, onConfirmRecurring, loggingRecurringIds, justConfirmedIds, onBackfillRecurring, backfillingIds, onEdit, onPay }: Props) {
+export default function InputPanel({ financials, dashData, onChange, session, onConfirmRecurring, loggingRecurringIds, justConfirmedIds, onEdit, onPay }: Props) {
   const T = useTheme();
   const BUCKETS: { value: Bucket; label: string; icon: string; color: string }[] = [
     { value: "NEEDS",   label: "Needs",   icon: "🏠", color: T.sky   },
@@ -100,7 +93,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   // "the full transaction amount" (today's implicit behavior, zero extra
   // typing for the common case), a typed value overrides it down to a
   // partial amount. Entered in the transaction's own currency, like txAmt
-  // itself -- converted to USD at commit, same as amtUSD.
+  // itself -- converted to USD at commit, the same way efAmtUSD is.
   const [txEfAmt,     setTxEfAmt]     = useState("");
   const [txCardId,    setTxCardId]    = useState<string | null>(null);
   const [showAddCard, setShowAddCard] = useState(false);
@@ -263,7 +256,6 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     const amt = parseFloat(txAmt);
     if (!amt || amt <= 0) return;
     const { cardId, cardLabel } = resolveCard();
-    const amtUSD = txCurrency === "LBP" ? amt / (financials.lbpRate ?? DEFAULT_LBP_RATE) : amt;
     const description = txDesc.trim() || txBucket.charAt(0) + txBucket.slice(1).toLowerCase();
     // "If null only": a category rule only ever fills in a category the
     // user hasn't already picked -- never overrides an explicit choice.

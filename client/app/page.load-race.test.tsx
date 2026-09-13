@@ -23,8 +23,7 @@
 // Verified RED against the pre-fix code, and RED for the right reason: the
 // shell renders while the pull is pending.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor, act, fireEvent } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { render, screen, waitFor } from "@testing-library/react";
 import { StrictMode } from "react";
 import { DEFAULT_DATA, type LocalFinancials } from "../lib/localData";
 
@@ -82,23 +81,9 @@ beforeEach(() => {
 });
 afterEach(() => { vi.clearAllMocks(); });
 
-/**
- * Releases the deferred pull and lets the whole continuation settle. A bare
- * `await Promise.resolve()` is not enough: the success path awaits saveData
- * before calling setFinancials, so the state update sits one macrotask
- * further out than the failure path does.
- */
-async function releaseAndSettle(result: unknown) {
-  await act(async () => {
-    releasePull(result);
-    await new Promise((r) => setTimeout(r, 0));
-    await new Promise((r) => setTimeout(r, 0));
-  });
-}
 
 describe("2.4.69 — a write during the first-load window survives the pull resolving", () => {
   it("no write window exists: the shell stays locked until the load settles", { timeout: 20000 }, async () => {
-    const user = userEvent.setup();
     render(<StrictMode><Home /></StrictMode>);
 
     // Give React every chance to commit a shell. Pre-fix this is where the
