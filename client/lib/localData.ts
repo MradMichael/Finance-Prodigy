@@ -18,14 +18,38 @@ export interface StoredTransaction {
   id: string;
   amount: number;
   currency: Currency;
-  // The USD/LBP rate in effect when this record was entered -- only ever
-  // meaningful (set) when currency is "LBP"; USD needs no conversion, so
-  // this stays undefined for a USD record. Captured once, never
-  // recomputed: this is what makes "historical records retain the rate at
-  // which they were entered" (docs/ROADMAP.md Phase 1) true even after the
-  // global reference rate changes later. See buildRecurringPaymentLog and
-  // withRate below for where this gets populated on new records, and
-  // migrateFinancials for how it's backfilled on existing ones.
+  // The USD/LBP rate that was live when this record was TYPED -- only ever
+  // set when currency is "LBP"; USD needs no conversion. Written by
+  // withRate() on creation and backfilled by migrateFinancials on older
+  // records.
+  //
+  // ── DELIBERATELY UNREAD. Do not wire this into conversion. ──
+  //
+  // Nothing derives a figure from this field, and that is the decision, not
+  // an omission (owner, 2026-09-13; full reasoning in docs/AUDIT_2026-08.md
+  // finding 2.4.90). Conversion goes through rateForMonth(lbpRateHistory,
+  // ym, live) instead -- the rate in effect for the PERIOD a record belongs
+  // to.
+  //
+  // Two reasons, and the first is the one that settles it:
+  //
+  // 1. This captures entry time, not transaction time. `date` can be any
+  //    date, but withRate() only ever sees the live rate at the moment of
+  //    typing -- so backdating an entry stamps it with TODAY's rate, while
+  //    the period history would give the rate that actually applied on the
+  //    date it happened. For a backdated record this field is strictly LESS
+  //    accurate than the mechanism that replaced it.
+  //
+  // 2. A mistyped rate captured here is uncorrectable: every record stamped
+  //    under it is permanently wrong and fixable only one record at a time.
+  //    lbpRateHistory is a single edit.
+  //
+  // It is kept rather than deleted because it is a real captured fact --
+  // what the app believed the rate was when this was entered -- which is
+  // worth retaining even though it is the wrong input for "what did this
+  // cost" (use the period rate) or "what is this worth now" (use the live
+  // rate). See StoredRecurring.lbpRateAtEntry for why a template never gets
+  // one at all.
   lbpRateAtEntry?: number;
   // INCOME is a one-off/incidental receipt (a gift, a genuine windfall) logged
   // as a dated transaction like any other -- distinct from the recurring
