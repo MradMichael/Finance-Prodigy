@@ -126,7 +126,30 @@ export default function Home() {
     setTimeout(() => setSyncStatus((s) => s !== "syncing" ? "idle" : s), 4000);
   }, []);
 
+  // 2.4.69 -- identifies which load run is the current one, so a superseded
+  // run cannot apply the snapshot it captured before its await.
+  //
+  // Same purpose as ImportStatement.tsx:65's cancellation ref, and re-armed
+  // on setup for the same reason, but a TOKEN rather than a boolean -- the
+  // plain boolean form is actively wrong for this effect. There, the ref
+  // means "the modal is gone", one in-flight parse, and re-arming on setup
+  // undoes StrictMode's simulated cleanup so real parses aren't pre-cancelled.
+  // Here StrictMode's double-run IS the failure mechanism: two runs are in
+  // flight at once, and a shared boolean re-armed by the second setup would
+  // clear the very flag meant to stop the first -- un-cancelling the stale
+  // run instead of blocking it. Comparing a per-run token distinguishes
+  // "superseded" from "unmounted", which a boolean cannot.
+  //
+  // Deliberately not a `let cancelled` closure either, though that would also
+  // work: staleness here is decided by comparison rather than by a cleanup
+  // side effect, so it holds even on a path where cleanup never runs.
+  const loadRunRef = useRef(0);
+
   useEffect(() => {
+    // Re-armed on every setup: this run claims the latest token.
+    const myRun = ++loadRunRef.current;
+    const superseded = () => loadRunRef.current !== myRun;
+
     const s = getSession();
     if (!s || !hasValidSession()) {
       // A session can outlive its per-tab encryption key (browser restart,
@@ -145,16 +168,25 @@ export default function Home() {
       // email, why isn't my data there" without ever risking a real local
       // edit being overwritten (isEmptyFinancials gates that; the
       // hasAutoPulled flag makes it a one-time attempt, not a retry loop).
+      if (superseded()) return;
       if (isEmptyFinancials(data) && !hasAutoPulled(s.userId)) {
         markAutoPulled(s.userId);
         const result = await pullFromServer(s.email);
+        // The one that matters: `data` was captured before this await, and a
+        // newer run has since unlocked the UI. Anything the user typed in the
+        // meantime is live state, and applying either branch below would
+        // replace the WHOLE financials object with a snapshot that predates
+        // it -- not just income, everything written in that window.
+        if (superseded()) return;
         if (result.ok && !isEmptyFinancials(result.data)) {
           const pulled = { ...result.data, userName: s.name };
           await saveData(pulled, s.userId);
+          if (superseded()) return;
           setFinancials(pulled);
           return;
         }
       }
+      if (superseded()) return;
       setFinancials({ ...data, userName: s.name });
     });
   }, [router]);
