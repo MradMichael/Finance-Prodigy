@@ -402,7 +402,22 @@ export default function ProjectionsScreen({
             <div className="flex flex-wrap gap-2 mt-2">
               {[
                 { label: "Recommended savings", v: Math.round(budgetTargets.savings) },
-                { label: `My full surplus (${money(surplus)})`, v: surplus },
+                // 2.4.80: was "My full surplus". The seed above is a BUDGETING
+                // RULE (a percentage of income), not an availability figure --
+                // a deliberate choice, confirmed by the owner, and unchanged.
+                // But at the owner's real numbers it opens at $92 against
+                // $401 actually unspent, and the old label gave no signal that
+                // this preset was the honest available figure rather than just
+                // a bigger number to try.
+                //
+                // "Unspent so far" is exact: income minus everything logged
+                // this month, recurring bills that have been confirmed
+                // included. "so far" is load-bearing -- month-to-date spend
+                // against a whole month's income makes this OPTIMISTIC
+                // mid-month, and it shrinks as the month fills in. Anything
+                // implying a steady monthly figure ("full surplus",
+                // "available", "/mo") would overclaim it.
+                { label: `Unspent so far this month (${money(surplus)})`, v: surplus },
               ].map((p) => {
                 // moneyEquals, not === -- p.v for the surplus preset is
                 // itself computed (income minus commitments), so a re-render
@@ -426,6 +441,11 @@ export default function ProjectionsScreen({
                 );
               })}
             </div>
+            {hasIncome && (
+              <p className="text-[11px] mt-2" style={{ color: T.mute }}>
+                &ldquo;Recommended savings&rdquo; is your budget rule&apos;s target. &ldquo;Unspent so far&rdquo; is what&apos;s actually left this month — it moves as the month fills in.
+              </p>
+            )}
           </div>
 
           <div>
