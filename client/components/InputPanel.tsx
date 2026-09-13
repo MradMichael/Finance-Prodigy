@@ -32,17 +32,13 @@ interface Props {
   loggingRecurringIds?: Set<string>;
   /** Recurring item ids that just finished confirming, briefly, before their target moves on to the next cycle (2.4.30, finding 3). */
   justConfirmedIds?: Set<string>;
-  /** Confirms one specific pre-cutover cycle (2.4.31 backfill) -- dated to that cycle's own historical due date, not today. */
-  onBackfillRecurring?: (recurringId: string, dueDate: Date) => void;
-  /** `${recurringId}:${dueISO}` keys whose backfill write is currently in flight. */
-  backfillingIds?: Set<string>;
   /** Opens the shared edit surface (page.tsx) for the given entity -- one implementation per kind, shared with each entity's own standalone screen. */
   onEdit: (kind: "transaction" | "debt" | "recurring" | "goal", id: string) => void;
   /** Opens the shared "record a payment" surface (page.tsx) for a debt -- shared with DebtsScreen. */
   onPay: (debtId: string) => void;
 }
 
-export default function InputPanel({ financials, dashData, onChange, session, onConfirmRecurring, loggingRecurringIds, justConfirmedIds, onBackfillRecurring, backfillingIds, onEdit, onPay }: Props) {
+export default function InputPanel({ financials, dashData, onChange, session, onConfirmRecurring, loggingRecurringIds, justConfirmedIds, onEdit, onPay }: Props) {
   const T = useTheme();
   const BUCKETS: { value: Bucket; label: string; icon: string; color: string }[] = [
     { value: "NEEDS",   label: "Needs",   icon: "🏠", color: T.sky   },
