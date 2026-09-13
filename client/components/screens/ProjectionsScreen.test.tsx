@@ -296,3 +296,47 @@ describe("Looking ahead — bounded obligations that free capacity later", () =>
     expect(screen.queryByText(/Looking ahead/)).toBeNull();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// 2.4.80: the surplus preset's labelling.
+//
+// The $92 seed from budgetTargets.savings is a deliberate choice and is NOT
+// under test here -- it stays. What is under test is that the preset next to
+// it reads as the actual available figure, and that it does not overclaim
+// that figure as a steady monthly one. The value is month-to-date spend
+// against a whole month's income, so it is optimistic mid-month.
+describe("2.4.80 — the surplus preset reads as actual capacity, without overclaiming it", () => {
+  it("names the figure as unspent so far this month, not as a surplus", () => {
+    renderProjections();
+    expect(screen.getByRole("button", { name: /Unspent so far this month/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /full surplus/i })).toBeNull();
+  });
+
+  it("does not claim a steady monthly figure", () => {
+    renderProjections();
+    const btn = screen.getByRole("button", { name: /Unspent so far this month/ });
+    // The words that would turn a month-to-date figure into a rate.
+    expect(btn.textContent).not.toMatch(/\/mo|per month|every month|available/i);
+    // "so far" is the part that carries the caveat -- it must survive edits.
+    expect(btn.textContent).toMatch(/so far/);
+  });
+
+  it("distinguishes the two presets in copy, so the seed is not mistaken for the available figure", () => {
+    renderProjections();
+    const note = screen.getByText(/is your budget rule/);
+    expect(note.textContent).toMatch(/Recommended savings/);
+    expect(note.textContent).toMatch(/Unspent so far/);
+    expect(note.textContent).toMatch(/moves as the month fills in/);
+  });
+
+  it("the preset still sets the plan amount to the real unspent figure when clicked", () => {
+    const dash = renderProjections();
+    const expected = Math.max(0, Math.round(dash.month.netCashFlow));
+    fireEvent.click(screen.getByRole("button", { name: /Unspent so far this month/ }));
+    const input = screen.getByLabelText("Monthly amount to plan with") as HTMLInputElement;
+    expect(Number(input.value)).toBe(expected);
+    // Premise: the preset and the seed genuinely differ for this fixture,
+    // or the assertion above would pass without discriminating.
+    expect(expected).not.toBe(Math.round(dash.budgetTargets.savings));
+  });
+});
