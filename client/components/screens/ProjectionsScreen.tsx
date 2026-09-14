@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
-import { BUDGET_RULES, moneyEquals, capacityFreedFrom, isRecurringActive, toUSD as toUSDShared, DEFAULT_LBP_RATE } from "../../lib/localData";
+import { BUDGET_RULES, moneyEquals, capacityFreedFrom, isRecurringActive, toUSD as toUSDShared, DEFAULT_LBP_RATE, cycleStartDayOf } from "../../lib/localData";
 import { dateFmt, toDebtInputs, type computeDashboard } from "../../lib/computeDashboard";
 import { simulateDebtPayoff, addMonths, type DebtInput } from "../../lib/debtEngine";
 import { projectCompletion } from "../../lib/projections";
 import { allocateGoalCapacity, fastestGoalCompletion, capacityByMonth, type GoalCapacityInput, type GoalAllocationReport, type GoalFastestReport, type GoalFeasibilityStatus, type RecurringCapacityInput } from "../../lib/goalFeasibility";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money } from "./shared";
+import { periodNoun } from "../../lib/period";
 
 type PriorityKey = "ef" | "debt" | "goals";
 const PRIORITY_META: Record<PriorityKey, { label: string; color: (T: ReturnType<typeof useTheme>) => string }> = {
@@ -60,6 +61,7 @@ export default function ProjectionsScreen({
   dashData: ReturnType<typeof computeDashboard>;
 }) {
   const T = useTheme();
+  const noun = periodNoun(cycleStartDayOf(financials));
   const { emergencyFund, debt, goals, budgetTargets, budgetTargetPct, budgetRule, month, anchor } = dashData;
 
   const hasIncome = month.income > 0;
@@ -415,7 +417,7 @@ export default function ProjectionsScreen({
                 // mid-month, and it shrinks as the month fills in. Anything
                 // implying a steady monthly figure ("full surplus",
                 // "available", "/mo") would overclaim it.
-                { label: `Unspent so far this month (${money(surplus)})`, v: surplus },
+                { label: `Unspent so far this ${noun} (${money(surplus)})`, v: surplus },
               ].map((p) => {
                 // moneyEquals, not === -- p.v for the surplus preset is
                 // itself computed (income minus commitments), so a re-render
@@ -441,7 +443,7 @@ export default function ProjectionsScreen({
             </div>
             {hasIncome && (
               <p className="text-[11px] mt-2" style={{ color: T.mute }}>
-                &ldquo;Recommended savings&rdquo; is your budget rule&apos;s target. &ldquo;Unspent so far&rdquo; is what&apos;s actually left this month — it moves as the month fills in.
+                &ldquo;Recommended savings&rdquo; is your budget rule&apos;s target. &ldquo;Unspent so far&rdquo; is what&apos;s actually left this {noun} — it moves as the month fills in.
               </p>
             )}
           </div>

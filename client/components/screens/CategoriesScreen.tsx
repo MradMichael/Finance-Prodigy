@@ -7,7 +7,7 @@ import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money } from "./shared";
 import { Label, FocusInput, PrimaryBtn } from "../form/Primitives";
 import Donut from "../charts/Donut";
-import {currentCycleKey, isInCycle } from "../../lib/period";
+import {currentCycleKey, isInCycle, periodNoun } from "../../lib/period";
 
 function slugify(name: string): string {
   return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "category";
@@ -118,6 +118,7 @@ export default function CategoriesScreen({
   // (summing a recurring item across all of history is a different, fuzzier
   // question than "what did this month cost").
   const currentYm = currentCycleKey(new Date(), startDay);
+  const noun = periodNoun(startDay);
   // Phase 2.6.3b: excludes soft-deleted transactions from the category
   // breakdown, same as every other total.
   const activeTx = activeTransactions(financials.transactions);
@@ -322,7 +323,7 @@ export default function CategoriesScreen({
                     color: scope === s ? T.brass : T.mute,
                   }}
                 >
-                  {s === "month" ? "This month" : "All time"}
+                  {s === "month" ? `This ${noun}` : "All time"}
                 </button>
               ))}
             </div>
@@ -336,7 +337,7 @@ export default function CategoriesScreen({
                 trackColor={T.line}
                 labelColor={T.text}
                 centerLabel={money(breakdownTotal)}
-                centerSublabel={scope === "month" ? "this month" : "all time"}
+                centerSublabel={scope === "month" ? `this ${noun}` : "all time"}
               />
               <div className="flex-1 min-w-[160px] space-y-2.5">
                 {breakdown.map((c, i) => (

@@ -154,7 +154,7 @@ export default function StatisticsScreen({
             <p className="text-[10px] mb-4" style={{ color: T.mute }}>{cycleLabel(thisYm, startDay)} vs {cycleLabel(lastYm, startDay)}</p>
           )}
           {!hasComparisonActivity ? (
-            <p className="text-sm" style={{ color: T.mute }}>Once you&apos;ve logged a month or two, this compares them side by side.</p>
+            <p className="text-sm" style={{ color: T.mute }}>Once you&apos;ve logged a {noun} or two, this compares them side by side.</p>
           ) : (
           <div className="space-y-2.5">
             {comparisonRows.map((row) => {
@@ -205,7 +205,7 @@ export default function StatisticsScreen({
         <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
           <p className="text-xs uppercase tracking-widest mb-1" style={{ color: T.mute }}>Net worth forecast</p>
           <p className="text-[11px] mb-4" style={{ color: T.mute }}>
-            Today&apos;s net worth ({money(currentNetWorth)}) carried forward at this month&apos;s net cash flow ({netCashFlow >= 0 ? "+" : ""}{money(netCashFlow)}/mo). A directional estimate, not a plan — see Projections for debt/goal payoff timing.
+            Today&apos;s net worth ({money(currentNetWorth)}) carried forward at this {noun}&apos;s net cash flow ({netCashFlow >= 0 ? "+" : ""}{money(netCashFlow)}/mo). A directional estimate, not a plan — see Projections for debt/goal payoff timing.
           </p>
           <div className="grid grid-cols-3 gap-3">
             {forecastCheckpoints.map((c) => (
@@ -221,7 +221,7 @@ export default function StatisticsScreen({
         <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
           <p className="text-xs uppercase tracking-widest mb-4" style={{ color: T.mute }}>Monthly book (USD)</p>
           {!hasTrendActivity ? (
-            <p className="text-sm" style={{ color: T.mute }}>Once you&apos;ve logged income and spending, each month&apos;s book appears here.</p>
+            <p className="text-sm" style={{ color: T.mute }}>Once you&apos;ve logged income and spending, each {noun}&apos;s book appears here.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-xs" style={{ borderCollapse: "collapse" }}>

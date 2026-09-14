@@ -7,7 +7,7 @@ import { computeHoldingsByCurrency } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
 import Donut from "../charts/Donut";
-import {currentCycleKey, isInCycle } from "../../lib/period";
+import {currentCycleKey, isInCycle, periodNoun } from "../../lib/period";
 
 /**
  * Moved here from SetupScreen 2026-09-13, behaviour unchanged. The rate is
@@ -73,6 +73,7 @@ export default function CurrencyScreen({ financials, onChange }: { financials: L
   // native currency (not converted) so this actually measures which
   // currency money is changing hands in, not just USD-equivalent totals. ──
   const currentYm = currentCycleKey(new Date(), startDay);
+  const noun = periodNoun(startDay);
   // TRANSFER (2.4.55) excluded too -- not spend, and its amount can be
   // negative (an incoming leg), which would corrupt this currency total.
   const monthTx = activeTransactions(financials.transactions).filter((t) => isInCycle(t.date, currentYm, startDay) && t.bucket !== "INCOME" && t.bucket !== "TRANSFER");
@@ -144,9 +145,9 @@ export default function CurrencyScreen({ financials, onChange }: { financials: L
 
         {/* Spend by currency */}
         <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
-          <p className="text-xs uppercase tracking-widest mb-4" style={{ color: T.mute }}>This month&apos;s spending, by currency</p>
+          <p className="text-xs uppercase tracking-widest mb-4" style={{ color: T.mute }}>This {noun}&apos;s spending, by currency</p>
           {moneyEquals(spendTotalUSD, 0) ? (
-            <p className="text-sm" style={{ color: T.mute }}>No spending logged yet this month.</p>
+            <p className="text-sm" style={{ color: T.mute }}>No spending logged yet this {noun}.</p>
           ) : (
             <div className="flex items-center gap-6 flex-wrap">
               <Donut
@@ -155,7 +156,7 @@ export default function CurrencyScreen({ financials, onChange }: { financials: L
                   { value: toUSD(spendLBP, "LBP"), color: colors.lbp, label: "LBP" },
                 ]}
                 trackColor={T.line} labelColor={T.text}
-                centerLabel={money(spendTotalUSD)} centerSublabel="this month"
+                centerLabel={money(spendTotalUSD)} centerSublabel={`this ${noun}`}
               />
               <div className="flex-1 min-w-[180px] space-y-3">
                 <div className="flex items-center justify-between text-sm">

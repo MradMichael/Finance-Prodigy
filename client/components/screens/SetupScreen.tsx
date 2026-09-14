@@ -171,7 +171,7 @@ export default function SetupScreen({
               placeholder="e.g. 3500"
             />
             <p className="text-[11px] mt-1.5 px-1" style={{ color: T.mute }}>
-              Changing this only affects this month onward — a raise or a new job never rewrites how past months were judged. A one-off bonus or gift doesn&apos;t belong here; log it as an Income entry in My Finances instead.
+              Changing this only affects this {periodNoun(startDay)} onward — a raise or a new job never rewrites how past {periodNoun(startDay)}s were judged. A one-off bonus or gift doesn&apos;t belong here; log it as an Income entry in My Finances instead.
             </p>
             {incomeHistoryDisplay.length > 1 && (
               <div className="mt-3 rounded-xl px-3 py-2.5 space-y-1.5" style={{ background: T.ink, border: `1px solid ${T.line}` }}>
