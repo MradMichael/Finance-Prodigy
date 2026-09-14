@@ -7,7 +7,7 @@ import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
 import { PaymentMethodPicker, Label, DateFieldDMY } from "../form/Primitives";
-import { currentCycleKey, isInCycle } from "../../lib/period";
+import { currentCycleKey, isInCycle, periodNoun } from "../../lib/period";
 
 export default function GoalsScreen({
   dashData,
@@ -42,6 +42,7 @@ export default function GoalsScreen({
   const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
   const startDay = cycleStartDayOf(financials);
   const prefix = currentCycleKey(new Date(), startDay);
+  const noun = periodNoun(startDay);
   const goalTxThisMonth = activeTransactions(financials.transactions ?? []).filter(
     (t) => t.bucket === "SAVINGS" && isInCycle(t.date, prefix, startDay) && t.description.startsWith("Goal:")
   );
@@ -133,7 +134,7 @@ export default function GoalsScreen({
             <div className="rounded-xl px-4 py-2.5 flex items-center gap-2" style={{ background: T.jade + "18", border: `1px solid ${T.jade}35` }}>
               <span className="text-lg">🔥</span>
               <div>
-                <p className="text-xs font-semibold" style={{ color: T.jade }}>{money(totalPaidThisMonth)} paid toward goals this month</p>
+                <p className="text-xs font-semibold" style={{ color: T.jade }}>{money(totalPaidThisMonth)} paid toward goals this {noun}</p>
                 <p className="text-[10px]" style={{ color: T.mute }}>{goalTxThisMonth.length} payment{goalTxThisMonth.length !== 1 ? "s" : ""} logged</p>
               </div>
             </div>

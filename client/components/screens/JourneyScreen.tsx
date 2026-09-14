@@ -171,7 +171,7 @@ export default function JourneyScreen({
             </>
           ) : (
             <p className="text-xl leading-snug" style={SERIF}>
-              Right now your net worth is <span style={{ ...NUMS, color: nwLatest >= 0 ? T.jade : T.coral }}>{money(nwLatest)}</span>. That&apos;s today&apos;s starting line, come back next month to see the first chapter.
+              Right now your net worth is <span style={{ ...NUMS, color: nwLatest >= 0 ? T.jade : T.coral }}>{money(nwLatest)}</span>. That&apos;s today&apos;s starting line, come back next month to see the first chapter.{/* "month" is correct here and deliberately not the period noun: this sentence is about netWorthHistory, the one CALENDAR-keyed series (2.4.87), whose next point genuinely is a calendar month-end. */}
             </p>
           )}
         </Beat>
@@ -209,7 +209,7 @@ export default function JourneyScreen({
             </>
           ) : rateLatest !== null ? (
             <p className="text-xl leading-snug" style={SERIF}>
-              You&apos;re saving <span style={{ ...NUMS, color: T.jade }}>{rateLatest}%</span> of your income this month. That&apos;s the number this story will track from here.
+              You&apos;re saving <span style={{ ...NUMS, color: T.jade }}>{rateLatest}%</span> of your income this {periodNoun(startDay)}. That&apos;s the number this story will track from here.
             </p>
           ) : (
             <p className="text-sm" style={{ color: T.mute }}>Log some income and spending to start tracking your saving habit here.</p>

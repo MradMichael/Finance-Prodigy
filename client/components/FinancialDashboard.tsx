@@ -186,7 +186,7 @@ function Bar({ pct, color }: { pct: number; color: string }) {
   );
 }
 
-function BucketRow({ label, actual, target, color, bucket }: { label: string; actual: number; target: number; color: string; bucket: "NEEDS" | "WANTS" | "SAVINGS" }) {
+function BucketRow({ label, actual, target, color, bucket, noun }: { label: string; actual: number; target: number; color: string; noun: string; bucket: "NEEDS" | "WANTS" | "SAVINGS" }) {
   const T = useTheme();
   const pct = target > 0 ? (actual / target) * 100 : 0;
   // budgetPace's own carve-outs (computeDashboard.ts), applied here too: a
@@ -205,11 +205,11 @@ function BucketRow({ label, actual, target, color, bucket }: { label: string; ac
       <Bar pct={pct} color={alarmed ? T.coral : color} />
       <p className="text-xs mt-1" style={{ color: alarmed ? T.coral : T.mute }}>
         {state.kind === "zeroed"
-          ? `target rolled to $0 this month`
+          ? `target rolled to $0 this ${noun}`
           : state.kind === "met"
           ? `target met`
           : state.kind === "over"
-          ? `${money(state.over)} over — carries into next month's target`
+          ? `${money(state.over)} over — carries into next ${noun}'s target`
           : `${money(state.headroom)} ${bucket === "SAVINGS" ? "to go" : "of room left"}`}
       </p>
     </div>
@@ -297,6 +297,7 @@ export default function FinancialDashboard({
   // extra complexity of also walking recurring history for this list.
   const startDay = cycleStartDayOf(financials ?? { });
   const currentYm = currentCycleKey(new Date(), startDay);
+  const noun = periodNoun(startDay);
   const showPaydayBanner = !paydayBannerDismissed
     && startDay > 1
     && !!financials?.cycleStartDayChangedAt
@@ -332,8 +333,8 @@ export default function FinancialDashboard({
                 : budgetTargetPct.savings > 0 && month.savingsRatePct >= budgetTargetPct.savings
                 ? <>{user.name.split(" ")[0]}, you saved <span style={{ color: T.jade }}>{money(month.savingsContrib)}</span>, at or above your {budgetTargetPct.savings}% target.</>
                 : month.netCashFlow > 0
-                ? <>You kept <span style={{ color: T.brass }}>{money(month.netCashFlow)}</span> this month, {user.name.split(" ")[0]}. Every dollar counts.</>
-                : <>Spending exceeded income by <span style={{ color: T.coral }}>{money(-month.netCashFlow)}</span> this month, {user.name.split(" ")[0]}. The plan below shows the path.</>}
+                ? <>You kept <span style={{ color: T.brass }}>{money(month.netCashFlow)}</span> this {noun}, {user.name.split(" ")[0]}. Every dollar counts.</>
+                : <>Spending exceeded income by <span style={{ color: T.coral }}>{money(-month.netCashFlow)}</span> this {noun}, {user.name.split(" ")[0]}. The plan below shows the path.</>}
             </h1>
           </div>
           {demo && (
@@ -437,7 +438,7 @@ export default function FinancialDashboard({
         {month.income > 0 && (
           <div className="grid grid-cols-3 gap-3">
             {[
-              { label: "Income",  value: money(month.income),        sub: "this month",                       color: T.text  },
+              { label: "Income",  value: money(month.income),        sub: `this ${noun}`,                       color: T.text  },
               { label: "Spent",   value: money(month.totalSpend),    sub: `${Math.round(month.totalSpend / month.income * 100)}% of income`, color: month.totalSpend > month.income ? T.coral : T.mute },
               { label: "Saved",   value: money(month.savingsContrib), sub: `${month.savingsRatePct.toFixed(1)}% rate`,                       color: T.jade  },
             ].map(({ label, value, sub, color }) => (
@@ -461,7 +462,7 @@ export default function FinancialDashboard({
           <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <label htmlFor="past-month-select" className="text-xs uppercase tracking-widest" style={{ color: T.mute }}>
-                Review a past month
+                Review a past {noun}
               </label>
               <select
                 id="past-month-select"
@@ -472,7 +473,7 @@ export default function FinancialDashboard({
                 className="rounded-xl px-3 py-2 text-sm"
                 style={{ background: T.panelSoft, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
               >
-                <option value="">Select a month…</option>
+                <option value="">Select a {noun}…</option>
                 {pastMonths.map((ym) => (
                   <option key={ym} value={ym}>{cycleLabel(ym, startDay)}</option>
                 ))}
@@ -589,9 +590,9 @@ export default function FinancialDashboard({
                   label and the three sum to income. Rollover is not removed --
                   budgetPace and its alerts still judge spend against the
                   rollover-adjusted target. */}
-              <BucketRow label={`Needs · ${budgetPct.needs}%`}   actual={month.needsSpend}    target={data.budgetTargets.needs}   color={T.sky}   bucket="NEEDS" />
-              <BucketRow label={`Wants · ${budgetPct.wants}%`}   actual={month.wantsSpend}    target={data.budgetTargets.wants}   color={T.brass} bucket="WANTS" />
-              <BucketRow label={`Savings · ${budgetPct.savings}%`} actual={month.savingsContrib} target={data.budgetTargets.savings} color={T.jade}  bucket="SAVINGS" />
+              <BucketRow noun={noun} label={`Needs · ${budgetPct.needs}%`}   actual={month.needsSpend}    target={data.budgetTargets.needs}   color={T.sky}   bucket="NEEDS" />
+              <BucketRow noun={noun} label={`Wants · ${budgetPct.wants}%`}   actual={month.wantsSpend}    target={data.budgetTargets.wants}   color={T.brass} bucket="WANTS" />
+              <BucketRow noun={noun} label={`Savings · ${budgetPct.savings}%`} actual={month.savingsContrib} target={data.budgetTargets.savings} color={T.jade}  bucket="SAVINGS" />
             </div>
 
             {/* Pace warnings — Copilot-style "on track to exceed" heads-up */}
@@ -613,11 +614,11 @@ export default function FinancialDashboard({
               </div>
             )}
             <p className="text-xs mt-5 pt-4" style={{ color: T.mute, borderTop: `1px solid ${T.line}` }}>
-              Savings rate this month: <span style={{ ...NUMS, color: T.jade }}>{month.savingsRatePct.toFixed(1)}%</span> of income
+              Savings rate this {noun}: <span style={{ ...NUMS, color: T.jade }}>{month.savingsRatePct.toFixed(1)}%</span> of income
             </p>
           </Panel>
 
-          <Panel title="Cash flow · last 6 months">
+          <Panel title={`Cash flow · last 6 ${noun}s`}>
             <div className="h-56">
               <ResponsiveContainer>
                 <AreaChart data={sixMonthTrend} margin={{ top: 8, right: 4, left: -18, bottom: 0 }}>
@@ -645,7 +646,7 @@ export default function FinancialDashboard({
             </p>
             <div className="mt-4 pt-4" style={{ borderTop: `1px solid ${T.line}` }}>
               <div className="flex items-baseline justify-between">
-                <span className="text-xs" style={{ color: T.mute }}>Left this month · income minus spending so far</span>
+                <span className="text-xs" style={{ color: T.mute }}>Left this {noun} · income minus spending so far</span>
                 <span className="text-lg" style={{ ...SERIF, ...NUMS, color: month.netCashFlow >= 0 ? T.jade : T.coral }}>
                   {money(month.netCashFlow)}
                 </span>

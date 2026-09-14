@@ -2,7 +2,8 @@
 
 import { useEffect } from "react";
 import type { LocalFinancials, BudgetRuleKey } from "../../lib/localData";
-import { BUDGET_RULES, MIN_SPLIT_PCT, floorCustomSplit, moneyEquals } from "../../lib/localData";
+import { BUDGET_RULES, MIN_SPLIT_PCT, floorCustomSplit, moneyEquals, cycleStartDayOf } from "../../lib/localData";
+import { periodNoun } from "../../lib/period";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { bucketDisplayState } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
@@ -18,6 +19,7 @@ export default function BudgetScreen({
   onChange: (f: LocalFinancials) => void;
 }) {
   const T = useTheme();
+  const noun = periodNoun(cycleStartDayOf(financials));
   const { month } = dashData;
   const income = month.income;
 
@@ -103,7 +105,7 @@ export default function BudgetScreen({
           <div className="rounded-2xl p-4 space-y-2" style={{ background: T.brass + "14", border: `1px solid ${T.brass}40` }}>
             <p className="text-sm font-semibold" style={{ color: T.brass }}>A better fit might be available</p>
             <p className="text-xs leading-relaxed" style={{ color: T.mute }}>
-              Your needs are taking <strong style={{ color: T.text }}>{Math.round(actualNeedsPct)}%</strong> of income this month,
+              Your needs are taking <strong style={{ color: T.text }}>{Math.round(actualNeedsPct)}%</strong> of income this {noun},
               more than the <strong style={{ color: T.text }}>{BUDGET_RULES[ruleKey].needs}%</strong> your current split allows.
               The <strong style={{ color: T.text }}>{BUDGET_RULES[suggested].label}</strong> model ({BUDGET_RULES[suggested].desc.toLowerCase()}) would be a more realistic fit.
             </p>
@@ -259,13 +261,13 @@ export default function BudgetScreen({
                   </div>
                   <p className="text-[10px] mt-1" style={{ color: alarmed ? T.coral : T.mute }}>
                     {state.kind === "zeroed"
-                      ? `Target rolled to $0 this month — no headroom carried in from prior months.`
+                      ? `Target rolled to $0 this ${noun} — no headroom carried in from prior ${noun}s.`
                       : state.kind === "met"
-                      ? `Savings target met for this month.`
+                      ? `Savings target met for this ${noun}.`
                       : state.kind === "over"
                       ? `${money(state.over)} over. Consider trimming ${label.toLowerCase()} or switching to a looser model`
                       : bucket === "SAVINGS"
-                      ? `${money(state.headroom)} to go to hit this month's savings target`
+                      ? `${money(state.headroom)} to go to hit this ${noun}'s savings target`
                       : `${money(state.headroom)} of headroom left`}
                   </p>
                 </div>

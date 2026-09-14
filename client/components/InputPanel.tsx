@@ -10,7 +10,7 @@ import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker } from "./form/Primitives";
 import { fmtCur } from "./screens/shared";
 import ImportStatement from "./ImportStatement";
-import {currentCycleKey, cycleKeyForISO, isInCycle } from "../lib/period";
+import {currentCycleKey, cycleKeyForISO, isInCycle, periodNoun } from "../lib/period";
 
 type Bucket = "NEEDS" | "WANTS" | "SAVINGS";
 // Transactions (not recurring items) can also be logged as one-off INCOME --
@@ -531,6 +531,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   // ── derived ───────────────────────────────────────────────────── //
 
   const prefix   = currentCycleKey(new Date(), startDay);
+  const noun = periodNoun(startDay);
   // Phase 2.6.3b: a soft-deleted transaction must not keep counting toward
   // this month's totals or appear in "This month"'s list -- deleting is
   // meant to behave exactly like the old hard-delete from here on.
@@ -765,7 +766,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                 </div>
                 {/* So far this month */}
                 <div className="rounded-xl px-3 py-2 flex items-center justify-between" style={{ background: T.panelSoft }}>
-                  <span className="text-[11px]" style={{ color: T.mute }}>Saved so far this month</span>
+                  <span className="text-[11px]" style={{ color: T.mute }}>Saved so far this {noun}</span>
                   <span className="text-xs font-medium tabular-nums" style={{ color: savOut >= targetAmt ? T.jade : T.brass }}>
                     ${Math.round(savOut).toLocaleString()} / ${targetAmt.toLocaleString()}
                   </span>
@@ -1018,7 +1019,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
               style={{ background: T.panelSoft, border: `1px dashed ${T.line}` }}
             >
               <p className="text-2xl mb-1">📭</p>
-              <p className="text-xs" style={{ color: T.mute }}>No entries yet this month</p>
+              <p className="text-xs" style={{ color: T.mute }}>No entries yet this {noun}</p>
             </div>
           ) : (
             <>
@@ -1499,7 +1500,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                             {isAddingExtra && (
                               <div className="mt-2 pt-2 space-y-2" style={{ borderTop: `1px solid ${T.line}` }}>
                                 <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.jade }}>
-                                  Log extra payment this month
+                                  Log extra payment this {noun}
                                 </p>
                                 <div className="flex gap-2">
                                   <div className="flex-1">
@@ -1525,7 +1526,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                                   >✕</button>
                                 </div>
                                 <p className="text-[10px]" style={{ color: T.mute }}>
-                                  Logged as a transaction in {b.label} · {cur} this month.
+                                  Logged as a transaction in {b.label} · {cur} this {noun}.
                                 </p>
                               </div>
                             )}

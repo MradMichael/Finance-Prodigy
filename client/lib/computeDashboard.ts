@@ -325,6 +325,12 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   // The user's payday, or 1 when unset. Read once; every period call below
   // takes it explicitly (Phase 2a made that a compile error to omit).
   const startDay = cycleStartDayOf(data);
+  // Hoisted here rather than defined beside budgetPace, which is where it
+  // used to live: the encouragement strings ~300 lines below also need it,
+  // and a noun that only exists in the bottom third of this function is a
+  // standing invitation to write "month" in the top two thirds -- which is
+  // exactly what happened (2.4.100).
+  const noun = periodNoun(startDay);
 
   // ── Budget rule targets ──────────────────────────────────────────
   const ruleKey: BudgetRuleKey = data.budgetRule ?? "50-30-20";
@@ -544,9 +550,9 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   } else if (savingsRatePct >= 20) {
     enc.push(`${savingsRatePct.toFixed(1)}% savings rate: you've cleared the 20% bar. Every extra dollar is compounding quietly in the background.`);
   } else if (savingsRatePct >= 10) {
-    enc.push(`Saving ${savingsRatePct.toFixed(1)}% this month. You're ${(20 - savingsRatePct).toFixed(1)} points from the ideal 20%, closer than you think.`);
+    enc.push(`Saving ${savingsRatePct.toFixed(1)}% this ${noun}. You're ${(20 - savingsRatePct).toFixed(1)} points from the ideal 20%, closer than you think.`);
   } else if (savingsRatePct > 0) {
-    enc.push(`${savingsRatePct.toFixed(1)}% saved this month. Small, but it's real. The habit matters more than the amount right now.`);
+    enc.push(`${savingsRatePct.toFixed(1)}% saved this ${noun}. Small, but it's real. The habit matters more than the amount right now.`);
   }
   if (efPct >= 100) {
     enc.push("Safety net fully funded. You've built the buffer that lets you take smart risks.");
@@ -836,7 +842,6 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   // Phase 2 is where they stop being day-of-calendar-month -- routed through
   // the primitive now so that change is a constant, not a rewrite here.
   const { daysInto: daysElapsed, daysInCycle: daysInMonth } = cycleProgress(now, startDay);
-  const noun = periodNoun(startDay);
   const BUCKET_LABEL = { NEEDS: "Needs", WANTS: "Wants", SAVINGS: "Savings" } as const;
   const bucketSpend = { NEEDS: needsSpend, WANTS: wantsSpend, SAVINGS: savingsContrib };
   // Floored at 0 — a deficit rolling in from past months (or a 0%-allocated
@@ -885,10 +890,10 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
         // Savings is a floor, not a ceiling — clearing it early is good news.
         const status = pctOfBudgetUsed >= 100 ? "ok" : "watch";
         const message = pctOfBudgetUsed >= 100
-          ? `Savings target already met this month.`
+          ? `Savings target already met this ${noun}.`
           : reliableProjection
-          ? `On pace for ${Math.max(0, projectedPct)}% of this month's savings target.`
-          : `${pctOfBudgetUsed}% of this month's savings target met so far.`;
+          ? `On pace for ${Math.max(0, projectedPct)}% of this ${noun}'s savings target.`
+          : `${pctOfBudgetUsed}% of this ${noun}'s savings target met so far.`;
         return { bucket: b, label: BUCKET_LABEL[b], pctOfMonthElapsed, pctOfBudgetUsed, projectedPct, status, message };
       }
 
@@ -952,7 +957,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   if (savingsStreak >= 2) {
     streaks.push({
       key: "savings-streak", label: "Savings streak", count: savingsStreak,
-      message: `🔥 ${savingsStreak} months in a row hitting your savings target.`,
+      message: `🔥 ${savingsStreak} ${noun}s in a row hitting your savings target.`,
     });
   }
 
@@ -1071,7 +1076,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     // status that isn't actually urgent the way overspending NEEDS/WANTS is.
     if (bp.bucket === "SAVINGS") continue;
     if (bp.status === "over") {
-      alerts.push({ id: `budget-${bp.bucket}`, severity: "critical", message: `${bp.label} is over budget this month`, screen: "budget" });
+      alerts.push({ id: `budget-${bp.bucket}`, severity: "critical", message: `${bp.label} is over budget this ${noun}`, screen: "budget" });
     } else if (bp.status === "watch") {
       alerts.push({ id: `budget-${bp.bucket}`, severity: "warning", message: `${bp.label} is on pace to go over budget`, screen: "budget" });
     }
