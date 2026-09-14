@@ -5,13 +5,15 @@ import { nextOccurrence, isRecurringActive, toUSD as toUSDShared, DEFAULT_LBP_RA
 import { periodTotals, type computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money } from "./shared";
-import {currentCycleKey, cycleKeyMinus, cycleBounds, cycleLabel, periodNoun } from "../../lib/period";
+import {currentCycleKey, cycleKeyMinus, cycleBounds, cycleLabel, ymKeyToCycleKey, periodNoun } from "../../lib/period";
 
-const MONTH_NAMES = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-function fmtYmKey(ymKey: number): string {
-  const s = String(ymKey);
-  return `${MONTH_NAMES[+s.slice(4, 6)]} ${s.slice(0, 4)}`;
+/**
+ * Neither caller is a chart tick -- one is a flex row at 10px, the other a
+ * table cell -- so both take the full range rather than the tick form.
+ */
+function fmtYmKey(ymKey: number, startDay: number): string {
+  return cycleLabel(ymKeyToCycleKey(ymKey), startDay);
 }
 
 export default function StatisticsScreen({
@@ -120,7 +122,7 @@ export default function StatisticsScreen({
               {trend.map((t) => (
                 <div key={t.ymKey}>
                   <div className="flex justify-between text-[10px] mb-1" style={{ color: T.mute }}>
-                    <span>{fmtYmKey(t.ymKey)}</span>
+                    <span>{fmtYmKey(t.ymKey, startDay)}</span>
                     <span>{money(t.income)} in · {money(t.spend)} out</span>
                   </div>
                   <div className="relative h-2 rounded-full overflow-hidden" style={{ background: T.line }}>
@@ -239,7 +241,7 @@ export default function StatisticsScreen({
                     const net = t.income - t.spend;
                     return (
                       <tr key={t.ymKey} style={{ borderBottom: `1px solid ${T.line}` }}>
-                        <td className="py-2 pr-3" style={{ color: T.text }}>{fmtYmKey(t.ymKey)}</td>
+                        <td className="py-2 pr-3" style={{ color: T.text }}>{fmtYmKey(t.ymKey, startDay)}</td>
                         <td className="text-right py-2 px-3 tabular-nums" style={{ color: T.jade }}>{money(t.income)}</td>
                         <td className="text-right py-2 px-3 tabular-nums" style={{ color: T.coral }}>{money(t.spend)}</td>
                         <td className="text-right py-2 px-3 tabular-nums" style={{ color: T.text }}>{money(t.savingsContrib)}</td>

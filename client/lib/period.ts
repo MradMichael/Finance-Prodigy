@@ -216,6 +216,43 @@ export function cycleLabelLong(key: CycleKey, startDay: number): string {
 }
 
 /**
+ * A numeric `YYYYMM` (e.g. 202608) back to a CycleKey.
+ *
+ * The numeric form exists only because recharts wants a numeric axis
+ * dataKey; it is the one place a period key stops being a branded string,
+ * and therefore the one place the compiler stops policing it (2.4.101).
+ * Confining the conversion here keeps that boundary greppable, the same
+ * reasoning as asCycleKey/asCalendarKey.
+ */
+export function ymKeyToCycleKey(ymKey: number): CycleKey {
+  return `${Math.floor(ymKey / 100)}-${pad(ymKey % 100)}` as CycleKey;
+}
+
+/**
+ * A cycle named for a CHART TICK, where the full range does not fit.
+ *
+ * Six ticks share the axis width, which on a phone is ~48px each; the full
+ * range renders ~82px at the 11px these axes use. So the tick carries the
+ * cycle's START DATE only -- "27 Aug".
+ *
+ * That is deliberately NOT the rejected form (a): "Aug '26" claims a month
+ * for a period that is mostly September, whereas "27 Aug" names a real date
+ * and claims nothing about the rest. Following 2.4.98's rule, the fallback
+ * from a range is LESS information, never different information. The
+ * tooltip on every one of these charts carries the full range with years,
+ * so nothing is lost -- only deferred to the interaction that has room.
+ *
+ * At startDay 1 it collapses to the short month form these axes already
+ * used, so no default account's chart changes.
+ */
+export function cycleTickLabel(key: CycleKey, startDay: number): string {
+  const [y, m] = key.split("-").map(Number);
+  if (startDay <= 1) return `${MON[m]} ’${String(y).slice(2)}`;
+  const { start } = cycleBounds(key, startDay);
+  return `${start.getDate()} ${MON[start.getMonth() + 1]}`;
+}
+
+/**
  * What to call a period in user-facing copy.
  *
  * "cycle" is accurate but is jargon to someone who has never set a payday --
