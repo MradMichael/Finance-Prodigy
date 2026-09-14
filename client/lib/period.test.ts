@@ -14,7 +14,7 @@ import { describe, it, expect } from "vitest";
 import {
   CYCLE_START_DAY, calendarKeyForDate, calendarKeyForISO, cycleKeyForDate,
   cycleKeyForISO, currentCycleKey, cycleBounds, cycleKeyMinus, isInCycle,
-  cycleProgress, cycleLabel, cycleLabelLong, type CycleKey,
+  cycleProgress, cycleLabel, cycleLabelLong, cycleTickLabel, ymKeyToCycleKey, type CycleKey,
 } from "./period";
 
 const k = (s: string) => s as CycleKey;
@@ -174,5 +174,36 @@ describe("cycleLabel — how a cycle is named to the user (form (b), explicit ra
 
   it("the long form omits the first year when both ends share one", () => {
     expect(cycleLabelLong(k("2026-09"), 27)).toBe("27 Sep – 26 Oct 2026");
+  });
+});
+
+describe("numeric ymKey labels — the axis form, which no brand can police", () => {
+  // sixMonthTrend's ymKey is a CYCLE key reduced to a number for recharts.
+  // A number carries no brand and no "month" word, so neither tsc nor
+  // period-copy.test.ts can see a wrong label here (2.4.101). Pinned
+  // directly instead.
+  it("round-trips a numeric key back to the cycle key it came from", () => {
+    expect(ymKeyToCycleKey(202608)).toBe("2026-08");
+    expect(ymKeyToCycleKey(202601)).toBe("2026-01");
+    expect(ymKeyToCycleKey(202612)).toBe("2026-12");
+  });
+
+  it("a tick names the cycle's START DATE, never the month the key carries", () => {
+    // "Aug '26" for 27 Aug - 26 Sep is the rejected form (a): most of that
+    // period is September.
+    expect(cycleTickLabel(k("2026-08"), 27)).toBe("27 Aug");
+    expect(cycleTickLabel(k("2026-08"), 27)).not.toMatch(/'26|Sep/);
+  });
+
+  it("collapses to the short month form at startDay 1, so no default chart changes", () => {
+    expect(cycleTickLabel(k("2026-08"), 1)).toBe("Aug ’26");
+  });
+
+  it("the tick is SHORTER than the label it replaced, so it cannot overflow an axis that already fit", () => {
+    // The reason a tick may not carry the full range at all: six of them
+    // share ~48px each on a phone.
+    expect(cycleTickLabel(k("2026-08"), 27).length)
+      .toBeLessThanOrEqual(cycleTickLabel(k("2026-08"), 1).length);
+    expect(cycleLabel(k("2026-08"), 27).length).toBeGreaterThan(cycleTickLabel(k("2026-08"), 27).length * 2);
   });
 });

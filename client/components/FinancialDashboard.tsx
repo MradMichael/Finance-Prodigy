@@ -32,16 +32,20 @@ import { getLastSyncTime } from "../lib/syncService";
 import { periodTotals, bucketDisplayState, type DashboardPayload } from "../lib/computeDashboard";
 import OnboardingChecklist from "./OnboardingChecklist";
 import { fmtCur, type Screen } from "./screens/shared";
-import {currentCycleKey, cycleKeyForISO, cycleLabel, cycleBounds, periodNoun, asCalendarKey, asCycleKey, type CycleKey, type CalendarKey } from "../lib/period";
+import {currentCycleKey, cycleKeyForISO, cycleLabel, cycleLabelLong, cycleTickLabel, ymKeyToCycleKey, cycleBounds, periodNoun, asCalendarKey, asCycleKey, type CycleKey, type CalendarKey } from "../lib/period";
 const SERIF: React.CSSProperties = { fontFamily: "Georgia, 'Times New Roman', serif" };
 const NUMS: React.CSSProperties = { fontVariantNumeric: "tabular-nums" };
 
 const money = (n: number, digits = 0) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: digits }).format(n);
-const ymLabel = (ymKey: number) => {
-  const m = ymKey % 100, y = Math.floor(ymKey / 100) % 100;
-  return `${["", "Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][m]} ’${y}`;
-};
+/**
+ * sixMonthTrend's ymKey is a CYCLE key in numeric form. It used to render as
+ * a calendar month name ("Aug '26") beneath a panel titled "last 6 cycles" --
+ * form (a), under a cycle-titled chart (2.4.101). Ticks now carry the
+ * cycle's start date and the tooltip carries the full range.
+ */
+const ymTick = (ymKey: number, startDay: number) => cycleTickLabel(ymKeyToCycleKey(ymKey), startDay);
+const ymFull = (ymKey: number, startDay: number) => cycleLabelLong(ymKeyToCycleKey(ymKey), startDay);
 /**
  * A CALENDAR month, short ("Sep '26"). netWorthHistory is the one
  * calendar-keyed series (2.4.87), and this is its formatter. Cycle keys get
@@ -629,11 +633,11 @@ export default function FinancialDashboard({
                     </linearGradient>
                   </defs>
                   <CartesianGrid stroke={T.line} strokeDasharray="2 6" vertical={false} />
-                  <XAxis dataKey="ymKey" tickFormatter={ymLabel} tick={{ fill: T.mute, fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <XAxis dataKey="ymKey" tickFormatter={(v) => ymTick(Number(v), startDay)} tick={{ fill: T.mute, fontSize: 11 }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fill: T.mute, fontSize: 11 }} axisLine={false} tickLine={false} />
                   <Tooltip
                     contentStyle={{ background: T.panelSoft, border: `1px solid ${T.line}`, borderRadius: 12, color: T.text }}
-                    labelFormatter={(v) => ymLabel(Number(v))}
+                    labelFormatter={(v) => ymFull(Number(v), startDay)}
                     formatter={(v: number, name: string) => [money(v), name === "income" ? "Income" : "Spend"]}
                   />
                   <Area type="monotone" dataKey="income" stroke={T.jade} strokeWidth={2} fill="url(#inc)" />

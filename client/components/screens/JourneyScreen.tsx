@@ -8,7 +8,7 @@ import { projectCompletion } from "../../lib/projections";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money, type Screen } from "./shared";
 import Donut from "../charts/Donut";
-import { cycleKeyForISO, cycleLabel, periodNoun, asCycleKey, asCalendarKey, type CalendarKey } from "../../lib/period";
+import { cycleKeyForISO, cycleLabel, cycleLabelLong, cycleTickLabel, ymKeyToCycleKey, periodNoun, asCycleKey, asCalendarKey, type CalendarKey } from "../../lib/period";
 
 /** A CALENDAR month -- see FinancialDashboard's copy of this. */
 const ymStrLabel = (ym: CalendarKey) => {
@@ -57,10 +57,10 @@ export default function JourneyScreen({
   const rateFirst = hasRateArc ? rateOf(activeMonths[0]) : null;
   const rateLatest = hasRateArc ? rateOf(activeMonths[activeMonths.length - 1]) : dashData.month.savingsRatePct > 0 ? Math.round(dashData.month.savingsRatePct) : null;
   const rateChartData = activeMonths.map((m) => ({ ymKey: m.ymKey, rate: rateOf(m) }));
-  const ymKeyLabel = (k: number) => {
-    const y = Math.floor(k / 100), m = k % 100;
-    return `${["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][m]} '${String(y).slice(2)}`;
-  };
+  // ymKey is a CYCLE key in numeric form -- see FinancialDashboard's copy of
+  // this pair. Tick gets the cycle's start date, tooltip the full range.
+  const ymKeyTick = (k: number) => cycleTickLabel(ymKeyToCycleKey(k), startDay);
+  const ymKeyFull = (k: number) => cycleLabelLong(ymKeyToCycleKey(k), startDay);
 
   // ── Category shift: earliest vs. latest calendar month with logged transactions ──
   const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
@@ -195,11 +195,11 @@ export default function JourneyScreen({
                 <ResponsiveContainer>
                   <LineChart data={rateChartData} margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
                     <CartesianGrid stroke={T.line} strokeDasharray="2 6" vertical={false} />
-                    <XAxis dataKey="ymKey" tickFormatter={ymKeyLabel} tick={{ fill: T.mute, fontSize: 11 }} axisLine={false} tickLine={false} />
+                    <XAxis dataKey="ymKey" tickFormatter={ymKeyTick} tick={{ fill: T.mute, fontSize: 11 }} axisLine={false} tickLine={false} />
                     <YAxis tick={{ fill: T.mute, fontSize: 11 }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => `${v}%`} />
                     <Tooltip
                       contentStyle={{ background: T.panelSoft, border: `1px solid ${T.line}`, borderRadius: 12, color: T.text }}
-                      labelFormatter={(v) => ymKeyLabel(Number(v))}
+                      labelFormatter={(v) => ymKeyFull(Number(v))}
                       formatter={(v: number) => [`${v}%`, "Savings rate"]}
                     />
                     <Line type="monotone" dataKey="rate" stroke={T.jade} strokeWidth={2} dot={{ r: 3, fill: T.jade }} />
