@@ -7,6 +7,7 @@ import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
 import { PaymentMethodPicker, Label, DateFieldDMY } from "../form/Primitives";
+import { currentCycleKey, CYCLE_START_DAY } from "../../lib/period";
 
 export default function GoalsScreen({
   dashData,
@@ -39,7 +40,7 @@ export default function GoalsScreen({
   const [payDate,      setPayDate]      = useState(todayISO());
 
   const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
-  const prefix = todayISO().slice(0, 7);
+  const prefix = currentCycleKey(new Date(), CYCLE_START_DAY);
   const goalTxThisMonth = activeTransactions(financials.transactions ?? []).filter(
     (t) => t.bucket === "SAVINGS" && t.date.startsWith(prefix) && t.description.startsWith("Goal:")
   );

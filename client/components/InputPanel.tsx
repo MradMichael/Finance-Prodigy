@@ -10,7 +10,7 @@ import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker } from "./form/Primitives";
 import { fmtCur } from "./screens/shared";
 import ImportStatement from "./ImportStatement";
-import { currentCycleKey } from "../lib/period";
+import {CYCLE_START_DAY, currentCycleKey, cycleKeyForISO } from "../lib/period";
 
 type Bucket = "NEEDS" | "WANTS" | "SAVINGS";
 // Transactions (not recurring items) can also be logged as one-off INCOME --
@@ -529,7 +529,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
 
   // ── derived ───────────────────────────────────────────────────── //
 
-  const prefix   = currentCycleKey(new Date());
+  const prefix   = currentCycleKey(new Date(), CYCLE_START_DAY);
   // Phase 2.6.3b: a soft-deleted transaction must not keep counting toward
   // this month's totals or appear in "This month"'s list -- deleting is
   // meant to behave exactly like the old hard-delete from here on.
@@ -547,14 +547,14 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   // Someone scanning for "did my rent go through" would never find it, even
   // though it was already counted in every total on this page.
   const recurRowsThisMonth = recs
-    .map((r) => ({ r, usd: toUSD(historizedRecurringContribution(r, prefix, now), r.currency) }))
+    .map((r) => ({ r, usd: toUSD(historizedRecurringContribution(r, prefix, now, CYCLE_START_DAY), r.currency) }))
     .filter(({ usd }) => usd > 0);
   const needsOut = monthTx.filter((t) => t.bucket === "NEEDS").reduce((s, t)   => s + toUSD(t.amount, t.currency), 0)
-                 + recs.filter((r) => r.bucket === "NEEDS").reduce((s, r)   => s + toUSD(historizedRecurringContribution(r, prefix, now), r.currency), 0);
+                 + recs.filter((r) => r.bucket === "NEEDS").reduce((s, r)   => s + toUSD(historizedRecurringContribution(r, prefix, now, CYCLE_START_DAY), r.currency), 0);
   const wantsOut = monthTx.filter((t) => t.bucket === "WANTS").reduce((s, t)   => s + toUSD(t.amount, t.currency), 0)
-                 + recs.filter((r) => r.bucket === "WANTS").reduce((s, r)   => s + toUSD(historizedRecurringContribution(r, prefix, now), r.currency), 0);
+                 + recs.filter((r) => r.bucket === "WANTS").reduce((s, r)   => s + toUSD(historizedRecurringContribution(r, prefix, now, CYCLE_START_DAY), r.currency), 0);
   const savOut   = monthTx.filter((t) => t.bucket === "SAVINGS").reduce((s, t) => s + toUSD(t.amount, t.currency), 0)
-                 + recs.filter((r) => r.bucket === "SAVINGS").reduce((s, r) => s + toUSD(historizedRecurringContribution(r, prefix, now), r.currency), 0);
+                 + recs.filter((r) => r.bucket === "SAVINGS").reduce((s, r) => s + toUSD(historizedRecurringContribution(r, prefix, now, CYCLE_START_DAY), r.currency), 0);
   const totalOut = needsOut + wantsOut + savOut;
   const fmt      = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 
@@ -848,7 +848,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
               placeholder={txBucket === "INCOME" ? "Bonus, freelance gig, gift…" : txBucket === "TRANSFER" ? "Dad paid me back for gas…" : "Rent, groceries, gym…"}
               onKeyDown={(e) => e.key === "Enter" && (txSplitMode ? commitSplitTransaction() : addTransaction())}
             />
-            {!txSplitMode && txBucket !== "INCOME" && txBucket !== "TRANSFER" && looksRecurring(txDesc, txDate, activeTx, financials.recurring ?? []) && (
+            {!txSplitMode && txBucket !== "INCOME" && txBucket !== "TRANSFER" && looksRecurring(txDesc, txDate, activeTx, financials.recurring ?? [], CYCLE_START_DAY) && (
               <div className="mt-2 rounded-xl px-3 py-2.5 flex items-center justify-between gap-2" style={{ background: T.brass + "14", border: `1px solid ${T.brass}30` }}>
                 <p className="text-[11px]" style={{ color: T.brass }}>You&apos;ve logged this before in another month. Looks recurring.</p>
                 <button
@@ -1027,7 +1027,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                   // (2.4.55 sub-phase 3) -- the ?? TRANSFER_META fallback
                   // this replaced (2.4.56) is no longer reachable.
                   const b = TX_BUCKETS.find((b) => b.value === tx.bucket)!;
-                  const divergence = cycleMonthDivergence(tx, financials.recurring ?? []);
+                  const divergence = cycleMonthDivergence(tx, financials.recurring ?? [], CYCLE_START_DAY);
                   return (
                     <div key={tx.id}>
                         <div
@@ -1127,7 +1127,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
           if (pastTx.length === 0) return null;
           const byMonth: Record<string, StoredTransaction[]> = {};
           pastTx.forEach((t) => {
-            const ym = t.date.slice(0, 7);
+            const ym = cycleKeyForISO(t.date, CYCLE_START_DAY);
             if (!byMonth[ym]) byMonth[ym] = [];
             byMonth[ym].push(t);
           });
@@ -1154,7 +1154,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                       <div className="space-y-1.5">
                         {txs.sort((a, b) => b.date.localeCompare(a.date)).map((tx) => {
                           const b = TX_BUCKETS.find((b) => b.value === tx.bucket)!;
-                          const divergence = cycleMonthDivergence(tx, financials.recurring ?? []);
+                          const divergence = cycleMonthDivergence(tx, financials.recurring ?? [], CYCLE_START_DAY);
                           return (
                             <div key={tx.id}>
                                 <div
@@ -1563,8 +1563,8 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                                   // point where it's still easy to fix. Warns, doesn't block: a
                                   // genuinely late/early payment across a month boundary stays
                                   // fully legitimate.
-                                  const dueYm = target.dueDate.toISOString().slice(0, 7);
-                                  const diverges = !!confirmDate && confirmDate.slice(0, 7) !== dueYm;
+                                  const dueYm = cycleKeyForISO(target.dueDate.toISOString(), CYCLE_START_DAY);
+                                  const diverges = !!confirmDate && cycleKeyForISO(confirmDate, CYCLE_START_DAY) !== dueYm;
                                   const [dueY, dueM] = dueYm.split("-");
                                   const dueMonthLabel = `${["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][+dueM]} ${dueY}`;
                                   return (

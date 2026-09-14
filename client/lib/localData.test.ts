@@ -634,27 +634,27 @@ describe("cycleMonthDivergence (2.4.36)", () => {
 
   it("null when there's no cycleDate at all -- nothing to compare, not a divergence", () => {
     const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Uni", date: "2026-08-01", recurringId: "r1" };
-    expect(cycleMonthDivergence(tx, recurring)).toBeNull();
+    expect(cycleMonthDivergence(tx, recurring, 1)).toBeNull();
   });
 
   it("null when cycleDate is explicitly detached (null) -- matches isCycleConfirmed's own null handling, nothing to compare against", () => {
     const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Uni", date: "2026-08-01", cycleDate: null, recurringId: "r1" };
-    expect(cycleMonthDivergence(tx, recurring)).toBeNull();
+    expect(cycleMonthDivergence(tx, recurring, 1)).toBeNull();
   });
 
   it("null when cycleDate and date fall in the SAME month, even if the exact day differs", () => {
     const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Uni", date: "2026-08-05", cycleDate: "2026-08-01", recurringId: "r1" };
-    expect(cycleMonthDivergence(tx, recurring)).toBeNull();
+    expect(cycleMonthDivergence(tx, recurring, 1)).toBeNull();
   });
 
   it("a label naming the settled month and the recurring item's name when the months genuinely differ -- the owner's exact live case (date Aug 1, cycleDate Sep 1)", () => {
     const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Uni", date: "2026-08-01", cycleDate: "2026-09-01", recurringId: "r1" };
-    expect(cycleMonthDivergence(tx, recurring)).toBe("Settles Sep 2026 — Uni");
+    expect(cycleMonthDivergence(tx, recurring, 1)).toBe("Settles Sep 2026 — Uni");
   });
 
   it("falls back to 'a deleted recurring item' when recurringId no longer resolves -- same fallback the edit form's own Settles line already uses (2.4.32)", () => {
     const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Uni", date: "2026-08-01", cycleDate: "2026-09-01", recurringId: "gone" };
-    expect(cycleMonthDivergence(tx, recurring)).toBe("Settles Sep 2026 — a deleted recurring item");
+    expect(cycleMonthDivergence(tx, recurring, 1)).toBe("Settles Sep 2026 — a deleted recurring item");
   });
 });
 
@@ -817,26 +817,26 @@ describe("historizedRecurringContribution", () => {
     // created after the account was already on schema v3 has no history to
     // grandfather at all.
     const r = makeRecurring({ amount: 100, startDate: "2026-03-01" }); // no confirmCutoverDate
-    expect(historizedRecurringContribution(r, asCycleKey("2026-03"), utcMidnight(2026, 2, 15))).toBe(0);
+    expect(historizedRecurringContribution(r, asCycleKey("2026-03"), utcMidnight(2026, 2, 15), 1)).toBe(0);
   });
 
   it("returns the old monthlyEquivalent accrual for a month strictly before the item's own cutover", () => {
     const r = makeRecurring({ amount: 100, startDate: "2026-01-01", confirmCutoverDate: "2026-04-01" });
     const asOf = utcMidnight(2026, 1, 15); // Feb 15 -- before the Apr 1 cutover
-    expect(historizedRecurringContribution(r, asCycleKey("2026-02"), asOf)).toBe(monthlyEquivalent(r, asOf));
-    expect(historizedRecurringContribution(r, asCycleKey("2026-02"), asOf)).toBe(100);
+    expect(historizedRecurringContribution(r, asCycleKey("2026-02"), asOf, 1)).toBe(monthlyEquivalent(r, asOf));
+    expect(historizedRecurringContribution(r, asCycleKey("2026-02"), asOf, 1)).toBe(100);
   });
 
   it("returns 0 for the cutover's own month, not the old accrual -- the cutover month itself is NOT grandfathered", () => {
     const r = makeRecurring({ amount: 100, startDate: "2026-01-01", confirmCutoverDate: "2026-04-01" });
-    expect(historizedRecurringContribution(r, asCycleKey("2026-04"), utcMidnight(2026, 3, 15))).toBe(0);
+    expect(historizedRecurringContribution(r, asCycleKey("2026-04"), utcMidnight(2026, 3, 15), 1)).toBe(0);
   });
 
   it("returns 0 for a month well after the cutover, even though monthlyEquivalent alone would still report a nonzero accrual", () => {
     const r = makeRecurring({ amount: 100, startDate: "2026-01-01", confirmCutoverDate: "2026-04-01" });
     const asOf = utcMidnight(2026, 5, 15); // Jun 15, well past cutover
     expect(monthlyEquivalent(r, asOf)).toBe(100); // the old estimate would still say $100...
-    expect(historizedRecurringContribution(r, asCycleKey("2026-06"), asOf)).toBe(0); // ...but the new rule says 0 -- confirmed cycles are already real transactions, counted elsewhere
+    expect(historizedRecurringContribution(r, asCycleKey("2026-06"), asOf, 1)).toBe(0); // ...but the new rule says 0 -- confirmed cycles are already real transactions, counted elsewhere
   });
 });
 

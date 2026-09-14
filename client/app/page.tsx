@@ -24,7 +24,7 @@ import type { Screen, SyncStatus } from "../components/screens/shared";
 import { loadData, saveData, isEmptyFinancials, buildRecurringConfirmLog, nextConfirmTarget, autoPurgeExpired, DEFAULT_LBP_RATE } from "../lib/localData";
 import type { LocalFinancials } from "../lib/localData";
 import { computeDashboard } from "../lib/computeDashboard";
-import { currentCycleKey, calendarKeyForDate, type CycleKey, type CycleHistory } from "../lib/period";
+import {CYCLE_START_DAY, currentCycleKey, calendarKeyForDate, type CycleKey, type CycleHistory } from "../lib/period";
 import { getSession, hasValidSession, signOut } from "../lib/auth";
 import type { Session } from "../lib/auth";
 import { pushToServer, pullFromServer, hasAutoPulled, markAutoPulled, mergeAndPush, buildMergeNoticeText } from "../lib/syncService";
@@ -322,7 +322,7 @@ export default function Home() {
     // two key spaces are distinguished. Identical strings at startDay 1; the
     // TYPES differ, which is what stops a future edit from keying
     // netWorthHistory by cycle or the other three by calendar (2.4.87).
-    const cycleYm = currentCycleKey(now);
+    const cycleYm = currentCycleKey(now, CYCLE_START_DAY);
     const calendarYm = calendarKeyForDate(now);
 
     function snapshot<K extends string>(history: { ym: K; value: number }[] | undefined, ym: K, value: number) {

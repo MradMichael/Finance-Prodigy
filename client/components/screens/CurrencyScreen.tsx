@@ -7,7 +7,7 @@ import { computeHoldingsByCurrency } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
 import Donut from "../charts/Donut";
-import { currentCycleKey } from "../../lib/period";
+import {CYCLE_START_DAY, currentCycleKey } from "../../lib/period";
 
 /**
  * Moved here from SetupScreen 2026-09-13, behaviour unchanged. The rate is
@@ -71,14 +71,14 @@ export default function CurrencyScreen({ financials, onChange }: { financials: L
   // ── Spend by currency: this month's transactions + active recurring,
   // native currency (not converted) so this actually measures which
   // currency money is changing hands in, not just USD-equivalent totals. ──
-  const currentYm = currentCycleKey(new Date());
+  const currentYm = currentCycleKey(new Date(), CYCLE_START_DAY);
   // TRANSFER (2.4.55) excluded too -- not spend, and its amount can be
   // negative (an incoming leg), which would corrupt this currency total.
   const monthTx = activeTransactions(financials.transactions).filter((t) => t.date.startsWith(currentYm) && t.bucket !== "INCOME" && t.bucket !== "TRANSFER");
   const spendUSD = monthTx.filter((t) => (t.currency ?? "USD") === "USD").reduce((s, t) => s + t.amount, 0)
-    + (financials.recurring ?? []).filter((r) => (r.currency ?? "USD") === "USD").reduce((s, r) => s + historizedRecurringContribution(r, currentYm, new Date()), 0);
+    + (financials.recurring ?? []).filter((r) => (r.currency ?? "USD") === "USD").reduce((s, r) => s + historizedRecurringContribution(r, currentYm, new Date(), CYCLE_START_DAY), 0);
   const spendLBP = monthTx.filter((t) => t.currency === "LBP").reduce((s, t) => s + t.amount, 0)
-    + (financials.recurring ?? []).filter((r) => r.currency === "LBP").reduce((s, r) => s + historizedRecurringContribution(r, currentYm, new Date()), 0);
+    + (financials.recurring ?? []).filter((r) => r.currency === "LBP").reduce((s, r) => s + historizedRecurringContribution(r, currentYm, new Date(), CYCLE_START_DAY), 0);
   const spendTotalUSD = toUSD(spendUSD, "USD") + toUSD(spendLBP, "LBP");
 
   // See computeHoldingsByCurrency's own doc comment for why debts are

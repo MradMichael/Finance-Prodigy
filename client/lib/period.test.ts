@@ -21,31 +21,31 @@ const k = (s: string) => s as CycleKey;
 
 describe("startDay 1 — the Phase 1 identity, which is what makes the threading safe", () => {
   it("a cycle key is the date's own calendar month", () => {
-    expect(cycleKeyForDate(new Date(2026, 8, 13))).toBe("2026-09");
-    expect(cycleKeyForDate(new Date(2026, 8, 1))).toBe("2026-09");
-    expect(cycleKeyForDate(new Date(2026, 8, 30))).toBe("2026-09");
+    expect(cycleKeyForDate(new Date(2026, 8, 13), 1)).toBe("2026-09");
+    expect(cycleKeyForDate(new Date(2026, 8, 1), 1)).toBe("2026-09");
+    expect(cycleKeyForDate(new Date(2026, 8, 30), 1)).toBe("2026-09");
   });
 
   it("cycleKeyForISO matches the slice(0,7) it replaces, across a year boundary", () => {
     for (const iso of ["2026-01-01", "2026-09-13", "2026-12-31", "2027-01-01"]) {
-      expect(cycleKeyForISO(iso)).toBe(iso.slice(0, 7));
+      expect(cycleKeyForISO(iso, 1)).toBe(iso.slice(0, 7));
     }
   });
 
   it("isInCycle matches the startsWith(ym) membership test it replaces", () => {
-    expect(isInCycle("2026-09-13", k("2026-09"))).toBe(true);
-    expect(isInCycle("2026-08-31", k("2026-09"))).toBe(false);
-    expect(isInCycle("2026-10-01", k("2026-09"))).toBe(false);
+    expect(isInCycle("2026-09-13", k("2026-09"), 1)).toBe(true);
+    expect(isInCycle("2026-08-31", k("2026-09"), 1)).toBe(false);
+    expect(isInCycle("2026-10-01", k("2026-09"), 1)).toBe(false);
   });
 
   it("cycleProgress matches now.getDate() / daysInMonth", () => {
-    expect(cycleProgress(new Date(2026, 8, 13))).toEqual({ daysInto: 13, daysInCycle: 30 });
-    expect(cycleProgress(new Date(2026, 1, 5))).toEqual({ daysInto: 5, daysInCycle: 28 });   // Feb 2026
-    expect(cycleProgress(new Date(2026, 0, 31))).toEqual({ daysInto: 31, daysInCycle: 31 });
+    expect(cycleProgress(new Date(2026, 8, 13), 1)).toEqual({ daysInto: 13, daysInCycle: 30 });
+    expect(cycleProgress(new Date(2026, 1, 5), 1)).toEqual({ daysInto: 5, daysInCycle: 28 });   // Feb 2026
+    expect(cycleProgress(new Date(2026, 0, 31), 1)).toEqual({ daysInto: 31, daysInCycle: 31 });
   });
 
   it("cycleBounds spans exactly the calendar month", () => {
-    const { start, end } = cycleBounds(k("2026-09"));
+    const { start, end } = cycleBounds(k("2026-09"), 1);
     expect(start.getDate()).toBe(1);
     expect(start.getMonth()).toBe(8);
     expect(end.getDate()).toBe(1);
@@ -146,6 +146,6 @@ describe("Phase 1 is inert", () => {
   });
 
   it("currentCycleKey is the current calendar month", () => {
-    expect(currentCycleKey(new Date(2026, 8, 13))).toBe("2026-09");
+    expect(currentCycleKey(new Date(2026, 8, 13), 1)).toBe("2026-09");
   });
 });

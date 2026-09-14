@@ -8,6 +8,7 @@ import { projectCompletion } from "../../lib/projections";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money, type Screen } from "./shared";
 import Donut from "../charts/Donut";
+import { cycleKeyForISO, CYCLE_START_DAY } from "../../lib/period";
 
 const ymStrLabel = (ym: string) => {
   const [y, m] = ym.split("-").map(Number);
@@ -77,7 +78,7 @@ export default function JourneyScreen({
     // the same reason -- it isn't a savings contribution just because it
     // isn't NEEDS/WANTS, and its amount can be negative (an incoming leg).
     if (t.bucket === "INCOME" || t.bucket === "TRANSFER") continue;
-    const k = t.date.slice(0, 7);
+    const k = cycleKeyForISO(t.date, CYCLE_START_DAY);
     const b = byMonth[k] ?? (byMonth[k] = { needs: 0, wants: 0, savings: 0 });
     const usd = toUSD(t.amount, t.currency);
     if (t.bucket === "NEEDS") b.needs += usd; else if (t.bucket === "WANTS") b.wants += usd; else b.savings += usd;

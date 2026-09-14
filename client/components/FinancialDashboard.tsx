@@ -32,7 +32,7 @@ import { getLastSyncTime } from "../lib/syncService";
 import { periodTotals, bucketDisplayState, type DashboardPayload } from "../lib/computeDashboard";
 import OnboardingChecklist from "./OnboardingChecklist";
 import { fmtCur, type Screen } from "./screens/shared";
-import { currentCycleKey, cycleKeyForISO, asCalendarKey, asCycleKey, type CycleKey } from "../lib/period";
+import {CYCLE_START_DAY, currentCycleKey, cycleKeyForISO, asCalendarKey, asCycleKey, type CycleKey } from "../lib/period";
 const SERIF: React.CSSProperties = { fontFamily: "Georgia, 'Times New Roman', serif" };
 const NUMS: React.CSSProperties = { fontVariantNumeric: "tabular-nums" };
 
@@ -284,9 +284,9 @@ export default function FinancialDashboard({
   // was grandfathered recurring accrual with zero actual transactions
   // logged won't appear here -- a narrow, pre-Phase-2.5 case, not worth the
   // extra complexity of also walking recurring history for this list.
-  const currentYm = currentCycleKey(new Date());
+  const currentYm = currentCycleKey(new Date(), CYCLE_START_DAY);
   const pastMonths = financials
-    ? Array.from(new Set((financials.transactions ?? []).filter((t) => t.deletedAt == null).map((t) => cycleKeyForISO(t.date))))
+    ? Array.from(new Set((financials.transactions ?? []).filter((t) => t.deletedAt == null).map((t) => cycleKeyForISO(t.date, CYCLE_START_DAY))))
         .filter((ym) => ym !== currentYm)
         .sort()
         .reverse()

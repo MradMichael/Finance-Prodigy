@@ -8,6 +8,7 @@ import {
 } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY, CurrencyToggle, PM_OPTIONS, CardPicker } from "./form/Primitives";
+import { cycleKeyForISO, currentCycleKey, CYCLE_START_DAY } from "../lib/period";
 
 type TxBucket = "NEEDS" | "WANTS" | "SAVINGS" | "INCOME" | "TRANSFER";
 
@@ -92,12 +93,12 @@ export default function EditTransactionSheet({
   );
   const [lbpConfirmAmount, setLbpConfirmAmount] = useState<number | null>(null);
 
-  const divergence = cycleMonthDivergence(transaction, financials.recurring ?? []);
+  const divergence = cycleMonthDivergence(transaction, financials.recurring ?? [], CYCLE_START_DAY);
   // A transfer, like income, doesn't fit "convert to a recurring bill" --
   // StoredRecurring.bucket stays NEEDS/WANTS/SAVINGS only (2.4.55).
   const showRecurringNudge = bucket !== "INCOME" && bucket !== "TRANSFER"
-    && date.slice(0, 7) === new Date().toISOString().slice(0, 7)
-    && looksRecurring(desc, date, financials.transactions.filter((t) => t.id !== transaction.id), financials.recurring ?? []);
+    && cycleKeyForISO(date, CYCLE_START_DAY) === currentCycleKey(new Date(), CYCLE_START_DAY)
+    && looksRecurring(desc, date, financials.transactions.filter((t) => t.id !== transaction.id), financials.recurring ?? [], CYCLE_START_DAY);
 
   // 2.4.56 -- picking a new bucket here used to just relabel the
   // transaction, leaving TRANSFER's signed amount however it happened to be
