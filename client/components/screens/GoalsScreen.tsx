@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import type { LocalFinancials, PaymentMethod, StoredCard } from "../../lib/localData";
-import { uid, todayISO, applyGoalContribution, toUSD as toUSDShared, activeTransactions, DEFAULT_LBP_RATE } from "../../lib/localData";
+import { uid, todayISO, applyGoalContribution, toUSD as toUSDShared, activeTransactions, DEFAULT_LBP_RATE, cycleStartDayOf } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
 import { PaymentMethodPicker, Label, DateFieldDMY } from "../form/Primitives";
-import { currentCycleKey, CYCLE_START_DAY } from "../../lib/period";
+import { currentCycleKey, isInCycle } from "../../lib/period";
 
 export default function GoalsScreen({
   dashData,
@@ -40,9 +40,10 @@ export default function GoalsScreen({
   const [payDate,      setPayDate]      = useState(todayISO());
 
   const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
-  const prefix = currentCycleKey(new Date(), CYCLE_START_DAY);
+  const startDay = cycleStartDayOf(financials);
+  const prefix = currentCycleKey(new Date(), startDay);
   const goalTxThisMonth = activeTransactions(financials.transactions ?? []).filter(
-    (t) => t.bucket === "SAVINGS" && t.date.startsWith(prefix) && t.description.startsWith("Goal:")
+    (t) => t.bucket === "SAVINGS" && isInCycle(t.date, prefix, startDay) && t.description.startsWith("Goal:")
   );
   // Converted per-transaction before summing -- a contribution is always
   // in its own goal's currency (see buildGoalContributionTx), so this sum

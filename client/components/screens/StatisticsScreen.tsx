@@ -1,11 +1,11 @@
 "use client";
 
 import type { LocalFinancials } from "../../lib/localData";
-import { nextOccurrence, isRecurringActive, toUSD as toUSDShared, DEFAULT_LBP_RATE } from "../../lib/localData";
+import { nextOccurrence, isRecurringActive, toUSD as toUSDShared, DEFAULT_LBP_RATE, cycleStartDayOf } from "../../lib/localData";
 import { periodTotals, type computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money } from "./shared";
-import {CYCLE_START_DAY, currentCycleKey, cycleKeyMinus } from "../../lib/period";
+import {currentCycleKey, cycleKeyMinus, cycleBounds, cycleLabel, periodNoun } from "../../lib/period";
 
 const MONTH_NAMES = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -21,6 +21,8 @@ export default function StatisticsScreen({
   dashData: ReturnType<typeof computeDashboard>;
 }) {
   const T = useTheme();
+  const startDay = cycleStartDayOf(financials);
+  const noun = periodNoun(startDay);
   const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
   const toUSD = (n: number, cur?: string) => toUSDShared(n, cur as "USD" | "LBP" | undefined, lbpRate);
   const now = new Date();
@@ -39,9 +41,12 @@ export default function StatisticsScreen({
   // ── Period comparison: this month vs last month, transactions +
   // recurring blended in (matching how every other screen treats "this
   // month's real numbers"). ──
-  const thisYm = currentCycleKey(now, CYCLE_START_DAY);
-  const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const thisYm = currentCycleKey(now, startDay);
   const lastYm = cycleKeyMinus(thisYm, 1);
+  // The previous cycle's OWN first day, not the 1st of the previous calendar
+  // month. periodTotals uses this as the recurring as-of, and under a 27th
+  // payday "1 Aug" is not inside the cycle that began 27 Aug at all.
+  const lastMonthDate = cycleBounds(lastYm, startDay).start;
 
   // 2.4.55 sub-phase 3: periodTotals moved to computeDashboard.ts (shared
   // with Overview's new past-month card) -- a genuine, deliberate behavior
@@ -136,7 +141,18 @@ export default function StatisticsScreen({
 
         {/* Period comparison */}
         <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
-          <p className="text-xs uppercase tracking-widest mb-4" style={{ color: T.mute }}>This month vs. last month</p>
+          <p className="text-xs uppercase tracking-widest mb-1" style={{ color: T.mute }}>This {noun} vs. last {noun}</p>
+          {/* THE ONE SITE WHERE THE EXPLICIT RANGE DOES NOT FIT the caption
+              itself: two full ranges ("27 SEP - 26 OCT VS. 27 AUG - 26 SEP")
+              at text-xs uppercase tracking-widest is ~300px and wraps badly
+              in this card on a phone. Rather than fall back to naming the
+              months -- which is the form rejected for claiming the wrong
+              month -- the caption names neither, and the ranges go on their
+              own line below where there is room for them. Absent entirely at
+              startDay 1, where "this month" is already unambiguous. */}
+          {startDay > 1 && (
+            <p className="text-[10px] mb-4" style={{ color: T.mute }}>{cycleLabel(thisYm, startDay)} vs {cycleLabel(lastYm, startDay)}</p>
+          )}
           {!hasComparisonActivity ? (
             <p className="text-sm" style={{ color: T.mute }}>Once you&apos;ve logged a month or two, this compares them side by side.</p>
           ) : (

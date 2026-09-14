@@ -1,6 +1,6 @@
 import type { LocalFinancials } from "./localData";
-import { BUDGET_RULES, nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, toUSD as toUSDShared, categoryLabel, derivedDebtBalance, activeTransactions, DEFAULT_LBP_RATE, makeToUSDForMonth } from "./localData";
-import {CYCLE_START_DAY, cycleKeyForISO } from "./period";
+import { cycleStartDayOf, BUDGET_RULES, nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, toUSD as toUSDShared, categoryLabel, derivedDebtBalance, activeTransactions, DEFAULT_LBP_RATE, makeToUSDForMonth } from "./localData";
+import {cycleKeyForISO, currentCycleKey, cycleLabelLong, periodNoun } from "./period";
 import type { computeDashboard } from "./computeDashboard";
 
 type DashboardPayload = ReturnType<typeof computeDashboard>;
@@ -21,6 +21,11 @@ export interface ReportOptions {
  * session) for something the platform does natively.
  */
 export function buildReportHtml(userName: string, data: LocalFinancials, dash: DashboardPayload, options: ReportOptions = { detailed: false }): string {
+  const startDay = cycleStartDayOf(data);
+  // The report has room for the full range, so it gets the long form with
+  // years -- a printed page can outlive the month it was printed in, and
+  // "27 Dec - 26 Jan" without years is ambiguous once it does.
+  const reportPeriod = currentCycleKey(new Date(), startDay);
   const money = (n: number) => `$${Math.round(n).toLocaleString()}`;
   const generatedAt = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
   const ruleLabel = BUDGET_RULES[dash.budgetRule]?.label ?? dash.budgetRule;
@@ -49,14 +54,14 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
   // TRANSFER (2.4.55) excluded for the same reason -- it isn't spend, and its
   // amount can be negative (an incoming leg), which would otherwise corrupt
   // this total rather than just under/over-counting it.
-  const ledgerTotal = ledgerTx.filter((t) => t.bucket !== "INCOME" && t.bucket !== "TRANSFER").reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, cycleKeyForISO(t.date, CYCLE_START_DAY)), 0);
+  const ledgerTotal = ledgerTx.filter((t) => t.bucket !== "INCOME" && t.bucket !== "TRANSFER").reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, cycleKeyForISO(t.date, startDay)), 0);
   const ledgerRows = ledgerTx.map((t) => `
     <tr>
       <td>${t.date.split("-").reverse().join("/")}</td>
       <td>${escapeHtml(t.description)}</td>
       <td>${BL[t.bucket]}</td>
       <td>${t.category ? escapeHtml(categoryLabel(t.category, data.customCategories)) : "—"}</td>
-      <td class="num">${money(toUSDForMonth(t.amount, t.currency, cycleKeyForISO(t.date, CYCLE_START_DAY)))}</td>
+      <td class="num">${money(toUSDForMonth(t.amount, t.currency, cycleKeyForISO(t.date, startDay)))}</td>
     </tr>`).join("");
   const rangeLabel = options.dateFrom || options.dateTo
     ? `${options.dateFrom ? options.dateFrom.split("-").reverse().join("/") : "the start"} to ${options.dateTo ? options.dateTo.split("-").reverse().join("/") : "today"}`
@@ -140,7 +145,7 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
     <div class="card"><div class="label">Net worth</div><div class="value">${money(dash.netWorth.total)} &middot; ${escapeHtml(dash.netWorth.tier)}</div></div>
   </div>
 
-  <h2>This month</h2>
+  <h2>This ${periodNoun(startDay)}${startDay > 1 ? ` &middot; ${cycleLabelLong(reportPeriod, startDay)}` : ""}</h2>
   <div class="grid">
     <div class="card"><div class="label">Income</div><div class="value">${money(dash.month.income)}</div></div>
     <div class="card"><div class="label">Spent</div><div class="value">${money(dash.month.totalSpend)}</div></div>

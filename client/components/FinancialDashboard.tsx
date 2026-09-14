@@ -27,12 +27,12 @@ import {
   LineChart, Line,
 } from "recharts";
 import { useTheme } from "../contexts/ThemeContext";
-import { moneyEquals, type LocalFinancials } from "../lib/localData";
+import { moneyEquals, type LocalFinancials, cycleStartDayOf } from "../lib/localData";
 import { getLastSyncTime } from "../lib/syncService";
 import { periodTotals, bucketDisplayState, type DashboardPayload } from "../lib/computeDashboard";
 import OnboardingChecklist from "./OnboardingChecklist";
 import { fmtCur, type Screen } from "./screens/shared";
-import {CYCLE_START_DAY, currentCycleKey, cycleKeyForISO, asCalendarKey, asCycleKey, type CycleKey } from "../lib/period";
+import {currentCycleKey, cycleKeyForISO, cycleLabel, cycleBounds, periodNoun, asCalendarKey, asCycleKey, type CycleKey, type CalendarKey } from "../lib/period";
 const SERIF: React.CSSProperties = { fontFamily: "Georgia, 'Times New Roman', serif" };
 const NUMS: React.CSSProperties = { fontVariantNumeric: "tabular-nums" };
 
@@ -42,7 +42,14 @@ const ymLabel = (ymKey: number) => {
   const m = ymKey % 100, y = Math.floor(ymKey / 100) % 100;
   return `${["", "Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][m]} ’${y}`;
 };
-const ymStrLabel = (ym: string) => {
+/**
+ * A CALENDAR month, short ("Sep '26"). netWorthHistory is the one
+ * calendar-keyed series (2.4.87), and this is its formatter. Cycle keys get
+ * cycleLabel instead -- the two key spaces had been sharing this one
+ * function, which is the two-meanings-one-label shape 2.4.87 exists to
+ * prevent, just in the display layer rather than the data.
+ */
+const ymStrLabel = (ym: CalendarKey) => {
   const [y, m] = ym.split("-").map(Number);
   return `${["", "Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][m]} ’${String(y).slice(2)}`;
 };
@@ -51,6 +58,7 @@ const ymStrLabel = (ym: string) => {
 const MOCK: DashboardPayload = {
   user: { name: "Demo User", currency: "USD", payoffStrategy: "AVALANCHE" },
   period: { year: 2026, month: 6 },
+  periodLabel: "Jun 2026",
   // Fixed, matching this mock's own period -- a live `new Date()` here would
   // make the dev-only mock drift against its own hardcoded dates.
   anchor: new Date(2026, 6, 14),
@@ -265,6 +273,10 @@ export default function FinancialDashboard({
   // selection, nothing extra shown -- Overview stays exactly as it always
   // has by default.
   const [selectedPastMonth, setSelectedPastMonth] = useState<CycleKey | "">("");
+  // Dismissal is per-mount, not persisted: the banner already expires by
+  // itself when the cycle advances, so persisting a flag would add a field
+  // whose only job is to be cleaned up later.
+  const [paydayBannerDismissed, setPaydayBannerDismissed] = useState(false);
 
   if (!data) {
     return (
@@ -274,8 +286,7 @@ export default function FinancialDashboard({
     );
   }
 
-  const { health, month, emergencyFund: ef, debt, goals, sixMonthTrend, encouragements, user, period, netWorth, streaks, budgetPace, netWorthTrend, upcomingRenewals, balanceChecks, budgetTargetPct, alerts } = data;
-  const monthName = ["", "January","February","March","April","May","June","July","August","September","October","November","December"][period.month];
+  const { health, month, periodLabel, emergencyFund: ef, debt, goals, sixMonthTrend, encouragements, user, netWorth, streaks, budgetPace, netWorthTrend, upcomingRenewals, balanceChecks, budgetTargetPct, alerts } = data;
   const targets     = data.budgetTargets;
   const budgetLabel = data.budgetRule === "custom" ? "Custom split" : data.budgetRule.replace(/-/g, " / ");
 
@@ -284,15 +295,22 @@ export default function FinancialDashboard({
   // was grandfathered recurring accrual with zero actual transactions
   // logged won't appear here -- a narrow, pre-Phase-2.5 case, not worth the
   // extra complexity of also walking recurring history for this list.
-  const currentYm = currentCycleKey(new Date(), CYCLE_START_DAY);
+  const startDay = cycleStartDayOf(financials ?? { });
+  const currentYm = currentCycleKey(new Date(), startDay);
+  const showPaydayBanner = !paydayBannerDismissed
+    && startDay > 1
+    && !!financials?.cycleStartDayChangedAt
+    && cycleKeyForISO(financials.cycleStartDayChangedAt, startDay) === currentYm;
   const pastMonths = financials
-    ? Array.from(new Set((financials.transactions ?? []).filter((t) => t.deletedAt == null).map((t) => cycleKeyForISO(t.date, CYCLE_START_DAY))))
+    ? Array.from(new Set((financials.transactions ?? []).filter((t) => t.deletedAt == null).map((t) => cycleKeyForISO(t.date, startDay))))
         .filter((ym) => ym !== currentYm)
         .sort()
         .reverse()
     : [];
   const pastMonthReview = financials && selectedPastMonth
-    ? periodTotals(financials, selectedPastMonth, new Date(`${selectedPastMonth}-01T00:00:00`))
+    // The selected cycle's own first day, not the 1st of the calendar month
+    // its key names -- periodTotals uses this as the recurring as-of.
+    ? periodTotals(financials, selectedPastMonth, cycleBounds(selectedPastMonth, startDay).start)
     : null;
   const budgetPct   = {
     needs:   Math.round(targets.needs   / Math.max(month.income, 1) * 100),
@@ -307,7 +325,7 @@ export default function FinancialDashboard({
         {/* Header */}
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <p className="text-xs uppercase tracking-widest" style={{ color: T.mute }}>ESSA · {monthName} {period.year}</p>
+            <p className="text-xs uppercase tracking-widest" style={{ color: T.mute }}>ESSA · {periodLabel}</p>
             <h1 className="text-3xl md:text-4xl mt-1" style={SERIF}>
               {moneyEquals(month.income, 0)
                 ? <>Set your income to see the full picture, {user.name.split(" ")[0]}.</>
@@ -353,6 +371,34 @@ export default function FinancialDashboard({
               <span className="text-xs flex-shrink-0" style={{ color: T.brass }}>→</span>
             </div>
           </button>
+        )}
+
+        {/* Payday just moved. Shown for the FIRST cycle under the new
+            boundary only, and gated on a timestamp rather than a
+            dismissed-flag: once the cycle key of the change no longer
+            matches the current cycle key, the banner is gone on its own.
+            That means no seen-flag to persist, no stale flag left behind if
+            the payday changes again, and nothing to clean up later -- the
+            same reasoning as cycleStartDayChangedAt being a stamp. It is
+            still dismissible for the rest of that cycle. */}
+        {showPaydayBanner && (
+          <div className="rounded-2xl p-4 flex items-start gap-3" style={{ background: T.brass + "12", border: `1px solid ${T.brass}30` }}>
+            <div className="flex-1">
+              <p className="text-sm font-medium" style={{ color: T.text }}>Your budget {periodNoun(startDay)} now runs {periodLabel}</p>
+              <p className="text-xs mt-1" style={{ color: T.mute }}>
+                Every figure here is measured over that range instead of the calendar month, history included, so some numbers will have moved. Net worth is the exception &mdash; it stays dated by the calendar. You can change payday back in Setup.
+              </p>
+            </div>
+            <button
+              type="button"
+              aria-label="Dismiss"
+              className="text-xs px-2 py-1 rounded-lg"
+              style={{ color: T.mute }}
+              onClick={() => setPaydayBannerDismissed(true)}
+            >
+              &times;
+            </button>
+          </div>
         )}
 
         {/* Needs attention — the 2-3 most urgent things, aggregated from
@@ -428,7 +474,7 @@ export default function FinancialDashboard({
               >
                 <option value="">Select a month…</option>
                 {pastMonths.map((ym) => (
-                  <option key={ym} value={ym}>{ymStrLabel(ym)}</option>
+                  <option key={ym} value={ym}>{cycleLabel(ym, startDay)}</option>
                 ))}
               </select>
             </div>
@@ -445,7 +491,7 @@ export default function FinancialDashboard({
                   </div>
                 ))}
                 <p className="col-span-3 text-[10px]" style={{ color: T.mute }}>
-                  Net: {money(pastMonthReview.income - pastMonthReview.needs - pastMonthReview.wants - pastMonthReview.savings)} · {ymStrLabel(selectedPastMonth)}
+                  Net: {money(pastMonthReview.income - pastMonthReview.needs - pastMonthReview.wants - pastMonthReview.savings)} · {cycleLabel(asCycleKey(selectedPastMonth), startDay)}
                 </p>
               </div>
             )}
@@ -595,7 +641,7 @@ export default function FinancialDashboard({
               </ResponsiveContainer>
             </div>
             <p className="text-xs mt-2" style={{ color: T.mute }}>
-              The gap between the lines is your monthly progress. {monthName} is still in progress, so its spend line will keep rising (and the gap will keep shrinking) as the rest of the month gets logged.
+              The gap between the lines is your progress so far. {periodLabel} is still in progress, so its spend line will keep rising (and the gap will keep shrinking) as the rest of it gets logged.
             </p>
             <div className="mt-4 pt-4" style={{ borderTop: `1px solid ${T.line}` }}>
               <div className="flex items-baseline justify-between">
@@ -694,6 +740,11 @@ export default function FinancialDashboard({
                 </div>
               </div>
 
+              {netWorthTrend.length >= 2 && startDay > 1 && (
+                <p className="text-[10px] mb-1" style={{ color: T.mute }}>
+                  Calendar month-ends &mdash; net worth is a snapshot of a moment, so it is dated by the calendar, not by your {periodNoun(startDay)}.
+                </p>
+              )}
               {netWorthTrend.length >= 2 && (
                 <div className="h-40 mb-2">
                   <ResponsiveContainer>
@@ -703,7 +754,7 @@ export default function FinancialDashboard({
                       <YAxis tick={{ fill: T.mute, fontSize: 11 }} axisLine={false} tickLine={false} />
                       <Tooltip
                         contentStyle={{ background: T.panelSoft, border: `1px solid ${T.line}`, borderRadius: 12, color: T.text }}
-                        labelFormatter={(v) => ymStrLabel(String(v))}
+                        labelFormatter={(v) => ymStrLabel(asCalendarKey(String(v)))}
                         formatter={(v: number) => [money(v), "Net worth"]}
                       />
                       <Line type="monotone" dataKey="value" stroke={nwColor} strokeWidth={2} dot={{ r: 3, fill: nwColor }} />

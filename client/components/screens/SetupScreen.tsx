@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import type { LocalFinancials, BudgetRuleKey } from "../../lib/localData";
-import { BUDGET_RULES, MIN_SPLIT_PCT, floorCustomSplit, buildEfAdjustmentTx, roundMoney } from "../../lib/localData";
+import { BUDGET_RULES, MIN_SPLIT_PCT, floorCustomSplit, buildEfAdjustmentTx, roundMoney, cycleStartDayOf } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF } from "./shared";
+import { cycleLabel, currentCycleKey, periodNoun } from "../../lib/period";
 
 /**
  * Ceiling on monthly income. This field had a floor (`min="0"`, and a
@@ -24,6 +25,22 @@ import { SERIF } from "./shared";
  * change than this fix was scoped to.
  */
 const MAX_INCOME = 1_000_000;
+
+/**
+ * Payday, 1..28. Capped at 28 rather than 31 deliberately: a 29th/30th/31st
+ * payday would clamp to the month's last day (period.ts does this, matching
+ * nextOccurrence), which means a 31st payday silently becomes the 28th every
+ * February. That is defensible arithmetic and a confusing setting, so the
+ * field does not offer it. 1 means calendar months -- the default, and what
+ * every account has until this is changed.
+ */
+const MAX_CYCLE_START_DAY = 28;
+
+/** "1st", "22nd" -- for naming the SETTING, not for claiming a date. */
+function ordinalSuffix(n: number): string {
+  if (n % 100 >= 11 && n % 100 <= 13) return "th";
+  return ["th", "st", "nd", "rd"][n % 10] ?? "th";
+}
 
 export default function SetupScreen({
   financials,
@@ -53,6 +70,33 @@ export default function SetupScreen({
   // separate correction transactions along the way. A delta of 0 (clicked
   // in, clicked out, nothing changed) creates nothing.
   const [efBalanceInput, setEfBalanceInput] = useState<string | null>(null);
+
+  // ── Payday ────────────────────────────────────────────────────────────
+  // Changing this re-slices every period boundary in the app, including
+  // past ones, so it confirms at the point of change rather than saving on
+  // a keystroke. `cycleStartDayChangedAt` is a STAMP, not a seen-flag: the
+  // Overview banner it drives expires when the cycle key advances, so it
+  // explains the first cycle under the new boundary and then stops on its
+  // own without anything needing to be dismissed or cleaned up.
+  // Draft state is a STRING, not a number, for the same reason the LBP rate
+  // field's is: a number cannot represent "the field is empty" or "half a
+  // number has been typed". Holding it as a number meant clearing the field
+  // snapped it to 1 and the next keystroke appended to that, so typing "27"
+  // into a cleared field produced 127. Caught by this field's own tests.
+  const startDay = cycleStartDayOf(financials);
+  const [startDayDraft, setStartDayDraft] = useState<string | null>(null);
+  const parsedDraft = startDayDraft == null || startDayDraft.trim() === ""
+    ? null
+    : Math.min(MAX_CYCLE_START_DAY, Math.max(1, parseInt(startDayDraft, 10) || 1));
+  const pendingStartDay = parsedDraft != null && parsedDraft !== startDay ? parsedDraft : null;
+
+  function commitStartDay(next: number) {
+    update({
+      cycleStartDay: next,
+      cycleStartDayChangedAt: new Date().toISOString(),
+    });
+    setStartDayDraft(null);
+  }
 
   function commitEfBalance(raw: string) {
     const entered = Math.max(0, parseFloat(raw) || 0);
@@ -138,6 +182,50 @@ export default function SetupScreen({
                     <span className="tabular-nums" style={{ color: T.text }}>${h.value.toLocaleString()}</span>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label htmlFor="setup-payday" className="block text-xs mb-1.5" style={{ color: T.mute }}>Payday (day of month)</label>
+            <input
+              id="setup-payday"
+              className="w-full rounded-xl px-4 py-2.5 text-sm tabular-nums"
+              style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
+              type="number" min="1" max={MAX_CYCLE_START_DAY} step="1"
+              value={startDayDraft ?? String(startDay)}
+              onChange={(e) => setStartDayDraft(e.target.value)}
+            />
+            <p className="text-[11px] mt-1.5 px-1" style={{ color: T.mute }}>
+              Your budget {periodNoun(startDay)} runs from this day to the day before it next comes round. Leave it at 1 for calendar months.
+              {startDay > 1 && <> Right now that&apos;s {cycleLabel(currentCycleKey(new Date(), startDay), startDay)}.</>}
+            </p>
+            {pendingStartDay != null && (
+              <div className="mt-3 rounded-xl px-3 py-3 space-y-2" style={{ background: T.ink, border: `1px solid ${T.brass}` }}>
+                <p className="text-xs" style={{ color: T.text }}>
+                  Move payday to the {pendingStartDay}{ordinalSuffix(pendingStartDay)}?
+                </p>
+                <p className="text-[11px]" style={{ color: T.mute }}>
+                  This re-slices every period, past ones included. Totals, budget pace, rollover and your savings streak are all measured per period, so figures you have already seen can move &mdash; a payment near the boundary changes which period it belongs to. Nothing is deleted and you can change it back.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="rounded-lg px-3 py-1.5 text-xs font-medium"
+                    style={{ background: T.brass, color: T.ink }}
+                    onClick={() => commitStartDay(pendingStartDay)}
+                  >
+                    Move payday
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-lg px-3 py-1.5 text-xs"
+                    style={{ background: "transparent", border: `1px solid ${T.line}`, color: T.mute }}
+                    onClick={() => setStartDayDraft(null)}
+                  >
+                    Keep the {startDay === 1 ? "1st" : `${startDay}${ordinalSuffix(startDay)}`}
+                  </button>
+                </div>
               </div>
             )}
           </div>

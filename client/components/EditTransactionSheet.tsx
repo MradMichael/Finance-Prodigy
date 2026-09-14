@@ -4,11 +4,10 @@ import { useState } from "react";
 import type { LocalFinancials, StoredTransaction, StoredCard, Currency, PaymentMethod } from "../lib/localData";
 import {
   fmtDate, allCategories, looksRecurring, buildQuickRecurring, cycleMonthDivergence,
-  roundMoney, uid, DEFAULT_LBP_RATE, retagBucketAmount, moneyMaxFor,
-} from "../lib/localData";
+  roundMoney, uid, DEFAULT_LBP_RATE, retagBucketAmount, moneyMaxFor, cycleStartDayOf } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY, CurrencyToggle, PM_OPTIONS, CardPicker } from "./form/Primitives";
-import { cycleKeyForISO, currentCycleKey, CYCLE_START_DAY } from "../lib/period";
+import { cycleKeyForISO, currentCycleKey } from "../lib/period";
 
 type TxBucket = "NEEDS" | "WANTS" | "SAVINGS" | "INCOME" | "TRANSFER";
 
@@ -39,6 +38,7 @@ export default function EditTransactionSheet({
   onClose: () => void;
 }) {
   const T = useTheme();
+  const startDay = cycleStartDayOf(financials);
   const update = (patch: Partial<LocalFinancials>) => onChange({ ...financials, ...patch });
   const cards = financials.cards ?? [];
   function saveCard(type: StoredCard["type"], last4: string): StoredCard | null {
@@ -93,12 +93,12 @@ export default function EditTransactionSheet({
   );
   const [lbpConfirmAmount, setLbpConfirmAmount] = useState<number | null>(null);
 
-  const divergence = cycleMonthDivergence(transaction, financials.recurring ?? [], CYCLE_START_DAY);
+  const divergence = cycleMonthDivergence(transaction, financials.recurring ?? [], startDay);
   // A transfer, like income, doesn't fit "convert to a recurring bill" --
   // StoredRecurring.bucket stays NEEDS/WANTS/SAVINGS only (2.4.55).
   const showRecurringNudge = bucket !== "INCOME" && bucket !== "TRANSFER"
-    && cycleKeyForISO(date, CYCLE_START_DAY) === currentCycleKey(new Date(), CYCLE_START_DAY)
-    && looksRecurring(desc, date, financials.transactions.filter((t) => t.id !== transaction.id), financials.recurring ?? [], CYCLE_START_DAY);
+    && cycleKeyForISO(date, startDay) === currentCycleKey(new Date(), startDay)
+    && looksRecurring(desc, date, financials.transactions.filter((t) => t.id !== transaction.id), financials.recurring ?? [], startDay);
 
   // 2.4.56 -- picking a new bucket here used to just relabel the
   // transaction, leaving TRANSFER's signed amount however it happened to be
