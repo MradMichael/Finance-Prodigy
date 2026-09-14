@@ -5,7 +5,7 @@ import { nextOccurrence, isRecurringActive, toUSD as toUSDShared, DEFAULT_LBP_RA
 import { periodTotals, type computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money } from "./shared";
-import { currentCycleKey, cycleKeyMinus } from "../../lib/period";
+import {CYCLE_START_DAY, currentCycleKey, cycleKeyMinus } from "../../lib/period";
 
 const MONTH_NAMES = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -39,7 +39,7 @@ export default function StatisticsScreen({
   // ── Period comparison: this month vs last month, transactions +
   // recurring blended in (matching how every other screen treats "this
   // month's real numbers"). ──
-  const thisYm = currentCycleKey(now);
+  const thisYm = currentCycleKey(now, CYCLE_START_DAY);
   const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const lastYm = cycleKeyMinus(thisYm, 1);
 

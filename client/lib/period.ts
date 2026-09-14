@@ -68,9 +68,16 @@ export const asCycleKey = (s: string): CycleKey => s as CycleKey;
 export const asCalendarKey = (s: string): CalendarKey => s as CalendarKey;
 
 /**
- * Phase 1: 1, i.e. calendar months. Phase 2 replaces this constant with a
- * per-account setting; nothing else in this module changes when it does,
- * which is the point of routing everything through here first.
+ * Phase 1: 1, i.e. calendar months. Phase 2b replaces this with a per-account
+ * setting; nothing else in this module changes when it does.
+ *
+ * Phase 2a made `startDay` a REQUIRED parameter on every function below
+ * rather than one defaulting to this constant. The default was a silent
+ * fallback of exactly the kind 2.4.81 and 2.4.85 are about: a caller that
+ * forgot it compiled cleanly and inherited calendar months. Required means
+ * the compiler enumerates every period decision in the codebase -- which is
+ * what Phase 2b needs, since it must change the ARGUMENT at each site rather
+ * than this constant.
  */
 export const CYCLE_START_DAY = 1;
 
@@ -93,7 +100,7 @@ export function calendarKeyForISO(iso: string): CalendarKey {
  * before the start day belongs to the cycle that began in the PREVIOUS
  * calendar month — the case that makes this a function rather than a slice.
  */
-export function cycleKeyForDate(d: Date, startDay: number = CYCLE_START_DAY): CycleKey {
+export function cycleKeyForDate(d: Date, startDay: number): CycleKey {
   const y = d.getFullYear();
   const m = d.getMonth();
   if (startDay <= 1 || d.getDate() >= effectiveStartDay(y, m, startDay)) {
@@ -104,13 +111,13 @@ export function cycleKeyForDate(d: Date, startDay: number = CYCLE_START_DAY): Cy
 }
 
 /** The cycle an ISO `YYYY-MM-DD` string belongs to. */
-export function cycleKeyForISO(iso: string, startDay: number = CYCLE_START_DAY): CycleKey {
+export function cycleKeyForISO(iso: string, startDay: number): CycleKey {
   if (startDay <= 1) return iso.slice(0, 7) as CycleKey;
   return cycleKeyForDate(parseISODateLocal(iso), startDay);
 }
 
 /** The cycle containing `now`. */
-export function currentCycleKey(now: Date, startDay: number = CYCLE_START_DAY): CycleKey {
+export function currentCycleKey(now: Date, startDay: number): CycleKey {
   return cycleKeyForDate(now, startDay);
 }
 
@@ -131,7 +138,7 @@ function parseISODateLocal(iso: string): Date {
 }
 
 /** First and last instants of a cycle, as local dates. `end` is exclusive. */
-export function cycleBounds(key: CycleKey, startDay: number = CYCLE_START_DAY): { start: Date; end: Date } {
+export function cycleBounds(key: CycleKey, startDay: number): { start: Date; end: Date } {
   const [y, m] = key.split("-").map(Number);
   const mi = m - 1;
   const start = new Date(y, mi, effectiveStartDay(y, mi, startDay));
@@ -150,7 +157,7 @@ export function cycleKeyMinus(key: CycleKey, n: number): CycleKey {
 }
 
 /** Whether an ISO-dated record falls inside a cycle. */
-export function isInCycle(iso: string, key: CycleKey, startDay: number = CYCLE_START_DAY): boolean {
+export function isInCycle(iso: string, key: CycleKey, startDay: number): boolean {
   if (startDay <= 1) return iso.startsWith(key);
   return cycleKeyForISO(iso, startDay) === key;
 }
@@ -164,7 +171,7 @@ export function isInCycle(iso: string, key: CycleKey, startDay: number = CYCLE_S
  * day-of-calendar-month says nothing about progress through a cycle that
  * began on the 27th. Phase 1 changes no output; Phase 2 relies on this.
  */
-export function cycleProgress(now: Date, startDay: number = CYCLE_START_DAY): { daysInto: number; daysInCycle: number } {
+export function cycleProgress(now: Date, startDay: number): { daysInto: number; daysInCycle: number } {
   const { start, end } = cycleBounds(cycleKeyForDate(now, startDay), startDay);
   const DAY = 24 * 60 * 60 * 1000;
   const midnight = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();

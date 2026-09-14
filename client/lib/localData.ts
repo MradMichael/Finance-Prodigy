@@ -1,7 +1,7 @@
 "use client";
 
 import type { CycleKey, CycleHistory, CalendarHistory } from "./period";
-import { cycleKeyForISO } from "./period";
+import {CYCLE_START_DAY, cycleKeyForISO } from "./period";
 export type { CycleKey, CalendarKey, CycleHistory, CalendarHistory } from "./period";
 
 export type Currency = "USD" | "LBP";
@@ -681,7 +681,7 @@ export const DEFAULT_DATA: LocalFinancials = {
  * lbpRateAtEntry comment for why a template shouldn't get one at all.
  */
 function addCurrencyAndRate(d: LocalFinancials): LocalFinancials {
-  const rateForDate = (dateOrIso: string) => valueForMonth(d.lbpRateHistory, cycleKeyForISO(dateOrIso), d.lbpRate);
+  const rateForDate = (dateOrIso: string) => valueForMonth(d.lbpRateHistory, cycleKeyForISO(dateOrIso, CYCLE_START_DAY), d.lbpRate);
   return {
     ...d,
     schemaVersion: 2,
@@ -1562,10 +1562,16 @@ export function isCycleConfirmed(r: StoredRecurring, dueDate: Date, transactions
  * month matches `date`'s month exactly (the ordinary, expected case --
  * paid a few days early/late within the same month is not a divergence).
  */
-export function cycleMonthDivergence(tx: StoredTransaction, recurring: StoredRecurring[]): string | null {
+export function cycleMonthDivergence(tx: StoredTransaction, recurring: StoredRecurring[], startDay: number): string | null {
   if (tx.cycleDate == null) return null;
-  const cycleYm = tx.cycleDate.slice(0, 7);
-  if (cycleYm === tx.date.slice(0, 7)) return null;
+  // Both sides were raw calendar slices. Phase 1's branding could not see
+  // this site -- it never calls a cycle-keyed lookup, it just compares two
+  // slices -- so it kept asking "different calendar month?" while every
+  // other period question in the app had moved. Identical at startDay 1;
+  // at any other value it is WHICH PAIRS DIVERGE that changes, not the
+  // recurring engine, which never consults a period key at all.
+  const cycleYm = cycleKeyForISO(tx.cycleDate, startDay);
+  if (cycleYm === cycleKeyForISO(tx.date, startDay)) return null;
   const [y, m] = cycleYm.split("-");
   const monthLabel = `${["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][+m]} ${y}`;
   const name = recurring.find((r) => r.id === tx.recurringId)?.name ?? "a deleted recurring item";
@@ -1684,8 +1690,11 @@ export function nextConfirmTarget(r: StoredRecurring, transactions: StoredTransa
  * ym < cutoverYm` would read as "no cutover -> always old rule," which is
  * backwards; the condition below is deliberately the other way around.
  */
-export function historizedRecurringContribution(r: StoredRecurring, ym: CycleKey, asOf: Date): number {
-  if (r.confirmCutoverDate && ym < r.confirmCutoverDate.slice(0, 7)) {
+export function historizedRecurringContribution(r: StoredRecurring, ym: CycleKey, asOf: Date, startDay: number): number {
+  // MIXED before Phase 2a: `ym` is a branded CycleKey, the right side was a
+  // raw calendar slice. `<` does not enforce brands, so this compiled and
+  // type-checked while comparing two different key spaces.
+  if (r.confirmCutoverDate && ym < cycleKeyForISO(r.confirmCutoverDate, startDay)) {
     return monthlyEquivalent(r, asOf);
   }
   return 0;
@@ -1974,12 +1983,15 @@ export function buildDebtAdjustmentTx(debt: StoredDebt, delta: number): StoredTr
  * main entry form and the edit-transaction sheet alike (usability backlog,
  * 2026-08-29) -- previously duplicated as a private helper in InputPanel.tsx.
  */
-export function looksRecurring(description: string, date: string, transactions: StoredTransaction[], recurring: StoredRecurring[]): boolean {
+export function looksRecurring(description: string, date: string, transactions: StoredTransaction[], recurring: StoredRecurring[], startDay: number): boolean {
   const norm = description.trim().toLowerCase();
   if (!norm) return false;
   if (recurring.some((r) => r.name.trim().toLowerCase() === norm)) return false;
-  const thisMonth = date.slice(0, 7);
-  return transactions.some((t) => t.description.trim().toLowerCase() === norm && t.date.slice(0, 7) !== thisMonth);
+  // "Have I seen this description in a DIFFERENT period?" -- a period
+  // question, not a calendar one, even though it drives a suggestion rather
+  // than a figure. Identical at startDay 1.
+  const thisPeriod = cycleKeyForISO(date, startDay);
+  return transactions.some((t) => t.description.trim().toLowerCase() === norm && cycleKeyForISO(t.date, startDay) !== thisPeriod);
 }
 
 /**
