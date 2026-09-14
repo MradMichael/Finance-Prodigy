@@ -14,7 +14,7 @@ import { describe, it, expect } from "vitest";
 import {
   CYCLE_START_DAY, calendarKeyForDate, calendarKeyForISO, cycleKeyForDate,
   cycleKeyForISO, currentCycleKey, cycleBounds, cycleKeyMinus, isInCycle,
-  cycleProgress, type CycleKey,
+  cycleProgress, cycleLabel, cycleLabelLong, type CycleKey,
 } from "./period";
 
 const k = (s: string) => s as CycleKey;
@@ -147,5 +147,32 @@ describe("Phase 1 is inert", () => {
 
   it("currentCycleKey is the current calendar month", () => {
     expect(currentCycleKey(new Date(2026, 8, 13), 1)).toBe("2026-09");
+  });
+});
+
+describe("cycleLabel — how a cycle is named to the user (form (b), explicit range)", () => {
+  it("collapses to a plain month name at startDay 1, so nothing changes without a payday set", () => {
+    expect(cycleLabel(k("2026-09"), 1)).toBe("Sep 2026");
+    expect(cycleLabelLong(k("2026-09"), 1)).toBe("Sep 2026");
+  });
+
+  it("names the real range, not the month the key happens to carry", () => {
+    // The key says 2026-09; the period is mostly October. Naming it "Sep 2026"
+    // is the thing this form exists to avoid.
+    expect(cycleLabel(k("2026-09"), 27)).toBe("27 Sep – 26 Oct");
+  });
+
+  it("crosses a year boundary without losing the year", () => {
+    expect(cycleLabel(k("2026-12"), 27)).toBe("27 Dec – 26 Jan");
+    expect(cycleLabelLong(k("2026-12"), 27)).toBe("27 Dec 2026 – 26 Jan 2027");
+  });
+
+  it("follows the clamp: a 31st payday in a 30-day month", () => {
+    // September has 30 days, so the cycle starts on the 30th.
+    expect(cycleLabel(k("2026-09"), 31)).toBe("30 Sep – 30 Oct");
+  });
+
+  it("the long form omits the first year when both ends share one", () => {
+    expect(cycleLabelLong(k("2026-09"), 27)).toBe("27 Sep – 26 Oct 2026");
   });
 });

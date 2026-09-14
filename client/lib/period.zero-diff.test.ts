@@ -123,8 +123,19 @@ describe("period primitive — zero-diff gate", () => {
     const dash = computeDashboard(makeData());
     // `anchor` is a live Date; with fake timers it is deterministic, but it
     // is serialised explicitly so a change in its TYPE would also show.
-    const serialisable = { ...dash, anchor: dash.anchor.toISOString() };
+    // `periodLabel` is ADDED by Phase 2b and has no pre-change counterpart,
+    // so it is held out rather than regenerating the baseline with -u. The
+    // gate's claim is "no figure that existed before has moved"; a new key
+    // cannot be checked against a baseline that predates it, and -u would
+    // relicense every other value in the payload at the same time (the
+    // exact failure this file's own header warns about). Asserted
+    // separately below instead.
+    const { periodLabel, ...rest } = dash;
+    const serialisable = { ...rest, anchor: dash.anchor.toISOString() };
     expect(serialisable).toMatchSnapshot();
+    // At startDay 1 the label must still read as a plain month, or the
+    // hold-out above would be hiding a real change to existing behaviour.
+    expect(periodLabel).toBe("Sep 2026");
   });
 
   it("headline figures, asserted explicitly so the gate survives a snapshot regeneration", () => {

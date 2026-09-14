@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 import type { LocalFinancials, StoredRecurring } from "../../lib/localData";
-import { fmtDate, historizedRecurringContribution, toUSD as toUSDShared, categoryLabel as categoryLabelShared, categoryIcon as categoryIconShared, activeTransactions, cycleMonthDivergence, purgeTransaction, DEFAULT_LBP_RATE } from "../../lib/localData";
+import { fmtDate, historizedRecurringContribution, toUSD as toUSDShared, categoryLabel as categoryLabelShared, categoryIcon as categoryIconShared, activeTransactions, cycleMonthDivergence, purgeTransaction, DEFAULT_LBP_RATE, cycleStartDayOf } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money, fmtCur } from "./shared";
 import Donut from "../charts/Donut";
-import {CYCLE_START_DAY, currentCycleKey, cycleKeyForISO, cycleKeyForDate, asCycleKey, type CycleKey } from "../../lib/period";
+import {currentCycleKey, cycleKeyForISO, cycleLabel, cycleBounds, cycleKeyMinus, isInCycle, asCycleKey, type CycleKey } from "../../lib/period";
 
 type TrendPeriod = "monthly" | "quarterly" | "yearly";
 type BucketTotals = { needs: number; wants: number; savings: number };
@@ -14,7 +14,7 @@ type BucketTotals = { needs: number; wants: number; savings: number };
 const FREQ_LABEL = { weekly: "Weekly", biweekly: "Every 2 weeks", monthly: "Monthly", every2months: "Every 2 months", quarterly: "Quarterly", biannually: "Every 6 months", yearly: "Yearly" } as const;
 
 /** YYYY-MM / YYYY-Q# / YYYY grouping key for a transaction date, depending on the selected trend period. */
-function periodKey(dateStr: string, mode: TrendPeriod): string {
+function periodKey(dateStr: string, mode: TrendPeriod, startDay: number): string {
   // All three branches now derive from the cycle key, not a raw calendar
   // slice -- so quarters and years are built out of the user's own periods
   // rather than calendar ones. Identical at startDay 1. At any other value a
@@ -24,17 +24,20 @@ function periodKey(dateStr: string, mode: TrendPeriod): string {
   // Flagged rather than assumed: this is a judgement, and the alternative
   // (cycle months, calendar quarters) would put two period concepts in one
   // control.
-  const [y, m] = cycleKeyForISO(dateStr, CYCLE_START_DAY).split("-");
+  const [y, m] = cycleKeyForISO(dateStr, startDay).split("-");
   if (mode === "yearly") return y;
   if (mode === "quarterly") return `${y}-Q${Math.ceil(parseInt(m, 10) / 3)}`;
   return `${y}-${m}`;
 }
 
-function periodLabel(key: string, mode: TrendPeriod): string {
+function periodLabel(key: string, mode: TrendPeriod, startDay: number): string {
   if (mode === "yearly") return key;
   if (mode === "quarterly") return key.replace("-", " ");
-  const [y, m] = key.split("-");
-  return `${["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][+m]} ${y}`;
+  // Monthly keys are CYCLE keys, so they are named as an explicit range
+  // ("27 Sep - 26 Oct") rather than by the month the key carries -- which
+  // for a 27th payday would be mostly the wrong month. Collapses to a plain
+  // month name at startDay 1.
+  return cycleLabel(key as CycleKey, startDay);
 }
 
 /** Every calendar month (YYYY-MM) a period key covers: one for "monthly", three for "quarterly", twelve for "yearly". Recurring bills don't create a transaction row each month, so a period's real total needs each covered month evaluated separately, not just the period's own key. */
@@ -58,11 +61,11 @@ function monthsInPeriod(key: string, mode: TrendPeriod): CycleKey[] {
  * (all that matters for a past/future month is whether the item was
  * active then at all).
  */
-function recurringForMonth(recurring: StoredRecurring[], ym: CycleKey, currentYm: CycleKey, toUSD: (n: number, cur?: string) => number): BucketTotals {
+function recurringForMonth(recurring: StoredRecurring[], ym: CycleKey, currentYm: CycleKey, toUSD: (n: number, cur?: string) => number, startDay: number): BucketTotals {
   const asOf = ym === currentYm ? new Date() : new Date(`${ym}-01T00:00:00`);
   const out: BucketTotals = { needs: 0, wants: 0, savings: 0 };
   for (const r of recurring) {
-    const usd = toUSD(historizedRecurringContribution(r, ym, asOf, CYCLE_START_DAY), r.currency);
+    const usd = toUSD(historizedRecurringContribution(r, ym, asOf, startDay), r.currency);
     if (r.bucket === "NEEDS") out.needs += usd;
     else if (r.bucket === "WANTS") out.wants += usd;
     else out.savings += usd;
@@ -72,10 +75,11 @@ function recurringForMonth(recurring: StoredRecurring[], ym: CycleKey, currentYm
 
 export default function TransactionsScreen({ financials, onChange, onEdit }: { financials: LocalFinancials; onChange: (f: LocalFinancials) => void; onEdit: (id: string) => void }) {
   const T = useTheme();
+  const startDay = cycleStartDayOf(financials);
   // Defaults to the current month, not "All time" -- that's what a user is
   // actually managing day to day; "All time" is a choice to make, not the
   // thing they see first (owner's live-use report, 2026-09-01).
-  const [filter, setFilter] = useState<CycleKey | "all">(currentCycleKey(new Date(), CYCLE_START_DAY));
+  const [filter, setFilter] = useState<CycleKey | "all">(currentCycleKey(new Date(), startDay));
   const [query,  setQuery]  = useState("");
   const [donutView, setDonutView] = useState<"type" | "category">("type");
   // Phase 2.6.3b: "Recently deleted" -- always-visible entry point (the pill
@@ -117,7 +121,7 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
     });
   }
   const recurring = financials.recurring ?? [];
-  const currentYm = currentCycleKey(new Date(), CYCLE_START_DAY);
+  const currentYm = currentCycleKey(new Date(), startDay);
   // Months where at least one recurring item was active, independent of the
   // search query below -- feeds the month dropdown so a recurring-only
   // month (rent/tuition auto-debited, nothing else logged) can still be
@@ -126,12 +130,14 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
   // produce an unbounded list.
   const recurActiveMonths: CycleKey[] = [];
   {
-    const cursor = new Date(`${currentYm}-01T00:00:00`);
+    // Walked by cycle key. Stepping a Date anchored on the 1st and
+    // re-deriving the key would land one cycle early at any payday past the
+    // 1st, because the 1st is before the payday -- the same defect fixed in
+    // computeDashboard's three month-walks this phase.
     for (let i = 0; i < 24; i++) {
-      const mo = cycleKeyForDate(cursor, CYCLE_START_DAY);
-      const asOf = mo === currentYm ? new Date() : new Date(cursor);
-      if (recurring.some((r) => toUSD(historizedRecurringContribution(r, mo, asOf, CYCLE_START_DAY), r.currency) > 0)) recurActiveMonths.push(mo);
-      cursor.setMonth(cursor.getMonth() - 1);
+      const mo = cycleKeyMinus(currentYm, i);
+      const asOf = mo === currentYm ? new Date() : cycleBounds(mo, startDay).start;
+      if (recurring.some((r) => toUSD(historizedRecurringContribution(r, mo, asOf, startDay), r.currency) > 0)) recurActiveMonths.push(mo);
     }
   }
   // currentYm is always included, even with zero transactions and zero
@@ -139,7 +145,7 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
   // account's month dropdown must have a real option matching that default,
   // not just fall back to whatever the browser does with an unmatched
   // <select> value.
-  const months = Array.from(new Set([...allTx.map((t) => cycleKeyForISO(t.date, CYCLE_START_DAY)), ...recurActiveMonths, currentYm])).sort().reverse();
+  const months = Array.from(new Set([...allTx.map((t) => cycleKeyForISO(t.date, startDay)), ...recurActiveMonths, currentYm])).sort().reverse();
 
   const q = query.trim().toLowerCase();
   const matchesQuery = (t: (typeof allTx)[number]) => {
@@ -153,7 +159,7 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
       || (t.paymentNote ?? "").toLowerCase().includes(q)
     );
   };
-  const filtered = (filter === "all" ? allTx : allTx.filter((t) => t.date.startsWith(filter))).filter(matchesQuery);
+  const filtered = (filter === "all" ? allTx : allTx.filter((t) => isInCycle(t.date, filter, startDay))).filter(matchesQuery);
   // Recurring bills don't create a transaction row, so a specific month's
   // real totals need their monthly-equivalent added in (matches how the
   // Overview dashboard already blends the two). Deliberately skipped for
@@ -161,15 +167,20 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
   // active history is a different, fuzzier question than "what did this
   // month cost."
   const recurForFilter: BucketTotals = filter !== "all"
-    ? recurringForMonth(recurring, filter, currentYm, toUSD)
+    ? recurringForMonth(recurring, filter, currentYm, toUSD, startDay)
     : { needs: 0, wants: 0, savings: 0 };
 
-  const fmtMo = (ym: string) => {
-    const [y, m] = ym.split("-");
-    return `${["","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+m]} ${y}`;
-  };
+  // Every one of this page's month labels is a CYCLE label now -- the month
+  // picker, the donut's centre, the "Where it went" caption and each group
+  // header. Collapses to "Sep 2026" at startDay 1, so nothing moves for an
+  // account with no payday set.
+  //
+  // Checked rather than assumed for the tightest of them, the donut centre:
+  // the hole is size - 2*thickness = 100px and the caption renders at 10px,
+  // where "27 Sep - 26 Oct" is about 75px. It fits on one line.
+  const fmtMo = (ym: CycleKey) => cycleLabel(ym, startDay);
   const grouped = filtered.reduce<Record<string, typeof allTx>>((acc, t) => {
-    const k = cycleKeyForISO(t.date, CYCLE_START_DAY);
+    const k = cycleKeyForISO(t.date, startDay);
     (acc[k] = acc[k] ?? []).push(t);
     return acc;
   }, {});
@@ -181,9 +192,9 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
   // month's list for "did my tuition payment show up" would never find it,
   // even though it was already counted in every total on this page.
   function recurringRowsForMonth(mo: CycleKey) {
-    const asOf = mo === currentYm ? new Date() : new Date(`${mo}-01T00:00:00`);
+    const asOf = mo === currentYm ? new Date() : cycleBounds(mo, startDay).start;
     return recurring
-      .map((r) => ({ r, usd: toUSD(historizedRecurringContribution(r, mo, asOf, CYCLE_START_DAY), r.currency) }))
+      .map((r) => ({ r, usd: toUSD(historizedRecurringContribution(r, mo, asOf, startDay), r.currency) }))
       .filter(({ usd }) => usd > 0)
       .filter(({ r }) => !q || r.name.toLowerCase().includes(q) || r.bucket.toLowerCase().includes(q));
   }
@@ -225,7 +236,7 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
     if (filter !== "all") {
       const asOf = filter === currentYm ? new Date() : new Date(`${filter}-01T00:00:00`);
       for (const r of recurring) {
-        const amt = toUSD(historizedRecurringContribution(r, filter, asOf, CYCLE_START_DAY), r.currency);
+        const amt = toUSD(historizedRecurringContribution(r, filter, asOf, startDay), r.currency);
         if (amt > 0) bump(r.category ?? "uncategorized", amt);
       }
     }
@@ -251,7 +262,7 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
       // miscounted them as extra savings. TRANSFER (2.4.55) excluded too --
       // not spend, and its amount can be negative (an incoming leg).
       if (t.bucket === "INCOME" || t.bucket === "TRANSFER") continue;
-      const k = periodKey(t.date, trendPeriod);
+      const k = periodKey(t.date, trendPeriod, startDay);
       const b = byPeriod[k] ?? (byPeriod[k] = { needs: 0, wants: 0, savings: 0 });
       const usd = toUSD(t.amount, t.currency);
       if (t.bucket === "NEEDS") b.needs += usd;
@@ -261,7 +272,7 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
     // Always include the current period even with zero logged transactions
     // so far, otherwise a period with only recurring bills and nothing
     // manually logged yet would silently vanish from the trend entirely.
-    const currentKey = periodKey(new Date().toISOString().slice(0, 10), trendPeriod);
+    const currentKey = periodKey(new Date().toISOString().slice(0, 10), trendPeriod, startDay);
     const periodKeys = Array.from(new Set([...Object.keys(byPeriod), currentKey])).sort().reverse().slice(0, trendCap).reverse();
     // allTx is sorted newest-first, so the last entry is the earliest
     // logged transaction. Recurring still accrues for every month it's
@@ -273,12 +284,12 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
     // Monthly for no reason a user logged.
     // MIXED before Phase 2a: compared with `ym < earliestTxYm` where ym is a
     // branded CycleKey. `<` does not enforce brands, so it type-checked.
-    const earliestTxYm = allTx.length > 0 ? cycleKeyForISO(allTx[allTx.length - 1].date, CYCLE_START_DAY) : null;
+    const earliestTxYm = allTx.length > 0 ? cycleKeyForISO(allTx[allTx.length - 1].date, startDay) : null;
     for (const k of periodKeys) {
       const b = byPeriod[k] ?? (byPeriod[k] = { needs: 0, wants: 0, savings: 0 });
       for (const ym of monthsInPeriod(k, trendPeriod)) {
         if (earliestTxYm && ym < earliestTxYm) continue;
-        const r = recurringForMonth(recurring, ym, currentYm, toUSD);
+        const r = recurringForMonth(recurring, ym, currentYm, toUSD, startDay);
         b.needs += r.needs; b.wants += r.wants; b.savings += r.savings;
       }
     }
@@ -286,7 +297,7 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
       const { needs, wants, savings } = byPeriod[k];
       const total = needs + wants + savings;
       return {
-        key: k, label: periodLabel(k, trendPeriod), total,
+        key: k, label: periodLabel(k, trendPeriod, startDay), total,
         needsPct: total > 0 ? Math.round((needs / total) * 100) : 0,
         wantsPct: total > 0 ? Math.round((wants / total) * 100) : 0,
         savingsPct: total > 0 ? Math.round((savings / total) * 100) : 0,
@@ -567,7 +578,7 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
                     <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: BC[t.bucket] }} />
                     <div className="flex-1 min-w-0">
                       {(() => {
-                        const divergence = cycleMonthDivergence(t, recurring, CYCLE_START_DAY);
+                        const divergence = cycleMonthDivergence(t, recurring, startDay);
                         // Display-only sibling lookup -- linkedPaymentId
                         // (Batch C) exists purely to group two currency legs
                         // of one real payment in the UI; this never feeds a

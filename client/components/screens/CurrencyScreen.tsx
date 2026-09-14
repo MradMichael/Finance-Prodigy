@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
-import { historizedRecurringContribution, toUSD as toUSDShared, moneyEquals, activeTransactions, LBP_RATE_STALE_DAYS, DEFAULT_LBP_RATE } from "../../lib/localData";
+import { historizedRecurringContribution, toUSD as toUSDShared, moneyEquals, activeTransactions, LBP_RATE_STALE_DAYS, DEFAULT_LBP_RATE, cycleStartDayOf } from "../../lib/localData";
 import { computeHoldingsByCurrency } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
 import Donut from "../charts/Donut";
-import {CYCLE_START_DAY, currentCycleKey } from "../../lib/period";
+import {currentCycleKey, isInCycle } from "../../lib/period";
 
 /**
  * Moved here from SetupScreen 2026-09-13, behaviour unchanged. The rate is
@@ -49,6 +49,7 @@ function RateStaleness({ updatedAt }: { updatedAt?: string }) {
 export default function CurrencyScreen({ financials, onChange }: { financials: LocalFinancials; onChange: (updated: LocalFinancials) => void }) {
   const T = useTheme();
   const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
+  const startDay = cycleStartDayOf(financials);
 
   // Draft state, committed on blur. Bounding per keystroke would rewrite the
   // display back mid-entry and make a rate impossible to type; bounds are
@@ -71,14 +72,14 @@ export default function CurrencyScreen({ financials, onChange }: { financials: L
   // ── Spend by currency: this month's transactions + active recurring,
   // native currency (not converted) so this actually measures which
   // currency money is changing hands in, not just USD-equivalent totals. ──
-  const currentYm = currentCycleKey(new Date(), CYCLE_START_DAY);
+  const currentYm = currentCycleKey(new Date(), startDay);
   // TRANSFER (2.4.55) excluded too -- not spend, and its amount can be
   // negative (an incoming leg), which would corrupt this currency total.
-  const monthTx = activeTransactions(financials.transactions).filter((t) => t.date.startsWith(currentYm) && t.bucket !== "INCOME" && t.bucket !== "TRANSFER");
+  const monthTx = activeTransactions(financials.transactions).filter((t) => isInCycle(t.date, currentYm, startDay) && t.bucket !== "INCOME" && t.bucket !== "TRANSFER");
   const spendUSD = monthTx.filter((t) => (t.currency ?? "USD") === "USD").reduce((s, t) => s + t.amount, 0)
-    + (financials.recurring ?? []).filter((r) => (r.currency ?? "USD") === "USD").reduce((s, r) => s + historizedRecurringContribution(r, currentYm, new Date(), CYCLE_START_DAY), 0);
+    + (financials.recurring ?? []).filter((r) => (r.currency ?? "USD") === "USD").reduce((s, r) => s + historizedRecurringContribution(r, currentYm, new Date(), startDay), 0);
   const spendLBP = monthTx.filter((t) => t.currency === "LBP").reduce((s, t) => s + t.amount, 0)
-    + (financials.recurring ?? []).filter((r) => r.currency === "LBP").reduce((s, r) => s + historizedRecurringContribution(r, currentYm, new Date(), CYCLE_START_DAY), 0);
+    + (financials.recurring ?? []).filter((r) => r.currency === "LBP").reduce((s, r) => s + historizedRecurringContribution(r, currentYm, new Date(), startDay), 0);
   const spendTotalUSD = toUSD(spendUSD, "USD") + toUSD(spendLBP, "LBP");
 
   // See computeHoldingsByCurrency's own doc comment for why debts are

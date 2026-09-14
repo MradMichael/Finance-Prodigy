@@ -537,6 +537,26 @@ export interface LocalFinancials {
   budgetRuleHistory?: CycleHistory<{ needs: number; wants: number; savings: number }>;
   /** ISO timestamp of the last time `lbpRate` was actually edited — powers the staleness indicator in SetupScreen (day-level precision; lbpRateHistory above only tracks month granularity). Absent on accounts predating this field, or if the rate has never been edited since. */
   lbpRateUpdatedAt?: string;
+  /**
+   * Day of the month the budget cycle starts on -- the user's payday. 1..31,
+   * clamped to a short month's last day (a 31st payday runs to the 30th in
+   * September), matching nextOccurrence's own convention.
+   *
+   * ABSENT MEANS 1, i.e. calendar months. Deploying this changes nothing for
+   * any existing account; behaviour changes only when a payday is actually
+   * set. That is why there is no migration and no release-wide notice --
+   * the flip is per-account and user-initiated.
+   */
+  cycleStartDay?: number;
+  /**
+   * ISO timestamp of the last cycleStartDay change. Powers the one-cycle
+   * Overview banner after a change.
+   *
+   * A stamp rather than a seen-flag on purpose: the banner should expire when
+   * the affected cycle ends, not when the user happens to dismiss it, and it
+   * should re-arm if the payday is changed again. A boolean does neither.
+   */
+  cycleStartDayChangedAt?: string;
   budgetRule?: BudgetRuleKey;
   budgetCustomNeeds?: number;
   budgetCustomWants?: number;
@@ -601,6 +621,16 @@ export const MONEY_MAX_USD = 100_000_000;
  * threshold" and can drift apart is the shape this project keeps logging.
  */
 export const LBP_RATE_STALE_DAYS = 14;
+
+/**
+ * The one place `cycleStartDay ?? 1` is spelled. Every period call reads the
+ * start day through this, so "absent means calendar months" is stated once
+ * rather than defaulted independently at 26 call sites -- which is the shape
+ * 2.4.85 and Phase 2a were both about.
+ */
+export function cycleStartDayOf(d: { cycleStartDay?: number }): number {
+  return d.cycleStartDay ?? CYCLE_START_DAY;
+}
 
 export function moneyMaxFor(currency: Currency | undefined, lbpRate: number): number {
   return currency === "LBP" ? MONEY_MAX_USD * rateOrDefault(lbpRate) : MONEY_MAX_USD;

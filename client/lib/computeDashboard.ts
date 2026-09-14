@@ -1,6 +1,6 @@
 import type { LocalFinancials, BudgetRuleKey, StoredDebt, StoredTransaction, StoredRecurring, TrackedBalance, Currency } from "./localData";
-import { historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, LBP_RATE_STALE_DAYS, valueForMonth, makeToUSDForMonth, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, DEFAULT_LBP_RATE, derivedEfBalance, derivedDebtBalance, activeTransactions, parseLocalDate, isRecurringActive } from "./localData";
-import {CYCLE_START_DAY, cycleKeyForDate, cycleKeyForISO, currentCycleKey, calendarKeyForDate, isInCycle, cycleProgress, type CycleKey, type CalendarKey, type CalendarHistory } from "./period";
+import { historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, LBP_RATE_STALE_DAYS, cycleStartDayOf, valueForMonth, makeToUSDForMonth, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, DEFAULT_LBP_RATE, derivedEfBalance, derivedDebtBalance, activeTransactions, parseLocalDate, isRecurringActive } from "./localData";
+import { cycleKeyForISO, currentCycleKey, calendarKeyForDate, isInCycle, cycleProgress, cycleBounds, cycleKeyMinus, periodNoun, cycleLabel, type CycleKey, type CalendarKey, type CalendarHistory } from "./period";
 import { simulateDebtPayoff, type DebtInput } from "./debtEngine";
 
 interface Projection {
@@ -10,7 +10,14 @@ interface Projection {
 
 export interface DashboardPayload {
   user: { name: string; currency: string; payoffStrategy: "SNOWBALL" | "AVALANCHE" };
+  /**
+   * The CURRENT CYCLE, not the calendar month. At startDay 1 they are the
+   * same; above it, `month` is the month the cycle STARTS in, which is why
+   * nothing should render it directly -- use periodLabel.
+   */
   period: { year: number; month: number };
+  /** The current cycle named as a range ("27 Sep - 26 Oct"), or a plain month name at startDay 1. */
+  periodLabel: string;
   /**
    * 2.4.81 -- the single instant every forward-looking figure in the app is
    * measured from. Computed once here and read by every consumer instead of
@@ -137,9 +144,13 @@ export function dateFmt(d: Date) {
  * produce.) The CURRENT month is unaffected -- it already evaluates as of
  * `now`, exactly like `month.totalSpend` at the top of this function.
  */
-function historizedRecurAsOf(r: StoredRecurring, monthStart: Date): Date {
-  if (isRecurringActive(r, monthStart)) return monthStart;
-  return new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0); // last day of monthStart's month
+function historizedRecurAsOf(r: StoredRecurring, cycleStart: Date, cycleEnd: Date): Date {
+  if (isRecurringActive(r, cycleStart)) return cycleStart;
+  // Last day of THIS CYCLE, not of cycleStart's calendar month. Under a
+  // 27th payday the cycle beginning 27 Aug ends 26 Sep, and "31 Aug" is
+  // neither its last day nor even inside it once the month is short.
+  // `cycleEnd` is exclusive (cycleBounds' own convention), so step back one.
+  return new Date(cycleEnd.getFullYear(), cycleEnd.getMonth(), cycleEnd.getDate() - 1);
 }
 
 /**
@@ -156,6 +167,7 @@ function expectedFromRelevantTx(
   tb: Pick<TrackedBalance, "startingBalance" | "startingDate" | "currency">,
   relevantTx: StoredTransaction[],
   toUSDForMonth: (amount: number, currency: string | undefined, ym: CycleKey) => number,
+  startDay: number,
 ): number {
   // INCOME transactions received on this same payment method put money IN,
   // so they subtract from "spent" (raising the expected balance) instead
@@ -168,8 +180,8 @@ function expectedFromRelevantTx(
   // shortcut a first draft of this used -- that version's polarity was the
   // opposite of efAmount's, undocumented drift a future reader would have
   // had no way to catch from the code alone.
-  const spentOf = relevantTx.reduce((s, t) => s + (t.bucket === "INCOME" || t.bucket === "TRANSFER" ? -1 : 1) * toUSDForMonth(t.amount, t.currency, cycleKeyForISO(t.date, CYCLE_START_DAY)), 0);
-  const startingUSD = toUSDForMonth(tb.startingBalance, tb.currency, cycleKeyForISO(tb.startingDate, CYCLE_START_DAY));
+  const spentOf = relevantTx.reduce((s, t) => s + (t.bucket === "INCOME" || t.bucket === "TRANSFER" ? -1 : 1) * toUSDForMonth(t.amount, t.currency, cycleKeyForISO(t.date, startDay)), 0);
+  const startingUSD = toUSDForMonth(tb.startingBalance, tb.currency, cycleKeyForISO(tb.startingDate, startDay));
   return Math.round((startingUSD - spentOf) * 100) / 100;
 }
 
@@ -195,7 +207,7 @@ export function trackedBalanceExpected(
     const tKey = `${t.paymentMethod ?? ""}|${t.paymentMethod === "card" ? (t.cardId ?? "") : ""}`;
     return tKey === key && t.date >= tb.startingDate;
   });
-  return expectedFromRelevantTx(tb, relevantTx, toUSDForMonth);
+  return expectedFromRelevantTx(tb, relevantTx, toUSDForMonth, cycleStartDayOf(data));
 }
 
 /**
@@ -220,14 +232,15 @@ export function trackedBalanceExpected(
 export function periodTotals(
   data: LocalFinancials, ym: CycleKey, recurAsOf: Date,
 ): { income: number; needs: number; wants: number; savings: number } {
+  const startDay = cycleStartDayOf(data);
   const toUSDForMonth = makeToUSDForMonth(data);
-  const tx = activeTransactions(data.transactions ?? []).filter((t) => isInCycle(t.date, ym, CYCLE_START_DAY));
+  const tx = activeTransactions(data.transactions ?? []).filter((t) => isInCycle(t.date, ym, startDay));
   const txSum = (bucket: string) => tx.filter((t) => t.bucket === bucket).reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, ym), 0);
   const salary = valueForMonth(data.incomeHistory, ym, data.income);
   const txIncome = tx.filter((t) => t.bucket === "INCOME").reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, ym), 0);
   const out = { income: salary + txIncome, needs: txSum("NEEDS"), wants: txSum("WANTS"), savings: txSum("SAVINGS") };
   for (const r of data.recurring ?? []) {
-    const usd = toUSDForMonth(historizedRecurringContribution(r, ym, recurAsOf, CYCLE_START_DAY), r.currency, ym);
+    const usd = toUSDForMonth(historizedRecurringContribution(r, ym, recurAsOf, startDay), r.currency, ym);
     if (r.bucket === "NEEDS") out.needs += usd;
     else if (r.bucket === "WANTS") out.wants += usd;
     else out.savings += usd;
@@ -309,7 +322,9 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   // The one anchor -- see DashboardPayload.anchor. Everything time-relative
   // in this file, and every consumer of the payload, measures from this.
   const now = new Date();
-  const year = now.getFullYear();
+  // The user's payday, or 1 when unset. Read once; every period call below
+  // takes it explicitly (Phase 2a made that a compile error to omit).
+  const startDay = cycleStartDayOf(data);
 
   // ── Budget rule targets ──────────────────────────────────────────
   const ruleKey: BudgetRuleKey = data.budgetRule ?? "50-30-20";
@@ -322,8 +337,14 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   const budgetTargetPct = ruleKey === "custom"
     ? floorCustomSplit(data.budgetCustomNeeds ?? 50, data.budgetCustomWants ?? 30)
     : { needs: baseRule.needs, wants: baseRule.wants, savings: baseRule.savings };
-  const month = now.getMonth() + 1;
-  const prefix = currentCycleKey(now, CYCLE_START_DAY);
+  // Cycle-derived, not calendar-derived: on 28 Sep under a 27th payday the
+  // active period began 27 Sep, and a header reading "September" beside
+  // figures describing 27 Sep - 26 Oct is the two-meanings-one-label problem
+  // 2.4.87 exists to prevent.
+  const currentCycle = currentCycleKey(now, startDay);
+  const [cycleYear, cycleMonth] = currentCycle.split("-").map(Number);
+  const month = cycleMonth;
+  const prefix = currentCycleKey(now, startDay);
 
   // Same historized-lookup pattern as incomeForMonth/toUSDForMonth, for the
   // budget-rule split — otherwise changing your budget rule today silently
@@ -353,21 +374,25 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   // incomeForMonth wants the un-boosted salary alone, so this is folded in
   // at the source instead of threading a second figure through every site.
   const incomeTxForMonth = (ym: CycleKey) => (data.transactions ?? [])
-    .filter((t) => t.date.startsWith(ym) && t.bucket === "INCOME")
+    // isInCycle, not date.startsWith(ym): `ym` is a CYCLE key, and
+    // String.prototype.startsWith takes a plain string, so the brand does
+    // not stop a cycle key being used as a calendar prefix. Identical at
+    // startDay 1; one period out at any other value.
+    .filter((t) => isInCycle(t.date, ym, startDay) && t.bucket === "INCOME")
     .reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, ym), 0);
   const incomeForMonth = (ym: CycleKey) => valueForMonth(data.incomeHistory, ym, data.income) + incomeTxForMonth(ym);
   const incomeForMonthSafe = (ym: CycleKey) => Math.max(incomeForMonth(ym), 1);
 
-  const monthTx = (data.transactions ?? []).filter((t) => isInCycle(t.date, prefix, CYCLE_START_DAY));
+  const monthTx = (data.transactions ?? []).filter((t) => isInCycle(t.date, prefix, startDay));
 
   // Recurring contributions this month -- historized (Phase 2.5): a
   // grandfathered pre-cutover item still uses the old live-estimate
   // accrual; a confirm-on-due item contributes 0 here, because a confirmed
   // cycle is already a real transaction, already counted by monthTx below.
   const activeRecurring = (data.recurring ?? []);
-  const recurNeeds   = activeRecurring.filter((r) => r.bucket === "NEEDS").reduce((s, r)   => s + toUSD(historizedRecurringContribution(r, prefix, now, CYCLE_START_DAY), r.currency), 0);
-  const recurWants   = activeRecurring.filter((r) => r.bucket === "WANTS").reduce((s, r)   => s + toUSD(historizedRecurringContribution(r, prefix, now, CYCLE_START_DAY), r.currency), 0);
-  const recurSavings = activeRecurring.filter((r) => r.bucket === "SAVINGS").reduce((s, r) => s + toUSD(historizedRecurringContribution(r, prefix, now, CYCLE_START_DAY), r.currency), 0);
+  const recurNeeds   = activeRecurring.filter((r) => r.bucket === "NEEDS").reduce((s, r)   => s + toUSD(historizedRecurringContribution(r, prefix, now, startDay), r.currency), 0);
+  const recurWants   = activeRecurring.filter((r) => r.bucket === "WANTS").reduce((s, r)   => s + toUSD(historizedRecurringContribution(r, prefix, now, startDay), r.currency), 0);
+  const recurSavings = activeRecurring.filter((r) => r.bucket === "SAVINGS").reduce((s, r) => s + toUSD(historizedRecurringContribution(r, prefix, now, startDay), r.currency), 0);
 
   const needsSpend  = monthTx.filter((t) => t.bucket === "NEEDS").reduce((s, t) => s + toUSD(t.amount, t.currency), 0)   + recurNeeds;
   const wantsSpend  = monthTx.filter((t) => t.bucket === "WANTS").reduce((s, t) => s + toUSD(t.amount, t.currency), 0)   + recurWants;
@@ -695,11 +720,19 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
 
   // ── Six-month trend ───────────────────────────────────────────────
   const sixMonthTrend = Array.from({ length: 6 }, (_, i) => {
-    const d = new Date(year, month - 1 - (5 - i), 1);
-    const ymKey = d.getFullYear() * 100 + (d.getMonth() + 1);
+    // Walked by CYCLE KEY, not by stepping a Date anchored on the 1st.
+    // `cycleKeyForDate(new Date(y, m, 1), 27)` returns the PREVIOUS cycle --
+    // the 1st is before the payday -- so the day-1 anchor shifted this whole
+    // chart back one period, and `year` being the calendar year while
+    // `month` is cycle-derived shifted it a further twelve at a December
+    // cycle. cycleKeyMinus needs no startDay: keys are bijective with
+    // calendar months at every start day (see period.ts's own note).
+    const mo = cycleKeyMinus(currentCycle, 5 - i);
+    const [moY, moM] = mo.split("-").map(Number);
+    const ymKey = moY * 100 + moM;
     const isCurrent = i === 5;
-    const mo = cycleKeyForDate(d, CYCLE_START_DAY);
-    const tx = data.transactions.filter((t) => isInCycle(t.date, mo, CYCLE_START_DAY));
+    const { start: cycStart, end: cycEnd } = cycleBounds(mo, startDay);
+    const tx = data.transactions.filter((t) => isInCycle(t.date, mo, startDay));
     // INCOME transactions aren't spend -- they're already folded into
     // moIncome below via incomeForMonth. Summing them here too would
     // inflate the spend line by exactly what should be inflating income.
@@ -718,8 +751,8 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     // matching the top-of-function totalSpend calc — using day-1 here too
     // would disagree with month.totalSpend for any item that starts/ends
     // partway through the current month.
-    const recurAsOf = (r: StoredRecurring) => isCurrent ? now : historizedRecurAsOf(r, d);
-    const recurSpend = activeRecurring.reduce((s, r) => s + toUSDForMonth(historizedRecurringContribution(r, mo, recurAsOf(r), CYCLE_START_DAY), r.currency, mo), 0);
+    const recurAsOf = (r: StoredRecurring) => isCurrent ? now : historizedRecurAsOf(r, cycStart, cycEnd);
+    const recurSpend = activeRecurring.reduce((s, r) => s + toUSDForMonth(historizedRecurringContribution(r, mo, recurAsOf(r), startDay), r.currency, mo), 0);
     const sp = txSpend + recurSpend;
     // Savings-only slice of the same spend, for a real per-month savings
     // rate (savingsContrib / income) — kept separate from `spend`
@@ -729,7 +762,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     // approximating it via leftover cash flow, which disagreed once spend
     // was fully allocated across all three buckets.
     const txSavings = tx.filter((t) => t.bucket === "SAVINGS").reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, mo), 0);
-    const recurSavings = activeRecurring.filter((r) => r.bucket === "SAVINGS").reduce((s, r) => s + toUSDForMonth(historizedRecurringContribution(r, mo, recurAsOf(r), CYCLE_START_DAY), r.currency, mo), 0);
+    const recurSavings = activeRecurring.filter((r) => r.bucket === "SAVINGS").reduce((s, r) => s + toUSDForMonth(historizedRecurringContribution(r, mo, recurAsOf(r), startDay), r.currency, mo), 0);
     const savingsContrib = txSavings + recurSavings;
     // Raw (unfloored) income for display, same reasoning as the current-
     // month income/incomeSafe split — a genuinely $0 past month should
@@ -737,12 +770,6 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     const moIncome = isCurrent ? income : incomeForMonth(mo);
     return { ymKey, income: isCurrent ? income : (sp > 0 ? moIncome : 0), spend: sp, savingsContrib };
   });
-
-  const monthKey = (d: Date): CycleKey => cycleKeyForDate(d, CYCLE_START_DAY);
-  const ordinal = (n: number) => {
-    const s = ["th", "st", "nd", "rd"], v = n % 100;
-    return n + (s[(v - 20) % 10] || s[v] || s[0]);
-  };
 
   // ── Budget rollover — unspent (or overspent) carries into this month ──
   // Uses the income/LBP-rate/budget-rule that were actually in effect each
@@ -757,9 +784,9 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   {
     const monthsBack = Math.min(11, month - 1); // back to January of this year, capped at 11
     for (let i = monthsBack; i >= 1; i--) {
-      const d = new Date(year, month - 1 - i, 1);
-      const ym = monthKey(d);
-      const tx = data.transactions.filter((t) => isInCycle(t.date, ym, CYCLE_START_DAY));
+      const ym = cycleKeyMinus(currentCycle, i);
+      const { start: cycStart, end: cycEnd } = cycleBounds(ym, startDay);
+      const tx = data.transactions.filter((t) => isInCycle(t.date, ym, startDay));
       const spend = { needs: 0, wants: 0, savings: 0 };
       for (const t of tx) {
         // INCOME transactions already boosted moIncome via incomeForMonth
@@ -783,7 +810,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
       // month's needsSpend/wantsSpend/savingsContrib above.
       let recurActive = false;
       for (const r of activeRecurring) {
-        const amt = toUSDForMonth(historizedRecurringContribution(r, ym, historizedRecurAsOf(r, d), CYCLE_START_DAY), r.currency, ym);
+        const amt = toUSDForMonth(historizedRecurringContribution(r, ym, historizedRecurAsOf(r, cycStart, cycEnd), startDay), r.currency, ym);
         if (amt <= 0) continue;
         recurActive = true;
         if (r.bucket === "NEEDS") spend.needs += amt;
@@ -808,7 +835,8 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   // Phase 1: cycleProgress at startDay 1 returns exactly these two values.
   // Phase 2 is where they stop being day-of-calendar-month -- routed through
   // the primitive now so that change is a constant, not a rewrite here.
-  const { daysInto: daysElapsed, daysInCycle: daysInMonth } = cycleProgress(now, CYCLE_START_DAY);
+  const { daysInto: daysElapsed, daysInCycle: daysInMonth } = cycleProgress(now, startDay);
+  const noun = periodNoun(startDay);
   const BUCKET_LABEL = { NEEDS: "Needs", WANTS: "Wants", SAVINGS: "Savings" } as const;
   const bucketSpend = { NEEDS: needsSpend, WANTS: wantsSpend, SAVINGS: savingsContrib };
   // Floored at 0 — a deficit rolling in from past months (or a 0%-allocated
@@ -868,16 +896,20 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
       let message: string;
       if (spend >= target) {
         status = "over";
-        message = `${BUCKET_LABEL[b]} budget is already used up, with ${Math.max(0, 100 - pctOfMonthElapsed)}% of the month left.`;
+        message = `${BUCKET_LABEL[b]} budget is already used up, with ${Math.max(0, 100 - pctOfMonthElapsed)}% of the ${noun} left.`;
       } else if (projectedPct >= 100 && reliableProjection) {
         status = "watch";
         const overBy = Math.round(projectedSpend - target);
-        message = `${pctOfBudgetUsed}% of ${BUCKET_LABEL[b]} budget spent and it's only the ${ordinal(daysElapsed)}. At this rate, you'll exceed it by ~$${overBy}.`;
+        // Was `it's only the ${ordinal(daysElapsed)}` -- an ordinal reads as a
+        // calendar date, and under a payday cycle day 10 is the 6th of the
+        // following month. The number was true of the cycle and false of the
+        // sentence it sat in.
+        message = `${pctOfBudgetUsed}% of ${BUCKET_LABEL[b]} budget spent and you're only ${daysElapsed} days in. At this rate, you'll exceed it by ~$${overBy}.`;
       } else if (projectedPct >= 100) {
         status = "watch";
-        message = `${pctOfBudgetUsed}% of ${BUCKET_LABEL[b]} budget spent already, this early in the month. Worth keeping an eye on.`;
+        message = `${pctOfBudgetUsed}% of ${BUCKET_LABEL[b]} budget spent already, this early in the ${noun}. Worth keeping an eye on.`;
       } else {
-        message = `${BUCKET_LABEL[b]} spending is on pace (${pctOfBudgetUsed}% used, ${pctOfMonthElapsed}% of the month elapsed).`;
+        message = `${BUCKET_LABEL[b]} spending is on pace (${pctOfBudgetUsed}% used, ${pctOfMonthElapsed}% of the ${noun} elapsed).`;
       }
       return { bucket: b, label: BUCKET_LABEL[b], pctOfMonthElapsed, pctOfBudgetUsed, projectedPct, status, message };
     });
@@ -890,9 +922,9 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   // to be $0 (e.g. between jobs, or not yet re-entered after a reset).
   if (targetSavingsPct > 0) {
     for (let i = 1; i <= 12; i++) {
-      const d = new Date(year, month - 1 - i, 1);
-      const ym = monthKey(d);
-      const tx = data.transactions.filter((t) => isInCycle(t.date, ym, CYCLE_START_DAY));
+      const ym = cycleKeyMinus(currentCycle, i);
+      const { start: cycStart, end: cycEnd } = cycleBounds(ym, startDay);
+      const tx = data.transactions.filter((t) => isInCycle(t.date, ym, startDay));
       let monthSavings = tx.filter((t) => t.bucket === "SAVINGS").reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, ym), 0);
       // Recurring bills don't create a transaction row, so a past month's
       // real savings contribution was understated (sometimes all the way to
@@ -902,7 +934,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
       let recurActive = false;
       for (const r of activeRecurring) {
         if (r.bucket !== "SAVINGS") continue;
-        const amt = toUSDForMonth(historizedRecurringContribution(r, ym, historizedRecurAsOf(r, d), CYCLE_START_DAY), r.currency, ym);
+        const amt = toUSDForMonth(historizedRecurringContribution(r, ym, historizedRecurAsOf(r, cycStart, cycEnd), startDay), r.currency, ym);
         if (amt <= 0) continue;
         recurActive = true;
         monthSavings += amt;
@@ -983,9 +1015,9 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   const balanceChecks: DashboardPayload["balanceChecks"] = data.trackedBalances.map((tb) => {
     const key = `${tb.paymentMethod}|${tb.paymentMethod === "card" ? (tb.cardId ?? "") : ""}`;
     const relevantTx = (txByPaymentKey.get(key) ?? []).filter((t) => t.date >= tb.startingDate);
-    const expected = expectedFromRelevantTx(tb, relevantTx, toUSDForMonth);
+    const expected = expectedFromRelevantTx(tb, relevantTx, toUSDForMonth, startDay);
     const actual = tb.actualBalance != null
-      ? toUSDForMonth(tb.actualBalance, tb.currency, cycleKeyForISO(tb.actualBalanceDate ?? tb.startingDate, CYCLE_START_DAY))
+      ? toUSDForMonth(tb.actualBalance, tb.currency, cycleKeyForISO(tb.actualBalanceDate ?? tb.startingDate, startDay))
       : null;
     // A transaction logged AFTER the last actual check-in moves `expected`
     // forward without touching `actual` (a fixed snapshot from whenever the
@@ -1086,7 +1118,8 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
 
   return {
     user: { name: data.userName || "You", currency: "USD", payoffStrategy: "AVALANCHE" },
-    period: { year, month },
+    period: { year: cycleYear, month },
+    periodLabel: cycleLabel(currentCycle, startDay),
     hasLoggedTransactions: (data.transactions ?? []).length > 0,
     health: {
       score: totalScore, grade,

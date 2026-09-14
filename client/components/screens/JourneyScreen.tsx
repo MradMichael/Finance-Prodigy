@@ -2,15 +2,16 @@
 
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import type { LocalFinancials } from "../../lib/localData";
-import { DEFAULT_LBP_RATE, activeTransactions, toUSD as toUSDShared } from "../../lib/localData";
+import { DEFAULT_LBP_RATE, activeTransactions, toUSD as toUSDShared, cycleStartDayOf } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { projectCompletion } from "../../lib/projections";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money, type Screen } from "./shared";
 import Donut from "../charts/Donut";
-import { cycleKeyForISO, CYCLE_START_DAY } from "../../lib/period";
+import { cycleKeyForISO, cycleLabel, periodNoun, asCycleKey, asCalendarKey, type CalendarKey } from "../../lib/period";
 
-const ymStrLabel = (ym: string) => {
+/** A CALENDAR month -- see FinancialDashboard's copy of this. */
+const ymStrLabel = (ym: CalendarKey) => {
   const [y, m] = ym.split("-").map(Number);
   return `${["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][m]} '${String(y).slice(2)}`;
 };
@@ -37,6 +38,7 @@ export default function JourneyScreen({
   const nwColor = dashData.netWorth.tierColor === "jade" ? T.jade : dashData.netWorth.tierColor === "brass" ? T.brass : dashData.netWorth.tierColor === "coral" ? T.coral : T.mute;
 
   // ── Net worth arc ────────────────────────────────────────────────
+  const startDay = cycleStartDayOf(financials);
   const nwHistory = financials.netWorthHistory ?? [];
   const hasNwArc = nwHistory.length >= 2;
   const nwFirst = hasNwArc ? nwHistory[0].value : null;
@@ -78,7 +80,7 @@ export default function JourneyScreen({
     // the same reason -- it isn't a savings contribution just because it
     // isn't NEEDS/WANTS, and its amount can be negative (an incoming leg).
     if (t.bucket === "INCOME" || t.bucket === "TRANSFER") continue;
-    const k = cycleKeyForISO(t.date, CYCLE_START_DAY);
+    const k = cycleKeyForISO(t.date, startDay);
     const b = byMonth[k] ?? (byMonth[k] = { needs: 0, wants: 0, savings: 0 });
     const usd = toUSD(t.amount, t.currency);
     if (t.bucket === "NEEDS") b.needs += usd; else if (t.bucket === "WANTS") b.wants += usd; else b.savings += usd;
@@ -93,7 +95,9 @@ export default function JourneyScreen({
   const catLatest = hasCategoryArc ? pctOf(byMonth[txMonths[txMonths.length - 1]]) : null;
   const latestMonthKey = txMonths.length > 0 ? txMonths[txMonths.length - 1] : null;
   const latestMonthTotals = latestMonthKey ? byMonth[latestMonthKey] : null;
-  const latestMonthLabel = latestMonthKey ? ymStrLabel(latestMonthKey) : null;
+  // latestMonthKey is a CYCLE key (built from cycleKeyForISO above), so it
+  // gets the cycle label, not the calendar one.
+  const latestMonthLabel = latestMonthKey ? cycleLabel(asCycleKey(latestMonthKey), startDay) : null;
 
   // ── Milestones ───────────────────────────────────────────────────
   const totalTx = activeTx.length;
@@ -142,6 +146,11 @@ export default function JourneyScreen({
               <p className="text-sm mt-2" style={{ color: T.mute }}>
                 That&apos;s {nwChange >= 0 ? "up" : "down"} <span style={{ color: nwChange >= 0 ? T.jade : T.coral, ...NUMS }}>{money(Math.abs(nwChange))}</span> since your first tracked month, {nwChange >= 0 ? "real progress worth noticing." : "and now you know exactly where to focus."}
               </p>
+              {dashData.netWorthTrend.length >= 2 && startDay > 1 && (
+                <p className="text-[10px] mt-4" style={{ color: T.mute }}>
+                  Calendar month-ends &mdash; net worth is a snapshot of a moment, so it is dated by the calendar, not by your {periodNoun(startDay)}.
+                </p>
+              )}
               {dashData.netWorthTrend.length >= 2 && (
                 <div className="h-36 mt-4 -ml-2">
                   <ResponsiveContainer>
@@ -151,7 +160,7 @@ export default function JourneyScreen({
                       <YAxis tick={{ fill: T.mute, fontSize: 11 }} axisLine={false} tickLine={false} width={54} />
                       <Tooltip
                         contentStyle={{ background: T.panelSoft, border: `1px solid ${T.line}`, borderRadius: 12, color: T.text }}
-                        labelFormatter={(v) => ymStrLabel(String(v))}
+                        labelFormatter={(v) => ymStrLabel(asCalendarKey(String(v)))}
                         formatter={(v: number) => [money(v), "Net worth"]}
                       />
                       <Line type="monotone" dataKey="value" stroke={nwColor} strokeWidth={2} dot={{ r: 3, fill: nwColor }} />

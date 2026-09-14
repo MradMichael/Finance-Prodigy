@@ -179,3 +179,50 @@ export function cycleProgress(now: Date, startDay: number): { daysInto: number; 
   const daysInto = Math.round((midnight(now) - midnight(start)) / DAY) + 1;
   return { daysInto: Math.max(1, daysInto), daysInCycle };
 }
+
+const MON = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * How a cycle is NAMED to the user: an explicit date range, "27 Sep – 26 Oct".
+ *
+ * Owner's decision (form (b), 2026-09-14) over the two alternatives, both
+ * rejected for stated reasons. Naming a cycle by the month it starts in --
+ * "Sep 2026" for 27 Sep to 26 Oct -- is faithful to the key and reads wrong,
+ * since most of that period is October. Naming it by the month that holds
+ * most of its days reads naturally but breaks the key/label correspondence,
+ * so a picker's value and its text would disagree: two meanings, one label,
+ * which is exactly what 2.4.87 exists to prevent.
+ *
+ * At startDay 1 this collapses to the plain month name, so nothing changes
+ * for an account that has not set a payday.
+ */
+export function cycleLabel(key: CycleKey, startDay: number): string {
+  const [y, m] = key.split("-").map(Number);
+  if (startDay <= 1) return `${MON[m]} ${y}`;
+  const { start, end } = cycleBounds(key, startDay);
+  const last = new Date(end.getFullYear(), end.getMonth(), end.getDate() - 1);
+  return `${start.getDate()} ${MON[start.getMonth() + 1]} – ${last.getDate()} ${MON[last.getMonth() + 1]}`;
+}
+
+/** The same range, with years -- for a report header where space allows. */
+export function cycleLabelLong(key: CycleKey, startDay: number): string {
+  const [y, m] = key.split("-").map(Number);
+  if (startDay <= 1) return `${MON[m]} ${y}`;
+  const { start, end } = cycleBounds(key, startDay);
+  const last = new Date(end.getFullYear(), end.getMonth(), end.getDate() - 1);
+  const sameYear = start.getFullYear() === last.getFullYear();
+  const l = `${start.getDate()} ${MON[start.getMonth() + 1]}${sameYear ? "" : " " + start.getFullYear()}`;
+  return `${l} – ${last.getDate()} ${MON[last.getMonth() + 1]} ${last.getFullYear()}`;
+}
+
+/**
+ * What to call a period in user-facing copy.
+ *
+ * "cycle" is accurate but is jargon to someone who has never set a payday --
+ * and for them the period IS the calendar month, so "month" is both natural
+ * and true. Varying the noun keeps the default account's copy unchanged,
+ * which is the same principle as cycleLabel collapsing to a month name.
+ */
+export function periodNoun(startDay: number): string {
+  return startDay <= 1 ? "month" : "cycle";
+}

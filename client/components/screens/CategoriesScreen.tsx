@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import type { LocalFinancials, CategoryRule } from "../../lib/localData";
-import { CATEGORIES, allCategories, categoryLabel, categoryIcon, matchCategoryRule, historizedRecurringContribution, toUSD as toUSDShared, uid, moneyEquals, activeTransactions, DEFAULT_LBP_RATE } from "../../lib/localData";
+import { CATEGORIES, allCategories, categoryLabel, categoryIcon, matchCategoryRule, historizedRecurringContribution, toUSD as toUSDShared, uid, moneyEquals, activeTransactions, DEFAULT_LBP_RATE, cycleStartDayOf } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money } from "./shared";
 import { Label, FocusInput, PrimaryBtn } from "../form/Primitives";
 import Donut from "../charts/Donut";
-import {CYCLE_START_DAY, currentCycleKey } from "../../lib/period";
+import {currentCycleKey, isInCycle } from "../../lib/period";
 
 function slugify(name: string): string {
   return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "category";
@@ -21,6 +21,7 @@ export default function CategoriesScreen({
   onChange: (f: LocalFinancials) => void;
 }) {
   const T = useTheme();
+  const startDay = cycleStartDayOf(financials);
   const [newIcon, setNewIcon] = useState("🏷️");
   const [newName, setNewName] = useState("");
   const [scope, setScope] = useState<"month" | "all">("all");
@@ -116,11 +117,11 @@ export default function CategoriesScreen({
   // donut uses: INCOME excluded, recurring blended in only for "this month"
   // (summing a recurring item across all of history is a different, fuzzier
   // question than "what did this month cost").
-  const currentYm = currentCycleKey(new Date(), CYCLE_START_DAY);
+  const currentYm = currentCycleKey(new Date(), startDay);
   // Phase 2.6.3b: excludes soft-deleted transactions from the category
   // breakdown, same as every other total.
   const activeTx = activeTransactions(financials.transactions);
-  const txInScope = scope === "month" ? activeTx.filter((t) => t.date.startsWith(currentYm)) : activeTx;
+  const txInScope = scope === "month" ? activeTx.filter((t) => isInCycle(t.date, currentYm, startDay)) : activeTx;
   const totals = new Map<string, number>();
   const bump = (key: string, amt: number) => totals.set(key, (totals.get(key) ?? 0) + amt);
   for (const t of txInScope) {
@@ -129,7 +130,7 @@ export default function CategoriesScreen({
   }
   if (scope === "month") {
     for (const r of financials.recurring ?? []) {
-      const amt = toUSD(historizedRecurringContribution(r, currentYm, new Date(), CYCLE_START_DAY), r.currency);
+      const amt = toUSD(historizedRecurringContribution(r, currentYm, new Date(), startDay), r.currency);
       if (amt > 0) bump(r.category ?? "uncategorized", amt);
     }
   }
