@@ -17,7 +17,9 @@
 //   2  totalAmount + endDate, endDate binds  -- the limit must NOT bind
 //   3  endDate only                          -- a different branch entirely
 //   4  cap already met                       -- returns null before any walk
-//   5  totalAmount + endDate, byAmount binds -- both bounds live, limit wins
+//   5  totalAmount + endDate, cap exhausts first -- the cap is the answer (2.4.110)
+//   6  both bounds on the same cycle           -- they agree; min() must not be off by one
+//   7  cap met AND endDate set                 -- null; the obligation is already over
 import { describe, it, expect } from "vitest";
 import {
   remainingInstallments, capacityFreedFrom, recurringPaidSoFar,
@@ -94,19 +96,54 @@ describe("case 4 — the cap is already met", () => {
   });
 });
 
-describe("case 5 — totalAmount + a distant endDate, byAmount binds", () => {
-  it("count is byAmount, and endsOn is the ninth cycle, not the endDate", () => {
+describe("case 5 — totalAmount + a distant endDate: the CAP binds, not the endDate", () => {
+  it("capacity is freed when the money runs out, not when the outer boundary arrives", () => {
     const r = rec({ endDate: "2030-01-01" });
     const remaining = remainingInstallments(r, [], NOW);
     expect(remaining!.count).toBe(9);
     expect(iso(remaining!.endsOn)).toBe("2027-04-01");
-    // NOTE, recorded not fixed: capacityFreedFrom returns the endDate
-    // whenever one is set (localData.ts:1533), BEFORE consulting the cap.
-    // So it reports 2030 here even though the item is really exhausted in
-    // Apr 2027 -- the two functions disagree about when this item ends.
-    // Pinned as current behaviour so the bound-the-walk change cannot move
-    // it silently; flagged in the branch report as a separate question.
-    expect(iso(capacityFreedFrom(r, [], NOW))).toBe("2030-01-01");
+    // 2.4.110. This previously returned 2030-01-01 -- capacityFreedFrom
+    // took an early return on endDate before ever consulting the cap, so it
+    // disagreed with remainingInstallments about the same item by nearly
+    // three years. totalAmount is a statement about MONEY: nine payments of
+    // $750 exhaust $6,750 and the obligation genuinely ends in April 2027.
+    // endDate is an outer boundary ("no later than"), not a schedule.
+    //
+    // This expectation was UPDATED in place rather than joined by a second
+    // case, so the matrix asserts one answer for this input, not both.
+    expect(iso(capacityFreedFrom(r, [], NOW))).toBe("2027-05-01");
+  });
+});
+
+describe("case 6 — both bounds land on the same cycle", () => {
+  it("agree, and the answer is that shared date", () => {
+    // endDate set exactly to the date the cap frees capacity. The two
+    // bounds coincide, so min() must not be off by a cycle in either
+    // direction -- the failure mode a <= vs < would produce.
+    const r = rec({ endDate: "2027-05-01" });
+    const remaining = remainingInstallments(r, [], NOW);
+    // Premise: the cap still resolves to nine installments here, i.e. the
+    // endDate has not truncated the walk, so both bounds really are live.
+    expect(remaining!.count).toBe(9);
+    expect(iso(remaining!.endsOn)).toBe("2027-04-01");
+    expect(iso(capacityFreedFrom(r, [], NOW))).toBe("2027-05-01");
+  });
+});
+
+describe("case 7 — the cap is met AND an endDate is set", () => {
+  it("returns null: the obligation is already over, so there is no future step", () => {
+    const r = rec({ endDate: "2030-01-01" });
+    // Premise: the cap really is met, so null below means "nothing remains"
+    // rather than "the fixture was empty".
+    expect(recurringPaidSoFar(r, PAID_IN_FULL)).toBe(6750);
+    expect(remainingInstallments(r, PAID_IN_FULL, NOW)).toBeNull();
+    // Also 2.4.110, and the same root cause: the old early return handed
+    // back 2030-01-01 for an item that finished paying already, promising a
+    // future capacity step for money the user has in hand. ProjectionsScreen
+    // drops a null, which is the correct treatment (its own comment at :99
+    // says an already-ended obligation "would read as a promise of money the
+    // user already has").
+    expect(capacityFreedFrom(r, PAID_IN_FULL, NOW)).toBeNull();
   });
 });
 
