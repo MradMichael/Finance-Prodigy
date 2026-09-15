@@ -21,13 +21,13 @@ export default function RecurringScreen({ financials, onEdit }: { financials: Lo
   // math elsewhere uses. Otherwise this number (and every row's price below)
   // dips to $0 the moment a bill gets logged as paid, making an active
   // subscription look cancelled until next cycle.
-  const totalMonthly = financials.recurring.reduce((s, r) => s + toUSD(nominalMonthlyEquivalent(r, now), r.currency), 0);
+  const totalMonthly = financials.recurring.reduce((s, r) => s + toUSD(nominalMonthlyEquivalent(r, financials.transactions, now), r.currency), 0);
 
   const buckets = (["NEEDS","WANTS","SAVINGS"] as const).map((b) => ({
     bucket: b,
     items: financials.recurring.filter((r) => r.bucket === b),
     total: financials.recurring.filter((r) => r.bucket === b)
-      .reduce((s, r) => s + toUSD(nominalMonthlyEquivalent(r, now), r.currency), 0),
+      .reduce((s, r) => s + toUSD(nominalMonthlyEquivalent(r, financials.transactions, now), r.currency), 0),
   }));
 
   return (
@@ -59,7 +59,7 @@ export default function RecurringScreen({ financials, onEdit }: { financials: Lo
                 </div>
                 <div className="rounded-2xl overflow-hidden" style={{ border: `1px solid ${T.line}` }}>
                   {items.map((r, i) => {
-                    const monthly = toUSD(nominalMonthlyEquivalent(r, now), r.currency);
+                    const monthly = toUSD(nominalMonthlyEquivalent(r, financials.transactions, now), r.currency);
                     const target = nextConfirmTarget(r, financials.transactions, todayMidnight);
                     const overdue = (target?.overdueCount ?? 0) > 0;
                     const paidThisCycle = target ? isCycleConfirmed(r, target.dueDate, financials.transactions) : false;

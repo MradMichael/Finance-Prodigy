@@ -1207,16 +1207,53 @@ export function isPaidThisCycle(r: StoredRecurring, asOf: Date = new Date()): bo
   return asOfYm === r.lastPaidCycle;
 }
 
-/** Monthly cost of a recurring item as of a given date, 0 if not currently active (isRecurringActive) OR if this cycle's accrual is already covered by a logged transaction (isPaidThisCycle) -- used for actual spend/budget math, where double-counting a paid cycle would be wrong. Displays that want a stable "what this costs" figure regardless of this cycle's payment status should use nominalMonthlyEquivalent instead. */
+/**
+ * Monthly cost as of a given date, 0 if not active (isRecurringActive) or if
+ * this cycle's accrual is already covered by a logged transaction
+ * (isPaidThisCycle) -- for actual spend/budget math, where double-counting a
+ * paid cycle would be wrong. Displays wanting a stable "what this costs"
+ * figure should use nominalMonthlyEquivalent.
+ *
+ * DELIBERATELY NOT MADE PAYMENT-AWARE alongside nominalMonthlyEquivalent
+ * (2.4.112). Its only caller is historizedRecurringContribution, and only on
+ * the GRANDFATHERED pre-cutover branch -- a historical accrual for a month
+ * that closed before confirm-on-due applied. "Is this item exhausted today"
+ * is the wrong question there; the right one would be "as of that month",
+ * which needs a point-in-time ledger this does not have. Threading
+ * `transactions` here would reach 19 call sites across 6 files to change a
+ * figure that should not change.
+ */
 export function monthlyEquivalent(r: StoredRecurring, asOf: Date = new Date()): number {
   if (!isRecurringActive(r, asOf)) return 0;
   if (isPaidThisCycle(r, asOf)) return 0;
   return r.amount * FREQ_MONTHLY[r.frequency];
 }
 
-/** Same as monthlyEquivalent but ignores this-cycle payment suppression -- a recurring item's stable "what this costs" figure for display (RecurringScreen's totals, InputPanel's list, printReport's PDF), independent of whether this specific cycle has already been logged as a real transaction. Never use this for spend/budget totals -- see monthlyEquivalent. */
-export function nominalMonthlyEquivalent(r: StoredRecurring, asOf: Date = new Date()): number {
-  return isRecurringActive(r, asOf) ? r.amount * FREQ_MONTHLY[r.frequency] : 0;
+/**
+ * A recurring item's stable "what this costs" figure for display
+ * (RecurringScreen's totals, InputPanel's list, printReport's PDF) --
+ * ignores this-cycle payment suppression, unlike monthlyEquivalent. Never
+ * use this for spend/budget totals.
+ *
+ * `transactions` is REQUIRED, not optional (2.4.112). A committed monthly
+ * load must be 0 for an item whose cap is spent, and exhaustion is a
+ * payment question -- isRecurringActive deliberately no longer guesses it
+ * from elapsed calendar time. Required rather than defaulted so the
+ * compiler enumerates every call site: an optional parameter here would let
+ * a forgetful caller silently inherit the pre-2.4.112 answer, which is the
+ * shape of 2.4.81 and 2.4.85.
+ *
+ * `recurringPaidSoFar`, not `remainingInstallments === null`: both answer
+ * "is it finished" identically, and the first is ~28x cheaper because it
+ * does not walk cycles (2.4.113). This runs 3N times per RecurringScreen
+ * render, so the difference is worth the less obvious-looking call.
+ */
+export function nominalMonthlyEquivalent(
+  r: StoredRecurring, transactions: StoredTransaction[], asOf: Date = new Date(),
+): number {
+  if (!isRecurringActive(r, asOf)) return 0;
+  if (r.totalAmount != null && r.totalAmount > 0 && recurringPaidSoFar(r, transactions) >= r.totalAmount) return 0;
+  return r.amount * FREQ_MONTHLY[r.frequency];
 }
 
 const DAY_FREQ_LENGTH: Partial<Record<RecurringFrequency, number>> = { weekly: 7, biweekly: 14 };

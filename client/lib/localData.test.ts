@@ -90,14 +90,14 @@ describe("nominalMonthlyEquivalent", () => {
     const r = makeRecurring({ amount: 50, startDate: "2026-01-01", lastPaidCycle: "2026-07" });
     const asOf = new Date(2026, 6, 15);
     expect(monthlyEquivalent(r, asOf)).toBe(0); // suppressed, for spend/budget math
-    expect(nominalMonthlyEquivalent(r, asOf)).toBe(50); // NOT suppressed, for display
+    expect(nominalMonthlyEquivalent(r, [], asOf)).toBe(50); // NOT suppressed, for display
   });
 
   it("is still 0 for a genuinely ended/not-yet-started item -- suppression is the only thing it ignores", () => {
     const r = makeRecurring({ startDate: "2026-06-01" });
-    expect(nominalMonthlyEquivalent(r, new Date(2026, 4, 15))).toBe(0); // before start
+    expect(nominalMonthlyEquivalent(r, [], new Date(2026, 4, 15))).toBe(0); // before start
     const ended = makeRecurring({ endDate: "2026-06-30" });
-    expect(nominalMonthlyEquivalent(ended, new Date(2026, 6, 1))).toBe(0); // after end
+    expect(nominalMonthlyEquivalent(ended, [], new Date(2026, 6, 1))).toBe(0); // after end
   });
 });
 

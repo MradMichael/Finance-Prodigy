@@ -37,7 +37,7 @@
 // constant 1194-cycle term is gone. Only the closed form (Fix 2) flattens
 // age dependence, and C at 1.07x is what "flat" looks like.
 import { describe, it, expect } from "vitest";
-import { capacityFreedFrom, nextOccurrence, type StoredRecurring } from "./localData";
+import { capacityFreedFrom, nextOccurrence, nominalMonthlyEquivalent, recurringPaidSoFar, type StoredRecurring, type StoredTransaction } from "./localData";
 
 const NOW = new Date(2026, 6, 15); // 15 Jul 2026, matching ProjectionsScreen.test.tsx
 
@@ -191,5 +191,66 @@ describe("premise: the shape under test is the one the owner actually has", () =
     // And the capped one really does resolve, i.e. the measured path is the
     // one that does the work.
     expect(capacityFreedFrom(capped, [], NOW)).toBeInstanceOf(Date);
+  });
+});
+
+describe("E. the 3N display path stays cheap now that it reads the ledger (2.4.112)", () => {
+  // nominalMonthlyEquivalent became payment-aware, so it is O(transactions)
+  // where it used to be O(1). RecurringScreen calls it 3N times per render
+  // -- two reduces over every item plus one per row -- so this is the path
+  // that had to be measured before the threading was approved.
+  //
+  // THRESHOLD REACHABILITY (2.4.111), and a correction to the calibration
+  // this file was first written with. The stated justification was that
+  // swapping recurringPaidSoFar for remainingInstallments -- the obvious-
+  // looking call, ~28x dearer -- would cross the budget. MEASURED, that is
+  // false at this ledger size: 0.596ms vs 0.693ms, a 16% difference. The
+  // 28x gap is real only at SMALL ledgers, where the cycle walk dominates;
+  // at 8,400 transactions remainingInstallments calls recurringPaidSoFar
+  // internally and then walks four cycles, so the scan swamps it (2.4.113).
+  // No sane threshold discriminates 16%, and claiming one would repeat
+  // exactly the unreachable-threshold mistake 2.4.111 records.
+  //
+  // What these two DO catch is the regression that matters: any change that
+  // reintroduces a per-call cycle walk. Undoing 2.4.109's bound would make
+  // one call ~368ms and nine of them ~3.3s -- past both assertions by three
+  // orders of magnitude.
+  const ITEMS = 3;      // the owner's real count
+  const CALLS = 3;      // RecurringScreen's 3N
+  const LEDGER = 8400;  // 100x the owner's real 84
+  const txs: StoredTransaction[] = Array.from({ length: LEDGER }, (_, i) => ({
+    id: `t${i}`, amount: 10, currency: "USD", bucket: "WANTS", description: "x",
+    date: "2026-05-01", recurringId: i % 21 === 0 ? "monthly-2026" : undefined,
+  } as unknown as StoredTransaction));
+  const items = Array.from({ length: ITEMS }, () => item("monthly", 2026));
+  const render = () => {
+    let total = 0;
+    for (let c = 0; c < CALLS; c++) for (const r of items) total += nominalMonthlyEquivalent(r, txs, NOW);
+    return total;
+  };
+
+  it("the wrapper costs no more than the ledger scan it performs -- no hidden walk per call", () => {
+    // The real assertion, and a ratio against a control measured in the
+    // same run: 3N wrapper calls must cost about 3N bare recurringPaidSoFar
+    // calls, because that scan is all the wrapper legitimately does.
+    // Measured 0.98x. A per-call cycle walk is what pushes this up.
+    expect(recurringPaidSoFar(items[0], txs)).toBeGreaterThan(0); // premise: the scan runs
+    const withWrapper = median(render, { batch: 20 });
+    const bareScans = median(() => {
+      let t = 0;
+      for (let c = 0; c < CALLS; c++) for (const r of items) t += recurringPaidSoFar(r, txs);
+      return t;
+    }, { batch: 20 });
+    expect(bareScans).toBeGreaterThan(0);
+    expect(withWrapper / bareScans).toBeLessThan(3);
+  });
+
+  it("and stays under 5ms in absolute terms at 100x the real ledger", () => {
+    // Backstop, per assertion D's reasoning: a change that slows the
+    // wrapper and its control equally satisfies the ratio above while
+    // still being far too slow. Measured 0.596ms, so ~8x inside -- stated
+    // plainly rather than dressed up as tighter than it is.
+    expect(render()).toBeGreaterThan(0);
+    expect(median(render, { batch: 20 })).toBeLessThan(5);
   });
 });
