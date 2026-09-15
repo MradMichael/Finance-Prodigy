@@ -1571,20 +1571,36 @@ export function remainingInstallments(
 export function capacityFreedFrom(
   r: StoredRecurring, transactions: StoredTransaction[], asOf: Date = new Date(),
 ): Date | null {
-  if (r.endDate) return new Date(r.endDate);
-  if (!r.totalAmount) return null;
+  // 2.4.110: THE EARLIER OF THE TWO BOUNDS, not whichever is checked first.
+  //
+  // This used to `return new Date(r.endDate)` before looking at the cap at
+  // all, so an item with both bounds reported the endDate even when the
+  // money ran out years earlier -- disagreeing with remainingInstallments
+  // about the same item. `totalAmount` is a statement about MONEY: once the
+  // cap is spent the obligation is genuinely over. `endDate` is an outer
+  // boundary, "no later than", not a schedule; an item that has paid out
+  // its cap does not resume because its endDate has not arrived yet.
+  const endBound = r.endDate ? new Date(r.endDate) : null;
+  if (!r.totalAmount) return endBound; // endDate only, or neither
 
   const remaining = remainingInstallments(r, transactions, asOf);
+  // Cap already met: the obligation is over NOW, so there is no future step
+  // to report -- including when an endDate is still outstanding, which
+  // previously returned that endDate and promised capacity the user already
+  // has (ProjectionsScreen's own note at :99).
   if (!remaining) return null;
 
   // Uncapped for the same reason remainingInstallments strips it: the walk
   // needs to reach the cycle PAST the cap, which the cap itself refuses to
-  // generate. No endDate is in play here -- the branch above returned.
+  // generate.
   const uncapped: StoredRecurring = { ...r, totalAmount: null };
   const horizon = new Date(remaining.endsOn.getTime());
   horizon.setUTCFullYear(horizon.getUTCFullYear() + 1);
-  const following = dueCycles(uncapped, remaining.endsOn, horizon, 2);
-  return following[1] ?? null;
+  const capBound = dueCycles(uncapped, remaining.endsOn, horizon, 2)[1] ?? null;
+
+  if (!capBound) return endBound;
+  if (!endBound) return capBound;
+  return capBound <= endBound ? capBound : endBound;
 }
 
 /**
