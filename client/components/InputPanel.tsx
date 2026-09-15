@@ -1372,13 +1372,13 @@ export default function InputPanel({ financials, dashData, onChange, session, on
             // that's simply already been paid this cycle. Actual spend/budget
             // totals elsewhere keep using monthlyEquivalent, which correctly
             // suppresses a paid cycle to avoid double-counting real spend.
-            const totalMonthly = recs.reduce((s, r) => s + nominalMonthlyEquivalent(r, now), 0);
+            const totalMonthly = recs.reduce((s, r) => s + nominalMonthlyEquivalent(r, financials.transactions, now), 0);
             return (
               <>
                 {recs.length > 0 && (
                   <div className="space-y-2 mb-1">
                     {recs.map((r) => {
-                      const mo     = nominalMonthlyEquivalent(r, now);
+                      const mo     = nominalMonthlyEquivalent(r, financials.transactions, now);
                       const b      = BUCKETS.find((b) => b.value === r.bucket)!;
                       const cur    = r.currency ?? "USD";
                       const sym    = cur === "LBP" ? "L£" : "$";

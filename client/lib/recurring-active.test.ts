@@ -47,7 +47,7 @@ describe("the 2027-05-02 case, on the owner's real item shape", () => {
   it("and it still reports a cost, instead of reading $0 while money is owed", () => {
     // WAS $0 -- the single most visible consequence, reaching RecurringScreen's
     // totals, InputPanel's list and printReport's PDF table.
-    expect(nominalMonthlyEquivalent(UNI, AFTER_FLIP)).toBe(750);
+    expect(nominalMonthlyEquivalent(UNI, [], AFTER_FLIP)).toBe(750);
     expect(monthlyEquivalent(UNI, AFTER_FLIP)).toBe(750);
   });
 
@@ -62,7 +62,7 @@ describe("the 2027-05-02 case, on the owner's real item shape", () => {
     expect(target!.overdueCount).toBeGreaterThan(0);
     // ...and so the rest of the app must not be calling it finished.
     expect(isRecurringActive(UNI, AFTER_FLIP)).toBe(true);
-    expect(nominalMonthlyEquivalent(UNI, AFTER_FLIP)).toBe(750);
+    expect(nominalMonthlyEquivalent(UNI, six, AFTER_FLIP)).toBe(750);
     expect(recurringPaidSoFar(UNI, six)).toBe(4500); // $2,250 still owed
   });
 
@@ -96,36 +96,37 @@ describe("exhaustion is still answered — by the function that actually knows",
   });
 });
 
-describe("KNOWN GAP the removal exposes — the cost figure for a fully paid item", () => {
-  // Found by the before/after measurement, not by the plan, which said only
-  // InputPanel's badge needed exhaustion. It was wrong about these two.
+describe("a fully paid item costs $0 — closed, and it was wrong in BOTH directions before", () => {
+  // This shipped as `it.fails` on the previous branch: dropping
+  // isRecurringActive's elapsed-time clause left nominalMonthlyEquivalent
+  // reporting $750 for an item owing nothing. Promoted here now that the
+  // wrapper asks recurringPaidSoFar directly.
   //
-  // monthlyEquivalent/nominalMonthlyEquivalent have NEVER handled a fully
-  // paid capped item correctly. The removed clause masked it in exactly one
-  // of the two sub-cases -- once calendar time had passed, the item read
-  // inactive and the figure fell to $0 by coincidence. Paid off EARLY it
-  // already reported $750 for an item owing nothing, before this branch
-  // touched anything (measured: 2027-01-15, 9 of 9 confirmed, $750 both
-  // before and after).
-  //
-  // So the removal does not introduce the bug; it stops hiding half of it.
-  // Fixing it needs `transactions` threaded into both wrappers, which is
-  // the signature change the plan explicitly weighed and rejected -- so it
-  // is reported and held for a decision, not smuggled in here.
-  it.fails("a fully paid capped item should cost $0, whenever it was paid (CURRENTLY $750)", () => {
+  // The measurement that produced it also showed the wrapper had NEVER
+  // handled a finished item correctly -- paid off early it already read
+  // $750 before any of this. The old clause masked exactly one of the two
+  // sub-cases, by the coincidence of calendar time having passed. Both are
+  // asserted below, which is why this is two tests and not one.
+  it("paid off AFTER the old flip date — the case the removal exposed", () => {
     const all = confirmed(9);
-    // Premise: genuinely finished, both before and after the old flip date.
+    // Premise: genuinely finished.
     expect(recurringPaidSoFar(UNI, all)).toBe(6750);
     expect(remainingInstallments(UNI, all, at("2027-05-10"))).toBeNull();
-    expect(nominalMonthlyEquivalent(UNI, at("2027-05-10"))).toBe(0);
+    expect(nominalMonthlyEquivalent(UNI, all, at("2027-05-10"))).toBe(0);
   });
 
-  it("documents the pre-existing half, so the regression is not mistaken for new", () => {
-    // Paid off early: $750 before this branch and $750 after. Unchanged --
-    // evidence that the wrappers were already wrong for a finished item.
+  it("paid off EARLY — the half that was always wrong and was never reported", () => {
     const all = confirmed(9);
+    // Measured $750 both before the clause was removed and after, i.e. the
+    // elapsed-time clause never helped here at all.
     expect(remainingInstallments(UNI, all, at("2027-01-15"))).toBeNull();
-    expect(nominalMonthlyEquivalent(UNI, at("2027-01-15"))).toBe(750);
+    expect(nominalMonthlyEquivalent(UNI, all, at("2027-01-15"))).toBe(0);
+  });
+
+  it("an item still owing money is NOT zeroed — the pair, so the above isn't 'always 0'", () => {
+    const six = confirmed(6);
+    expect(recurringPaidSoFar(UNI, six)).toBe(4500);
+    expect(nominalMonthlyEquivalent(UNI, six, at("2027-05-10"))).toBe(750);
   });
 });
 
@@ -134,18 +135,18 @@ describe("the neighbouring clauses are untouched", () => {
     const withEnd = { ...UNI, endDate: "2026-12-01" } as StoredRecurring;
     expect(isRecurringActive(withEnd, at("2026-11-01"))).toBe(true);
     expect(isRecurringActive(withEnd, at("2027-01-01"))).toBe(false);
-    expect(nominalMonthlyEquivalent(withEnd, at("2027-01-01"))).toBe(0);
+    expect(nominalMonthlyEquivalent(withEnd, [], at("2027-01-01"))).toBe(0);
   });
 
   it("startDate still gates an item that has not begun", () => {
     expect(isRecurringActive(UNI, at("2026-07-01"))).toBe(false);
-    expect(nominalMonthlyEquivalent(UNI, at("2026-07-01"))).toBe(0);
+    expect(nominalMonthlyEquivalent(UNI, [], at("2026-07-01"))).toBe(0);
   });
 
   it("an item with no totalAmount is unaffected in every direction — the control", () => {
     const uncapped = { ...UNI, totalAmount: null } as StoredRecurring;
     // Never touched the removed clause, so nothing here can have moved.
     expect(isRecurringActive(uncapped, at("2027-08-01"))).toBe(true);
-    expect(nominalMonthlyEquivalent(uncapped, at("2027-08-01"))).toBe(750);
+    expect(nominalMonthlyEquivalent(uncapped, [], at("2027-08-01"))).toBe(750);
   });
 });
