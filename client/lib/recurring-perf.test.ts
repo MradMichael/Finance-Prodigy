@@ -21,15 +21,21 @@
 // records that it does not, and begins failing the moment a fix lands,
 // forcing its own promotion to `it` -- which a skip would not.
 //
-// STATUS after Fix 1 (the byAmount bound, 2.4.109 cause 1):
-//   A  horizon waste   GREEN  368ms -> 0.061ms   promoted, and reframed (see below)
-//   D  absolute        GREEN  516ms -> 1.26ms    promoted
-//   B  monthly/weekly  RED    97.8x -> 214x      untouched by Fix 1, as predicted
-//   C  age growth      RED    3.25x -> 70.7x     WORSE, as predicted
+// STATUS -- all four now hold. The two fixes, and which assertion each one
+// moved, measured rather than argued:
 //
-// B and C are what make "both fixes are needed" a checked claim rather than
-// an assertion. Fix 2 (closed-form monthly nextOccurrence) is what they
-// wait for.
+//                      on main    after Fix 1   after Fix 2
+//   A  horizon waste     368ms      0.061ms       0.020ms    GREEN at Fix 1
+//   D  absolute          516ms      1.26ms        0.021ms    GREEN at Fix 1
+//   B  monthly/weekly     97.8x     214x          3.21x      GREEN at Fix 2
+//   C  age growth          3.25x     70.7x        1.07x      GREEN at Fix 2
+//
+// The middle column is the evidence that BOTH fixes were needed, and it was
+// a prediction recorded before either landed: bounding the walk (Fix 1)
+// removes cycles but makes no single nextOccurrence call cheaper, so B was
+// untouched and C got worse -- 9 cycles x O(age) is still O(age) once the
+// constant 1194-cycle term is gone. Only the closed form (Fix 2) flattens
+// age dependence, and C at 1.07x is what "flat" looks like.
 import { describe, it, expect } from "vitest";
 import { capacityFreedFrom, nextOccurrence, type StoredRecurring } from "./localData";
 
@@ -107,11 +113,12 @@ describe("B. monthly must not cost dramatically more than weekly (cause 2: the l
   // a known-good control for the identical query on the same machine in the
   // same run -- if monthly is far slower, the loop is the only difference.
   //
-  // On main: monthly 122.8us, weekly 1.26us -- 97.8x.
-  // AFTER FIX 1: 92.3us vs 0.43us -- 214x. Unchanged in substance, as
-  // predicted: bounding the walk removes cycles, it does not make any one
-  // nextOccurrence call cheaper. Only the closed form (Fix 2) touches this.
-  it.fails("monthly nextOccurrence is within 5x of weekly at the same item age (CURRENTLY ~98x)", () => {
+  // On main 97.8x (122.8us vs 1.26us); after Fix 1, 214x -- untouched, as
+  // predicted, because bounding the walk removes cycles without making any
+  // single call cheaper. After Fix 2: 1.71us vs 0.53us, 3.21x. The residual
+  // gap is the month-index arithmetic and the one or two clamp corrections,
+  // which is what a closed form costs over a subtraction.
+  it("monthly nextOccurrence is within 5x of weekly at the same item age (WAS ~98x)", () => {
     const monthly = item("monthly", 2006);
     const weekly  = item("weekly", 2006);
     const tMonthly = median(() => nextOccurrence(monthly, NOW), { batch: 500 });
@@ -136,9 +143,13 @@ describe("C. cost must not grow with an item's age (cause 2, from the other side
   // fast, because 9 cycles x O(age) is still O(age) once the constant
   // 1194-cycle term is gone. Measured after Fix 1: 0.058ms vs 4.124ms --
   // 70.7x, up from 3.25x. Absolutely ~200x faster on both sides; relatively
-  // far more age-dependent. This is the assertion that proves Fix 1 alone
-  // is not sufficient for the cause, rather than my asserting it.
-  it.fails("a 1950-start item costs no more than 2x a 2026-start one (CURRENTLY ~3.3x)", () => {
+  // far more age-dependent. This is the assertion that proved Fix 1 alone
+  // was not sufficient for the cause, rather than that being asserted.
+  //
+  // After Fix 2: 0.0220ms vs 0.0235ms -- 1.07x. A 76-year-old item now
+  // costs what a new one costs, which is the whole point of the closed
+  // form and the thing no absolute budget would have checked.
+  it("a 1950-start item costs no more than 2x a 2026-start one (WAS ~3.3x, and 70.7x after Fix 1 alone)", () => {
     const fresh = item("monthly", 2026);
     const aged  = item("monthly", 1950);
     const tFresh = median(() => capacityFreedFrom(fresh, [], NOW), { batch: 4, samples: 5 });

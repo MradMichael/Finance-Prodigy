@@ -1278,18 +1278,46 @@ export function nextOccurrence(r: StoredRecurring, asOf: Date = new Date()): Dat
   // occurrence and shifting the recurring day going forward.
   const monthLen = MONTH_FREQ_LENGTH[r.frequency] ?? 1;
   const targetDay = start.getUTCDate();
-  let next = new Date(start);
-  let cycleIndex = 0;
-  // Strictly-less-than: stop as soon as `next` is on/after asOfDay and
-  // return that value, instead of advancing past an exact match (the
-  // same boundary bug as the day-frequency branch above, just as a loop).
-  while (next < asOfDay) {
-    const candidate = new Date(Date.UTC(next.getUTCFullYear(), next.getUTCMonth() + monthLen, 1));
-    const daysInTargetMonth = new Date(Date.UTC(candidate.getUTCFullYear(), candidate.getUTCMonth() + 1, 0)).getUTCDate();
-    candidate.setUTCDate(Math.min(targetDay, daysInTargetMonth));
-    next = candidate;
-    cycleIndex++;
-  }
+  const startMonthIndex = start.getUTCFullYear() * 12 + start.getUTCMonth();
+
+  /**
+   * The k-th occurrence, closed form.
+   *
+   * This is exactly what the loop this replaced computed, and it is a pure
+   * function of k for a reason worth stating: clamping only ever changes
+   * the DAY, never the month, so the month index advances by exactly
+   * monthLen per cycle no matter how many short months are crossed. A
+   * 31st-of-the-month item clamped to Feb 28 still resumes on Mar 31,
+   * because targetDay is read from `start` each time rather than carried
+   * forward -- which is the behaviour the old loop had, and the reason
+   * `next.setMonth(+1)` cannot be used here (see the comment above).
+   */
+  const occurrenceAt = (k: number): Date => {
+    const mi = startMonthIndex + k * monthLen;
+    const y = Math.floor(mi / 12);
+    const m = mi % 12;
+    const daysInMonth = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+    return new Date(Date.UTC(y, m, Math.min(targetDay, daysInMonth)));
+  };
+
+  // 2.4.109 cause 2: this used to be a loop from `start`, so every call
+  // cost O(months since startDate) and dueCycles -- which calls this once
+  // per cycle -- was O(N^2). The day-frequency branch above has always been
+  // closed-form; this brings the monthly branch into line.
+  //
+  // Month arithmetic gets within one cycle of the answer; day-of-month
+  // clamping is what can put it on either side, so the two corrections
+  // below run at most once or twice each. Occurrences strictly increase
+  // (the month always advances), so both terminate.
+  const asOfMonthIndex = asOfDay.getUTCFullYear() * 12 + asOfDay.getUTCMonth();
+  let cycleIndex = Math.max(0, Math.ceil((asOfMonthIndex - startMonthIndex) / monthLen));
+  while (cycleIndex > 0 && occurrenceAt(cycleIndex - 1) >= asOfDay) cycleIndex--;
+  // Strictly-less-than, matching the old loop: stop as soon as the
+  // occurrence is on/after asOfDay and return that, rather than advancing
+  // past an exact match (the same boundary bug as the day-frequency branch).
+  while (occurrenceAt(cycleIndex) < asOfDay) cycleIndex++;
+
+  const next = occurrenceAt(cycleIndex);
   return withinRecurringBounds(r, next, cycleIndex) ? next : null;
 }
 
