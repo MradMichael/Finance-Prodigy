@@ -50,11 +50,19 @@ describe("monthlyEquivalent", () => {
     expect(monthlyEquivalent(r, new Date(2026, 5, 1))).toBe(120);
   });
 
-  it("is 0 once cumulative totalAmount has been exhausted", () => {
-    // $100/month, $300 cap -> exhausted after 3 months.
+  // REWRITTEN for 2.4.112, not adjusted. This previously asserted
+  // `monthlyEquivalent(r, 2027-01-01) === 0` -- "a year later, exhausted"
+  // -- for a $100/mo item with a $300 cap and NO confirmed transactions.
+  // That was the elapsed-time clause: nothing had been paid, yet the item
+  // read as finished because the calendar had moved on. It is the only test
+  // in the suite that asserted the removed behaviour.
+  it("still costs money a year later when nothing was ever confirmed -- calendar time does not pay a bill", () => {
     const r = makeRecurring({ amount: 100, totalAmount: 300, startDate: "2026-01-01" });
-    expect(monthlyEquivalent(r, new Date(2026, 1, 15))).toBe(100); // Feb, still active
-    expect(monthlyEquivalent(r, new Date(2027, 0, 1))).toBe(0); // a year later, exhausted
+    expect(monthlyEquivalent(r, new Date(2026, 1, 15))).toBe(100); // Feb, unchanged
+    // Premise: the cap genuinely has not been met, which is what makes the
+    // assertion below right rather than merely different.
+    expect(recurringPaidSoFar(r, [])).toBe(0);
+    expect(monthlyEquivalent(r, new Date(2027, 0, 1))).toBe(100);
   });
 
   it("is 0 for the cycle marked lastPaidCycle, distinct from being ended", () => {

@@ -1382,8 +1382,18 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                       const b      = BUCKETS.find((b) => b.value === r.bucket)!;
                       const cur    = r.currency ?? "USD";
                       const sym    = cur === "LBP" ? "L£" : "$";
-                      const ended  = !isRecurringActive(r, now);
                       const target = nextConfirmTarget(r, financials.transactions, todayMidnight);
+                      // 2.4.112: "ended" is now asked of BOTH bounds, because
+                      // isRecurringActive no longer guesses exhaustion from
+                      // elapsed time. A capped item is over when the money is
+                      // spent -- remainingInstallments returns null then --
+                      // and otherwise only when its endDate passes.
+                      //
+                      // This also closes a bug the old form had in the other
+                      // direction: an item paid off EARLY kept reading as live
+                      // until the calendar caught up.
+                      const ended  = !isRecurringActive(r, now)
+                        || (r.totalAmount != null && remainingInstallments(r, financials.transactions, now) === null);
                       const overdue = (target?.overdueCount ?? 0) > 0;
                       // Covers both "confirmed on time" and "confirmed early" (paid ahead of its due date) -- either way still shown as paid.
                       const paidThisCycle = target ? isCycleConfirmed(r, target.dueDate, financials.transactions) : false;
