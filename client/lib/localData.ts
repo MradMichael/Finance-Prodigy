@@ -1418,15 +1418,24 @@ export function buildRecurringPaymentLog(r: StoredRecurring, lbpRate: number, no
  * moment a computed candidate is out of bounds, which the `!next` check
  * below already handles.
  */
-export function dueCycles(r: StoredRecurring, from: Date, to: Date): Date[] {
+export function dueCycles(r: StoredRecurring, from: Date, to: Date, limit = Infinity): Date[] {
   const cycles: Date[] = [];
   let cursor = from;
+  // `limit` is how many cycles the CALLER will actually read. It is not a
+  // second correctness bound -- `to` is still the only thing deciding which
+  // cycles exist -- it just stops the walk once the answer is complete.
+  //
+  // 2.4.109: without it, remainingInstallments walked a 100-year horizon to
+  // build 1194 cycles and then used 9, which cost ~350ms synchronously on
+  // three screens. The 5000 safety cap below is unchanged and still the
+  // backstop; this is the ordinary bound.
+  const stopAt = Math.min(limit, 5000);
   // Generous safety cap, not a realistic limit (a weekly item over 90+
   // years) -- each iteration strictly advances cursor past the cycle it
   // just recorded, so nextOccurrence's own determinism already guarantees
   // termination; this is just insurance against a future change to that
   // guarantee silently reintroducing an infinite loop here.
-  for (let i = 0; i < 5000; i++) {
+  for (let i = 0; i < stopAt; i++) {
     const next = nextOccurrence(r, cursor);
     if (!next || next > to) break;
     cycles.push(next);
@@ -1480,7 +1489,11 @@ export function remainingInstallments(
   // a real remaining balance could realistically reach; this is a
   // placeholder ceiling for the walk, not a claim about the item itself.
   const to = r.endDate ? new Date(r.endDate) : new Date(Date.UTC(asOf.getUTCFullYear() + 100, 0, 1));
-  const cycles = dueCycles(uncapped, from, to);
+  // Bounded by byAmount: the next line reads at most that many, so any
+  // further cycle the walk produced would be built and discarded. When an
+  // endDate truncates first the limit simply never binds, which is what
+  // keeps this output-identical (see recurring-bounds.matrix.test.ts).
+  const cycles = dueCycles(uncapped, from, to, byAmount);
   if (cycles.length === 0) return null; // endDate already passed
   const count = Math.min(byAmount, cycles.length);
   return { count, endsOn: cycles[count - 1] };
@@ -1542,7 +1555,7 @@ export function capacityFreedFrom(
   const uncapped: StoredRecurring = { ...r, totalAmount: null };
   const horizon = new Date(remaining.endsOn.getTime());
   horizon.setUTCFullYear(horizon.getUTCFullYear() + 1);
-  const following = dueCycles(uncapped, remaining.endsOn, horizon);
+  const following = dueCycles(uncapped, remaining.endsOn, horizon, 2);
   return following[1] ?? null;
 }
 

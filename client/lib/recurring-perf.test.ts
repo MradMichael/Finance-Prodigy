@@ -17,10 +17,19 @@
 // actually violates. Each ratio has a known-good control measured in the
 // same run -- an endDate-bounded item for the horizon, weekly for the loop.
 //
-// These ship as `it.fails`: they state the property that SHOULD hold and
-// record that it does not, and they begin failing the moment a fix lands,
-// forcing their own promotion to `it` -- which a skip would not. Measured
-// values on main at the time of writing are in each test.
+// They shipped as `it.fails`: each states the property that SHOULD hold and
+// records that it does not, and begins failing the moment a fix lands,
+// forcing its own promotion to `it` -- which a skip would not.
+//
+// STATUS after Fix 1 (the byAmount bound, 2.4.109 cause 1):
+//   A  horizon waste   GREEN  368ms -> 0.061ms   promoted, and reframed (see below)
+//   D  absolute        GREEN  516ms -> 1.26ms    promoted
+//   B  monthly/weekly  RED    97.8x -> 214x      untouched by Fix 1, as predicted
+//   C  age growth      RED    3.25x -> 70.7x     WORSE, as predicted
+//
+// B and C are what make "both fixes are needed" a checked claim rather than
+// an assertion. Fix 2 (closed-form monthly nextOccurrence) is what they
+// wait for.
 import { describe, it, expect } from "vitest";
 import { capacityFreedFrom, nextOccurrence, type StoredRecurring } from "./localData";
 
@@ -64,8 +73,20 @@ describe("A. the walk must not build cycles it discards (cause 1: the 100-year h
   // statement of "this work is waste": not "it is slow", but "it is slower
   // than the same question asked a way that happens to bound the walk".
   //
-  // On main: unbounded 368ms, bounded 0.000ms, and both return 2027-05-01.
-  it.fails("an unbounded capped item costs no more than an endDate-bounded one giving the same answer (CURRENTLY ~700,000x)", () => {
+  // REFRAMED WHEN FIX 1 LANDED, rather than left to pass for the wrong
+  // reason. The original form asserted a <=5x RATIO against the
+  // endDate-bounded control. That control returns at localData.ts:1533
+  // without walking at all, so its cost is ~0.0003ms and a 5x ratio was
+  // never reachable -- post-fix the ratio is still 187x while the absolute
+  // cost is 0.06ms. The `+ 2ms` floor, added only to avoid dividing by
+  // timer noise, was doing all the work. An assertion whose stated form is
+  // unreachable is not an assertion, so the ratio is now a PREMISE (the two
+  // answers must match, which is what makes the extra work discardable) and
+  // the budget is absolute.
+  //
+  // Measured: 368ms before Fix 1, 0.061ms after -- a ~6000x improvement,
+  // against a 2ms budget with a ~30x margin.
+  it("an unbounded capped item resolves in under 2ms, doing work proportional to its 9 installments (WAS 368ms)", () => {
     const unbounded = item("monthly", 2026);
     const bounded   = item("monthly", 2026, { endDate: "2027-05-01" });
     // Premise, and the whole force of this test: the answers are the same,
@@ -75,11 +96,8 @@ describe("A. the walk must not build cycles it discards (cause 1: the 100-year h
     expect(a).toBeInstanceOf(Date);
     expect(a!.toISOString()).toBe(b!.toISOString());
 
-    const tUnbounded = median(() => capacityFreedFrom(unbounded, [], NOW), { samples: 5 });
-    const tBounded   = median(() => capacityFreedFrom(bounded, [], NOW), { batch: 50 });
-    // +2ms floor: the bounded call is below timer resolution, so a pure
-    // ratio would divide by noise.
-    expect(tUnbounded).toBeLessThan(tBounded * 5 + 2);
+    const tUnbounded = median(() => capacityFreedFrom(unbounded, [], NOW), { batch: 50 });
+    expect(tUnbounded).toBeLessThan(2);
   });
 });
 
@@ -90,6 +108,9 @@ describe("B. monthly must not cost dramatically more than weekly (cause 2: the l
   // same run -- if monthly is far slower, the loop is the only difference.
   //
   // On main: monthly 122.8us, weekly 1.26us -- 97.8x.
+  // AFTER FIX 1: 92.3us vs 0.43us -- 214x. Unchanged in substance, as
+  // predicted: bounding the walk removes cycles, it does not make any one
+  // nextOccurrence call cheaper. Only the closed form (Fix 2) touches this.
   it.fails("monthly nextOccurrence is within 5x of weekly at the same item age (CURRENTLY ~98x)", () => {
     const monthly = item("monthly", 2006);
     const weekly  = item("weekly", 2006);
@@ -110,10 +131,13 @@ describe("C. cost must not grow with an item's age (cause 2, from the other side
   // is 515.8ms, 1.86x, which is why this uses 1950: the 20-year ratio sits
   // too close to the threshold to discriminate reliably.)
   //
-  // NOTE, recorded as a prediction this test will check rather than assert:
-  // fixing cause 1 alone should make this ratio WORSE in relative terms
-  // even as both sides become fast, because 9 cycles x O(age) is still
-  // O(age). Only the closed form flattens it.
+  // PREDICTION MADE BEFORE FIX 1, AND CONFIRMED BY IT: fixing cause 1 alone
+  // would make this ratio WORSE in relative terms even as both sides became
+  // fast, because 9 cycles x O(age) is still O(age) once the constant
+  // 1194-cycle term is gone. Measured after Fix 1: 0.058ms vs 4.124ms --
+  // 70.7x, up from 3.25x. Absolutely ~200x faster on both sides; relatively
+  // far more age-dependent. This is the assertion that proves Fix 1 alone
+  // is not sufficient for the cause, rather than my asserting it.
   it.fails("a 1950-start item costs no more than 2x a 2026-start one (CURRENTLY ~3.3x)", () => {
     const fresh = item("monthly", 2026);
     const aged  = item("monthly", 1950);
@@ -131,7 +155,11 @@ describe("D. absolute backstop", () => {
   // to anything resembling current behaviour. The ratios above are the real
   // assertions; this exists so a change that slows every side equally
   // cannot satisfy them while still being far too slow.
-  it.fails("capacityFreedFrom on a 20-year-old monthly item completes in under 50ms (CURRENTLY ~516ms)", () => {
+  // Measured: 516ms before Fix 1, 1.26ms after -- a 40x margin under the
+  // budget. Kept at 50ms rather than tightened: this is the backstop for a
+  // change that slows everything equally, and a tight backstop is a flaky
+  // one.
+  it("capacityFreedFrom on a 20-year-old monthly item completes in under 50ms (WAS ~516ms)", () => {
     const aged = median(() => capacityFreedFrom(item("monthly", 2006), [], NOW), { samples: 5 });
     expect(aged).toBeLessThan(50);
   });
