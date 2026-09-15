@@ -1177,12 +1177,22 @@ export function isRecurringActive(r: StoredRecurring, asOf: Date = new Date()): 
   const start = parseLocalDate(r.startDate);
   if (asOf < start) return false;
 
-  // Exhausted by total amount: cumulative payments have hit the cap
-  if (r.totalAmount != null && r.totalAmount > 0 && r.amount > 0) {
-    const totalPeriods = r.totalAmount / r.amount;
-    const totalMs = (totalPeriods / FREQ_MONTHLY[r.frequency]) * 30.4375 * 24 * 60 * 60 * 1000;
-    if (asOf.getTime() > start.getTime() + totalMs) return false;
-  }
+  // NO totalAmount CHECK HERE, deliberately (2.4.112). "Active" is now a
+  // pure CALENDAR question: has it started, and has its endDate passed.
+  //
+  // This used to estimate exhaustion from elapsed time -- totalPeriods x
+  // 30.4375 days from startDate. Under confirm-on-due that is the wrong
+  // question: a cycle can sit unconfirmed indefinitely, so calendar time
+  // elapsed and money actually paid are different things (2.4.25 fixed the
+  // identical reasoning error in recurringPaidSoFar, and nextConfirmTarget
+  // already routed around this one rather than removing it). The effect was
+  // an item reading "ended" at $0 on four surfaces while Overview was still
+  // demanding thirteen overdue payments for it.
+  //
+  // Exhaustion has a correct answer already -- recurringPaidSoFar /
+  // remainingInstallments. A caller that needs it asks for it; InputPanel's
+  // "Ended" badge does exactly that. Keeping a second, worse answer to a
+  // question that already has a good one is what produced 2.4.110.
 
   const end = r.endDate ? parseLocalDate(r.endDate) : null;
   if (end && asOf > end) return false;
