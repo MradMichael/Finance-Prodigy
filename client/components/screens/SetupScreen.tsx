@@ -99,10 +99,22 @@ export default function SetupScreen({
   }
 
   function commitEfBalance(raw: string) {
-    const entered = Math.max(0, parseFloat(raw) || 0);
-    const delta = roundMoney(entered - efBalance);
-    if (delta !== 0) {
-      update({ transactions: [buildEfAdjustmentTx(delta), ...financials.transactions] });
+    const parsed = parseFloat(raw);
+    // An empty or unparseable field is DISCARDED, never committed -- the same
+    // shape as commitLbpRate on the Currency screen, which this field used to
+    // contradict on the same screen (2.4.104).
+    //
+    // It was `parseFloat(raw) || 0`, so an emptied field read as "my balance
+    // is now zero" and committed a correction of -balance, silently wiping
+    // the fund. Discarding, not clamping to 0: clamping would still wipe it,
+    // just deliberately. Typing 0 is an instruction; clearing the field is
+    // not, and a paste of unparseable text is not either.
+    if (!isNaN(parsed)) {
+      const entered = Math.max(0, parsed);
+      const delta = roundMoney(entered - efBalance);
+      if (delta !== 0) {
+        update({ transactions: [buildEfAdjustmentTx(delta), ...financials.transactions] });
+      }
     }
     setEfBalanceInput(null);
   }
