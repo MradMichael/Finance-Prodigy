@@ -154,38 +154,72 @@ describe("commit is on blur, never on a keystroke", () => {
   });
 });
 
-describe("input that is not a number", () => {
-  // See the report accompanying this branch. `parseFloat("") || 0` is 0, so
-  // an emptied field is read as "my balance is now zero" and commits a
-  // correction of -balance. commitLbpRate discards this exact case; this
-  // field does not, and the failure direction here is destructive.
+describe("input that is not a number is discarded, not read as zero", () => {
+  // FIXED (2.4.104). This was `parseFloat(raw) || 0`, so an emptied field
+  // read as "my balance is now zero" and committed a correction of -balance,
+  // wiping the fund. commitLbpRate discards the same input on the Currency
+  // screen; the two now agree.
   //
-  // These are it.fails: they state the CORRECT expectation and record that it
-  // does not hold today. Encoding the current behaviour as passing would lock
-  // the bug in. When the fix lands, it.fails starts failing and forces its own
-  // removal -- which a skip would not.
-  it.fails("EMPTY input should be discarded, as commitLbpRate discards it (CURRENTLY WIPES THE FUND)", () => {
+  // Discard, not clamp: clamping to 0 would still wipe the fund, just
+  // deliberately. Typing 0 IS an instruction and still works (below); an
+  // empty or unparseable field is not one.
+  it("an emptied field writes nothing", async () => {
+    const user = userEvent.setup();
     const { onChange } = renderSetup();
-    fireEvent.blur(field(), { target: { value: "" } });
+    // The real path: clearing fires onChange (draft := ""), then blur
+    // commits. Driving blur directly with a target value would skip the
+    // draft update and test a state the UI cannot actually be in.
+    await user.clear(field());
+    await user.tab();
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("documents what empty input does today, so the size of the bug is on record", () => {
-    const { onChange, data } = renderSetup();
-    fireEvent.blur(field(), { target: { value: "" } });
-    // Premise: it wrote at all -- the assertion below is about WHAT it wrote.
-    expect(onChange).toHaveBeenCalledTimes(1);
-    expect(theAdjustment(onChange, data.transactions).efAmount).toBe(-OPENING);
-    const after = { ...data, transactions: written(onChange)! } as LocalFinancials;
-    expect(computeDashboard(after).emergencyFund.balance).toBe(0);
+  it("a whitespace-only field writes nothing either", () => {
+    const { onChange } = renderSetup();
+    fireEvent.blur(field(), { target: { value: "   " } });
+    expect(onChange).not.toHaveBeenCalled();
   });
 
-  it.fails("UNPARSEABLE input should be discarded too (CURRENTLY WIPES THE FUND)", () => {
+  it("PASTED unparseable text writes nothing -- the case a typed letter cannot reach", async () => {
+    const user = userEvent.setup();
     const { onChange } = renderSetup();
-    // Reaches the handler the way a paste or autofill would; a typed letter
-    // is swallowed by the number input before it ever gets here.
+    // Premise, and the reason this test exists separately from the typed
+    // case below: a number input silently swallows typed letters, so typing
+    // can never produce a non-numeric value for the handler to mishandle.
+    // Pasting can, and so can autofill.
+    await user.clear(field());
+    await user.type(field(), "abc");
+    expect(field().value).toBe("");
+    await user.click(field());
+    await user.paste("abc");
     fireEvent.blur(field(), { target: { value: "abc" } });
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("discarding restores the field to the real balance rather than leaving it blank", async () => {
+    const user = userEvent.setup();
+    const { onChange } = renderSetup();
+    await user.clear(field());
+    // Premise: the field really was emptied, so the restore below is a
+    // restore and not just an untouched initial render.
+    expect(field().value).toBe("");
+    await user.tab();
+    expect(onChange).not.toHaveBeenCalled();
+    // The draft is cleared on every commit path, so the input falls back to
+    // the derived value -- a discarded edit must not leave the field looking
+    // like the balance is now empty.
+    expect(field().value).toBe(String(OPENING));
+  });
+
+  it("typing 0 still zeroes the fund -- that IS an instruction, and must keep working", async () => {
+    const user = userEvent.setup();
+    const { onChange, data } = renderSetup();
+    await user.clear(field());
+    await user.type(field(), "0");
+    await user.tab();
+    // The pair to the discard tests: the fix must not have made a real
+    // request to zero the balance impossible.
+    expect(theAdjustment(onChange, data.transactions).efAmount).toBe(-OPENING);
   });
 
   it("a negative balance is clamped to 0 rather than written as negative", async () => {
@@ -194,8 +228,8 @@ describe("input that is not a number", () => {
     await user.clear(field());
     await user.type(field(), "-50");
     await user.tab();
-    // Math.max(0, ...) -- an EF balance below zero is not a real state.
-    // Distinct from the empty case: here the user did ask for a wipe.
+    // Math.max(0, ...) -- an EF balance below zero is not a real state, and
+    // unlike an empty field this is a deliberate entry.
     expect(theAdjustment(onChange, data.transactions).efAmount).toBe(-OPENING);
   });
 });
