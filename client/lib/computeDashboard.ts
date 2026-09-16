@@ -1,5 +1,5 @@
 import type { LocalFinancials, BudgetRuleKey, StoredDebt, StoredTransaction, StoredRecurring, TrackedBalance, Currency } from "./localData";
-import { historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, LBP_RATE_STALE_DAYS, cycleStartDayOf, valueForMonth, makeToUSDForMonth, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, DEFAULT_LBP_RATE, derivedEfBalance, derivedDebtBalance, activeTransactions, parseLocalDate, isRecurringActive } from "./localData";
+import { historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, LBP_RATE_STALE_DAYS, cycleStartDayOf, valueForMonth, makeToUSDForMonth, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, DEFAULT_LBP_RATE, derivedEfBalance, derivedDebtBalance, activeTransactions, parseLocalDate, isRecurringActive, isAfterBalanceBaseline } from "./localData";
 import { cycleKeyForISO, currentCycleKey, calendarKeyForDate, isInCycle, cycleProgress, cycleBounds, cycleKeyMinus, periodNoun, cycleLabel, type CycleKey, type CalendarKey, type CalendarHistory } from "./period";
 import { simulateDebtPayoff, type DebtInput } from "./debtEngine";
 
@@ -198,14 +198,14 @@ function expectedFromRelevantTx(
  * above), so the two can't independently drift.
  */
 export function trackedBalanceExpected(
-  tb: Pick<TrackedBalance, "paymentMethod" | "cardId" | "startingBalance" | "startingDate" | "currency">,
+  tb: Pick<TrackedBalance, "paymentMethod" | "cardId" | "startingBalance" | "startingDate" | "startingAt" | "currency">,
   data: LocalFinancials,
 ): number {
   const toUSDForMonth = makeToUSDForMonth(data);
   const key = `${tb.paymentMethod}|${tb.paymentMethod === "card" ? (tb.cardId ?? "") : ""}`;
   const relevantTx = activeTransactions(data.transactions ?? []).filter((t) => {
     const tKey = `${t.paymentMethod ?? ""}|${t.paymentMethod === "card" ? (t.cardId ?? "") : ""}`;
-    return tKey === key && t.date >= tb.startingDate;
+    return tKey === key && isAfterBalanceBaseline(t, tb);
   });
   return expectedFromRelevantTx(tb, relevantTx, toUSDForMonth, cycleStartDayOf(data));
 }
@@ -1019,7 +1019,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   }
   const balanceChecks: DashboardPayload["balanceChecks"] = data.trackedBalances.map((tb) => {
     const key = `${tb.paymentMethod}|${tb.paymentMethod === "card" ? (tb.cardId ?? "") : ""}`;
-    const relevantTx = (txByPaymentKey.get(key) ?? []).filter((t) => t.date >= tb.startingDate);
+    const relevantTx = (txByPaymentKey.get(key) ?? []).filter((t) => isAfterBalanceBaseline(t, tb));
     const expected = expectedFromRelevantTx(tb, relevantTx, toUSDForMonth, startDay);
     const actual = tb.actualBalance != null
       ? toUSDForMonth(tb.actualBalance, tb.currency, cycleKeyForISO(tb.actualBalanceDate ?? tb.startingDate, startDay))

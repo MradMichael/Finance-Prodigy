@@ -280,6 +280,16 @@ export interface TrackedBalance {
   lbpRateAtEntry?: number;
   actualBalance?: number;   // last balance you told it you actually have
   actualBalanceDate?: string; // ISO — when you last confirmed it
+  // 2.4.65: the INSTANT the baseline was set, where startingDate is only a
+  // day. A check-in stamps both from the same moment; they differ in
+  // precision, and that difference is the whole point -- a transaction
+  // dated the same day can only be ordered against the check by a
+  // timestamp. Absent on every balance re-anchored before this field
+  // existed, and NOT backfilled: actualBalanceDate is the check instant,
+  // not the baseline instant, and inferring one from the other bakes in an
+  // assumption a boundary-pinned period close would break. See
+  // isAfterBalanceBaseline for how absence is handled.
+  startingAt?: string;
   // The live, computed "expected" total (USD) at the exact moment
   // actualBalance was confirmed -- captured directly rather than
   // reconstructed later from transaction dates, since a transaction only
@@ -2052,14 +2062,65 @@ export function retagBucketAmount(
  * a plain YYYY-MM-DD for startingDate, matching each field's own existing
  * convention.
  */
+/**
+ * Is this transaction on the far side of a tracked balance's baseline?
+ *
+ * THE ONE PLACE this comparison is made (2.4.65). It had been spelled
+ * inline at two sites -- computeDashboard's balanceChecks and
+ * trackedBalanceExpected -- as `t.date >= tb.startingDate`. Two copies of a
+ * boundary is two boundaries, and fixing one would have left
+ * ImportStatement writing an expectedAtCheckUSD that disagreed with the
+ * screen, which is worse than the bug because it persists.
+ *
+ * Three tiers. A date decides whenever it can; the timestamp is consulted
+ * ONLY for the same calendar day, which is the one case a date genuinely
+ * cannot order.
+ *
+ * THE FALLBACK IS INCLUDE, deliberately. That is the old behaviour, so a
+ * pair with no timestamps -- every pre-existing row, permanently, since
+ * `createdAt` is never backfilled -- behaves exactly as it did. The change
+ * is strictly NARROWING: it can exclude a transaction it can prove was
+ * entered before the check, and can never newly include one. A partial
+ * pair counts as no pair; comparing a string against `undefined` yields
+ * false and would silently flip those to excluded.
+ *
+ * BOUNDS THE BUG, DOES NOT CLOSE THE CLASS. `createdAt` is ENTRY time, not
+ * transaction time, so a backdated transaction is still ordered by its
+ * date. "Was this already reflected in the balance I counted?" remains
+ * unanswerable from either field -- a user can count cash that includes a
+ * purchase they have not logged. This fixes the same-day case, which a
+ * boundary-pinned period close would otherwise trigger every cycle.
+ */
+export function isAfterBalanceBaseline(
+  t: Pick<StoredTransaction, "date" | "createdAt">,
+  tb: Pick<TrackedBalance, "startingDate" | "startingAt">,
+): boolean {
+  if (t.date < tb.startingDate) return false;
+  if (t.date > tb.startingDate) return true;
+  if (t.createdAt && tb.startingAt) return t.createdAt >= tb.startingAt;
+  return true;
+}
+
 export function reanchorTrackedBalance(
   tb: TrackedBalance, actualBalance: number, expectedAtCheckUSD: number | undefined, lbpRate: number,
   asOf?: string,
 ): TrackedBalance {
+  // `asOf` may arrive as a bare date ("2026-09-05", ImportStatement's
+  // statement date) or as a full instant. `startingAt` needs an instant
+  // either way, so a bare date is read as the END of that day: a statement
+  // closing balance is true as of the day's close, which correctly places
+  // every transaction dated that day BEFORE the baseline.
+  //
+  // `actualBalanceDate` deliberately keeps taking `asOf` verbatim -- that is
+  // existing, tested behaviour (ImportStatement's own case) and not part of
+  // 2.4.65. Only the baseline instant is new.
+  const at = asOf
+    ? (asOf.length > 10 ? asOf : `${asOf}T23:59:59.999Z`)
+    : new Date().toISOString();
   return {
     ...tb,
-    actualBalance, actualBalanceDate: asOf ?? new Date().toISOString(), expectedAtCheckUSD,
-    startingBalance: actualBalance, startingDate: asOf ?? todayISO(),
+    actualBalance, actualBalanceDate: asOf ?? at, expectedAtCheckUSD,
+    startingBalance: actualBalance, startingDate: asOf ?? todayISO(), startingAt: at,
     ...withRate(tb.currency, lbpRate),
   };
 }

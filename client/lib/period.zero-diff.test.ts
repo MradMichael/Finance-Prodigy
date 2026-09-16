@@ -89,6 +89,15 @@ function makeData(): LocalFinancials {
       tx("t10", "2026-06-28", 400, "SAVINGS"),
       tx("t11", "2026-07-05", 905, "NEEDS"),
       tx("t12", "2026-07-22", 275, "WANTS"),
+      // DO NOT RE-DATE t13. It shares 2026-08-01 with tb1's startingDate
+      // below, on the same payment method, deliberately: that makes it the
+      // AMBIGUOUS same-day case for isAfterBalanceBaseline (2.4.65), which
+      // is tier 3 of the boundary. tb1 carries no `startingAt`, so the
+      // fallback applies and the transaction is included exactly as it was
+      // before 2.4.65 -- which is what makes this snapshot a proof that the
+      // fallback preserves legacy behaviour rather than a snapshot that
+      // never reaches the interesting branch. Change either date and the
+      // gate silently stops covering it.
       tx("t13", "2026-08-01", 950, "NEEDS", { paymentMethod: "cash" }),
       tx("t14", "2026-08-16", 310, "WANTS", { paymentMethod: "cash" }),
       tx("t15", "2026-08-30", 500, "SAVINGS"),
@@ -113,6 +122,9 @@ function makeData(): LocalFinancials {
       { id: "r2", name: "Uni", emoji: "U", amount: 750, currency: "USD", frequency: "monthly", bucket: "NEEDS", startDate: "2026-08-01", endDate: null, totalAmount: 6750, confirmCutoverDate: "2026-08-24", createdAt: "2026-08-01T00:00:00.000Z" },
     ],
     trackedBalances: [
+      // startingDate matches t13's date on purpose -- see the note there.
+      // No `startingAt`: this fixture predates it, which is the legacy
+      // shape the fallback exists for.
       { id: "tb1", name: "Wallet", paymentMethod: "cash", startingBalance: 900, startingDate: "2026-08-01", currency: "USD", actualBalance: 700, actualBalanceDate: "2026-09-05T00:00:00.000Z", expectedAtCheckUSD: 740 },
     ],
   } as LocalFinancials;
