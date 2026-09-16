@@ -368,6 +368,11 @@ export default function Home() {
     // below compares by REFERENCE, so returning a fresh [] for an account
     // whose history is still undefined would read as "changed" on every
     // render and persist in a loop -- the exact shape 2.4.84's test guards.
+    // COVERAGE GAP, not a defect: that regression test seeds a fixture whose
+    // history is already populated, so it would NOT have caught a fresh-array
+    // return on the undefined path. Anything added to this block that returns
+    // a new object/array on a no-change path needs its own test at an
+    // undefined history, because the existing loop guard will not see it.
     const updatedIncome    = financials.income === 0
       ? financials.incomeHistory
       : snapshot(financials.incomeHistory, cycleYm, financials.income);
