@@ -347,7 +347,30 @@ export default function Home() {
     }
 
     const updatedNetWorth  = snapshot(financials.netWorthHistory, calendarYm, dashboardData.netWorth.total);
-    const updatedIncome    = snapshot(financials.incomeHistory, cycleYm, financials.income);
+    // 2.4.105: a zero income is never recorded. Clearing the field yields
+    // `parseFloat("") || 0`, and a transient zero held across a cycle
+    // boundary becomes that cycle's permanent recorded income -- the entry
+    // is only ever written for the CURRENT key, so nothing revisits it.
+    //
+    // This does NOT distinguish a transient zero from a genuine one; they
+    // are the same value by the same path with no marker. It declines to
+    // record either, which matches how every other consumer already reads 0
+    // -- as unconfigured, not as an income level (Setup's "set your monthly
+    // income to unlock", incomeSafe's floor of 1, and the savings-streak
+    // comment bundling "between jobs" with "not yet re-entered").
+    //
+    // A refusal to WRITE, never a removal: an existing entry stands. And
+    // absence is not a gap -- valueForMonth resolves a keyless cycle to the
+    // most recent earlier figure, so a genuinely income-less cycle inherits
+    // the prior one. That trade is asserted in page.income-snapshot.test.tsx
+    // rather than left to be discovered.
+    // NB `financials.incomeHistory` verbatim, NOT `?? []`: the no-op guard
+    // below compares by REFERENCE, so returning a fresh [] for an account
+    // whose history is still undefined would read as "changed" on every
+    // render and persist in a loop -- the exact shape 2.4.84's test guards.
+    const updatedIncome    = financials.income === 0
+      ? financials.incomeHistory
+      : snapshot(financials.incomeHistory, cycleYm, financials.income);
     const updatedLbpRate   = snapshot(financials.lbpRateHistory, cycleYm, financials.lbpRate);
     const updatedBudgetPct = snapshotBudgetPct(financials.budgetRuleHistory, cycleYm, dashboardData.budgetTargetPct);
 
