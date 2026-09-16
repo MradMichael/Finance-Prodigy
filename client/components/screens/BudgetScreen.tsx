@@ -34,10 +34,28 @@ export default function BudgetScreen({
     if (ruleKey !== "custom") return;
     const healed = floorCustomSplit(customNeeds, customWants);
     if (healed.needs !== customNeeds || healed.wants !== customWants) {
-      onChange({ ...financials, budgetCustomNeeds: healed.needs, budgetCustomWants: healed.wants });
+      // 2.4.106: stamp WHAT changed, not just that something did. The
+      // adjustment itself is necessary -- 85/15 leaves Savings at 0% and
+      // breaks every downstream ratio -- so the defect was never the write,
+      // it was that a restored backup quietly became a different budget.
+      onChange({
+        ...financials,
+        budgetCustomNeeds: healed.needs, budgetCustomWants: healed.wants,
+        budgetSplitHealedAt: new Date().toISOString(),
+        budgetSplitHealedFrom: { needs: customNeeds, wants: customWants },
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ruleKey, customNeeds, customWants]);
+
+  /** Drops the stamp -- on dismissal, or once the user edits the split themselves. */
+  function clearHealNotice(patch: Partial<LocalFinancials> = {}) {
+    const next = { ...financials, ...patch };
+    delete next.budgetSplitHealedAt;
+    delete next.budgetSplitHealedFrom;
+    onChange(next);
+  }
+  const healedFrom = financials.budgetSplitHealedAt ? financials.budgetSplitHealedFrom : undefined;
 
   const targetPct = ruleKey === "custom"
     ? floorCustomSplit(customNeeds, customWants)
@@ -170,6 +188,25 @@ export default function BudgetScreen({
           {ruleKey === "custom" && (
             <div className="rounded-xl p-4 space-y-3" style={{ background: T.ink, border: `1px solid ${T.line}` }}>
               <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.jade }}>Custom percentages</p>
+              {healedFrom && (
+                <div className="rounded-lg px-3 py-2.5 flex items-start gap-2" style={{ background: T.brass + "12", border: `1px solid ${T.brass}30` }}>
+                  <div className="flex-1">
+                    <p className="text-xs" style={{ color: T.text }}>
+                      Your saved split left Savings below {MIN_SPLIT_PCT}%, so it was adjusted from{" "}
+                      <strong>{healedFrom.needs} / {healedFrom.wants}</strong> to{" "}
+                      <strong>{targetPct.needs} / {targetPct.wants} / {targetPct.savings}</strong>.
+                    </p>
+                    <p className="text-[10px] mt-1" style={{ color: T.mute }}>
+                      Savings needs its own floor or every target that divides by it breaks. Change the sliders below if that is not what you want.
+                    </p>
+                  </div>
+                  <button
+                    type="button" aria-label="Dismiss"
+                    className="text-xs px-2 py-1 rounded-lg" style={{ color: T.mute }}
+                    onClick={() => clearHealNotice()}
+                  >&times;</button>
+                </div>
+              )}
               {(["Needs", "Wants"] as const).map((label) => {
                 const val    = label === "Needs" ? customNeeds : customWants;
                 const other  = label === "Needs" ? customWants : customNeeds;
@@ -200,7 +237,10 @@ export default function BudgetScreen({
                         const floored = label === "Needs"
                           ? floorCustomSplit(raw, customWants)
                           : floorCustomSplit(customNeeds, raw);
-                        onChange({ ...financials, budgetCustomNeeds: floored.needs, budgetCustomWants: floored.wants });
+                        // Clears the heal stamp too: once the user moves a
+                        // slider the split is theirs, and a notice about
+                        // what it used to be is no longer news.
+                        clearHealNotice({ budgetCustomNeeds: floored.needs, budgetCustomWants: floored.wants });
                       }}
                       className="w-full" style={{ accentColor: T.jade }}
                       aria-label={`Custom ${label} percentage`}

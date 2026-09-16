@@ -569,6 +569,18 @@ export interface LocalFinancials {
   cycleStartDayChangedAt?: string;
   budgetRule?: BudgetRuleKey;
   budgetCustomNeeds?: number;
+  // 2.4.106: set when BudgetScreen's heal effect floors an out-of-range
+  // custom split, so the rewrite can be explained instead of happening in
+  // silence. A STAMP plus the prior pair, not a boolean -- the same
+  // reasoning as cycleStartDayChangedAt: it carries enough to say WHAT
+  // changed, and it is cleared on dismissal or on the next real edit rather
+  // than persisting as a seen-flag nobody cleans up.
+  //
+  // Reachable from any of saveData's nine callers, not just import: they
+  // all migrate through the same path and converge on the same heal, which
+  // is why this lives here and not in handleImportFile.
+  budgetSplitHealedAt?: string;
+  budgetSplitHealedFrom?: { needs: number; wants: number };
   budgetCustomWants?: number;
   /** User-created categories, alongside the built-in CATEGORIES -- see allCategories/categoryLabel/categoryIcon. */
   customCategories?: CustomCategory[];
