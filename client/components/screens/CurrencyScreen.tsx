@@ -7,7 +7,7 @@ import { computeHoldingsByCurrency } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
 import Donut from "../charts/Donut";
-import {currentCycleKey, isInCycle, periodNoun, cycleLabel, asCycleKey } from "../../lib/period";
+import {currentCycleKey, isInCycle, periodNoun, cycleLabel, type CycleKey } from "../../lib/period";
 
 /**
  * Moved here from SetupScreen 2026-09-13, behaviour unchanged. The rate is
@@ -107,7 +107,7 @@ export default function CurrencyScreen({ financials, onChange }: { financials: L
   const rateHistoryDesc = [...(financials.lbpRateHistory ?? [])].sort((a, b) => b.ym.localeCompare(a.ym));
   // lbpRateHistory is CYCLE-keyed (period.ts:50) -- same reasoning as
   // SetupScreen's income history. See 2.4.120.
-  const monthLabel = (ym: string) => cycleLabel(asCycleKey(ym), startDay);
+  const monthLabel = (ym: CycleKey) => cycleLabel(ym, startDay);
 
   return (
     <main className="min-h-screen px-4 py-8 md:px-10" style={{ background: T.ink }}>
