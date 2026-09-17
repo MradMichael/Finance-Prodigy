@@ -10,7 +10,7 @@ import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker } from "./form/Primitives";
 import { fmtCur } from "./screens/shared";
 import ImportStatement from "./ImportStatement";
-import {currentCycleKey, cycleKeyForISO, isInCycle, periodNoun } from "../lib/period";
+import {currentCycleKey, cycleKeyForISO, isInCycle, periodNoun, cycleLabel, asCycleKey } from "../lib/period";
 
 type Bucket = "NEEDS" | "WANTS" | "SAVINGS";
 // Transactions (not recurring items) can also be logged as one-off INCOME --
@@ -1133,8 +1133,9 @@ export default function InputPanel({ financials, dashData, onChange, session, on
             if (!byMonth[ym]) byMonth[ym] = [];
             byMonth[ym].push(t);
           });
-          const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-          const label = (ym: string) => { const [y, m] = ym.split("-"); return `${months[parseInt(m)-1]} ${y}`; };
+          // Keys here are built by cycleKeyForISO above, so they are cycle
+          // keys and get the range form (2.4.120).
+          const label = (ym: string) => cycleLabel(asCycleKey(ym), startDay);
           return (
             <Section title="History" icon="📚" badge={pastTx.length} defaultOpen={false}>
               <div className="space-y-4">
@@ -1577,8 +1578,8 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                                   // fully legitimate.
                                   const dueYm = cycleKeyForISO(target.dueDate.toISOString(), startDay);
                                   const diverges = !!confirmDate && cycleKeyForISO(confirmDate, startDay) !== dueYm;
-                                  const [dueY, dueM] = dueYm.split("-");
-                                  const dueMonthLabel = `${["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][+dueM]} ${dueY}`;
+                                  // dueYm is a cycle key (cycleKeyForISO, line above).
+                                  const dueMonthLabel = cycleLabel(dueYm, startDay);
                                   return (
                                     <p className="text-[10px]" style={{ color: diverges ? T.brass : T.mute }}>
                                       {diverges
