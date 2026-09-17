@@ -6,7 +6,7 @@ import { BUDGET_RULES, MIN_SPLIT_PCT, floorCustomSplit, buildEfAdjustmentTx, rou
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF } from "./shared";
-import { cycleLabel, currentCycleKey, periodNoun } from "../../lib/period";
+import { cycleLabel, currentCycleKey, periodNoun, asCycleKey } from "../../lib/period";
 
 /**
  * Ceiling on monthly income. This field had a floor (`min="0"`, and a
@@ -124,10 +124,11 @@ export default function SetupScreen({
   // whenever income actually changes) already drives every past-month
   // calculation (sixMonthTrend, budgetRollover, savingsStreak all read it
   // via computeDashboard.ts's incomeForMonth), this just makes that visible.
-  const monthLabel = (ym: string) => {
-    const [y, m] = ym.split("-");
-    return `${["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][+m]} ${y}`;
-  };
+  // incomeHistory is CYCLE-keyed (period.ts:50), so its keys are named by
+  // cycleLabel, not by the month the key happens to carry -- "Aug 2026" for
+  // 27 Aug - 26 Sep is label form (a), rejected in 2.4.98. Collapses to the
+  // plain month name at startDay 1.
+  const monthLabel = (ym: string) => cycleLabel(asCycleKey(ym), startDay);
   const incomeHistoryDisplay = [...(financials.incomeHistory ?? [])]
     .sort((a, b) => b.ym.localeCompare(a.ym))
     .slice(0, 6)

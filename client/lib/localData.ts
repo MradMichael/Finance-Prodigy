@@ -1,7 +1,7 @@
 "use client";
 
 import type { CycleKey, CycleHistory, CalendarHistory } from "./period";
-import {CYCLE_START_DAY, cycleKeyForISO } from "./period";
+import {CYCLE_START_DAY, cycleKeyForISO, cycleLabel } from "./period";
 export type { CycleKey, CalendarKey, CycleHistory, CalendarHistory } from "./period";
 
 export type Currency = "USD" | "LBP";
@@ -1728,8 +1728,9 @@ export function cycleMonthDivergence(tx: StoredTransaction, recurring: StoredRec
   // recurring engine, which never consults a period key at all.
   const cycleYm = cycleKeyForISO(tx.cycleDate, startDay);
   if (cycleYm === cycleKeyForISO(tx.date, startDay)) return null;
-  const [y, m] = cycleYm.split("-");
-  const monthLabel = `${["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][+m]} ${y}`;
+  // cycleYm is a cycle key (cycleKeyForISO, above), so it is named as a
+  // range rather than by the month the key carries (2.4.120).
+  const monthLabel = cycleLabel(cycleYm, startDay);
   const name = recurring.find((r) => r.id === tx.recurringId)?.name ?? "a deleted recurring item";
   return `Settles ${monthLabel} — ${name}`;
 }
