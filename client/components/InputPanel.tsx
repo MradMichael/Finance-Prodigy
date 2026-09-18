@@ -10,7 +10,7 @@ import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker } from "./form/Primitives";
 import { fmtCur } from "./screens/shared";
 import ImportStatement from "./ImportStatement";
-import {currentCycleKey, cycleKeyForISO, isInCycle, periodNoun, cycleLabel, asCycleKey } from "../lib/period";
+import {currentCycleKey, cycleKeyForISO, isInCycle, periodNoun, cycleLabel, type CycleKey } from "../lib/period";
 
 type Bucket = "NEEDS" | "WANTS" | "SAVINGS";
 // Transactions (not recurring items) can also be logged as one-off INCOME --
@@ -1127,7 +1127,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
         {(() => {
           const pastTx = activeTx.filter((t) => !isInCycle(t.date, prefix, startDay));
           if (pastTx.length === 0) return null;
-          const byMonth: Record<string, StoredTransaction[]> = {};
+          const byMonth: Record<CycleKey, StoredTransaction[]> = {} as Record<CycleKey, StoredTransaction[]>;
           pastTx.forEach((t) => {
             const ym = cycleKeyForISO(t.date, startDay);
             if (!byMonth[ym]) byMonth[ym] = [];
@@ -1135,11 +1135,15 @@ export default function InputPanel({ financials, dashData, onChange, session, on
           });
           // Keys here are built by cycleKeyForISO above, so they are cycle
           // keys and get the range form (2.4.120).
-          const label = (ym: string) => cycleLabel(asCycleKey(ym), startDay);
+          const label = (ym: CycleKey) => cycleLabel(ym, startDay);
           return (
             <Section title="History" icon="📚" badge={pastTx.length} defaultOpen={false}>
               <div className="space-y-4">
-                {Object.keys(byMonth).sort().reverse().map((ym) => {
+                {/* Object.keys erases the brand -- it returns string[] whatever
+                    the Record says, deliberately, because an object may carry keys
+                    beyond its declared type. Re-asserted here, the same way
+                    TransactionsScreen:556 does (2.4.96, fourth row). */}
+                {(Object.keys(byMonth) as CycleKey[]).sort().reverse().map((ym) => {
                   const txs = byMonth[ym];
                   // Excludes INCOME, matching the current month's total just
                   // above (totalOut) and every other "spend" figure in the

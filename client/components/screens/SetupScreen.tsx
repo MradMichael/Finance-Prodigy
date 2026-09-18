@@ -6,7 +6,7 @@ import { BUDGET_RULES, MIN_SPLIT_PCT, floorCustomSplit, buildEfAdjustmentTx, rou
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF } from "./shared";
-import { cycleLabel, currentCycleKey, periodNoun, asCycleKey } from "../../lib/period";
+import { cycleLabel, currentCycleKey, periodNoun, type CycleKey } from "../../lib/period";
 
 /**
  * Ceiling on monthly income. This field had a floor (`min="0"`, and a
@@ -128,7 +128,7 @@ export default function SetupScreen({
   // cycleLabel, not by the month the key happens to carry -- "Aug 2026" for
   // 27 Aug - 26 Sep is label form (a), rejected in 2.4.98. Collapses to the
   // plain month name at startDay 1.
-  const monthLabel = (ym: string) => cycleLabel(asCycleKey(ym), startDay);
+  const monthLabel = (ym: CycleKey) => cycleLabel(ym, startDay);
   const incomeHistoryDisplay = [...(financials.incomeHistory ?? [])]
     .sort((a, b) => b.ym.localeCompare(a.ym))
     .slice(0, 6)
