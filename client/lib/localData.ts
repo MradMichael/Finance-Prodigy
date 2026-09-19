@@ -147,6 +147,27 @@ export interface StoredTransaction {
   // already recommended for the dual-currency-single-transaction backlog
   // item (docs/ROADMAP.md).
   debtId?: string;
+  // 2.4.122 -- links this transaction to the StoredGoal it contributed to,
+  // set only by buildGoalContributionTx. Goals were the last linked entity
+  // in this model identified by PROSE rather than a key: GoalsScreen matched
+  // `description.startsWith("Goal:")`, and the description is user-editable
+  // with no guard, so an ordinary rename silently unmade a real
+  // contribution. debtId (above) and recurringId always had the key; this
+  // brings goals in line.
+  //
+  // NOT backfilled. Every row written before this field existed has no
+  // goalId, so the prose prefix stays as a legacy tier in the reader --
+  // permanently, because nothing can tell a pre-change contribution from
+  // any other Savings row except that sentence. That makes the literal
+  // "Goal:" STORED-DATA FORMAT from here on, not copy: it must never be
+  // translated, renamed, or "tidied," in any language. See the rule
+  // recorded with 2.4.122 in docs/AUDIT_2026-08.md -- no reader may match
+  // on `description` for semantics; description is display text.
+  //
+  // Optional and additive, so no schema bump: absent means "not linked,"
+  // which is exactly what every existing row means. Same shape as
+  // recurringModelNoticeSeen.
+  goalId?: string;
   // Added in schema v4 (Phase 2.6.1) -- signed: positive means this
   // transaction also added to the emergency fund, negative means it also
   // drew from it, for derivedEfBalance (2.6.2). Deliberately independent
@@ -1880,6 +1901,12 @@ export function buildGoalContributionTx(
   const now = new Date().toISOString();
   return {
     id: uid(), amount, currency: goal.currency, bucket: "SAVINGS",
+    // 2.4.122 -- the key, alongside the prose. buildDebtPaymentTx has always
+    // written both (`debtId` + "Debt payment: ..."); this is the same shape.
+    // The description stays because it is the transaction's own readable
+    // label in the ledger, and because it is what pre-2.4.122 rows are still
+    // matched on -- it is no longer what NEW rows are identified by.
+    goalId: goal.id,
     description: `Goal: ${goal.name}`, date: opts.date || todayISO(),
     // Phase 2.6.4: defaults to "other" when the caller doesn't say -- was
     // ALWAYS "other", unconditionally, until now (2.4.41: this made a goal
