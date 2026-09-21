@@ -38,7 +38,16 @@ function renderBudget(over: Partial<LocalFinancials> = {}) {
 const written = (onChange: ReturnType<typeof vi.fn>): LocalFinancials | undefined =>
   onChange.mock.calls.length ? onChange.mock.calls[0][0] as LocalFinancials : undefined;
 
-const notice = () => screen.queryByText(/below 5%|has been adjusted|been adjusted/i);
+/**
+ * The notice CONTAINER, not whichever paragraph happens to match.
+ *
+ * 2.4.130 split the copy across two <p>s -- the current split in one, the
+ * saved split and its date in the other -- so a text matcher returns one of
+ * them and the assertions below, which check both figures, see only half.
+ * Anchored on the dismiss button instead: it is a direct child of the
+ * notice and exists only when the notice does.
+ */
+const notice = () => screen.queryByRole("button", { name: /dismiss/i })?.parentElement ?? null;
 
 describe("6. THE PULL PATH — the case the original finding missed entirely", () => {
   it("a snapshot pulled from another device is healed, stamped and explained, exactly as an imported file is", () => {
