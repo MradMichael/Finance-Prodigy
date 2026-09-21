@@ -43,8 +43,23 @@ export default function GoalsScreen({
   const startDay = cycleStartDayOf(financials);
   const prefix = currentCycleKey(new Date(), startDay);
   const noun = periodNoun(startDay);
+  // 2.4.122 -- two tiers, in this order:
+  //
+  //   1. goalId, the key buildGoalContributionTx now stamps. Survives a
+  //      rename of the transaction, of the goal, and any future translation
+  //      of the description.
+  //   2. the "Goal:" prefix, for rows written before the key existed. This
+  //      tier is PERMANENT and the literal is stored-data format, not copy:
+  //      nothing distinguishes a pre-2.4.122 contribution from any other
+  //      Savings row except that sentence, so dropping it would silently
+  //      zero every existing account's contribution history.
+  //
+  // The cost of tier 2, accepted deliberately and pinned by a test: a
+  // user-typed Savings row beginning "Goal:" is counted. Dropping real
+  // history is the worse of the two errors.
   const goalTxThisMonth = activeTransactions(financials.transactions ?? []).filter(
-    (t) => t.bucket === "SAVINGS" && isInCycle(t.date, prefix, startDay) && t.description.startsWith("Goal:")
+    (t) => t.bucket === "SAVINGS" && isInCycle(t.date, prefix, startDay)
+      && (t.goalId !== undefined || t.description.startsWith("Goal:"))
   );
   // Converted per-transaction before summing -- a contribution is always
   // in its own goal's currency (see buildGoalContributionTx), so this sum
