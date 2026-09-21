@@ -92,7 +92,21 @@ export default function BudgetScreen({
     return "custom";
   }
   const suggested = suggestRule();
-  const showSuggestion = income > 0 && suggested !== ruleKey && ruleKey !== "custom"
+  // 2.4.128 -- `suggested === "custom"` means suggestRule found NO preset
+  // that fits: needs are over 80% of income and 80-15-5 is the loosest split
+  // there is. The banner used to fire anyway and offer "Switch to Custom",
+  // whose percentages come from budgetCustomNeeds/Wants (default 50/30) and
+  // NOT from BUDGET_RULES.custom -- so it proposed a 50% needs allowance to
+  // someone already overrunning an 80% one, described as "a more realistic
+  // fit". Exactly backwards.
+  //
+  // Suppressed rather than reworded: when nothing tighter exists there is
+  // nothing honest to offer, and saying nothing beats saying something
+  // false. Seeding a custom suggestion from actualNeedsPct would give the
+  // banner something true to say here -- deliberately NOT done, it is a
+  // separate decision (see 2.4.128's follow-up).
+  const showSuggestion = income > 0 && suggested !== "custom"
+    && suggested !== ruleKey && ruleKey !== "custom"
     && actualNeedsPct > BUDGET_RULES[ruleKey].needs;
 
   function applyRule(k: BudgetRuleKey) {
