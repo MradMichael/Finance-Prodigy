@@ -2,7 +2,7 @@ import { Router } from "express";
 import { createHash, timingSafeEqual } from "crypto";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
-import { normalizeToTables, deleteAllDataForEmail } from "../lib/normalizeSync";
+import { deleteAllDataForEmail } from "../lib/normalizeSync";
 import { logger } from "../lib/logger";
 import { prisma } from "../lib/prisma";
 import { emailSchema, tokenSchema } from "../lib/validation";
@@ -194,10 +194,24 @@ router.post("/push", async (req, res, next) => {
       throw err;
     }
 
-    // Normalize into all structured tables — fire & forget so client is never blocked
-    normalizeToTables(normalizedEmail, data).catch((err: Error) =>
-      logger.error("normalize_failed", err, { email: normalizedEmail })
-    );
+    // 2.4.132 step 1 -- the analytics warehouse is no longer written.
+    //
+    // What stood here was a fire-and-forget normalizeToTables() whose
+    // rejection went to a log line while this handler had already answered
+    // `ok: true`. 2.4.131 measured the result: 9 accounts have a user_sync
+    // row and no warehouse row, in four time-correlated windows -- a
+    // success response returned for a write that did not happen.
+    //
+    // Removed rather than repaired because the warehouse has no reader:
+    // the only findUnique against dim_user in this server is inside
+    // deleteAllDataForEmail, i.e. its sole reader is the function that
+    // deletes it. Nothing on the roadmap would consume it either -- F4 and
+    // F5 are both single-user and the client already holds the whole
+    // dataset, so building them here would mean a second derivation engine
+    // that has to agree with computeDashboard forever (2.4.132).
+    //
+    // deleteAllDataForEmail is deliberately KEPT (see DELETE below). The
+    // tables stop growing; they do not stop being cleaned up.
 
     res.json({ ok: true, syncedAt: syncedAt.toISOString() });
   } catch (err) {
@@ -311,8 +325,11 @@ router.post("/relink", async (req, res, next) => {
 // Called when a user deletes their account (client/lib/auth.ts deleteAccount)
 // so a synced backup doesn't outlive the account that created it. Removes
 // the user_sync row plus everything normalizeToTables ever wrote into the
-// analytics warehouse for that email. A no-op (still 200) if this account
-// never actually synced — nothing to delete either way.
+// analytics warehouse for that email. Nothing writes that warehouse any
+// more (2.4.132 step 1), but this cleanup is KEPT: the privacy page
+// promises deletion removes "that backup copy (and anything derived from
+// it)", and the derived rows are still there. A no-op (still 200) if this
+// account never actually synced — nothing to delete either way.
 router.delete("/", async (req, res, next) => {
   try {
     const { email, token } = deleteSchema.parse(req.body);
@@ -324,12 +341,19 @@ router.delete("/", async (req, res, next) => {
     const record = await prisma.userSync.findUnique({ where: { email } });
     if (!record) {
       // Nothing to verify a token against — treat as the documented no-op
-      // rather than deleting any warehouse data. normalizeToTables can, in
-      // a narrow race, finish creating warehouse rows for an email whose
-      // UserSync row is already gone (see its own stillSynced comment) —
-      // wiping that orphan here with zero proof of ownership would let
-      // anyone delete another account's warehouse data just by submitting
-      // their email with any token at all.
+      // rather than deleting any warehouse data. The ORIGINAL reason was a
+      // race (normalizeToTables finishing after the UserSync row was gone);
+      // that race is now impossible, since nothing writes the warehouse
+      // (2.4.132 step 1). The SECURITY reason is unchanged and is what
+      // keeps this branch: wiping warehouse rows here with zero proof of
+      // ownership would let anyone delete another account's derived data
+      // just by submitting their email with any token at all.
+      //
+      // Consequence, measured in 2.4.131 and NOT fixed here: 15 dim_user
+      // rows have no user_sync row and are therefore unreachable through
+      // this route entirely — it returns before ever calling the cleanup.
+      // Stopping the writes means no NEW ones can appear by that race; the
+      // existing 15 still need a decision (2.4.132 steps 2-3, held).
       return res.json({ ok: true });
     }
     // Mirror /pull's check exactly: a falsy authTokenHash must REFUSE the
