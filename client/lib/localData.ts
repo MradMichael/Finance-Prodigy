@@ -112,6 +112,41 @@ export interface StoredTransaction {
   // buildGoalContributionTx/InputPanel's logExtraPayment for why those stay
   // unlinked: they're additive, not a cycle's own settlement).
   recurringId?: string;
+  // 2.4.126 -- links an "+extra" ad-hoc payment (InputPanel's
+  // logExtraPayment) to the recurring item it was paid against. Prevention,
+  // not a fix: nothing reads it yet. It exists so the first consumer that
+  // wants "extra payments against this item" has a key to match on instead
+  // of reaching for `description.startsWith("Extra:")` -- the exact move
+  // 2.4.122's rule forbids, in the one writer that had no key at all.
+  //
+  // DELIBERATELY NOT `recurringId`, and the reason is not only the
+  // totalAmount cap:
+  //
+  //   * isCycleConfirmed falls back to `t.date` when `cycleDate` is absent
+  //     (`(t.cycleDate ?? t.date) === dueISO`). An extra payment has no
+  //     cycleDate and is dated today -- and the likeliest day to log one is
+  //     the day the bill itself is paid, i.e. the due date. Under
+  //     `recurringId` it would silently CONFIRM that cycle: isCycleOverdue
+  //     goes quiet and nextConfirmTarget skips ahead, with nothing settled.
+  //   * recurringPaidSoFar sums every recurringId-linked transaction with no
+  //     cycleDate condition, so it would count toward `totalAmount`. That may
+  //     even be the right answer -- an extra payment on a capped item does
+  //     reduce what is owed -- but it is a product decision, and a field
+  //     choice must not make it silently.
+  //   * EditTransactionSheet's "Settles: ... / Detach" panel is gated on
+  //     `cycleDate`, so a recurringId-linked extra payment would carry a
+  //     link that is invisible and impossible to detach while still feeding
+  //     the cap.
+  //
+  // `recurringId` + `cycleDate: null` would dodge the first point (null is
+  // rejected outright) and was rejected for its own reason: it overloads
+  // 2.4.32's "deliberately detached" sentinel with "was never attached".
+  // Those are a user's act and a property of the transaction kind; they have
+  // to stay distinguishable.
+  //
+  // Like recurringId, it is cleared when its recurring item is deleted
+  // (InputPanel's delete handler) so it cannot dangle -- 2.4.35's rule.
+  extraForRecurringId?: string;
   // Which cycle this confirms -- the due date, not necessarily this
   // transaction's own `date` (2.4.30, finding A). `date` is the real
   // payment date (defaults to the due date, editable to record a late
@@ -2340,7 +2375,8 @@ export function activeTransactions(transactions: StoredTransaction[]): StoredTra
  * (id, bucket, currency, date, deletedAt) -- everything else that could
  * carry information about what was bought, from whom, or how (amount,
  * description, category, payment method/note/card, and every linking
- * field: recurringId, cycleDate, debtId, efAmount, debtAdjustment,
+ * field: recurringId, cycleDate, debtId, goalId, extraForRecurringId,
+ * efAmount, debtAdjustment,
  * linkedPaymentId) is dropped, not just the description/amount named when
  * this was designed -- a purge that left a linked debtId or a payment note
  * behind would still be a real, if smaller, version of the same leak.
