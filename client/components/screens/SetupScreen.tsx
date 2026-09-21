@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import type { LocalFinancials, BudgetRuleKey } from "../../lib/localData";
-import { BUDGET_RULES, MIN_SPLIT_PCT, floorCustomSplit, buildEfAdjustmentTx, roundMoney, cycleStartDayOf } from "../../lib/localData";
+import type { LocalFinancials } from "../../lib/localData";
+import { buildEfAdjustmentTx, roundMoney, cycleStartDayOf } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF } from "./shared";
@@ -303,98 +303,21 @@ export default function SetupScreen({
           )}
         </div>
 
-        {/* Budget split */}
-        <div className="rounded-2xl p-6 space-y-4" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
-          <p className="text-xs uppercase tracking-widest font-semibold" style={{ color: T.mute }}>Budget split model</p>
-          <p className="text-[11px]" style={{ color: T.mute }}>
-            Choose how to split your income into Needs, Wants, and Savings. You can also set custom percentages.
-          </p>
-
-          <div className="space-y-2">
-            {(Object.keys(BUDGET_RULES) as BudgetRuleKey[]).map((k) => {
-              const rule   = BUDGET_RULES[k];
-              const active = (financials.budgetRule ?? "50-30-20") === k;
-              return (
-                <button
-                  key={k}
-                  onClick={() => update({ budgetRule: k })}
-                  className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-left transition-all"
-                  style={{
-                    background: active ? T.jade + "18" : T.panelSoft,
-                    border: `1px solid ${active ? T.jade : T.line}`,
-                  }}
-                >
-                  <div>
-                    <p className="text-sm font-semibold" style={{ color: active ? T.jade : T.text }}>{rule.label}</p>
-                    <p className="text-[11px]" style={{ color: T.mute }}>{rule.desc}</p>
-                  </div>
-                  <div className="flex items-center gap-3 flex-shrink-0 ml-3">
-                    {k !== "custom" && (
-                      <div className="hidden sm:flex gap-1.5 text-[10px]" style={{ color: T.mute }}>
-                        <span style={{ color: T.sky }}>{rule.needs}% N</span>
-                        <span>·</span>
-                        <span style={{ color: T.brass }}>{rule.wants}% W</span>
-                        <span>·</span>
-                        <span style={{ color: T.jade }}>{rule.savings}% S</span>
-                      </div>
-                    )}
-                    {active && <span className="text-base" style={{ color: T.jade }}>✓</span>}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Custom sliders */}
-          {(financials.budgetRule ?? "50-30-20") === "custom" && (
-            <div className="rounded-xl p-4 space-y-4" style={{ background: T.ink, border: `1px solid ${T.line}` }}>
-              <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.jade }}>Custom percentages</p>
-              {(["Needs", "Wants"] as const).map((label) => {
-                // A second, independent copy of BudgetScreen.tsx's custom
-                // sliders -- must floor the same way (MIN_SPLIT_PCT) or a
-                // user editing the split from Setup instead of Budget can
-                // still squeeze Needs/Wants to 0%, the exact bug fixed
-                // elsewhere this session but missed here since this is a
-                // separate implementation, not a shared component.
-                const val   = label === "Needs" ? (financials.budgetCustomNeeds ?? 50) : (financials.budgetCustomWants ?? 30);
-                const other = label === "Needs" ? (financials.budgetCustomWants ?? 30) : (financials.budgetCustomNeeds ?? 50);
-                // Reserves MIN_SPLIT_PCT for Savings too -- see the matching
-                // comment in BudgetScreen.tsx's own copy of this slider.
-                const maxVal = Math.max(MIN_SPLIT_PCT, 100 - MIN_SPLIT_PCT - other);
-                return (
-                  <div key={label}>
-                    <div className="flex justify-between text-xs mb-2">
-                      <span style={{ color: T.mute }}>{label}</span>
-                      <span className="font-semibold" style={{ color: T.jade }}>{val}%</span>
-                    </div>
-                    <input
-                      type="range" min={MIN_SPLIT_PCT} max={maxVal} step={5} value={Math.min(Math.max(val, MIN_SPLIT_PCT), maxVal)}
-                      onChange={(e) => {
-                        // Persist the floored PAIR, not just this field --
-                        // see the matching comment in BudgetScreen.tsx's own
-                        // copy of this slider for why (stale label vs.
-                        // clamped handle position otherwise).
-                        const raw = parseInt(e.target.value);
-                        const floored = label === "Needs"
-                          ? floorCustomSplit(raw, financials.budgetCustomWants ?? 30)
-                          : floorCustomSplit(financials.budgetCustomNeeds ?? 50, raw);
-                        update({ budgetCustomNeeds: floored.needs, budgetCustomWants: floored.wants });
-                      }}
-                      className="w-full" style={{ accentColor: T.jade }}
-                      aria-label={`Custom ${label} percentage`}
-                    />
-                  </div>
-                );
-              })}
-              <div className="flex justify-between items-center pt-1" style={{ borderTop: `1px solid ${T.line}` }}>
-                <span className="text-xs" style={{ color: T.mute }}>Savings (auto-calculated)</span>
-                <span className="text-sm font-semibold tabular-nums" style={{ color: T.jade }}>
-                  {floorCustomSplit(financials.budgetCustomNeeds ?? 50, financials.budgetCustomWants ?? 30).savings}%
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
+        {/* The budget-rule picker and the custom-percentage sliders moved to
+            BudgetScreen on 2026-09-21 (2.4.129). Deliberately no copy and no
+            link left here, matching the LBP rate's own move above: both
+            surfaces WROTE (budgetRule, budgetCustomNeeds/Wants), and the
+            second copy had already drifted -- this screen's sliders never
+            cleared budgetSplitHealedAt/From, so editing the split here left
+            BudgetScreen's heal notice standing and describing the user's own
+            choice as the heal's doing (2.4.127 finding B). clearHealNotice
+            lives in BudgetScreen; this screen had no knowledge of the stamp
+            at all. Reach is preserved by the two `budget-<bucket>` alerts
+            (computeDashboard.ts), which route to the Budget screen, and by
+            Budget's own top-level nav entry. Nothing needed an unset state:
+            `budgetRule ?? "50-30-20"` means the rule always has a value, so
+            there is no unconfigured case for onboarding to shepherd -- and
+            the onboarding checklist never had a budget step. */}
 
       </div>
     </main>
