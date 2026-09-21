@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import type { LocalFinancials, BudgetRuleKey } from "../../lib/localData";
-import { BUDGET_RULES, MIN_SPLIT_PCT, floorCustomSplit, moneyEquals, cycleStartDayOf } from "../../lib/localData";
+import { BUDGET_RULES, MIN_SPLIT_PCT, floorCustomSplit, moneyEquals, cycleStartDayOf, fmtDate } from "../../lib/localData";
 import { periodNoun } from "../../lib/period";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { bucketDisplayState } from "../../lib/computeDashboard";
@@ -204,21 +204,36 @@ export default function BudgetScreen({
               <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.jade }}>Custom percentages</p>
               {healedFrom && (
                 <div className="rounded-lg px-3 py-2.5 flex items-start gap-2" style={{ background: T.brass + "12", border: `1px solid ${T.brass}30` }}>
+                  {/* 2.4.130 -- a STANDING STATE, not an event.
+                      "it was adjusted" reads as "just now". The notice is
+                      shown whenever custom is selected and the stamp is
+                      still set, which after a preset round-trip can be
+                      weeks later -- accurate, but sounding like news
+                      (2.4.127 finding B, second half; the falsifying path
+                      itself went with 2.4.129).
+                      Three changes: present tense for the current split,
+                      the DATE the adjustment actually happened (read from
+                      budgetSplitHealedAt, which was stored from the start
+                      and never rendered), and "Got it" for a control that
+                      records an acknowledgement rather than closing a
+                      transient. */}
                   <div className="flex-1">
                     <p className="text-xs" style={{ color: T.text }}>
-                      Your saved split left Savings below {MIN_SPLIT_PCT}%, so it was adjusted from{" "}
-                      <strong>{healedFrom.needs} / {healedFrom.wants}</strong> to{" "}
+                      Your split is held at{" "}
                       <strong>{targetPct.needs} / {targetPct.wants} / {targetPct.savings}</strong>.
                     </p>
                     <p className="text-[10px] mt-1" style={{ color: T.mute }}>
-                      Savings needs its own floor or every target that divides by it breaks. Change the sliders below if that is not what you want.
+                      Saved as <strong style={{ color: T.text }}>{healedFrom.needs} / {healedFrom.wants}</strong>
+                      {financials.budgetSplitHealedAt ? <> on <strong style={{ color: T.text }}>{fmtDate(financials.budgetSplitHealedAt)}</strong></> : null}
+                      , which left Savings below {MIN_SPLIT_PCT}% &mdash; every target that divides by Savings breaks at zero, so it is floored. Change the sliders below if that is not what you want.
                     </p>
                   </div>
                   <button
                     type="button" aria-label="Dismiss"
-                    className="text-xs px-2 py-1 rounded-lg" style={{ color: T.mute }}
+                    className="text-[10px] font-semibold px-2 py-1 rounded-lg flex-shrink-0 transition-all hover:opacity-80"
+                    style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
                     onClick={() => clearHealNotice()}
-                  >&times;</button>
+                  >Got it</button>
                 </div>
               )}
               {(["Needs", "Wants"] as const).map((label) => {
