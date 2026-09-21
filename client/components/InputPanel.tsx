@@ -489,6 +489,11 @@ export default function InputPanel({ financials, dashData, onChange, session, on
       description: `Extra: ${rec.name}`,
       date: todayISO(),
       paymentMethod: "cash",
+      // 2.4.126 -- the key, so the link is not the sentence. Deliberately
+      // NOT recurringId: see the field's own comment in localData.ts for
+      // the three readers that would misinterpret it, the first of which
+      // (isCycleConfirmed) would read this as settling a cycle.
+      extraForRecurringId: rec.id,
       createdAt: now, updatedAt: now,
     };
     update({ transactions: [tx, ...financials.transactions] });
@@ -1499,8 +1504,18 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                                       // transaction itself is real spend/income and stays.
                                       update({
                                         recurring: recs.filter((x) => x.id !== r.id),
+                                        // 2.4.126: extraForRecurringId is cleared here too. It is a
+                                        // link to this same item and would dangle exactly the way
+                                        // 2.4.35 describes -- but it gets no cycleDate sentinel,
+                                        // because an extra payment never settled a cycle to detach
+                                        // from. Undefined is the whole of its cleared state.
                                         transactions: financials.transactions.map((t) =>
-                                          t.recurringId !== r.id ? t : { ...t, recurringId: undefined, cycleDate: null, updatedAt: new Date().toISOString() }
+                                          t.recurringId !== r.id && t.extraForRecurringId !== r.id ? t : {
+                                            ...t,
+                                            ...(t.recurringId === r.id ? { recurringId: undefined, cycleDate: null } : {}),
+                                            ...(t.extraForRecurringId === r.id ? { extraForRecurringId: undefined } : {}),
+                                            updatedAt: new Date().toISOString(),
+                                          }
                                         ),
                                       });
                                     }}
