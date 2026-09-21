@@ -194,8 +194,8 @@ describe("4. the suggestion banner — the third call site", () => {
 // and must be converted to a plain `it`. Nothing here asserts that the
 // current behaviour is correct.
 
-describe("5. known-wrong, recorded rather than pinned", () => {
-  it.fails("A: needs over 80% should not be offered 'Switch to Custom' — it is a LOOSER-to-TIGHTER move in the wrong direction", () => {
+describe("5. no preset fits — the banner must stay quiet (2.4.128, was it.fails)", () => {
+  it("needs over 80% are offered nothing, because nothing tighter exists", () => {
     // suggestRule walks 40/50/60/70/80 and returns "custom" when nothing
     // fits. The banner then renders BUDGET_RULES.custom's label and desc and
     // offers "Switch to Custom" -- but custom's percentages come from
@@ -203,10 +203,25 @@ describe("5. known-wrong, recorded rather than pinned", () => {
     // are eating 90% of income is told a 50%-needs split "would be a more
     // realistic fit" than the 80% one they are already overrunning.
     //
-    // The honest options are to suppress the banner once 80-15-5 is
-    // exhausted (there is nothing tighter to suggest), or to have the custom
-    // suggestion seed the sliders from actualNeedsPct. Not decided here.
+    // FIXED 2026-09-21 by suppressing the banner when suggestRule returns
+    // "custom". Seeding the sliders from actualNeedsPct would give it
+    // something true to say instead; that is a separate decision and is not
+    // what this asserts.
     renderBudget({ budgetRule: "80-15-5", transactions: needsTx(90) });
+    expect(screen.queryByText("A better fit might be available")).toBeNull();
+  });
+
+  it("and exactly at the 80% boundary a preset still DOES fit, so the banner fires", () => {
+    // The boundary is `>=`, so needs at exactly 80% are matched by 80-15-5
+    // and the suppression must not swallow it. Without this, "suppress when
+    // nothing fits" and "suppress whenever needs are high" are
+    // indistinguishable, and the second would be a silent regression.
+    renderBudget({ budgetRule: "50-30-20", transactions: needsTx(80) });
+    expect(screen.getByRole("button", { name: /Switch to 80 / })).toBeTruthy();
+  });
+
+  it("just past it, nothing is offered", () => {
+    renderBudget({ budgetRule: "50-30-20", transactions: needsTx(81) });
     expect(screen.queryByText("A better fit might be available")).toBeNull();
   });
 
