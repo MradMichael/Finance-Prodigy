@@ -62,7 +62,15 @@ function monthsInPeriod(key: string, mode: TrendPeriod): CycleKey[] {
  * active then at all).
  */
 function recurringForMonth(recurring: StoredRecurring[], ym: CycleKey, currentYm: CycleKey, toUSD: (n: number, cur?: string) => number, startDay: number): BucketTotals {
-  const asOf = ym === currentYm ? new Date() : new Date(`${ym}-01T00:00:00`);
+  // 2.4.93's fifth and sixth as-of dates. `new Date(`${ym}-01T00:00:00`)` was
+  // the 1st of the key's calendar month, which is not the cycle's first day
+  // at any payday past the 1st -- cycle 2026-07 at startDay 27 runs 27 Jul -
+  // 26 Aug, so the anchor sat 26 days before it, inside the previous cycle.
+  // Bidirectional: an item starting mid-cycle read inactive (undercount), an
+  // item that ended before the payday read active (overcount).
+  // cycleBounds(...).start is what :139 and :195 in this same file already
+  // use -- the convention, not a new one.
+  const asOf = ym === currentYm ? new Date() : cycleBounds(ym, startDay).start;
   const out: BucketTotals = { needs: 0, wants: 0, savings: 0 };
   for (const r of recurring) {
     const usd = toUSD(historizedRecurringContribution(r, ym, asOf, startDay), r.currency);
@@ -234,7 +242,10 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
       bump(t.category ?? "uncategorized", toUSD(t.amount, t.currency));
     }
     if (filter !== "all") {
-      const asOf = filter === currentYm ? new Date() : new Date(`${filter}-01T00:00:00`);
+      // Same anchor defect as recurringForMonth above (2.4.93). This site was
+      // missed by the sweep that fixed :139/:195 and by the one that found
+      // :65, so it is the second miss on the same shape in the same file.
+      const asOf = filter === currentYm ? new Date() : cycleBounds(filter, startDay).start;
       for (const r of recurring) {
         const amt = toUSD(historizedRecurringContribution(r, filter, asOf, startDay), r.currency);
         if (amt > 0) bump(r.category ?? "uncategorized", amt);
