@@ -187,12 +187,20 @@ describe("4. the suggestion banner — the third call site", () => {
   });
 });
 
-// ───────── 5. REPORTED, NOT ENCODED — these record wrong behaviour ─────────
+// ───────── 5. both findings from this file, now closed ─────────
 //
-// it.fails: the assertion is what SHOULD happen, and the test passes only
-// while the app disagrees with it. When either is fixed, the test goes red
-// and must be converted to a plain `it`. Nothing here asserts that the
-// current behaviour is correct.
+// Section 5 was originally two `it.fails` -- assertions of what SHOULD
+// happen, passing only while the app disagreed, so wrong behaviour was
+// recorded without being pinned. Both have since been resolved and the
+// tests promoted to plain `it`, in opposite directions:
+//
+//   A (2.4.128) the app was changed to match the assertion.
+//   B (2.4.129 + 2.4.130) the ASSERTION was wrong. A surviving heal stamp
+//     is the requirement, not the defect -- see the test's own comment.
+//
+// No `it.fails` remains in this file. If one is added back, it must carry
+// the same contract: the correct behaviour is what is written down, and a
+// green run means the app still disagrees.
 
 describe("5. no preset fits — the banner must stay quiet (2.4.128, was it.fails)", () => {
   it("needs over 80% are offered nothing, because nothing tighter exists", () => {
@@ -225,29 +233,53 @@ describe("5. no preset fits — the banner must stay quiet (2.4.128, was it.fail
     expect(screen.queryByText("A better fit might be available")).toBeNull();
   });
 
-  it.fails("B: a heal stamp survives switching away from custom, so the notice resurfaces later", () => {
-    // The heal notice renders only inside the `ruleKey === "custom"` block.
-    // budgetSplitHealedAt/HealedFrom are cleared on dismiss or on moving a
-    // slider -- neither of which happens if the user switches to a preset
-    // instead. The stamp persists, hidden, and reappears whenever they next
-    // choose Custom, describing an adjustment from another session entirely.
+  it("a heal stamp SURVIVES a preset round-trip — the record persists until acknowledged", () => {
+    // Was `it.fails`, recorded as 2.4.127 finding B on the reading that a
+    // resurfacing notice is stale. That reading was wrong, and both halves
+    // of the correction have shipped:
     //
-    // Same family as 2.4.106: a notice that outlives the moment it
-    // describes. The fix is presumably to clear the stamp in applyRule when
-    // leaving custom, but that is a decision, not a cleanup.
-    renderBudget({
-      budgetRule: "50-30-20", budgetCustomNeeds: 85, budgetCustomWants: 10,
-      budgetSplitHealedAt: new Date().toISOString(),
+    //   * 2.4.129 deleted Setup's duplicate sliders, which were the only
+    //     path that could change the split WITHOUT clearing the stamp. So a
+    //     surviving stamp can no longer describe anything but the real heal.
+    //   * 2.4.130 reworded the notice as a standing state carrying the date
+    //     it happened, so surfacing it weeks later reads correctly.
+    //
+    // Survival is therefore the REQUIREMENT, not the defect: 2.4.130's
+    // notice exists to be acknowledged, and clearing the stamp on the way
+    // past a preset would destroy a true, unacknowledged record because the
+    // user navigated. The two deliberate clears stay as they were --
+    // dismissing ("Got it") and editing the split, both acts of the user
+    // taking ownership.
+    const { onChange } = renderBudget({
+      budgetRule: "custom", budgetCustomNeeds: 85, budgetCustomWants: 10,
+      budgetSplitHealedAt: "2026-08-29T09:00:00.000Z",
       budgetSplitHealedFrom: { needs: 85, wants: 15 },
     } as Partial<LocalFinancials>);
-    fireEvent.click(screen.getByRole("button", { name: /Custom/ }));
-    // Re-render as the app would after that write, now on custom:
-    cleanup();
+
+    // Premise: 85/10 is in range, so the heal effect does not fire and the
+    // only write below is the picker's own.
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.click(tile(BUDGET_RULES["50-30-20"].label));
+
+    const out = saved(onChange)!;
+    expect(out.budgetRule).toBe("50-30-20");
+    expect(out.budgetSplitHealedAt).toBe("2026-08-29T09:00:00.000Z");
+    expect(out.budgetSplitHealedFrom).toEqual({ needs: 85, wants: 15 });
+  });
+
+  it("and the notice is still there to acknowledge on the way back", () => {
+    // The other end of the round-trip. Rendered as the app would be after
+    // the write above: back on custom, stamp intact, notice available.
+    // Without this the test above would only prove a field survived one
+    // spread -- not that the record is still reachable by the user.
     renderBudget({
       budgetRule: "custom", budgetCustomNeeds: 85, budgetCustomWants: 10,
-      budgetSplitHealedAt: new Date().toISOString(),
+      budgetSplitHealedAt: "2026-08-29T09:00:00.000Z",
       budgetSplitHealedFrom: { needs: 85, wants: 15 },
     } as Partial<LocalFinancials>);
-    expect(screen.queryByText(/has been adjusted|was adjusted|below 5%/i)).toBeNull();
+    const dismiss = screen.getByRole("button", { name: /dismiss/i });
+    expect(dismiss.textContent).toBe("Got it");
+    // 2.4.130: dated, so surfacing it late reads as a standing fact.
+    expect(dismiss.parentElement!.textContent).toContain("29/08/2026");
   });
 });
