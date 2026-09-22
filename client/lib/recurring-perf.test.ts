@@ -59,6 +59,20 @@ function item(frequency: string, startYear: number, over: Partial<StoredRecurrin
  * resolution, and a ratio of two rounding errors is not a measurement. The
  * first draft of this file omitted the warm-up and took a mean of five --
  * it reported an age ratio of 3.5x where the real figure is 1.9x.
+ * 📐 HELD QUESTION: min instead of median (raised 2026-09-22).
+ *
+ * Under contention the FASTEST sample is the one least interrupted, so min
+ * is the better estimator of the code's own cost -- median still carries
+ * scheduler noise, which is what made assertion E2's budget unsurvivable
+ * (0.61ms isolated vs a 5.64ms tail, a 9.2x swing).
+ *
+ * NOT CHANGED, and the reason is scope rather than doubt: this helper is
+ * shared by A, B, C, D and E. Switching to min silently re-tunes four
+ * assertions that are currently stable and whose margins were calibrated
+ * against median's numbers -- B and C are ratios where both sides would
+ * move, and D's 1,000x margin would simply grow. That is its own change,
+ * with its own before/after measurements, not a rider on a budget fix.
+ *
  */
 function median(fn: () => unknown, { batch = 1, samples = 7 } = {}): number {
   for (let i = 0; i < batch; i++) fn();
@@ -245,12 +259,73 @@ describe("E. the 3N display path stays cheap now that it reads the ledger (2.4.1
     expect(withWrapper / bareScans).toBeLessThan(3);
   });
 
-  it("and stays under 5ms in absolute terms at 100x the real ledger", () => {
-    // Backstop, per assertion D's reasoning: a change that slows the
-    // wrapper and its control equally satisfies the ratio above while
-    // still being far too slow. Measured 0.596ms, so ~8x inside -- stated
-    // plainly rather than dressed up as tighter than it is.
+  it("and stays under 50ms in absolute terms at 100x the real ledger", () => {
+    // Backstop, per assertion D's reasoning: a change that slows the wrapper
+    // and its control equally satisfies the ratio above while still being far
+    // too slow. That is the ONE regression the ratio is structurally blind to,
+    // because it inflates both sides -- concretely, recurringPaidSoFar itself
+    // getting slow.
+    //
+    // ⚠️ BUDGET CORRECTED 2026-09-22, from 5ms. It failed intermittently at
+    // ~5.6ms under full-suite load, on main, before Phase 2 existed. The old
+    // comment read "Measured 0.596ms, so ~8x inside -- stated plainly rather
+    // than dressed up as tighter than it is." Every word of that was true,
+    // and it is the sentence that should have prompted the question it did
+    // not: **8x of WHAT variance?**
+    //
+    // THE GENERAL DEFECT, which is the part worth carrying elsewhere:
+    //
+    //   A margin calibrated against a single measurement is a margin against
+    //   a POINT, not a distribution. State the variance the number has to
+    //   survive, not just the value it was measured at.
+    //
+    // MEASURED, this workload (9 nominalMonthlyEquivalent calls over 8,400
+    // transactions; median of 7 samples x 20 calls after a warm-up):
+    //
+    //   isolated, n=6              0.61 - 0.70 ms
+    //   full suite, n=4            1.19 - 1.57 ms
+    //   two suites concurrent, n=2 1.32 - 1.38 ms
+    //   observed failure            ~5.64 ms
+    //
+    // The absolute swings 9.2x across conditions. An 8x margin cannot
+    // survive a 9.2x swing; that is the whole bug, and it is arithmetic
+    // rather than bad luck.
+    //
+    // WHY 50 AND NOT "whatever stops it failing": it is assertion D's
+    // budget, and D has never flaked because its margin is ~1,000-2,200x
+    // (measured 0.023ms isolated, 0.023-0.051ms under load). D is the same
+    // shape of assertion on a workload 27x lighter, which is exactly why it
+    // was never exposed to this.
+    //
+    // REACHABILITY (2.4.111). Failure needs 9 calls over 50ms, i.e. >5.5ms
+    // per call against today's ~0.07ms -- an ~80x slowdown in
+    // recurringPaidSoFar's per-call cost. Both named regressions clear that:
+    // undoing 2.4.109's bound is ~368ms per call (~3.3s for nine, 66x past
+    // the budget), and an O(n^2) scan at 8,400 rows is hundreds of ms.
+    // WHAT IT WILL NOT CATCH: anything under ~80x. Said plainly -- that is
+    // the price of an absolute backstop on a measurement with 9x
+    // environmental variance, and it is why the RATIO above, not this, is
+    // the real assertion.
+    //
+    // REJECTED, with measurements, so none of these is re-proposed blind:
+    //
+    //   * A same-run machine-speed control (one trivial pass over the same
+    //     8,400-element array), normalising wrapper/calib. MEASURED: calib
+    //     is 0.0069ms isolated but 0.0175 / 0.2463 / 0.3096 under load -- a
+    //     45x swing, WORSE than its subject's 9.2x -- so wrapper/calib
+    //     ranged 90.2 down to 3.6, a 25x spread. **A normaliser below its
+    //     subject's noise floor makes the assertion worse, not better.** At
+    //     ~7us it is beneath timer and scheduler granularity. The ratio
+    //     technique is right in general and this file already uses it
+    //     correctly in A, B, C and in the test above -- against `bare`,
+    //     which is the same MAGNITUDE (0.85-1.20 across every condition).
+    //   * min instead of median. Genuinely better under contention, and
+    //     held as its own question -- see the note on `median` itself.
+    //   * Deleting this test. Loses the only cover for "recurringPaidSoFar
+    //     itself got slow".
+    //   * 10-20ms. Still inside the observed 5.64ms tail by under 4x: buys a
+    //     quieter suite, not a surviving one.
     expect(render()).toBeGreaterThan(0);
-    expect(median(render, { batch: 20 })).toBeLessThan(5);
+    expect(median(render, { batch: 20 })).toBeLessThan(50);
   });
 });
