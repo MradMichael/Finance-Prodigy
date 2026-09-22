@@ -53,7 +53,7 @@ export default function PrivacyPage() {
         <Section title="What we collect">
           <p><strong style={{ color: T.text }}>Account info:</strong> your name, email address, and a password hash, never your raw password.</p>
           <p><strong style={{ color: T.text }}>Financial data:</strong> transactions, goals, debts, recurring payments, and anything else you enter. This is encrypted (AES-256-GCM) and stored in your own browser&apos;s local storage. It never touches our servers unless you turn on Database sync.</p>
-          <p><strong style={{ color: T.text }}>Optional sync backup:</strong> if you use Profile → Push, a copy of your data is sent to our database (currently hosted on Neon/Postgres) so you can restore it on another device. This is opt-in: nothing is uploaded unless you choose to push. <strong style={{ color: T.text }}>Unlike your local browser storage, this server-side copy is not client-side-encrypted:</strong> it&apos;s stored as readable data, because the analytics decomposition described below needs to read actual field values. It&apos;s protected instead by database access controls, TLS in transit, and requiring your password-derived sync token to read it back, a materially different guarantee than the local encryption, and worth knowing plainly rather than assuming it carries over.</p>
+          <p><strong style={{ color: T.text }}>Optional sync backup:</strong> if you use Profile → Push, a copy of your data is sent to our database (currently hosted on Neon/Postgres) so you can restore it on another device. This is opt-in: nothing is uploaded unless you choose to push. <strong style={{ color: T.text }}>Unlike your local browser storage, this server-side copy is not client-side-encrypted:</strong> it&apos;s stored as readable data, because it has to be restorable on a device that does not hold this device&apos;s encryption key — a second device that joins by pulling your data generates its own. It&apos;s protected instead by database access controls, TLS in transit, and requiring your password-derived sync token to read it back, a materially different guarantee than the local encryption, and worth knowing plainly rather than assuming it carries over.</p>
         </Section>
 
         <Section title="How it's protected">
@@ -71,10 +71,12 @@ export default function PrivacyPage() {
 
         <Section title="Internal analytics">
           <p>
-            When you push data to sync, a decomposed copy is also written into an internal analytics warehouse
-            (categorized transactions, dates, accounts) so future features can eventually query trends across your
-            own data. This stays on our own database, is not shared externally, and the app itself doesn&apos;t
-            currently read it back. It exists for future internal use only.
+            Pushing to sync <strong style={{ color: T.text }}>used to</strong> also write a decomposed copy
+            (categorized transactions, dates, accounts) into an internal analytics warehouse, intended for future
+            features that could query trends across your own data. <strong style={{ color: T.text }}>That stopped in
+            September 2026: no decomposed copy is written any more.</strong> Copies made before it stopped are still on
+            our database. They were never shared externally, nothing in the app ever read them back, and deleting
+            your account removes them along with the sync backup itself.
           </p>
           <p>
             Separately, Profile → Help improve ESSA is a toggle, <strong style={{ color: T.text }}>on by default but a real opt-out</strong>,
