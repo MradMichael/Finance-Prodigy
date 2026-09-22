@@ -7,6 +7,111 @@ export type { CycleKey, CalendarKey, CycleHistory, CalendarHistory } from "./per
 export type Currency = "USD" | "LBP";
 export type PaymentMethod = "cash" | "card" | "other";
 
+/**
+ * Phase 1 of the period close (docs/PERIOD_CLOSE_PLAN.md). One record per
+ * cycle the owner has closed: what each tracked balance actually held, and
+ * what was overwritten to make that the new baseline.
+ *
+ * INERT AS OF PHASE 1. Nothing writes it and nothing in the UI reads it.
+ * The shape is settled here, before any row exists, precisely so Phase 2
+ * does not need a second migration against rows Phase 1 already wrote.
+ */
+export interface PeriodClose {
+  /** Which cycle was closed. */
+  cycleKey: CycleKey;
+  /**
+   * The cycle's real span, as literal YYYY-MM-DD dates. NOT redundant with
+   * cycleKey, and this is the field that makes the record trustworthy:
+   * 2.4.102 established that changing payday REINTERPRETS stored cycle keys
+   * -- the same `2026-08` resolves to a different span of real time at a
+   * different startDay. A close keyed only by cycleKey would silently
+   * re-date itself the moment the owner moved their payday, turning a
+   * statement about what was true in a period into a statement about a key
+   * whose meaning had shifted underneath it.
+   */
+  rangeStart: string;
+  rangeEnd: string;
+  /**
+   * cycleStartDay as it stood when this close was performed. Stored so a
+   * later reinterpretation is DETECTABLE rather than invisible: if this
+   * disagrees with today's cycleStartDayOf(data), the key no longer means
+   * what it meant, and rangeStart/rangeEnd are the authority.
+   */
+  startDayAtClose: number;
+  /**
+   * When the close was actually performed, distinct from rangeEnd. A cycle
+   * closed four days late is a different fact from one closed on the
+   * boundary, and the plan's Phase 3 depends on being able to tell them
+   * apart rather than pretending lateness away.
+   */
+  closedAt: string;
+  accounts: PeriodCloseAccount[];
+}
+
+/** One tracked balance's figures at the moment of a close. */
+export interface PeriodCloseAccount {
+  trackedBalanceId: string;
+  /** What the owner stated they actually held. */
+  actual: number;
+  /** What the ledger expected at that instant, frozen. */
+  expectedAtClose: number;
+  /** actual - expectedAtClose. Frozen; never recomputed. */
+  discrepancy: number;
+  currency: Currency;
+  lbpRateAtClose: number;
+  /**
+   * The anchor this close overwrote. A check-in is irreversible today --
+   * reanchorTrackedBalance replaces startingBalance/startingDate/startingAt
+   * with no copy kept -- and a close touches every account at once, so a
+   * mistyped figure becomes a multi-account mistake. This is what Phase 4's
+   * "reopen cycle" restores from.
+   */
+  priorState: {
+    startingBalance: number;
+    startingDate: string;
+    startingAt?: string;
+    actualBalance?: number;
+  };
+  /**
+   * 2.4.124 -- the owner marked this account's gap as accounted for. Absent
+   * means not acknowledged, which is the normal state.
+   *
+   * It does NOT adjust the ledger, rewrite expectedAtClose, or alter
+   * discrepancy. The gap stays recorded; only its status changes. What it
+   * clears is the Mismatch verdict on the two surfaces that render one
+   * (BalanceCheckScreen's badge and computeDashboard's balance-check alert)
+   * -- and only in Phase 2, which is what will read this.
+   */
+  acknowledgement?: PeriodCloseAcknowledgement;
+}
+
+/**
+ * 2.4.124. Why `discrepancy` and `startingAt` are COPIED in here rather than
+ * read off the balance when the badge is drawn: an acknowledgement attached
+ * to an ACCOUNT silences that account's badge permanently, including for
+ * gaps discovered later that nobody acknowledged -- 2.4.86's auto-absorb,
+ * reached by a slower route. Binding it to the specific frozen discrepancy
+ * prevents that. TrackedBalance.startingAt is the full ISO instant stamped
+ * by reanchorTrackedBalance on every check-in (2.4.65), so it uniquely
+ * identifies WHICH check-in's gap this refers to; a fresh check-in mints a
+ * new one and the acknowledgement stops applying.
+ */
+export interface PeriodCloseAcknowledgement {
+  /**
+   * REQUIRED, and it is the load-bearing part. Without a stored reason this
+   * is a silence button, and a silence button pressed at every close on a
+   * schedule is exactly what 2.4.86 refused. Enforcement of "non-empty,
+   * non-whitespace" belongs to the Phase 2 control that creates one; the
+   * type cannot express it.
+   */
+  note: string;
+  acknowledgedAt: string;
+  /** The figure being acknowledged, copied. */
+  discrepancy: number;
+  /** The anchor identity it was made against, copied. */
+  startingAt: string;
+}
+
 export interface StoredCard {
   id: string;
   type: "Visa" | "Mastercard" | "Amex" | "Other";
@@ -645,6 +750,16 @@ export interface LocalFinancials {
   wishlist?: WishlistItem[];
   /** Whether the one-time "recurring bills now count once you confirm them" notice has been dismissed (Phase 2.5.3). Optional, defaults falsy -- no migration needed, matches the existing "absent means not yet seen" pattern. */
   recurringModelNoticeSeen?: boolean;
+  /**
+   * Phase 1 of the period close. One PeriodClose per cycle the owner has
+   * closed, newest-last (cycleClosesFor sorts rather than relying on it).
+   *
+   * INERT: nothing writes this and nothing in the UI reads it. Declared now
+   * so the record's shape -- including the per-account acknowledgement --
+   * is settled before any row exists. Optional and additive; absent means
+   * "no cycle has been closed", which is true of every account today.
+   */
+  periodCloses?: PeriodClose[];
 }
 
 // Bumped whenever a stored-shape migration step is added to MIGRATIONS
@@ -652,7 +767,7 @@ export interface LocalFinancials {
 // captured lbpRateAtEntry to every LBP-currency record. v3 (Phase 2.5.1)
 // adds confirmCutoverDate to recurring items. v4 (Phase 2.6.1) adds
 // emergencyFundOpeningBalance and StoredDebt.openingBalance.
-export const CURRENT_SCHEMA_VERSION = 4;
+export const CURRENT_SCHEMA_VERSION = 5;
 
 // The reference rate a new account starts with, and the fallback used
 // anywhere financials.lbpRate is momentarily absent. Single source of
@@ -736,6 +851,10 @@ export const DEFAULT_DATA: LocalFinancials = {
   incomeHistory: [],
   lbpRateHistory: [],
   budgetRuleHistory: [],
+  // Present and empty, like every other collection here, so
+  // migrateFinancials(undefined) still deep-equals DEFAULT_DATA. Caught by
+  // that existing test rather than by design -- worth the line.
+  periodCloses: [],
   budgetRule: "50-30-20",
 };
 
@@ -865,11 +984,27 @@ function addLedgerDerivedFields(d: LocalFinancials): LocalFinancials {
   };
 }
 
+/**
+ * v4 -> v5. Adds the (empty) period-close record.
+ *
+ * Deliberately NON-CLOBBERING via `?? []` rather than an unconditional
+ * assignment: a device that migrates a second time, or one that pulls a
+ * snapshot already carrying closes, must not have them erased. Same idiom
+ * addRecurringConfirmModel uses for confirmCutoverDate.
+ *
+ * Nothing else moves. The array is empty on every existing account, so this
+ * is a schema bump with no behavioural surface at all -- which is what the
+ * zero-diff gate asserts.
+ */
+function addPeriodCloseRecord(d: LocalFinancials): LocalFinancials {
+  return { ...d, schemaVersion: 5, periodCloses: d.periodCloses ?? [] };
+}
 const MIGRATIONS: { fromVersion: number; migrate: (d: LocalFinancials) => LocalFinancials }[] = [
   { fromVersion: 0, migrate: (d) => ({ ...d, schemaVersion: 1 }) },
   { fromVersion: 1, migrate: addCurrencyAndRate },
   { fromVersion: 2, migrate: addRecurringConfirmModel },
   { fromVersion: 3, migrate: addLedgerDerivedFields },
+  { fromVersion: 4, migrate: addPeriodCloseRecord },
 ];
 
 /** Reads the schema version off a raw, not-yet-migrated value -- treats a
@@ -1059,6 +1194,27 @@ export async function saveData(data: LocalFinancials, userId: string): Promise<v
   localStorage.setItem(storageKey(userId), stored);
 }
 
+/**
+ * The closes recorded for one cycle, oldest first. Phase 1's only reader,
+ * and it is not wired to anything -- it exists so the record has a defined
+ * way in before Phase 2 needs one.
+ *
+ * MATCHES ON cycleKey, and that is a deliberate limitation worth stating
+ * rather than discovering: after a payday change the same key names a
+ * different span of real time (2.4.102), so a close stored under `2026-08`
+ * at startDay 1 and one stored under `2026-08` at startDay 27 both come
+ * back here. They are different periods. Callers that care -- Phase 3's
+ * unclosed-cycle list is the first -- must compare `startDayAtClose`
+ * against today's, and treat rangeStart/rangeEnd as the authority when
+ * they differ. The record carries everything needed to tell; this function
+ * deliberately does not decide it for them.
+ */
+export function cycleClosesFor(data: Pick<LocalFinancials, "periodCloses">, cycleKey: CycleKey): PeriodClose[] {
+  return (data.periodCloses ?? [])
+    .filter((c) => c.cycleKey === cycleKey)
+    .slice()
+    .sort((a, b) => a.closedAt.localeCompare(b.closedAt));
+}
 export function uid(): string {
   return Math.random().toString(36).slice(2, 10);
 }
