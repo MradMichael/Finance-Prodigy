@@ -4,9 +4,12 @@ import { useState } from "react";
 import type { LocalFinancials, TrackedBalance, PaymentMethod, StoredCard, Currency } from "../../lib/localData";
 import {
   uid, todayISO, fmtDate, withRate, reanchorTrackedBalance, moneyMaxFor, DEFAULT_LBP_RATE,
+  buildPeriodClose, cycleStartDayOf,
 } from "../../lib/localData";
 import { balanceCheckReconciliation, type computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
+import CloseCycleModal, { type CloseRow } from "../CloseCycleModal";
+import { currentCycleKey, cycleCloseInstant, cycleLabel as fmtCycle } from "../../lib/period";
 import { SERIF, NUMS, money, fmtCur } from "./shared";
 import {
   Label, FocusInput, MoneyInput, PrimaryBtn, CurrencyToggle, DateFieldDMY, CardPicker,
@@ -40,6 +43,49 @@ export default function BalanceCheckScreen({
   const cards = financials.cards ?? [];
   const tracked = financials.trackedBalances ?? [];
   const update = (patch: Partial<LocalFinancials>) => onChange({ ...financials, ...patch });
+
+  // ── Period close (docs/PERIOD_CLOSE_PLAN.md Phase 2) ──
+  const [closing, setClosing] = useState(false);
+  const startDay = cycleStartDayOf(financials);
+  const closingKey = currentCycleKey(new Date(), startDay);
+
+  /**
+   * ONE write for every account. Not a loop of per-account updates: the
+   * reanchors and the record land in a single onChange, so there is no
+   * partway state to recover from -- either the whole close happened or
+   * none of it did. saveData is likewise one setItem.
+   *
+   * Pinned to the cycle's END INSTANT, not today. reanchorTrackedBalance
+   * takes that instant for `startingAt` and derives a bare `startingDate`
+   * from it -- passing the instant straight through used to break
+   * isAfterBalanceBaseline's tier 3 for every boundary-day transaction.
+   */
+  function commitClose(entries: Parameters<React.ComponentProps<typeof CloseCycleModal>["onConfirm"]>[0]) {
+    const at = cycleCloseInstant(closingKey, startDay);
+    const now = new Date();
+    const record = buildPeriodClose({
+      cycleKey: closingKey, startDay, closedAt: now, lbpRate,
+      accounts: entries.map((e) => ({
+        tb: e.tb, actual: e.actual, expectedAtClose: e.expectedAtClose,
+        ...(e.acknowledgement
+          ? { acknowledgement: { ...e.acknowledgement, acknowledgedAt: now.toISOString(), startingAt: at } }
+          : {}),
+      })),
+    });
+    update({
+      trackedBalances: tracked.map((t) => {
+        const e = entries.find((x) => x.tb.id === t.id);
+        return e ? reanchorTrackedBalance(t, e.actual, e.expectedAtClose, lbpRate, at) : t;
+      }),
+      periodCloses: [...(financials.periodCloses ?? []), record],
+    });
+    setClosing(false);
+  }
+
+  const closeRows: CloseRow[] = tracked.map((tb) => ({
+    tb,
+    expectedAtClose: dashData.balanceChecks.find((b) => b.id === tb.id)?.expected ?? 0,
+  }));
 
   const [actualInputs, setActualInputs] = useState<Record<string, string>>({});
   const [tbName, setTbName] = useState("");
@@ -133,24 +179,59 @@ export default function BalanceCheckScreen({
             still standing" from "real activity that has since narrowed it"
             for the BODY COPY only; an unreconciled balance keeps its Mismatch
             badge regardless of how well activity happens to line up. */}
+        {/* The close action lives OUTSIDE the reconciliation block on
+            purpose. That block is gated on at least one account having been
+            checked in, and closing a cycle is precisely how you state a
+            balance for the first time -- nesting the button inside it made
+            the action unreachable for exactly the account that needs it
+            most. Found by perturbation: the original "not offered with zero
+            tracked balances" test passed either way, because the outer gate
+            hid the button regardless of its own condition. */}
+        {tracked.length > 0 && (
+          <div className="flex justify-end px-1">
+            <button
+              onClick={() => setClosing(true)}
+              className="text-[10px] font-semibold px-2.5 py-1 rounded-lg transition-all hover:opacity-80"
+              style={{ color: T.jade, border: `1px solid ${T.jade}40` }}
+            >
+              Close this cycle
+            </button>
+          </div>
+        )}
         {dashData.balanceChecks.some((b) => b.actual != null) && (
           <div className="space-y-3">
             <p className="text-xs uppercase tracking-widest px-1" style={{ color: T.mute }}>Reconciliation</p>
             <div className="grid gap-3 md:grid-cols-2">
               {dashData.balanceChecks.filter((b) => b.actual != null).map((b) => {
                 const gap = b.discrepancy ?? 0;
+                // >= $1, and the reason is stated here for the first time:
+                // this is a PER-ACCOUNT verdict on a screen opened
+                // deliberately, so it flags anything a person would call a
+                // real difference. The Overview alert's $5 threshold is
+                // higher on purpose -- that one INTERRUPTS, and earns a
+                // higher bar. The asymmetry was UNDESIGNED until 2026-09-22:
+                // the $5 always carried a stated reason, this one never did.
                 const mismatch = Math.abs(gap) >= 1;
-                const accent = mismatch ? T.coral : T.jade;
+                // Phase 2 / 2.4.124: three-valued. `acknowledged` is computed
+                // once in computeDashboard and read here AND by the Overview
+                // alert, so the two surfaces cannot disagree.
+                const ack = b.acknowledged;
+                const verdict = !mismatch ? "Matches" : ack ? "Accounted for" : "Mismatch";
+                // Brass, deliberately NOT jade. 2.4.64 refused to assert
+                // `Matches` on a balance nobody re-confirmed, and that
+                // objection survives: "Accounted for" means a real gap,
+                // explained -- it must not look like no gap.
+                const accent = !mismatch ? T.jade : ack ? T.brass : T.coral;
                 const { residual, explainedByActivity, netActivitySinceCheck } = balanceCheckReconciliation(gap, b.changeSinceCheck);
                 const residualStillOpen = Math.abs(residual) >= 1;
                 const expectedAsOfCheck = Math.round((b.expected - b.changeSinceCheck) * 100) / 100;
                 const hasActivitySince = Math.abs(netActivitySinceCheck) >= 0.01;
                 return (
-                  <div key={b.id} className="rounded-2xl px-5 py-4" style={{ background: T.panel, border: `1px solid ${mismatch ? T.coral + "40" : T.line}` }}>
+                  <div key={b.id} className="rounded-2xl px-5 py-4" style={{ background: T.panel, border: `1px solid ${mismatch ? accent + "40" : T.line}` }}>
                     <div className="flex items-center justify-between gap-2 mb-3">
                       <span className="text-sm font-medium" style={{ color: T.text }}>{b.name}</span>
                       <span className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: accent }}>
-                        {mismatch ? "Mismatch" : "Matches"}
+                        {verdict}
                       </span>
                     </div>
                     <div className="flex items-baseline justify-between text-xs" style={{ color: T.mute }}>
@@ -166,6 +247,11 @@ export default function BalanceCheckScreen({
                         <span>Difference</span>
                         <span style={{ ...NUMS, color: accent }}>{money(gap)}</span>
                       </div>
+                    )}
+                    {ack && (
+                      <p className="text-[10px] mt-2" style={{ color: T.brass }}>
+                        Accounted for on {fmtDate(ack.acknowledgedAt)} &mdash; &ldquo;{ack.note}&rdquo;
+                      </p>
                     )}
                     {b.actualDate && (
                       <p className="text-[10px] mt-2" style={{ color: T.mute }}>Checked {fmtDate(b.actualDate)}</p>
@@ -297,6 +383,14 @@ export default function BalanceCheckScreen({
         </div>
 
       </div>
+      {closing && (
+        <CloseCycleModal
+          cycleLabel={fmtCycle(closingKey, startDay)}
+          rows={closeRows}
+          onCancel={() => setClosing(false)}
+          onConfirm={commitClose}
+        />
+      )}
     </main>
   );
 }

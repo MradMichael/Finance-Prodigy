@@ -19,6 +19,24 @@
 //      snapshot on purpose: a snapshot can be regenerated with -u and lose
 //      its meaning, and these cannot be. They also document what the
 //      fixture is supposed to produce.
+//
+// ── SNAPSHOT REGENERATIONS, logged so none is silent ──
+//
+// This file's own warning is that `-u` can strip a snapshot of meaning.
+// Every regeneration is therefore recorded here with what moved and why.
+//
+//   2026-09-22, period close Phase 2. ONE added line:
+//
+//       + "acknowledged": null,
+//
+//     on each balanceChecks entry. Additive; nothing removed, nothing
+//     reordered, no figure changed. The field is null unless periodCloses
+//     holds an acknowledgement whose startingAt AND discrepancy both match,
+//     and this fixture has no periodCloses at all, so null is the only
+//     value it can take here. Layer 2 below -- the explicit headline
+//     assertions -- passed untouched across the change, which is the check
+//     that makes this regeneration meaningful rather than a reset.
+//
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { computeDashboard } from "./computeDashboard";
 import { DEFAULT_DATA, type LocalFinancials, type StoredTransaction } from "./localData";

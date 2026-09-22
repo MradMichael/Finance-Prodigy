@@ -149,6 +149,19 @@ export function cycleBounds(key: CycleKey, startDay: number): { start: Date; end
   return { start, end };
 }
 
+/**
+ * The last instant of a cycle, as a full ISO timestamp -- what a period
+ * close pins its baseline to (docs/PERIOD_CLOSE_PLAN.md Phase 2).
+ *
+ * cycleBounds' `end` is EXCLUSIVE (the next cycle's first local midnight),
+ * so this is one millisecond before it: 26 Sep 23:59:59.999 local for the
+ * cycle 27 Aug - 26 Sep. Pinning to the instant rather than the date is
+ * what lets isAfterBalanceBaseline's tier 3 decide the boundary day by
+ * createdAt (2.4.65) instead of excluding it wholesale.
+ */
+export function cycleCloseInstant(key: CycleKey, startDay: number): string {
+  return new Date(cycleBounds(key, startDay).end.getTime() - 1).toISOString();
+}
 /** `n` cycles before `key` (n = 1 is the immediately preceding cycle). */
 export function cycleKeyMinus(key: CycleKey, n: number): CycleKey {
   const [y, m] = key.split("-").map(Number);
