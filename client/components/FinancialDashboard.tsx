@@ -123,7 +123,7 @@ const MOCK: DashboardPayload = {
     { id: "1", name: "Netflix", emoji: "🎬", amount: 15.49, currency: "USD", dueDate: "2026-06-20", dueInDays: 3, overdueCount: 0 },
   ],
   balanceChecks: [
-    { id: "1", name: "Cash", currency: "USD", expected: 240, actual: 190, actualDate: "2026-06-18", discrepancy: -50, changeSinceCheck: 0 },
+    { id: "1", name: "Cash", currency: "USD", expected: 240, actual: 190, actualDate: "2026-06-18", discrepancy: -50, changeSinceCheck: 0, acknowledged: null },
   ],
   netWorth: {
     assets: 6620, liabilities: 13260, total: -6640,

@@ -1,5 +1,5 @@
-import type { LocalFinancials, BudgetRuleKey, StoredDebt, StoredTransaction, StoredRecurring, TrackedBalance, Currency } from "./localData";
-import { historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, LBP_RATE_STALE_DAYS, cycleStartDayOf, valueForMonth, makeToUSDForMonth, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, DEFAULT_LBP_RATE, derivedEfBalance, derivedDebtBalance, activeTransactions, parseLocalDate, isRecurringActive, isAfterBalanceBaseline } from "./localData";
+import type { LocalFinancials, BudgetRuleKey, StoredDebt, StoredTransaction, StoredRecurring, TrackedBalance, Currency, PeriodCloseAcknowledgement } from "./localData";
+import { acknowledgementFor, historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, LBP_RATE_STALE_DAYS, cycleStartDayOf, valueForMonth, makeToUSDForMonth, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, DEFAULT_LBP_RATE, derivedEfBalance, derivedDebtBalance, activeTransactions, parseLocalDate, isRecurringActive, isAfterBalanceBaseline } from "./localData";
 import { cycleKeyForISO, currentCycleKey, calendarKeyForDate, isInCycle, cycleProgress, cycleBounds, cycleKeyMinus, periodNoun, cycleLabel, type CycleKey, type CalendarKey, type CalendarHistory } from "./period";
 import { simulateDebtPayoff, type DebtInput } from "./debtEngine";
 
@@ -103,6 +103,20 @@ export interface DashboardPayload {
     discrepancy: number | null;
     /** Net effect (in USD) of transactions logged after actualDate -- 0 when there's been no activity since the last check, or no check has ever been done. */
     changeSinceCheck: number;
+    /**
+     * 2.4.124 / period close Phase 2. The acknowledgement that currently
+     * applies to this gap, or null.
+     *
+     * Computed ONCE, here, and read by BOTH surfaces that verdict on a gap
+     * -- BalanceCheckScreen's badge and the balance-check alert below.
+     * Deliberate, and the whole point: two surfaces deriving it
+     * independently is exactly the cross-surface disagreement this project
+     * keeps logging. One derived value cannot disagree with itself.
+     *
+     * It does NOT touch `discrepancy`, which stays the frozen figure. An
+     * acknowledged gap is still a gap; only its status changes.
+     */
+    acknowledged: PeriodCloseAcknowledgement | null;
   }[];
   netWorth: {
     assets: number;
@@ -1048,6 +1062,11 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
       actual, actualDate: tb.actualBalanceDate ?? null,
       discrepancy: actual != null ? Math.round((actual - expectedAsOfCheck) * 100) / 100 : null,
       changeSinceCheck,
+      acknowledged: acknowledgementFor(
+        tb,
+        actual != null ? Math.round((actual - expectedAsOfCheck) * 100) / 100 : null,
+        data.periodCloses,
+      ),
     };
   });
 
@@ -1112,7 +1131,10 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     // Matches the same "meaningful" threshold as a rounding/timing blip vs
     // a real mismatch worth flagging -- $5 is small enough to catch a real
     // missed transaction, large enough to ignore currency-conversion noise.
-    if (bc.discrepancy != null && Math.abs(bc.discrepancy) >= 5) {
+    // Period close Phase 2: an acknowledged gap is explained, so it stops
+    // interrupting on Overview. Reads the SAME derived value the badge does;
+    // neither surface recomputes it.
+    if (bc.acknowledged == null && bc.discrepancy != null && Math.abs(bc.discrepancy) >= 5) {
       alerts.push({ id: `balance-${bc.id}`, severity: "warning", message: `${bc.name} doesn't match what you logged`, screen: "balancecheck" });
     }
   }

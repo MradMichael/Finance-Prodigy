@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useTheme } from "../../contexts/ThemeContext";
 
 const SERIF: React.CSSProperties = { fontFamily: "Spectral, Georgia, serif" };
-const LAST_UPDATED = "6 July 2026";
+const LAST_UPDATED = "22 September 2026";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   const T = useTheme();
@@ -52,7 +52,7 @@ export default function PrivacyPage() {
 
         <Section title="What we collect">
           <p><strong style={{ color: T.text }}>Account info:</strong> your name, email address, and a password hash, never your raw password.</p>
-          <p><strong style={{ color: T.text }}>Financial data:</strong> transactions, goals, debts, recurring payments, and anything else you enter. This is encrypted (AES-256-GCM) and stored in your own browser&apos;s local storage. It never touches our servers unless you turn on Database sync.</p>
+          <p><strong style={{ color: T.text }}>Financial data:</strong> transactions, goals, debts, recurring payments, and anything else you enter — including any notes you write, such as the explanation required when you mark a balance difference as accounted for. This is encrypted (AES-256-GCM) and stored in your own browser&apos;s local storage. It never touches our servers unless you turn on Database sync.</p>
           <p><strong style={{ color: T.text }}>Optional sync backup:</strong> if you use Profile → Push, a copy of your data is sent to our database (currently hosted on Neon/Postgres) so you can restore it on another device. This is opt-in: nothing is uploaded unless you choose to push. <strong style={{ color: T.text }}>Unlike your local browser storage, this server-side copy is not client-side-encrypted:</strong> it&apos;s stored as readable data, because it has to be restorable on a device that does not hold this device&apos;s encryption key — a second device that joins by pulling your data generates its own. It&apos;s protected instead by database access controls, TLS in transit, and requiring your password-derived sync token to read it back, a materially different guarantee than the local encryption, and worth knowing plainly rather than assuming it carries over.</p>
         </Section>
 

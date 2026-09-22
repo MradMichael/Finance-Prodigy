@@ -1,7 +1,7 @@
 "use client";
 
 import type { CycleKey, CycleHistory, CalendarHistory } from "./period";
-import {CYCLE_START_DAY, cycleKeyForISO, cycleLabel } from "./period";
+import {CYCLE_START_DAY, cycleKeyForISO, cycleLabel, cycleBounds } from "./period";
 export type { CycleKey, CalendarKey, CycleHistory, CalendarHistory } from "./period";
 
 export type Currency = "USD" | "LBP";
@@ -1209,6 +1209,80 @@ export async function saveData(data: LocalFinancials, userId: string): Promise<v
  * they differ. The record carries everything needed to tell; this function
  * deliberately does not decide it for them.
  */
+/**
+ * The acknowledgement that currently applies to one tracked balance, or
+ * null. Phase 2's single source of truth for the third verdict state.
+ *
+ * BOTH the anchor identity and the figure must still match (2.4.124). An
+ * acknowledgement attached to an ACCOUNT would silence gaps nobody
+ * acknowledged -- 2.4.86's auto-absorb by a slower route. `startingAt` is
+ * the instant reanchorTrackedBalance stamps on every check-in, so a fresh
+ * check-in mints a new one and the acknowledgement lapses; `discrepancy`
+ * pins it to the specific figure that was explained.
+ *
+ * Fails CLOSED: an account with no `startingAt` (a legacy row predating
+ * 2.4.65) has no identity to bind to and can never read as acknowledged.
+ *
+ * Reads only; nothing here touches discrepancy or any stored figure.
+ */
+export function acknowledgementFor(
+  tb: Pick<TrackedBalance, "id" | "startingAt">,
+  discrepancy: number | null,
+  periodCloses: PeriodClose[] | undefined,
+): PeriodCloseAcknowledgement | null {
+  if (discrepancy == null || !tb.startingAt || !periodCloses?.length) return null;
+  // Most recent close first, so a later explanation supersedes an earlier
+  // one for the same anchor.
+  const ordered = periodCloses.slice().sort((a, b) => b.closedAt.localeCompare(a.closedAt));
+  for (const close of ordered) {
+    for (const acc of close.accounts) {
+      if (acc.trackedBalanceId !== tb.id) continue;
+      const ack = acc.acknowledgement;
+      if (!ack) continue;
+      if (ack.startingAt === tb.startingAt && ack.discrepancy === discrepancy) return ack;
+    }
+  }
+  return null;
+}
+
+/**
+ * Builds the PeriodClose for one close. Pure: it reads the PRE-reanchor
+ * TrackedBalance so `priorState` captures the anchor about to be
+ * overwritten, which is what Phase 4 reopens from.
+ */
+export function buildPeriodClose(input: {
+  cycleKey: CycleKey;
+  startDay: number;
+  closedAt: Date;
+  lbpRate: number;
+  accounts: { tb: TrackedBalance; actual: number; expectedAtClose: number; acknowledgement?: PeriodCloseAcknowledgement }[];
+}): PeriodClose {
+  const { cycleKey, startDay, closedAt, lbpRate, accounts } = input;
+  const { start, end } = cycleBounds(cycleKey, startDay);
+  return {
+    cycleKey,
+    rangeStart: isoLocalDay(start),
+    rangeEnd: isoLocalDay(new Date(end.getTime() - 1)),
+    startDayAtClose: startDay,
+    closedAt: closedAt.toISOString(),
+    accounts: accounts.map(({ tb, actual, expectedAtClose, acknowledgement }) => ({
+      trackedBalanceId: tb.id,
+      actual,
+      expectedAtClose,
+      discrepancy: roundMoney(actual - expectedAtClose),
+      currency: tb.currency,
+      lbpRateAtClose: lbpRate,
+      priorState: {
+        startingBalance: tb.startingBalance,
+        startingDate: tb.startingDate,
+        ...(tb.startingAt !== undefined ? { startingAt: tb.startingAt } : {}),
+        ...(tb.actualBalance !== undefined ? { actualBalance: tb.actualBalance } : {}),
+      },
+      ...(acknowledgement ? { acknowledgement } : {}),
+    })),
+  };
+}
+
 export function cycleClosesFor(data: Pick<LocalFinancials, "periodCloses">, cycleKey: CycleKey): PeriodClose[] {
   return (data.periodCloses ?? [])
     .filter((c) => c.cycleKey === cycleKey)
@@ -2332,6 +2406,22 @@ export function isAfterBalanceBaseline(
   return true;
 }
 
+/** A Date's LOCAL calendar day as YYYY-MM-DD. */
+function isoLocalDay(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/**
+ * The LOCAL calendar day of an ISO value. Identity on a bare date.
+ *
+ * Not `.toISOString().slice(0, 10)`: that is the UTC day, and transaction
+ * `date` values are local (todayISO). East of UTC a late-evening instant
+ * belongs to the next local day; west of UTC an early-morning one belongs
+ * to the previous. The same trap parseLocalDate's comment describes.
+ */
+function localDayOf(iso: string): string {
+  return iso.length <= 10 ? iso : isoLocalDay(new Date(iso));
+}
 export function reanchorTrackedBalance(
   tb: TrackedBalance, actualBalance: number, expectedAtCheckUSD: number | undefined, lbpRate: number,
   asOf?: string,
@@ -2342,6 +2432,15 @@ export function reanchorTrackedBalance(
   // closing balance is true as of the day's close, which correctly places
   // every transaction dated that day BEFORE the baseline.
   //
+  // `startingDate` must stay YYYY-MM-DD (its own contract). Phase 2 pins a
+  // close to the cycle's END INSTANT, and assigning that instant here
+  // silently broke isAfterBalanceBaseline: it compares the two as strings,
+  // so "2026-09-26" < "2026-09-26T20:59:59.999Z" put every boundary-day
+  // transaction through tier 1 and tier 3 -- the whole of 2.4.65's fix --
+  // never ran. A boundary-pinned close lands on that day by construction,
+  // so it would have fired every cycle. localDayOf, not .slice(0,10): the
+  // instant's LOCAL day, since transaction `date` values are local.
+  //
   // `actualBalanceDate` deliberately keeps taking `asOf` verbatim -- that is
   // existing, tested behaviour (ImportStatement's own case) and not part of
   // 2.4.65. Only the baseline instant is new.
@@ -2351,7 +2450,7 @@ export function reanchorTrackedBalance(
   return {
     ...tb,
     actualBalance, actualBalanceDate: asOf ?? at, expectedAtCheckUSD,
-    startingBalance: actualBalance, startingDate: asOf ?? todayISO(), startingAt: at,
+    startingBalance: actualBalance, startingDate: asOf ? localDayOf(asOf) : todayISO(), startingAt: at,
     ...withRate(tb.currency, lbpRate),
   };
 }
