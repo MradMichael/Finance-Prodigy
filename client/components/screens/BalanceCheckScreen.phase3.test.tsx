@@ -237,13 +237,22 @@ describe("4. re-closing an already-closed cycle", () => {
     expect(screen.queryByRole("button", { name: /Close the cycle 27 Aug/ })).toBeNull();
   });
 
-  it("and the current-cycle button refuses once that cycle is closed", () => {
-    // The guard in commitClose, reached through the one path that can still
-    // present a closed cycle: the always-present "Close this cycle" button.
-    const { onChange } = renderScreen({ periodCloses: [closeOf("2026-10", START_DAY)] });
-    fireEvent.click(screen.getByRole("button", { name: /close this cycle/i }));
-    fireEvent.change(amountFor("Cash"), { target: { value: "400" } });
-    confirmClose();
-    expect(onChange).not.toHaveBeenCalled();
+  it("and the current cycle is not offered for closing at all once it is closed", () => {
+    // AMENDED BY PHASE 4. This asserted that commitClose REFUSED a re-close
+    // of the current cycle, driven through the button that used to be
+    // present whether or not the cycle was closed. Phase 4 replaces that
+    // button with the closure line, so the refusal now happens a layer
+    // earlier and more honestly: the action is not offered, rather than
+    // offered and then silently doing nothing on confirm.
+    //
+    // commitClose keeps its guard. It is no longer reachable from this
+    // component -- the only two entry points are this button (hidden when
+    // closed) and an unclosed row (closed by definition) -- and what it now
+    // defends is a close arriving from another device while the dialog sits
+    // open. That race cannot be driven from a render test, so it is named
+    // here rather than asserted with a fixture that fakes it.
+    renderScreen({ periodCloses: [closeOf("2026-10", START_DAY)] });
+    expect(screen.queryByRole("button", { name: /close this cycle/i })).toBeNull();
+    expect(screen.getByText(/Closed on/)).toBeTruthy();
   });
 });

@@ -34,7 +34,7 @@ export interface CloseRow {
  * schedule structurally impossible rather than merely discouraged.
  */
 export default function CloseCycleModal({
-  cycleLabel, rows, daysLate, rangeEnd, onCancel, onConfirm,
+  cycleLabel, rows, daysLate, rangeEnd, reopenable, onCancel, onConfirm,
 }: {
   cycleLabel: string;
   rows: CloseRow[];
@@ -42,6 +42,13 @@ export default function CloseCycleModal({
   daysLate: number;
   /** The cycle's last day, already formatted. */
   rangeEnd: string;
+  /**
+   * Whether the cycle being closed is the CURRENT one, and so reopenable.
+   * Passed in rather than inferred from daysLate === 0: a past cycle closed
+   * on the very day it ended is also 0 days late and is NOT reopenable, so
+   * that inference would promise an undo this dialog cannot deliver.
+   */
+  reopenable: boolean;
   onCancel: () => void;
   onConfirm: (entries: { tb: TrackedBalance; actual: number; expectedAtClose: number; acknowledgement?: Omit<PeriodCloseAcknowledgement, "acknowledgedAt" | "startingAt"> }[]) => void;
 }) {
@@ -97,6 +104,11 @@ export default function CloseCycleModal({
               {" "}Closing this <strong style={{ color: T.text }}>{daysLate} day{daysLate === 1 ? "" : "s"}</strong>{" "}
               after it ended &mdash; figures are compared against what the ledger expected on{" "}
               <strong style={{ color: T.text }}>{rangeEnd}</strong>, not today.
+            </>
+          )}
+          {reopenable && (
+            <>
+              {" "}You can reopen this cycle while it is still current.
             </>
           )}
         </p>

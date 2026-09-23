@@ -5,7 +5,7 @@ import type { LocalFinancials, TrackedBalance, PaymentMethod, StoredCard, Curren
 import {
   uid, todayISO, fmtDate, withRate, reanchorTrackedBalance, moneyMaxFor, DEFAULT_LBP_RATE,
   buildPeriodClose, cycleStartDayOf, unclosedCycles, isCycleClosedBySpan,
-  closeMovesBaselineBackwards,
+  closeMovesBaselineBackwards, canReopen, reopenCycle, activeCloseForCycle,
 } from "../../lib/localData";
 import { balanceCheckReconciliation, trackedBalanceExpectedAsOf, type computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
@@ -116,6 +116,47 @@ export default function BalanceCheckScreen({
   // Expected AS OF the cycle end, not the live figure. For the current cycle
   // the two coincide; for a late close they do not, and comparing a stated
   // balance against today's expected would subtract one moment from another.
+  // ── Phase 4: reopen ──
+  // Rendered from canReopen and acted on through canReopen -- the same
+  // call, not two conditions that could disagree. The line only appears
+  // for the CURRENT cycle: reopen restores anchors, not the transactions
+  // logged since, so it is exact immediately after a close and steadily
+  // less so afterwards. Past cycles in the unclosed list are a different
+  // question and stay closed.
+  const activeClose = activeCloseForCycle(financials, currentKey, startDay);
+  const reopenVerdict = canReopen(financials, currentKey, new Date());
+  // closedAt is an INSTANT, so its local day -- not fmtDate on a UTC slice,
+  // which names the wrong day either side of midnight. Same trap as
+  // closingRangeEnd above.
+  const closedOnLabel = activeClose
+    ? (() => {
+        const d = new Date(activeClose.closedAt);
+        return fmtDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
+      })()
+    : "";
+
+  function commitReopen() {
+    // ONE decision point. reopenCycle re-asks canReopen internally against
+    // the clock at THIS moment, so a cycle that rolled over while the
+    // screen sat open is refused here even though the button was rendered
+    // from a verdict taken earlier -- and refused BEFORE the question is
+    // asked, rather than asked and then quietly ignored.
+    //
+    // An explicit canReopen call here as well would be a third guard of the
+    // kind this phase set out to stop adding: no test could reach it, since
+    // reopenCycle already returns null on the same condition. Nothing is
+    // written until update(), so computing the result before confirming
+    // costs nothing.
+    const next = reopenCycle(financials, currentKey, new Date());
+    if (!next) return;
+    if (!confirm(
+      "Reopen this cycle? Every account goes back to the balance and baseline it " +
+      "had before the close. Transactions you have logged since are untouched, and " +
+      "any note you wrote to account for a gap stops applying -- it stays on the " +
+      "record as history."
+    )) return;
+    update({ trackedBalances: next.trackedBalances, periodCloses: next.periodCloses });
+  }
   const closeRows: CloseRow[] = tracked.map((tb) => ({
     tb,
     expectedAtClose: trackedBalanceExpectedAsOf(tb, financials, cycleCloseInstant(closingKey, startDay)),
@@ -223,14 +264,41 @@ export default function BalanceCheckScreen({
             tracked balances" test passed either way, because the outer gate
             hid the button regardless of its own condition. */}
         {tracked.length > 0 && (
-          <div className="flex justify-end px-1">
-            <button
-              onClick={() => setClosing(currentKey)}
-              className="text-[10px] font-semibold px-2.5 py-1 rounded-lg transition-all hover:opacity-80"
-              style={{ color: T.jade, border: `1px solid ${T.jade}40` }}
-            >
-              Close this cycle
-            </button>
+          <div className="flex justify-end items-center gap-2 px-1">
+            {activeClose ? (
+              <>
+                <span className="text-[10px]" style={{ color: T.mute }}>
+                  Closed on {closedOnLabel}
+                </span>
+                {reopenVerdict.ok ? (
+                  <button
+                    onClick={commitReopen}
+                    className="text-[10px] font-semibold px-2.5 py-1 rounded-lg transition-all hover:opacity-80"
+                    style={{ color: T.mute, border: `1px solid ${T.mute}40` }}
+                  >
+                    Reopen
+                  </button>
+                ) : (
+                  // The only refusal reachable here: the record predates
+                  // Phase 4 and captured four of the seven fields a close
+                  // overwrites. Restoring those four would pair a pre-close
+                  // balance with the close's expected figure and invent a
+                  // gap, so the honest answer is to say why, not to offer a
+                  // button that half-works.
+                  <span className="text-[10px]" style={{ color: T.mute }}>
+                    (closed before reopening was supported)
+                  </span>
+                )}
+              </>
+            ) : (
+              <button
+                onClick={() => setClosing(currentKey)}
+                className="text-[10px] font-semibold px-2.5 py-1 rounded-lg transition-all hover:opacity-80"
+                style={{ color: T.jade, border: `1px solid ${T.jade}40` }}
+              >
+                Close this cycle
+              </button>
+            )}
           </div>
         )}
         {dashData.balanceChecks.some((b) => b.actual != null) && (
@@ -460,6 +528,7 @@ export default function BalanceCheckScreen({
           rows={closeRows}
           daysLate={Math.max(0, Math.floor((Date.now() - new Date(cycleCloseInstant(closingKey, startDay)).getTime()) / 86_400_000))}
           rangeEnd={closingRangeEnd}
+          reopenable={closingKey === currentKey}
           onCancel={() => setClosing(null)}
           onConfirm={commitClose}
         />
