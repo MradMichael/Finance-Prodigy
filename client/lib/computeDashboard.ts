@@ -211,6 +211,46 @@ function expectedFromRelevantTx(
  * formula computeDashboard's own balanceChecks uses (expectedFromRelevantTx
  * above), so the two can't independently drift.
  */
+/**
+ * `trackedBalanceExpected` as it stood at a past INSTANT -- what the ledger
+ * expected this balance to hold at the end of a cycle being closed late.
+ *
+ * 🔴 WHY THIS EXISTS, and why Phase 2 did not need it. Phase 2 closes the
+ * CURRENT cycle, where "after the baseline" and "up to now" coincide, so the
+ * live figure is the right one. Closing August on 5 October they diverge:
+ * the live figure already has 27 Sep - 5 Oct spending subtracted, while the
+ * user is being asked what the account held on 26 September. Subtracting one
+ * moment from the other does not give a stale discrepancy, it gives a
+ * meaningless one.
+ *
+ * The cut-off is by transaction DATE against the instant's local day, with
+ * no createdAt tiering. That asymmetry against isAfterBalanceBaseline is
+ * deliberate: the baseline side has to break ties on the boundary day
+ * because two things happened on one date and only the clock separates them
+ * (2.4.65). Here there is no tie -- `date` is a real-world date, so a
+ * transaction dated 26 Sep belongs to the cycle ending 26 Sep whenever it
+ * was typed.
+ */
+export function trackedBalanceExpectedAsOf(
+  tb: Pick<TrackedBalance, "paymentMethod" | "cardId" | "startingBalance" | "startingDate" | "startingAt" | "currency">,
+  data: LocalFinancials,
+  asOfInstant: string,
+): number {
+  const cutoff = localDayOfInstant(asOfInstant);
+  const toUSDForMonth = makeToUSDForMonth(data);
+  const key = `${tb.paymentMethod}|${tb.paymentMethod === "card" ? (tb.cardId ?? "") : ""}`;
+  const relevantTx = activeTransactions(data.transactions ?? []).filter((t) => {
+    const tKey = `${t.paymentMethod ?? ""}|${t.paymentMethod === "card" ? (t.cardId ?? "") : ""}`;
+    return tKey === key && isAfterBalanceBaseline(t, tb) && t.date <= cutoff;
+  });
+  return expectedFromRelevantTx(tb, relevantTx, toUSDForMonth, cycleStartDayOf(data));
+}
+
+/** An ISO instant's LOCAL calendar day. Transaction dates are local. */
+function localDayOfInstant(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 export function trackedBalanceExpected(
   tb: Pick<TrackedBalance, "paymentMethod" | "cardId" | "startingBalance" | "startingDate" | "startingAt" | "currency">,
   data: LocalFinancials,

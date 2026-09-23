@@ -1,7 +1,7 @@
 "use client";
 
 import type { CycleKey, CycleHistory, CalendarHistory } from "./period";
-import {CYCLE_START_DAY, cycleKeyForISO, cycleLabel, cycleBounds } from "./period";
+import {CYCLE_START_DAY, cycleKeyForISO, cycleLabel, cycleBounds, cycleKeyMinus, currentCycleKey } from "./period";
 export type { CycleKey, CalendarKey, CycleHistory, CalendarHistory } from "./period";
 
 export type Currency = "USD" | "LBP";
@@ -1283,6 +1283,136 @@ export function buildPeriodClose(input: {
   };
 }
 
+/**
+ * Would closing this cycle move the account's baseline BACKWARDS?
+ *
+ * 🔴 A close must never do that, and the reason is not arithmetic. Setting
+ * the baseline back from 5 Oct to 26 Sep discards a more recent, better-
+ * informed observation; overwrites expectedAtCheckUSD with a figure
+ * describing a different moment, so the badge would show an August-era gap
+ * as if current; and reclassifies every transaction between the two anchors
+ * as "after baseline", changing the live expected on the strength of the
+ * older statement. None of that is a miscalculation -- it is silent loss of
+ * the better observation, which is 2.4.86's family.
+ *
+ * Such an account is RECORDED in the PeriodClose and left unreanchored, so
+ * its priorState equals its current state and Phase 4's reopen is a no-op
+ * for it. Acknowledgement is not offered for it either: the ack binds to
+ * startingAt plus the frozen discrepancy, and with the baseline unchanged
+ * it would bind to an anchor whose current discrepancy is a different
+ * number -- a control that clears nothing.
+ *
+ * A legacy row with no startingAt (pre-2.4.65) has no anchor to compare
+ * and is treated as reanchorable. That is the same direction 2.4.65's own
+ * fallback takes: absent evidence, include.
+ */
+export function closeMovesBaselineBackwards(
+  tb: Pick<TrackedBalance, "startingAt">,
+  cycleEndInstant: string,
+): boolean {
+  if (!tb.startingAt) return false;
+  return cycleEndInstant <= tb.startingAt;
+}
+/** One row of the unclosed-cycle list. */
+export interface UnclosedCycle {
+  cycleKey: CycleKey;
+  rangeStart: string;
+  rangeEnd: string;
+  /**
+   * Set when a close EXISTS under this key but covered a different stretch
+   * of real time -- i.e. it was recorded at a different payday. The cycle
+   * is genuinely not closed, and this is what lets the list say so instead
+   * of reading as an unexplained gap.
+   */
+  closedUnderOtherSpan: { rangeStart: string; rangeEnd: string } | null;
+}
+
+/**
+ * Is this cycle closed? Phase 3's answer to the ambiguity Phase 1 recorded
+ * and deliberately left open.
+ *
+ * 📐 THE RULE: a cycle counts as closed only if a record matches the span
+ * the key names TODAY -- not merely the key. 2.4.102 established that
+ * changing payday reinterprets stored cycle keys: `2026-08` is 1-31 Aug at
+ * startDay 1 and 27 Aug - 26 Sep at startDay 27. A close recorded under the
+ * first did not close the second. Matching on the key alone would assert
+ * closure of a period that was never closed, which is exactly the re-dating
+ * 2.4.102 forbids.
+ *
+ * The approved consequence, stated rather than hidden: after a payday
+ * change, previously-closed cycles resurface as unclosed, because those
+ * periods genuinely were never closed. `closedUnderOtherSpan` is what the
+ * list uses to explain that rather than leave it mysterious.
+ */
+export function isCycleClosedBySpan(
+  data: Pick<LocalFinancials, "periodCloses">,
+  cycleKey: CycleKey,
+  startDay: number,
+): { closed: boolean; closedUnderOtherSpan: { rangeStart: string; rangeEnd: string } | null } {
+  const b = cycleBounds(cycleKey, startDay);
+  const rangeStart = isoLocalDay(b.start);
+  const rangeEnd = isoLocalDay(new Date(b.end.getTime() - 1));
+  const sameKey = (data.periodCloses ?? []).filter((c) => c.cycleKey === cycleKey);
+  const exact = sameKey.find((c) => c.rangeStart === rangeStart && c.rangeEnd === rangeEnd);
+  if (exact) return { closed: true, closedUnderOtherSpan: null };
+  const other = sameKey[0];
+  return {
+    closed: false,
+    closedUnderOtherSpan: other ? { rangeStart: other.rangeStart, rangeEnd: other.rangeEnd } : null,
+  };
+}
+
+/**
+ * The cycles that are not closed, newest first. Quiet by construction:
+ * there is no count on the nav, no alert and no Overview chip anywhere, and
+ * two bounds keep it from becoming a backlog to feel bad about.
+ *
+ * 1. NOTHING IS LISTED UNTIL THE FIRST CLOSE. Before there is a habit,
+ *    there is nothing to be behind on, and a new account greeted with
+ *    "14 cycles unclosed" is precisely the guilt that gets a ritual
+ *    abandoned. This still satisfies "gaps stay gaps": the window is
+ *    ACTIVITY-based, not anchored at the first close, so skipping August
+ *    and then closing September makes August appear.
+ * 2. CAPPED, oldest dropped first, with the remainder reported as a plain
+ *    number rather than a badge.
+ *
+ * The current cycle is excluded -- Phase 2's own button owns it.
+ */
+export function unclosedCycles(
+  data: Pick<LocalFinancials, "periodCloses" | "transactions" | "trackedBalances" | "cycleStartDay">,
+  now: Date,
+  cap = 12,
+): { rows: UnclosedCycle[]; hiddenEarlier: number } {
+  const empty = { rows: [], hiddenEarlier: 0 };
+  if (!(data.periodCloses ?? []).length) return empty;
+
+  const startDay = cycleStartDayOf(data);
+  const dates: string[] = [
+    ...activeTransactions(data.transactions ?? []).map((t) => t.date),
+    ...(data.trackedBalances ?? []).map((tb) => tb.startingDate),
+  ];
+  if (!dates.length) return empty;
+
+  const from = cycleKeyForISO(dates.reduce((a, b) => (a < b ? a : b)), startDay);
+  let key = cycleKeyMinus(currentCycleKey(now, startDay), 1);
+  const all: UnclosedCycle[] = [];
+  // Bounded independently of `from` as a runaway guard: a corrupt date far
+  // in the past must not spin here.
+  for (let i = 0; i < 600 && key >= from; i++) {
+    const verdict = isCycleClosedBySpan(data, key, startDay);
+    if (!verdict.closed) {
+      const b = cycleBounds(key, startDay);
+      all.push({
+        cycleKey: key,
+        rangeStart: isoLocalDay(b.start),
+        rangeEnd: isoLocalDay(new Date(b.end.getTime() - 1)),
+        closedUnderOtherSpan: verdict.closedUnderOtherSpan,
+      });
+    }
+    key = cycleKeyMinus(key, 1);
+  }
+  return { rows: all.slice(0, cap), hiddenEarlier: Math.max(0, all.length - cap) };
+}
 export function cycleClosesFor(data: Pick<LocalFinancials, "periodCloses">, cycleKey: CycleKey): PeriodClose[] {
   return (data.periodCloses ?? [])
     .filter((c) => c.cycleKey === cycleKey)
