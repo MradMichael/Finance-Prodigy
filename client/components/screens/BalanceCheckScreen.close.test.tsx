@@ -93,14 +93,24 @@ describe("1. closing a cycle", () => {
   });
 
   it("records priorState per account, so Phase 4 can reopen", () => {
+    // AMENDED BY PHASE 4: seven fields, not four. This test shipped with
+    // the four that Phase 1 happened to capture, which described an anchor
+    // rather than what a close DESTROYS -- reanchorTrackedBalance also
+    // overwrites actualBalanceDate, expectedAtCheckUSD and lbpRateAtEntry.
+    // Restoring four of seven would pair a pre-close actualBalance with the
+    // close's expectedAtCheckUSD and invent a gap out of two moments.
+    // priorStateComplete marks records written under the full capture.
     const { onChange } = renderScreen({ trackedBalances: [TB("a", "Cash", -31)] });
     openDialog();
     fireEvent.change(amountFor("Cash"), { target: { value: "400" } });
     confirmClose();
-    expect(written(onChange).periodCloses![0].accounts[0].priorState).toEqual({
+    const acc = written(onChange).periodCloses![0].accounts[0];
+    expect(acc.priorState).toEqual({
       startingBalance: 430, startingDate: "2026-09-01",
       startingAt: "2026-09-01T09:00:00.000Z", actualBalance: 430,
+      actualBalanceDate: "2026-09-01T09:00:00.000Z", expectedAtCheckUSD: 461,
     });
+    expect(acc.priorStateComplete).toBe(true);
   });
 
   it("refuses while any amount is missing", () => {

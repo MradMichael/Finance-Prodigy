@@ -46,6 +46,15 @@ export interface PeriodClose {
    */
   closedAt: string;
   accounts: PeriodCloseAccount[];
+  /**
+   * Set when the close was undone (Phase 4). MARKED, not deleted: a hard
+   * delete is the operation this codebase has repeatedly regretted (2.4.27
+   * -> 2.6.3b's tombstones), and a feature whose ethos is "lateness is
+   * recorded, gaps stay gaps" should not answer its own undo by erasing
+   * the fact. isCycleClosedBySpan filters these out, so the cycle reads
+   * unclosed again and reappears in Phase 3's list.
+   */
+  reopenedAt?: string;
 }
 
 /** One tracked balance's figures at the moment of a close. */
@@ -66,12 +75,36 @@ export interface PeriodCloseAccount {
    * mistyped figure becomes a multi-account mistake. This is what Phase 4's
    * "reopen cycle" restores from.
    */
+  /**
+   * 🔴 EVERY field reanchorTrackedBalance overwrites -- SEVEN, not the four
+   * Phase 1 named. That was an accurate description of an anchor and an
+   * incomplete description of what a close DESTROYS. Restoring four of
+   * seven pairs a pre-close actualBalance with the CLOSE's
+   * expectedAtCheckUSD, and the badge computes discrepancy from those two,
+   * so a partial reopen manufactures a gap out of two different moments.
+   *
+   * An absent optional here means the field was absent BEFORE the close,
+   * and reopen must delete the key rather than leave the close's value --
+   * which is only unambiguous because priorStateComplete says the capture
+   * was exhaustive.
+   */
   priorState: {
     startingBalance: number;
     startingDate: string;
     startingAt?: string;
     actualBalance?: number;
+    actualBalanceDate?: string;
+    expectedAtCheckUSD?: number;
+    lbpRateAtEntry?: number;
   };
+  /**
+   * Set by buildPeriodClose from Phase 4 on. Records written by Phases 2-3
+   * captured only four of the seven fields, and `expectedAtCheckUSD:
+   * undefined` cannot distinguish "was never set" from "was never
+   * captured". Reopen refuses a record without this marker rather than
+   * guess. Its useful life is about one cycle.
+   */
+  priorStateComplete?: true;
   /**
    * 2.4.124 -- the owner marked this account's gap as accounted for. Absent
    * means not acknowledged, which is the normal state.
@@ -1277,7 +1310,14 @@ export function buildPeriodClose(input: {
         startingDate: tb.startingDate,
         ...(tb.startingAt !== undefined ? { startingAt: tb.startingAt } : {}),
         ...(tb.actualBalance !== undefined ? { actualBalance: tb.actualBalance } : {}),
+        ...(tb.actualBalanceDate !== undefined ? { actualBalanceDate: tb.actualBalanceDate } : {}),
+        ...(tb.expectedAtCheckUSD !== undefined ? { expectedAtCheckUSD: tb.expectedAtCheckUSD } : {}),
+        ...(tb.lbpRateAtEntry !== undefined ? { lbpRateAtEntry: tb.lbpRateAtEntry } : {}),
       },
+      // Phase 4: this capture is exhaustive over what reanchorTrackedBalance
+      // overwrites, which is what makes an absent optional above mean "was
+      // absent before the close" rather than "was not captured".
+      priorStateComplete: true,
       ...(acknowledgement ? { acknowledgement } : {}),
     })),
   };
@@ -1313,6 +1353,132 @@ export function closeMovesBaselineBackwards(
   if (!tb.startingAt) return false;
   return cycleEndInstant <= tb.startingAt;
 }
+export type ReopenRefusal = "not-closed" | "already-reopened" | "not-current" | "incomplete-record";
+
+/**
+ * Can this cycle's close be undone? Phase 4's SINGLE decision point.
+ *
+ * 📐 Both layers call this one function: the screen renders from it, and
+ * reopenCycle refuses on it. That is deliberate. Rendering a button behind
+ * three conditions and then re-checking those conditions in the handler
+ * produces three guards no test can reach -- the pattern this feature has
+ * already accumulated twice (Phase 2's !tb.startingAt, Phase 3's
+ * !backwards). One exported predicate is reachable in isolation, every
+ * reason branch is assertable, and the two layers cannot disagree.
+ */
+export function canReopen(
+  data: Pick<LocalFinancials, "periodCloses" | "cycleStartDay">,
+  cycleKey: CycleKey,
+  now: Date,
+): { ok: true; close: PeriodClose } | { ok: false; reason: ReopenRefusal } {
+  const startDay = cycleStartDayOf(data);
+  // Same span rule as isCycleClosedBySpan, same function -- but the
+  // reopened ones are NOT filtered out here, because "already reopened" is
+  // a distinct answer from "never closed" and the user deserves the right
+  // one. A close whose stored span no longer matches today's payday is
+  // "not-closed": the same verdict the unclosed list gives, arrived at the
+  // same way rather than by a second comparison that could drift from it.
+  const matches = closesForSpan(data.periodCloses ?? [], cycleKey, startDay);
+  if (!matches.length) return { ok: false, reason: "not-closed" };
+  const close = matches[matches.length - 1];
+  if (close.reopenedAt) return { ok: false, reason: "already-reopened" };
+  // Reopen restores ANCHORS, not the transactions logged since, so it is
+  // clean immediately after and increasingly approximate later. Bounded to
+  // the cycle still being the current one, and the close dialog says so at
+  // the moment of the act rather than leaving the later absence a mystery.
+  if (cycleKey !== currentCycleKey(now, startDay)) return { ok: false, reason: "not-current" };
+  if (!close.accounts.every((a) => a.priorStateComplete)) return { ok: false, reason: "incomplete-record" };
+  return { ok: true, close };
+}
+
+/**
+ * Undo a close: restore every account's pre-close state and mark the record
+ * reopened. Returns null -- changing nothing -- for any refusal, so a caller
+ * can never half-apply.
+ *
+ * The acknowledgements on the record are NOT erased. They stop APPLYING,
+ * because they bind to the close's `startingAt` and this restores the
+ * earlier one; the note survives as history. "Discarded" means "no longer
+ * in force", not "deleted", and marking over deleting is what lets both be
+ * true at once.
+ */
+export function reopenCycle(
+  data: LocalFinancials,
+  cycleKey: CycleKey,
+  now: Date,
+): LocalFinancials | null {
+  const verdict = canReopen(data, cycleKey, now);
+  if (!verdict.ok) return null;
+  const byId = new Map(verdict.close.accounts.map((a) => [a.trackedBalanceId, a]));
+  return {
+    ...data,
+    trackedBalances: (data.trackedBalances ?? []).map((tb) => {
+      const acc = byId.get(tb.id);
+      return acc ? restoreTrackedBalance(tb, acc.priorState) : tb;
+    }),
+    periodCloses: (data.periodCloses ?? []).map(
+      (c) => (c === verdict.close ? { ...c, reopenedAt: now.toISOString() } : c),
+    ),
+  };
+}
+
+/**
+ * Puts a balance back exactly as it was before a close.
+ *
+ * An absent optional in priorState means the field was absent BEFORE the
+ * close, so the key is DELETED rather than set to undefined. A key present
+ * with value undefined survives a toEqual and serialises away silently --
+ * and leaving the close's expectedAtCheckUSD behind would pair it with a
+ * restored older actualBalance, which is the two-moments discrepancy this
+ * whole phase exists to avoid.
+ */
+function restoreTrackedBalance(
+  tb: TrackedBalance,
+  prior: PeriodCloseAccount["priorState"],
+): TrackedBalance {
+  const optional = ["startingAt", "actualBalance", "actualBalanceDate", "expectedAtCheckUSD", "lbpRateAtEntry"] as const;
+
+  const out: TrackedBalance = {
+    ...tb,
+    startingBalance: prior.startingBalance,
+    startingDate: prior.startingDate,
+  };
+  for (const k of optional) {
+    if (prior[k] === undefined) delete out[k];
+    else (out as unknown as Record<string, unknown>)[k] = prior[k];
+  }
+
+  // Restoring changed nothing -> hand back the SAME object, not an equal
+  // copy. This is the backwards-recorded account: Phase 3 refused to
+  // reanchor it, so its priorState IS its current state. reopenCycle
+  // already returns rows absent from the close by reference, and without
+  // this "did reopen touch this row?" would be answerable by identity for
+  // some rows and not others.
+  //
+  // Compared against the BUILT row rather than re-deciding field by field.
+  // A second field-by-field predicate would have to restate the
+  // absent-means-delete rule, and its presence half would be a branch no
+  // test can reach: reanchorTrackedBalance's `expectedAtCheckUSD` is typed
+  // `number | undefined`, so a present-but-undefined key is one careless
+  // caller away, yet both callers today pass a number and every persisted
+  // row has been through JSON.stringify, which drops such keys. Deriving
+  // the answer from `out` means the rule is stated once and the comparison
+  // is mechanical -- no unreachable branch to annotate.
+  return sameOwnFields(tb, out) ? tb : out;
+}
+
+/** Own enumerable keys and values both equal. Key PRESENCE counts: a key
+ *  carrying undefined is not the same as an absent one, and that
+ *  difference survives no toEqual. */
+function sameOwnFields(a: object, b: object): boolean {
+  const ka = Object.keys(a);
+  if (ka.length !== Object.keys(b).length) return false;
+  return ka.every(
+    (k) =>
+      Object.prototype.hasOwnProperty.call(b, k) &&
+      (a as unknown as Record<string, unknown>)[k] === (b as unknown as Record<string, unknown>)[k],
+  );
+}
 /** One row of the unclosed-cycle list. */
 export interface UnclosedCycle {
   cycleKey: CycleKey;
@@ -1327,6 +1493,36 @@ export interface UnclosedCycle {
   closedUnderOtherSpan: { rangeStart: string; rangeEnd: string } | null;
 }
 
+/**
+ * The closes whose STORED span is the span `cycleKey` denotes under
+ * `startDay` today. Phase 3's span rule, stated once: a cycle key alone is
+ * ambiguous across a payday change, so identity is the literal date range.
+ * Shared by isCycleClosedBySpan and canReopen -- two independent copies of
+ * this comparison could drift, and the drift would be invisible (both would
+ * still look right in isolation).
+ */
+function closesForSpan(closes: PeriodClose[], cycleKey: CycleKey, startDay: number): PeriodClose[] {
+  const b = cycleBounds(cycleKey, startDay);
+  const rangeStart = isoLocalDay(b.start);
+  const rangeEnd = isoLocalDay(new Date(b.end.getTime() - 1));
+  return closes.filter((c) => c.cycleKey === cycleKey && c.rangeStart === rangeStart && c.rangeEnd === rangeEnd);
+}
+/**
+ * The close currently in force for this cycle, or null. "In force" =
+ * matches the span (Phase 3) and has not been reopened (Phase 4).
+ *
+ * Exported so a surface that needs the RECORD -- its closedAt, to say when
+ * -- does not have to repeat the span lookup to find it. isCycleClosedBySpan
+ * is this function plus the closed-under-another-span explanation.
+ */
+export function activeCloseForCycle(
+  data: Pick<LocalFinancials, "periodCloses">,
+  cycleKey: CycleKey,
+  startDay: number,
+): PeriodClose | null {
+  const live = (data.periodCloses ?? []).filter((c) => !c.reopenedAt);
+  return closesForSpan(live, cycleKey, startDay)[0] ?? null;
+}
 /**
  * Is this cycle closed? Phase 3's answer to the ambiguity Phase 1 recorded
  * and deliberately left open.
@@ -1349,11 +1545,14 @@ export function isCycleClosedBySpan(
   cycleKey: CycleKey,
   startDay: number,
 ): { closed: boolean; closedUnderOtherSpan: { rangeStart: string; rangeEnd: string } | null } {
-  const b = cycleBounds(cycleKey, startDay);
-  const rangeStart = isoLocalDay(b.start);
-  const rangeEnd = isoLocalDay(new Date(b.end.getTime() - 1));
-  const sameKey = (data.periodCloses ?? []).filter((c) => c.cycleKey === cycleKey);
-  const exact = sameKey.find((c) => c.rangeStart === rangeStart && c.rangeEnd === rangeEnd);
+  // Phase 4: a reopened close is not a close. Filtered HERE rather than at
+  // each caller, so the unclosed list, the re-close guard and the
+  // closedUnderOtherSpan explanation all inherit it -- in particular, a
+  // reopened close of the SAME span must not fall through and tell the user
+  // "you closed a different period", which would be false. canReopen does
+  // NOT filter them, because "already reopened" is a distinct answer there.
+  const sameKey = (data.periodCloses ?? []).filter((c) => c.cycleKey === cycleKey && !c.reopenedAt);
+  const exact = activeCloseForCycle(data, cycleKey, startDay);
   if (exact) return { closed: true, closedUnderOtherSpan: null };
   const other = sameKey[0];
   return {
