@@ -11,6 +11,13 @@ export interface CloseRow {
   tb: TrackedBalance;
   /** The live `expected` figure for this account, captured before the close. */
   expectedAtClose: number;
+  /**
+   * This account's baseline is already NEWER than the cycle being closed, so
+   * the close records its figures but does not reanchor it. Acknowledgement
+   * is not offered either: the ack binds to startingAt plus the frozen
+   * discrepancy, and with the baseline unchanged it would clear nothing.
+   */
+  recordedOnly?: boolean;
 }
 
 /**
@@ -27,10 +34,14 @@ export interface CloseRow {
  * schedule structurally impossible rather than merely discouraged.
  */
 export default function CloseCycleModal({
-  cycleLabel, rows, onCancel, onConfirm,
+  cycleLabel, rows, daysLate, rangeEnd, onCancel, onConfirm,
 }: {
   cycleLabel: string;
   rows: CloseRow[];
+  /** Whole days between the cycle end and now. 0 for the current cycle. */
+  daysLate: number;
+  /** The cycle's last day, already formatted. */
+  rangeEnd: string;
   onCancel: () => void;
   onConfirm: (entries: { tb: TrackedBalance; actual: number; expectedAtClose: number; acknowledgement?: Omit<PeriodCloseAcknowledgement, "acknowledgedAt" | "startingAt"> }[]) => void;
 }) {
@@ -45,7 +56,11 @@ export default function CloseCycleModal({
     return isNaN(a) ? null : Math.round((a - r.expectedAtClose) * 100) / 100;
   };
   /** The badge's own threshold: you can only explain a gap that is being flagged. */
-  const hasGap = (r: CloseRow) => { const g = gapOf(r); return g != null && Math.abs(g) >= 1; };
+  const hasGap = (r: CloseRow) => {
+    if (r.recordedOnly) return false; // nothing to clear, so nothing to offer
+    const g = gapOf(r);
+    return g != null && Math.abs(g) >= 1;
+  };
 
   const everyAmountEntered = rows.every((r) => !isNaN(amountOf(r.tb.id)));
   // A ticked acknowledgement with an empty or whitespace-only note blocks the
@@ -77,6 +92,13 @@ export default function CloseCycleModal({
         <p className="text-xs mb-5" style={{ color: T.mute }}>
           State what each account actually holds. This sets its baseline to that figure, as of the
           cycle&apos;s last moment, so past drift stops affecting future checks.
+          {daysLate > 0 && (
+            <>
+              {" "}Closing this <strong style={{ color: T.text }}>{daysLate} day{daysLate === 1 ? "" : "s"}</strong>{" "}
+              after it ended &mdash; figures are compared against what the ledger expected on{" "}
+              <strong style={{ color: T.text }}>{rangeEnd}</strong>, not today.
+            </>
+          )}
         </p>
 
         <div className="space-y-4">
@@ -103,7 +125,13 @@ export default function CloseCycleModal({
                   placeholder="What you actually have"
                   max={Number.MAX_SAFE_INTEGER}
                 />
-                {gap != null && (
+                {r.recordedOnly && (
+                  <p className="text-[10px]" style={{ color: T.brass }}>
+                    Recorded only. Your baseline for this account is already later than this cycle,
+                    so closing will not move it backwards.
+                  </p>
+                )}
+                {gap != null && !r.recordedOnly && (
                   <p className="text-[10px]" style={{ color: flagged ? T.coral : T.jade }}>
                     {flagged
                       ? `Gap: ${fmtCur(Math.abs(gap), r.tb.currency)} unaccounted for.`

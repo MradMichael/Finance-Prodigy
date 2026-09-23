@@ -4,12 +4,13 @@ import { useState } from "react";
 import type { LocalFinancials, TrackedBalance, PaymentMethod, StoredCard, Currency } from "../../lib/localData";
 import {
   uid, todayISO, fmtDate, withRate, reanchorTrackedBalance, moneyMaxFor, DEFAULT_LBP_RATE,
-  buildPeriodClose, cycleStartDayOf,
+  buildPeriodClose, cycleStartDayOf, unclosedCycles, isCycleClosedBySpan,
+  closeMovesBaselineBackwards,
 } from "../../lib/localData";
-import { balanceCheckReconciliation, type computeDashboard } from "../../lib/computeDashboard";
+import { balanceCheckReconciliation, trackedBalanceExpectedAsOf, type computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import CloseCycleModal, { type CloseRow } from "../CloseCycleModal";
-import { currentCycleKey, cycleCloseInstant, cycleLabel as fmtCycle } from "../../lib/period";
+import { currentCycleKey, cycleCloseInstant, cycleBounds, cycleLabel as fmtCycle, type CycleKey } from "../../lib/period";
 import { SERIF, NUMS, money, fmtCur } from "./shared";
 import {
   Label, FocusInput, MoneyInput, PrimaryBtn, CurrencyToggle, DateFieldDMY, CardPicker,
@@ -45,9 +46,20 @@ export default function BalanceCheckScreen({
   const update = (patch: Partial<LocalFinancials>) => onChange({ ...financials, ...patch });
 
   // ── Period close (docs/PERIOD_CLOSE_PLAN.md Phase 2) ──
-  const [closing, setClosing] = useState(false);
+  // Phase 3: holds the cycle KEY being closed, so the same dialog serves the
+  // current cycle and any past one. null = shut.
+  const [closing, setClosing] = useState<CycleKey | null>(null);
   const startDay = cycleStartDayOf(financials);
-  const closingKey = currentCycleKey(new Date(), startDay);
+  const currentKey = currentCycleKey(new Date(), startDay);
+  const closingKey = closing ?? currentKey;
+  const unclosed = unclosedCycles(financials, new Date());
+  // The cycle's last LOCAL day, formatted. Not fmtDate on the close
+  // instant's ISO string: that is the UTC day, which for a 23:59:59.999
+  // local instant can name the day either side of the real one.
+  const closingRangeEnd = (() => {
+    const d = new Date(cycleBounds(closingKey, startDay).end.getTime() - 1);
+    return fmtDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
+  })();
 
   /**
    * ONE write for every account. Not a loop of per-account updates: the
@@ -61,13 +73,31 @@ export default function BalanceCheckScreen({
    * isAfterBalanceBaseline's tier 3 for every boundary-day transaction.
    */
   function commitClose(entries: Parameters<React.ComponentProps<typeof CloseCycleModal>["onConfirm"]>[0]) {
-    const at = cycleCloseInstant(closingKey, startDay);
+    const key = closingKey;
+    // Phase 3: re-closing an already-closed cycle is REFUSED, not replaced.
+    // A re-close with the same asOf mints an IDENTICAL startingAt, so a
+    // silent replace could re-attach an old acknowledgement to a new figure.
+    // The way back is Phase 4's reopen, which is why the copy promises none.
+    if (isCycleClosedBySpan(financials, key, startDay).closed) { setClosing(null); return; }
+
+    const at = cycleCloseInstant(key, startDay);
     const now = new Date();
+    // An account whose baseline is already NEWER than this cycle's end is
+    // recorded but not reanchored -- see closeMovesBaselineBackwards.
+    const backwards = (tb: TrackedBalance) => closeMovesBaselineBackwards(tb, at);
+
     const record = buildPeriodClose({
-      cycleKey: closingKey, startDay, closedAt: now, lbpRate,
+      cycleKey: key, startDay, closedAt: now, lbpRate,
       accounts: entries.map((e) => ({
         tb: e.tb, actual: e.actual, expectedAtClose: e.expectedAtClose,
-        ...(e.acknowledgement
+        // `!backwards` here is a SECOND layer and no test can redden it:
+        // the dialog already withholds the acknowledgement control from a
+        // recorded-only row, so nothing reachable through the UI arrives
+        // here with one. Kept because this is the persistence boundary and
+        // the dialog is a different layer -- recorded as NOT load-bearing
+        // rather than counted as covered (same call as Phase 2's
+        // !tb.startingAt early return).
+        ...(e.acknowledgement && !backwards(e.tb)
           ? { acknowledgement: { ...e.acknowledgement, acknowledgedAt: now.toISOString(), startingAt: at } }
           : {}),
       })),
@@ -75,16 +105,21 @@ export default function BalanceCheckScreen({
     update({
       trackedBalances: tracked.map((t) => {
         const e = entries.find((x) => x.tb.id === t.id);
-        return e ? reanchorTrackedBalance(t, e.actual, e.expectedAtClose, lbpRate, at) : t;
+        if (!e || backwards(t)) return t;
+        return reanchorTrackedBalance(t, e.actual, e.expectedAtClose, lbpRate, at);
       }),
       periodCloses: [...(financials.periodCloses ?? []), record],
     });
-    setClosing(false);
+    setClosing(null);
   }
 
+  // Expected AS OF the cycle end, not the live figure. For the current cycle
+  // the two coincide; for a late close they do not, and comparing a stated
+  // balance against today's expected would subtract one moment from another.
   const closeRows: CloseRow[] = tracked.map((tb) => ({
     tb,
-    expectedAtClose: dashData.balanceChecks.find((b) => b.id === tb.id)?.expected ?? 0,
+    expectedAtClose: trackedBalanceExpectedAsOf(tb, financials, cycleCloseInstant(closingKey, startDay)),
+    recordedOnly: closeMovesBaselineBackwards(tb, cycleCloseInstant(closingKey, startDay)),
   }));
 
   const [actualInputs, setActualInputs] = useState<Record<string, string>>({});
@@ -190,7 +225,7 @@ export default function BalanceCheckScreen({
         {tracked.length > 0 && (
           <div className="flex justify-end px-1">
             <button
-              onClick={() => setClosing(true)}
+              onClick={() => setClosing(currentKey)}
               className="text-[10px] font-semibold px-2.5 py-1 rounded-lg transition-all hover:opacity-80"
               style={{ color: T.jade, border: `1px solid ${T.jade}40` }}
             >
@@ -382,12 +417,50 @@ export default function BalanceCheckScreen({
           <PrimaryBtn onClick={addTrackedBalance} color={T.jade} disabled={!tbName.trim() || !tbStartBal || (tbMethod === "card" && !tbCardId)}>+ Track this balance</PrimaryBtn>
         </div>
 
+        {/* Phase 3: the unclosed-cycle list. QUIET BY CONSTRUCTION -- no
+            count on the nav, no Overview alert, no chip, and nothing at all
+            until the first close. A ritual that generates guilt gets
+            abandoned, and then the record is worse than none. */}
+        {unclosed.rows.length > 0 && (
+          <div className="rounded-2xl px-5 py-4 space-y-2" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
+            <p className="text-xs uppercase tracking-widest" style={{ color: T.mute }}>Cycles not closed</p>
+            <div className="space-y-1.5">
+              {unclosed.rows.map((r) => (
+                <div key={r.cycleKey} className="flex items-baseline justify-between gap-3">
+                  <div className="min-w-0">
+                    <span className="text-sm" style={{ color: T.text }}>{fmtCycle(r.cycleKey, startDay)}</span>
+                    {r.closedUnderOtherSpan && (
+                      <p className="text-[10px] mt-0.5" style={{ color: T.mute }}>
+                        You closed {fmtDate(r.closedUnderOtherSpan.rangeStart)} &ndash; {fmtDate(r.closedUnderOtherSpan.rangeEnd)} under
+                        your previous payday; that was a different period.
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => setClosing(r.cycleKey)}
+                    aria-label={`Close the cycle ${fmtCycle(r.cycleKey, startDay)}`}
+                    className="text-[10px] font-semibold px-2.5 py-1 rounded-lg flex-shrink-0 transition-all hover:opacity-80"
+                    style={{ color: T.jade, border: `1px solid ${T.jade}40` }}
+                  >
+                    Close
+                  </button>
+                </div>
+              ))}
+            </div>
+            {unclosed.hiddenEarlier > 0 && (
+              <p className="text-[10px]" style={{ color: T.mute }}>+{unclosed.hiddenEarlier} earlier</p>
+            )}
+          </div>
+        )}
+
       </div>
       {closing && (
         <CloseCycleModal
           cycleLabel={fmtCycle(closingKey, startDay)}
           rows={closeRows}
-          onCancel={() => setClosing(false)}
+          daysLate={Math.max(0, Math.floor((Date.now() - new Date(cycleCloseInstant(closingKey, startDay)).getTime()) / 86_400_000))}
+          rangeEnd={closingRangeEnd}
+          onCancel={() => setClosing(null)}
           onConfirm={commitClose}
         />
       )}
