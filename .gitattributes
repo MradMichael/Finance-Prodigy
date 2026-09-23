@@ -1,0 +1,11 @@
+# Vitest writes snapshot files with LF. core.autocrlf=true checks them out
+# with CRLF. The two disagree on every run: the content hash still matches
+# HEAD so nothing is ever staged, but git status shows the file modified
+# indefinitely and update-index --refresh reports "needs update".
+#
+# That is a false positive on the file whose whole job is to be the zero-diff
+# gate, and one that looks exactly like the regression it exists to catch.
+# Pinning the worktree form to LF -- the form the tool already writes --
+# removes the disagreement. The committed blob is already all-LF, so no
+# renormalising commit is needed. See audit 2.4.136.
+*.snap text eol=lf
