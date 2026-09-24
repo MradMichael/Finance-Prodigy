@@ -8,6 +8,60 @@ export type Currency = "USD" | "LBP";
 export type PaymentMethod = "cash" | "card" | "other";
 
 /**
+ * The emergency fund at a close (Phase 5a). EVERY figure here is USD, and
+ * the names say so: EF has no `currency` field and `efAmount` is USD by
+ * contract, so there is no native/USD boundary to get wrong -- the suffix
+ * is for whoever adds a currency later, not for today.
+ *
+ * Corrected by an ADJUSTMENT, not by moving a baseline. There is no
+ * priorState, because nothing is overwritten: the correction is a ledger
+ * row, and undoing it is deleting that row.
+ */
+export interface PeriodCloseEmergencyFund {
+  /** derivedEfBalance immediately before the close. USD. */
+  expectedUSD: number;
+  /** What the owner said the fund actually holds. USD. */
+  countedUSD: number;
+  /** countedUSD - expectedUSD. Zero when the count matched. USD. */
+  deltaUSD: number;
+  /**
+   * The adjustment transaction this close created, if any. Absent when
+   * deltaUSD is 0 -- confirming an unchanged figure writes nothing, which
+   * is what makes confirming it free. Phase 4's reopen uses this id to undo
+   * the correction; there is no anchor to restore.
+   */
+  transactionId?: string;
+}
+
+/**
+ * One debt at a close (Phase 5a). EVERY figure here is the DEBT'S OWN
+ * CURRENCY -- `native` is in the names for the same reason `USD` is above.
+ *
+ * No USD figure is stored, deliberately. Nothing in this phase compares
+ * debts to each other or to a dollar threshold (no badge, no
+ * acknowledgement, so no $1/$5 gate), so a USD field here would exist only
+ * to be believed by a later reader. 2.4.137 is what that costs. Phase 5b
+ * adds it together with the threshold that needs it.
+ */
+export interface PeriodCloseDebt {
+  debtId: string;
+  /** The debt's currency, so every figure below is readable without the debt. */
+  currency: Currency;
+  /** derivedDebtBalance immediately before the close. Native. */
+  expectedNative: number;
+  /** What the owner said is actually owed -- a STATEMENT figure, not a count. Native. */
+  countedNative: number;
+  /**
+   * expectedNative - countedNative, the sign buildDebtAdjustmentTx takes.
+   * Negative when the real debt is LARGER than the app thought, which for
+   * an interest-bearing debt is the normal case every cycle (2.4.140:
+   * derivedDebtBalance never reads apr). Native.
+   */
+  deltaNative: number;
+  /** As for the emergency fund: absent when deltaNative is 0. */
+  transactionId?: string;
+}
+/**
  * Phase 1 of the period close (docs/PERIOD_CLOSE_PLAN.md). One record per
  * cycle the owner has closed: what each tracked balance actually held, and
  * what was overwritten to make that the new baseline.
@@ -46,6 +100,16 @@ export interface PeriodClose {
    */
   closedAt: string;
   accounts: PeriodCloseAccount[];
+  /**
+   * Phase 5a. SEPARATE fields rather than more entries in `accounts`, and
+   * the reason is reopen: Phase 4 restores `priorState` for everything in
+   * that array, and these have none -- an adjustment is undone by removing
+   * a ledger row, not by putting a baseline back. Folding them in would
+   * have meant a discriminator check in every Phase 1-4 reader, each of
+   * which is currently correct by construction.
+   */
+  emergencyFund?: PeriodCloseEmergencyFund;
+  debts?: PeriodCloseDebt[];
   /**
    * Set when the close was undone (Phase 4). MARKED, not deleted: a hard
    * delete is the operation this codebase has repeatedly regretted (2.4.27
@@ -1291,6 +1355,56 @@ export function acknowledgementFor(
 }
 
 /**
+ * One row of a Phase 5a close: what the fund was, what the owner says it
+ * is, and the ledger row that reconciles the two.
+ *
+ * USD throughout -- see PeriodCloseEmergencyFund. The delta is
+ * counted MINUS expected because derivedEfBalance ADDS efAmount; the debt
+ * planner below is the other way round for the opposite reason, and each
+ * has a round-trip test rather than a restated rule.
+ *
+ * A zero delta returns NO transaction. That is what makes confirming an
+ * unchanged figure free -- the alternative, a zero-valued adjustment row,
+ * would fill the ledger with evidence that nothing happened.
+ */
+export function planEfClose(
+  data: Pick<LocalFinancials, "emergencyFundOpeningBalance" | "transactions">,
+  countedUSD: number,
+): { entry: PeriodCloseEmergencyFund; transaction?: StoredTransaction } {
+  const expectedUSD = derivedEfBalance(data as LocalFinancials);
+  const deltaUSD = roundMoney(countedUSD - expectedUSD);
+  if (deltaUSD === 0) return { entry: { expectedUSD, countedUSD, deltaUSD } };
+  const transaction = buildEfAdjustmentTx(deltaUSD);
+  return { entry: { expectedUSD, countedUSD, deltaUSD, transactionId: transaction.id }, transaction };
+}
+
+/**
+ * One debt's row of a Phase 5a close.
+ *
+ * The debt's own currency throughout, and no conversion anywhere: this is
+ * the property that made the adjustment mechanism currency-coherent while
+ * the reanchor path was not (2.4.137). `countedNative` is a STATEMENT
+ * figure -- the counterparty holds the truth for a debt, unlike cash you
+ * can count -- which is why the dialog asks for it differently.
+ *
+ * The delta is expected MINUS counted, because derivedDebtBalance
+ * SUBTRACTS amount+debtAdjustment. Negative means the real debt is larger
+ * than the app thought, which for an interest-bearing debt is the normal
+ * case every cycle (2.4.140).
+ */
+export function planDebtClose(
+  debt: StoredDebt,
+  transactions: StoredTransaction[],
+  countedNative: number,
+): { entry: PeriodCloseDebt; transaction?: StoredTransaction } {
+  const expectedNative = derivedDebtBalance(debt, transactions);
+  const deltaNative = roundMoney(expectedNative - countedNative);
+  const base = { debtId: debt.id, currency: debt.currency, expectedNative, countedNative, deltaNative };
+  if (deltaNative === 0) return { entry: base };
+  const transaction = buildDebtAdjustmentTx(debt, deltaNative);
+  return { entry: { ...base, transactionId: transaction.id }, transaction };
+}
+/**
  * Builds the PeriodClose for one close. Pure: it reads the PRE-reanchor
  * TrackedBalance so `priorState` captures the anchor about to be
  * overwritten, which is what Phase 4 reopens from.
@@ -1308,8 +1422,11 @@ export function buildPeriodClose(input: {
    * tsc refuses a caller that forgets.
    */
   accounts: { tb: TrackedBalance; actual: number; actualUSD: number; expectedAtClose: number; acknowledgement?: PeriodCloseAcknowledgement }[];
+  /** Phase 5a. Already planned by planEfClose/planDebtClose -- this only files them. */
+  emergencyFund?: PeriodCloseEmergencyFund;
+  debts?: PeriodCloseDebt[];
 }): PeriodClose {
-  const { cycleKey, startDay, closedAt, lbpRate, accounts } = input;
+  const { cycleKey, startDay, closedAt, lbpRate, accounts, emergencyFund, debts } = input;
   const { start, end } = cycleBounds(cycleKey, startDay);
   return {
     cycleKey,
@@ -1317,6 +1434,8 @@ export function buildPeriodClose(input: {
     rangeEnd: isoLocalDay(new Date(end.getTime() - 1)),
     startDayAtClose: startDay,
     closedAt: closedAt.toISOString(),
+    ...(emergencyFund ? { emergencyFund } : {}),
+    ...(debts && debts.length ? { debts } : {}),
     accounts: accounts.map(({ tb, actual, actualUSD, expectedAtClose, acknowledgement }) => ({
       trackedBalanceId: tb.id,
       actual,
@@ -1435,8 +1554,26 @@ export function reopenCycle(
   const verdict = canReopen(data, cycleKey, now);
   if (!verdict.ok) return null;
   const byId = new Map(verdict.close.accounts.map((a) => [a.trackedBalanceId, a]));
+
+  // Phase 5a: the adjustments this close wrote are undone too, and the
+  // mechanism differs because the correction did. A tracked balance had its
+  // anchor overwritten and needs priorState put back; the fund and debts had
+  // a ledger row ADDED and need it taken away. Soft-deleted, not spliced:
+  // derivedEfBalance and derivedDebtBalance both already ignore deletedAt,
+  // so the balances fall back on their own, and 2.6.3b's tombstones are the
+  // standing answer to hard deletion in this model.
+  const undone = new Set<string>([
+    ...(verdict.close.emergencyFund?.transactionId ? [verdict.close.emergencyFund.transactionId] : []),
+    ...(verdict.close.debts ?? []).flatMap((d) => (d.transactionId ? [d.transactionId] : [])),
+  ]);
+  const at = now.toISOString();
+
   return {
     ...data,
+    transactions: undone.size
+      ? (data.transactions ?? []).map((t) =>
+          undone.has(t.id) && t.deletedAt == null ? { ...t, deletedAt: at, updatedAt: at } : t)
+      : data.transactions,
     trackedBalances: (data.trackedBalances ?? []).map((tb) => {
       const acc = byId.get(tb.id);
       return acc ? restoreTrackedBalance(tb, acc.priorState) : tb;

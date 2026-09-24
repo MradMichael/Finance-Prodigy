@@ -1,15 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import type { LocalFinancials, TrackedBalance, PaymentMethod, StoredCard, Currency } from "../../lib/localData";
+import type { LocalFinancials, TrackedBalance, PaymentMethod, StoredCard, Currency, StoredDebt } from "../../lib/localData";
 import {
   uid, todayISO, fmtDate, withRate, reanchorTrackedBalance, moneyMaxFor, DEFAULT_LBP_RATE,
   buildPeriodClose, cycleStartDayOf, unclosedCycles, isCycleClosedBySpan,
   closeMovesBaselineBackwards, canReopen, reopenCycle, activeCloseForCycle, rateForMonth,
+  derivedEfBalance, derivedDebtBalance, planEfClose, planDebtClose,
 } from "../../lib/localData";
 import { balanceCheckReconciliation, trackedBalanceExpectedAsOf, type computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
-import CloseCycleModal, { type CloseRow } from "../CloseCycleModal";
+import CloseCycleModal, { type CloseRow, type AdjustmentRow } from "../CloseCycleModal";
 import { currentCycleKey, cycleCloseInstant, cycleBounds, cycleLabel as fmtCycle, type CycleKey } from "../../lib/period";
 import { SERIF, NUMS, money, fmtCur } from "./shared";
 import {
@@ -72,7 +73,10 @@ export default function BalanceCheckScreen({
    * from it -- passing the instant straight through used to break
    * isAfterBalanceBaseline's tier 3 for every boundary-day transaction.
    */
-  function commitClose(entries: Parameters<React.ComponentProps<typeof CloseCycleModal>["onConfirm"]>[0]) {
+  function commitClose(
+    entries: Parameters<React.ComponentProps<typeof CloseCycleModal>["onConfirm"]>[0],
+    adjustments: Parameters<React.ComponentProps<typeof CloseCycleModal>["onConfirm"]>[1],
+  ) {
     const key = closingKey;
     // Phase 3: re-closing an already-closed cycle is REFUSED, not replaced.
     // A re-close with the same asOf mints an IDENTICAL startingAt, so a
@@ -86,8 +90,25 @@ export default function BalanceCheckScreen({
     // recorded but not reanchored -- see closeMovesBaselineBackwards.
     const backwards = (tb: TrackedBalance) => closeMovesBaselineBackwards(tb, at);
 
+    // Phase 5a: plan every adjustment BEFORE writing anything, so the close
+    // stays one write. A zero delta plans no transaction at all, which is
+    // what makes confirming an unchanged fund or debt free.
+    const countedOf = (k: string) => adjustments.find((a) => a.key === k)?.counted;
+    const efCounted = countedOf("ef");
+    const efPlan = efCounted != null && !isNaN(efCounted) ? planEfClose(financials, efCounted) : null;
+    const debtPlans = openDebts
+      .map(({ d }) => ({ d, counted: countedOf(d.id) }))
+      .filter((x): x is { d: StoredDebt; counted: number } => x.counted != null && !isNaN(x.counted))
+      .map(({ d, counted }) => planDebtClose(d, financials.transactions ?? [], counted));
+    const newTransactions = [
+      ...(efPlan?.transaction ? [efPlan.transaction] : []),
+      ...debtPlans.flatMap((p) => (p.transaction ? [p.transaction] : [])),
+    ];
+
     const record = buildPeriodClose({
       cycleKey: key, startDay, closedAt: now,
+      ...(efPlan ? { emergencyFund: efPlan.entry } : {}),
+      ...(debtPlans.length ? { debts: debtPlans.map((p) => p.entry) } : {}),
       // The rate the figures were actually converted at, so the record's
       // lbpRateAtClose names the rate its own arithmetic used.
       lbpRate: lbpRateAtClose,
@@ -111,6 +132,12 @@ export default function BalanceCheckScreen({
         if (!e || backwards(t)) return t;
         return reanchorTrackedBalance(t, e.actual, e.expectedAtClose, lbpRate, at);
       }),
+      // The reanchors, the adjustments and the record land together. Phase
+      // 2 made this one write so there is no partway state to recover from;
+      // adding a second account type must not quietly make it two.
+      ...(newTransactions.length
+        ? { transactions: [...newTransactions, ...(financials.transactions ?? [])] }
+        : {}),
       periodCloses: [...(financials.periodCloses ?? []), record],
     });
     setClosing(null);
@@ -166,6 +193,30 @@ export default function BalanceCheckScreen({
   // historized rates, so converting the stated figure at today's rate would
   // compare two moments -- 2.4.134's fault in a second dimension.
   const lbpRateAtClose = rateForMonth(financials.lbpRateHistory, closingKey, lbpRate);
+
+  // Phase 5a. The fund appears only if it is in use, and a debt only while
+  // something is owed -- an account with nothing in it is not a question
+  // worth asking at a close, and the length of this dialog is the main
+  // thing standing between the ritual and being abandoned.
+  const efExpectedUSD = derivedEfBalance(financials);
+  const efInUse = efExpectedUSD !== 0 || (financials.emergencyFundOpeningBalance ?? 0) !== 0;
+  const openDebts = (financials.debts ?? [])
+    .map((d) => ({ d, expectedNative: derivedDebtBalance(d, financials.transactions ?? []) }))
+    .filter(({ expectedNative }) => expectedNative > 0);
+  const adjustmentRows: AdjustmentRow[] = [
+    ...(efInUse
+      ? [{ key: "ef", name: "Emergency fund", currency: "USD" as Currency,
+           expected: efExpectedUSD, hint: "What the fund actually holds" }]
+      : []),
+    // "owed", not "held": for a debt the counterparty holds the truth, so
+    // the figure comes off a statement rather than off a count. Saying so
+    // in the label is the difference between an answerable question and a
+    // guess.
+    ...openDebts.map(({ d, expectedNative }) => ({
+      key: d.id, name: d.name, currency: d.currency,
+      expected: expectedNative, hint: `What ${d.name} says is owed`,
+    })),
+  ];
 
   const closeRows: CloseRow[] = tracked.map((tb) => ({
     tb,
@@ -272,8 +323,13 @@ export default function BalanceCheckScreen({
             the action unreachable for exactly the account that needs it
             most. Found by perturbation: the original "not offered with zero
             tracked balances" test passed either way, because the outer gate
-            hid the button regardless of its own condition. */}
-        {tracked.length > 0 && (
+            hid the button regardless of its own condition.
+
+            Phase 5a: a fund or an open debt is reason enough to close a
+            cycle, so the gate is no longer about tracked balances alone --
+            this was the last place the feature still assumed they were the
+            only kind of account. */}
+        {(tracked.length > 0 || adjustmentRows.length > 0) && (
           <div className="flex justify-end items-center gap-2 px-1">
             {activeClose ? (
               <>
@@ -540,6 +596,7 @@ export default function BalanceCheckScreen({
           rangeEnd={closingRangeEnd}
           reopenable={closingKey === currentKey}
           lbpRateAtClose={lbpRateAtClose}
+          adjustmentRows={adjustmentRows}
           onCancel={() => setClosing(null)}
           onConfirm={commitClose}
         />
