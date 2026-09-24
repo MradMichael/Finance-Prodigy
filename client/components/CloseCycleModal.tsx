@@ -1,10 +1,37 @@
 "use client";
 
 import { useState } from "react";
-import { toUSD, moneyMaxFor, type TrackedBalance, type PeriodCloseAcknowledgement } from "../lib/localData";
+import { toUSD, moneyMaxFor, type Currency, type TrackedBalance, type PeriodCloseAcknowledgement } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { MoneyInput, Label, FocusInput } from "./form/Primitives";
 import { fmtCur } from "./screens/shared";
+
+/**
+ * Phase 5a: an adjustment-based row -- the emergency fund, or one debt.
+ *
+ * Rendered beside the tracked balances but behaving differently, and the
+ * difference is deliberate rather than incidental:
+ *
+ *   * PRE-FILLED with `expected`. The app already knows the derived figure,
+ *     so an unchanged account is confirmed by leaving it alone. A tracked
+ *     balance cannot do this -- a reanchor always writes -- which is what
+ *     keeps the close from getting longer in proportion to the accounts.
+ *   * NO acknowledgement. The ack suppresses the Mismatch badge, and these
+ *     accounts have no badge to suppress. A control that does nothing
+ *     visible is worse than no control (2.4.134).
+ *
+ * `expected` is in `currency`: USD for the fund, the debt's own currency
+ * for a debt. Nothing here converts.
+ */
+export interface AdjustmentRow {
+  /** "ef", or the debt's id. */
+  key: string;
+  name: string;
+  currency: Currency;
+  expected: number;
+  /** Why the figure is asked for differently -- a debt is read, not counted. */
+  hint: string;
+}
 
 /** One account's state inside the dialog. */
 export interface CloseRow {
@@ -39,7 +66,7 @@ export interface CloseRow {
  * schedule structurally impossible rather than merely discouraged.
  */
 export default function CloseCycleModal({
-  cycleLabel, rows, daysLate, rangeEnd, reopenable, lbpRateAtClose, onCancel, onConfirm,
+  cycleLabel, rows, adjustmentRows, daysLate, rangeEnd, reopenable, lbpRateAtClose, onCancel, onConfirm,
 }: {
   cycleLabel: string;
   rows: CloseRow[];
@@ -63,11 +90,24 @@ export default function CloseCycleModal({
    * mechanical and lives here.
    */
   lbpRateAtClose: number;
+  /** Phase 5a. Empty when the owner has neither a fund nor an open debt. */
+  adjustmentRows: AdjustmentRow[];
   onCancel: () => void;
-  onConfirm: (entries: { tb: TrackedBalance; actual: number; actualUSD: number; expectedAtClose: number; acknowledgement?: Omit<PeriodCloseAcknowledgement, "acknowledgedAt" | "startingAt"> }[]) => void;
+  onConfirm: (
+    entries: { tb: TrackedBalance; actual: number; actualUSD: number; expectedAtClose: number; acknowledgement?: Omit<PeriodCloseAcknowledgement, "acknowledgedAt" | "startingAt"> }[],
+    /** Phase 5a, in each row's own currency. The screen plans the adjustments. */
+    adjustments: { key: string; counted: number }[],
+  ) => void;
 }) {
   const T = useTheme();
   const [amounts, setAmounts] = useState<Record<string, string>>({});
+  // Pre-filled from the derived figure, so an unchanged row is confirmed by
+  // not touching it. Seeded once at mount rather than defaulted at read
+  // time, so clearing the field is an edit the user can see and correct,
+  // not a silent snap back to the app's own number.
+  const [adjAmounts, setAdjAmounts] = useState<Record<string, string>>(() =>
+    Object.fromEntries(adjustmentRows.map((r) => [r.key, String(r.expected)])),
+  );
   const [acked, setAcked] = useState<Record<string, boolean>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
 
@@ -107,11 +147,17 @@ export default function CloseCycleModal({
   };
 
 
-  const everyAmountEntered = rows.every((r) => !isNaN(amountOf(r.tb.id)));
+  const adjOf = (key: string) => parseFloat((adjAmounts[key] ?? "").replace(/,/g, ""));
+  const everyAmountEntered =
+    rows.every((r) => !isNaN(amountOf(r.tb.id)))
+    && adjustmentRows.every((r) => !isNaN(adjOf(r.key)));
   // A ticked acknowledgement with an empty or whitespace-only note blocks the
   // close. The note is the mechanism, not a label on it.
   const everyNoteFilled = rows.every((r) => !(acked[r.tb.id] && hasGap(r)) || (notes[r.tb.id] ?? "").trim().length > 0);
-  const canClose = rows.length > 0 && everyAmountEntered && everyNoteFilled;
+  // Phase 5a: a close is possible with NO tracked balances, if there is a
+  // fund or a debt to state. The old `rows.length > 0` was the tracked-only
+  // assumption in its last remaining place.
+  const canClose = (rows.length > 0 || adjustmentRows.length > 0) && everyAmountEntered && everyNoteFilled;
 
   function confirm() {
     if (!canClose) return;
@@ -128,7 +174,9 @@ export default function CloseCycleModal({
         // control silently does nothing.
         ...(wants ? { acknowledgement: { note, discrepancy: gapUSDOf(r)! } } : {}),
       };
-    }));
+    }),
+    adjustmentRows.map((r) => ({ key: r.key, counted: adjOf(r.key) })),
+    );
   }
 
   return (
@@ -218,6 +266,39 @@ export default function CloseCycleModal({
                     )}
                   </div>
                 )}
+              </div>
+            );
+          })}
+
+          {/* Phase 5a: the fund and any open debt. Pre-filled, no
+              acknowledgement, and a zero delta writes nothing -- so a row
+              that is already right costs one glance, not one typed figure. */}
+          {adjustmentRows.map((r) => {
+            const entered = adjOf(r.key);
+            const delta = isNaN(entered) ? null : Math.round((entered - r.expected) * 100) / 100;
+            return (
+              <div key={r.key} className="rounded-xl p-3.5 space-y-2" style={{ background: T.ink, border: `1px solid ${T.line}` }}>
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-sm font-medium" style={{ color: T.text }}>{r.name}</span>
+                  <span className="text-[10px]" style={{ color: T.mute }}>on record {fmtCur(r.expected, r.currency)}</span>
+                </div>
+                <Label htmlFor={`close-adj-${r.key}`}>
+                  {r.hint} ({r.currency === "LBP" ? "L£" : "$"})
+                </Label>
+                <MoneyInput
+                  id={`close-adj-${r.key}`}
+                  value={adjAmounts[r.key] ?? ""}
+                  onChange={(v) => setAdjAmounts((p) => ({ ...p, [r.key]: v }))}
+                  placeholder={String(r.expected)}
+                  max={moneyMaxFor(r.currency, lbpRateAtClose)}
+                />
+                <p className="text-[10px]" style={{ color: delta ? T.coral : T.mute }}>
+                  {delta == null
+                    ? "Enter a figure, or leave the one on record."
+                    : delta === 0
+                      ? "Matches what is on record. Nothing will be written."
+                      : `Records an adjustment of ${fmtCur(Math.abs(delta), r.currency)} ${delta > 0 ? "up" : "down"}.`}
+                </p>
               </div>
             );
           })}
