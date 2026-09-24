@@ -37,7 +37,7 @@
 import { describe, it, expect } from "vitest";
 import {
   DEFAULT_DATA, DEFAULT_LBP_RATE, buildPeriodClose, reanchorTrackedBalance,
-  canReopen, reopenCycle, isCycleClosedBySpan,
+  canReopen, reopenCycle, isCycleClosedBySpan, toUSD,
   type LocalFinancials, type TrackedBalance,
 } from "./localData";
 import { asCycleKey, cycleBounds, cycleCloseInstant, currentCycleKey } from "./period";
@@ -67,7 +67,7 @@ function closed(tb: TrackedBalance, actual = 430, expectedAtClose = 461) {
   const at = cycleCloseInstant(CUR, START_DAY);
   const record = buildPeriodClose({
     cycleKey: CUR, startDay: START_DAY, closedAt: NOW, lbpRate: DEFAULT_LBP_RATE,
-    accounts: [{ tb, actual, expectedAtClose }],
+    accounts: [{ tb, actual, actualUSD: toUSD(actual, tb.currency, DEFAULT_LBP_RATE), expectedAtClose }],
   });
   return data({
     trackedBalances: [reanchorTrackedBalance(tb, actual, expectedAtClose, DEFAULT_LBP_RATE, at)],
@@ -220,7 +220,7 @@ describe("4. reopening discards the cycle's acknowledgements", () => {
     const record = buildPeriodClose({
       cycleKey: CUR, startDay: START_DAY, closedAt: NOW, lbpRate: DEFAULT_LBP_RATE,
       accounts: [{
-        tb, actual: 430, expectedAtClose: 461,
+        tb, actual: 430, actualUSD: 430, expectedAtClose: 461,
         acknowledgement: { note: "Explained.", acknowledgedAt: NOW.toISOString(), discrepancy: -31, startingAt: at },
       }],
     });
@@ -261,7 +261,7 @@ describe("5. a recorded-but-not-reanchored account restores as a no-op", () => {
     const tb = TB({ startingAt: "2026-10-20T09:00:00.000Z", startingDate: "2026-10-20" });
     const record = buildPeriodClose({
       cycleKey: CUR, startDay: START_DAY, closedAt: NOW, lbpRate: DEFAULT_LBP_RATE,
-      accounts: [{ tb, actual: 400, expectedAtClose: 400 }],
+      accounts: [{ tb, actual: 400, actualUSD: 400, expectedAtClose: 400 }],
     });
     return { tb, d: data({ trackedBalances: [tb], periodCloses: [record] }) };
   };

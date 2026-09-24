@@ -65,6 +65,18 @@ export interface PeriodCloseAccount {
   /** What the ledger expected at that instant, frozen. */
   expectedAtClose: number;
   /** actual - expectedAtClose. Frozen; never recomputed. */
+  /**
+   * `actual` converted to USD at the close's rate. Stored because
+   * `discrepancy` below is computed from it and a reader must be able to
+   * check that without redoing a conversion -- redoing it is how the two
+   * surfaces came apart in the first place.
+   *
+   * Optional only for records written before this was fixed. Those are
+   * correct already if `currency` is USD (the conversion is the identity)
+   * and have a lira-scale `discrepancy` if it is not.
+   */
+  actualUSD?: number;
+  /** actualUSD - expectedAtClose. USD, like both of its operands. */
   discrepancy: number;
   currency: Currency;
   lbpRateAtClose: number;
@@ -1288,7 +1300,14 @@ export function buildPeriodClose(input: {
   startDay: number;
   closedAt: Date;
   lbpRate: number;
-  accounts: { tb: TrackedBalance; actual: number; expectedAtClose: number; acknowledgement?: PeriodCloseAcknowledgement }[];
+  /**
+   * `actual` is NATIVE (it becomes startingBalance); `actualUSD` and
+   * `expectedAtClose` are USD. The caller converts, deliberately: doing it
+   * here would be a second copy of the rate policy, and the screen already
+   * owns the one the dialog renders from. Required rather than optional so
+   * tsc refuses a caller that forgets.
+   */
+  accounts: { tb: TrackedBalance; actual: number; actualUSD: number; expectedAtClose: number; acknowledgement?: PeriodCloseAcknowledgement }[];
 }): PeriodClose {
   const { cycleKey, startDay, closedAt, lbpRate, accounts } = input;
   const { start, end } = cycleBounds(cycleKey, startDay);
@@ -1298,11 +1317,17 @@ export function buildPeriodClose(input: {
     rangeEnd: isoLocalDay(new Date(end.getTime() - 1)),
     startDayAtClose: startDay,
     closedAt: closedAt.toISOString(),
-    accounts: accounts.map(({ tb, actual, expectedAtClose, acknowledgement }) => ({
+    accounts: accounts.map(({ tb, actual, actualUSD, expectedAtClose, acknowledgement }) => ({
       trackedBalanceId: tb.id,
       actual,
+      actualUSD,
       expectedAtClose,
-      discrepancy: roundMoney(actual - expectedAtClose),
+      // BOTH operands in USD. Phase 2 subtracted the USD expected from the
+      // NATIVE actual, which for a lira account is a figure about five
+      // orders of magnitude wrong -- and the same mistake computeDashboard
+      // had already found and fixed for balanceChecks (see its comment at
+      // the txByPaymentKey grouping).
+      discrepancy: roundMoney(actualUSD - expectedAtClose),
       currency: tb.currency,
       lbpRateAtClose: lbpRate,
       priorState: {

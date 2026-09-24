@@ -1,15 +1,20 @@
 "use client";
 
 import { useState } from "react";
-import type { TrackedBalance, PeriodCloseAcknowledgement } from "../lib/localData";
+import { toUSD, moneyMaxFor, type TrackedBalance, type PeriodCloseAcknowledgement } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { MoneyInput, Label, FocusInput } from "./form/Primitives";
-import { fmtCur, money } from "./screens/shared";
+import { fmtCur } from "./screens/shared";
 
 /** One account's state inside the dialog. */
 export interface CloseRow {
   tb: TrackedBalance;
-  /** The live `expected` figure for this account, captured before the close. */
+  /**
+   * The `expected` figure for this account as of the close, captured before
+   * it. USD -- trackedBalanceExpectedAsOf converts the starting balance and
+   * every transaction. The row renders it in the its own currency,
+   * because the input beside it is native.
+   */
   expectedAtClose: number;
   /**
    * This account's baseline is already NEWER than the cycle being closed, so
@@ -34,7 +39,7 @@ export interface CloseRow {
  * schedule structurally impossible rather than merely discouraged.
  */
 export default function CloseCycleModal({
-  cycleLabel, rows, daysLate, rangeEnd, reopenable, onCancel, onConfirm,
+  cycleLabel, rows, daysLate, rangeEnd, reopenable, lbpRateAtClose, onCancel, onConfirm,
 }: {
   cycleLabel: string;
   rows: CloseRow[];
@@ -49,8 +54,17 @@ export default function CloseCycleModal({
    * that inference would promise an undo this dialog cannot deliver.
    */
   reopenable: boolean;
+  /**
+   * The LBP rate in force for the cycle being closed, chosen by the screen
+   * (rateForMonth against the closing key, not the live rate -- a late
+   * close states a balance as of the cycle end). One rate, passed in, used
+   * for every conversion this dialog does and for the figure it hands back.
+   * Choosing it is policy and lives with the screen; applying it is
+   * mechanical and lives here.
+   */
+  lbpRateAtClose: number;
   onCancel: () => void;
-  onConfirm: (entries: { tb: TrackedBalance; actual: number; expectedAtClose: number; acknowledgement?: Omit<PeriodCloseAcknowledgement, "acknowledgedAt" | "startingAt"> }[]) => void;
+  onConfirm: (entries: { tb: TrackedBalance; actual: number; actualUSD: number; expectedAtClose: number; acknowledgement?: Omit<PeriodCloseAcknowledgement, "acknowledgedAt" | "startingAt"> }[]) => void;
 }) {
   const T = useTheme();
   const [amounts, setAmounts] = useState<Record<string, string>>({});
@@ -58,16 +72,40 @@ export default function CloseCycleModal({
   const [notes, setNotes] = useState<Record<string, string>>({});
 
   const amountOf = (id: string) => parseFloat((amounts[id] ?? "").replace(/,/g, ""));
-  const gapOf = (r: CloseRow) => {
+  const round2 = (x: number) => Math.round(x * 100) / 100;
+
+  // THREE figures, and keeping them apart is the whole of this fix.
+  //
+  //   the typed amount   NATIVE  -- it becomes startingBalance
+  //   expectedAtClose    USD     -- the ledger converts everything
+  //   the stored gap     USD     -- comparable across accounts, and what
+  //                                 acknowledgementFor matches against
+  //
+  // Everything the dialog COMPARES is USD and is labelled USD; the only
+  // native figure is the input, and its label names the unit. Rendering the
+  // expectation in the account currency instead was tried and dropped: it
+  // means multiplying the rounded USD figure back up, and 111.73 x 89,500
+  // is 9,999,835 rather than the 10,000,000 baseline it came from. A figure
+  // visibly 165 lira off its own source invites exactly the question the
+  // row exists to answer.
+  // Rounded HERE, once. The threshold, the acknowledgement and the stored
+  // record all read this same figure, so they cannot differ by a rounding
+  // step -- and a reader can check the record arithmetic by eye, which is
+  // the property a record that disagreed with the screen never had.
+  const actualUSDOf = (r: CloseRow) => round2(toUSD(amountOf(r.tb.id), r.tb.currency, lbpRateAtClose));
+
+  /** What the row prints, what the threshold uses, what the record stores. */
+  const gapUSDOf = (r: CloseRow) => {
     const a = amountOf(r.tb.id);
-    return isNaN(a) ? null : Math.round((a - r.expectedAtClose) * 100) / 100;
+    return isNaN(a) ? null : round2(actualUSDOf(r) - r.expectedAtClose);
   };
   /** The badge's own threshold: you can only explain a gap that is being flagged. */
   const hasGap = (r: CloseRow) => {
     if (r.recordedOnly) return false; // nothing to clear, so nothing to offer
-    const g = gapOf(r);
+    const g = gapUSDOf(r);
     return g != null && Math.abs(g) >= 1;
   };
+
 
   const everyAmountEntered = rows.every((r) => !isNaN(amountOf(r.tb.id)));
   // A ticked acknowledgement with an empty or whitespace-only note blocks the
@@ -82,8 +120,13 @@ export default function CloseCycleModal({
       const note = (notes[r.tb.id] ?? "").trim();
       const wants = acked[r.tb.id] && hasGap(r) && note.length > 0;
       return {
-        tb: r.tb, actual, expectedAtClose: r.expectedAtClose,
-        ...(wants ? { acknowledgement: { note, discrepancy: Math.round((actual - r.expectedAtClose) * 100) / 100 } } : {}),
+        tb: r.tb, actual, actualUSD: actualUSDOf(r), expectedAtClose: r.expectedAtClose,
+        // The SAME USD figure the threshold used. acknowledgementFor
+        // matches this against balanceChecks[].discrepancy, which is USD;
+        // a native figure here never matches, so the note is stored and the
+        // badge it was written to clear stays lit. Nothing errors -- the
+        // control silently does nothing.
+        ...(wants ? { acknowledgement: { note, discrepancy: gapUSDOf(r)! } } : {}),
       };
     }));
   }
@@ -115,15 +158,15 @@ export default function CloseCycleModal({
 
         <div className="space-y-4">
           {rows.map((r) => {
-            const gap = gapOf(r);
+            const gap = gapUSDOf(r);
             const flagged = hasGap(r);
             return (
               <div key={r.tb.id} className="rounded-xl p-3.5 space-y-2" style={{ background: T.ink, border: `1px solid ${T.line}` }}>
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="text-sm font-medium" style={{ color: T.text }}>{r.tb.name}</span>
-                  <span className="text-[10px]" style={{ color: T.mute }}>expected {money(r.expectedAtClose)}</span>
+                  <span className="text-[10px]" style={{ color: T.mute }}>expected {fmtCur(r.expectedAtClose, "USD")}</span>
                 </div>
-                <Label htmlFor={`close-amt-${r.tb.id}`}>What {r.tb.name} actually holds</Label>
+                <Label htmlFor={`close-amt-${r.tb.id}`}>What {r.tb.name} actually holds ({r.tb.currency === "LBP" ? "L£" : "$"})</Label>
                 <MoneyInput
                   id={`close-amt-${r.tb.id}`}
                   value={amounts[r.tb.id] ?? ""}
@@ -135,7 +178,7 @@ export default function CloseCycleModal({
                     setAcked((p) => ({ ...p, [r.tb.id]: false }));
                   }}
                   placeholder="What you actually have"
-                  max={Number.MAX_SAFE_INTEGER}
+                  max={moneyMaxFor(r.tb.currency, lbpRateAtClose)}
                 />
                 {r.recordedOnly && (
                   <p className="text-[10px]" style={{ color: T.brass }}>
@@ -146,7 +189,7 @@ export default function CloseCycleModal({
                 {gap != null && !r.recordedOnly && (
                   <p className="text-[10px]" style={{ color: flagged ? T.coral : T.jade }}>
                     {flagged
-                      ? `Gap: ${fmtCur(Math.abs(gap), r.tb.currency)} unaccounted for.`
+                      ? `Gap: ${fmtCur(Math.abs(gap), "USD")} unaccounted for.`
                       : "Matches what you logged."}
                   </p>
                 )}

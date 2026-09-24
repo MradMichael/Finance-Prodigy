@@ -59,7 +59,7 @@ function closedNow(tb = TB(), actual = 430, expectedAtClose = 461) {
     trackedBalances: [reanchorTrackedBalance(tb, actual, expectedAtClose, DEFAULT_LBP_RATE, at)],
     periodCloses: [buildPeriodClose({
       cycleKey: CUR, startDay: START_DAY, closedAt: NOW, lbpRate: DEFAULT_LBP_RATE,
-      accounts: [{ tb, actual, expectedAtClose }],
+      accounts: [{ tb, actual, actualUSD: actual, expectedAtClose }],
     })],
   };
 }
