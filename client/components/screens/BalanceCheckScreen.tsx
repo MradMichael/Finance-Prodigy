@@ -5,7 +5,7 @@ import type { LocalFinancials, TrackedBalance, PaymentMethod, StoredCard, Curren
 import {
   uid, todayISO, fmtDate, withRate, reanchorTrackedBalance, moneyMaxFor, DEFAULT_LBP_RATE,
   buildPeriodClose, cycleStartDayOf, unclosedCycles, isCycleClosedBySpan,
-  closeMovesBaselineBackwards, canReopen, reopenCycle, activeCloseForCycle,
+  closeMovesBaselineBackwards, canReopen, reopenCycle, activeCloseForCycle, rateForMonth,
 } from "../../lib/localData";
 import { balanceCheckReconciliation, trackedBalanceExpectedAsOf, type computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
@@ -87,9 +87,12 @@ export default function BalanceCheckScreen({
     const backwards = (tb: TrackedBalance) => closeMovesBaselineBackwards(tb, at);
 
     const record = buildPeriodClose({
-      cycleKey: key, startDay, closedAt: now, lbpRate,
+      cycleKey: key, startDay, closedAt: now,
+      // The rate the figures were actually converted at, so the record's
+      // lbpRateAtClose names the rate its own arithmetic used.
+      lbpRate: lbpRateAtClose,
       accounts: entries.map((e) => ({
-        tb: e.tb, actual: e.actual, expectedAtClose: e.expectedAtClose,
+        tb: e.tb, actual: e.actual, actualUSD: e.actualUSD, expectedAtClose: e.expectedAtClose,
         // `!backwards` here is a SECOND layer and no test can redden it:
         // the dialog already withholds the acknowledgement control from a
         // recorded-only row, so nothing reachable through the UI arrives
@@ -157,6 +160,13 @@ export default function BalanceCheckScreen({
     )) return;
     update({ trackedBalances: next.trackedBalances, periodCloses: next.periodCloses });
   }
+  // THE rate for this close, chosen in one place. rateForMonth against the
+  // CLOSING cycle, not the live rate: a late close states what an account
+  // held at the cycle end, and expectedAtClose is already built from
+  // historized rates, so converting the stated figure at today's rate would
+  // compare two moments -- 2.4.134's fault in a second dimension.
+  const lbpRateAtClose = rateForMonth(financials.lbpRateHistory, closingKey, lbpRate);
+
   const closeRows: CloseRow[] = tracked.map((tb) => ({
     tb,
     expectedAtClose: trackedBalanceExpectedAsOf(tb, financials, cycleCloseInstant(closingKey, startDay)),
@@ -529,6 +539,7 @@ export default function BalanceCheckScreen({
           daysLate={Math.max(0, Math.floor((Date.now() - new Date(cycleCloseInstant(closingKey, startDay)).getTime()) / 86_400_000))}
           rangeEnd={closingRangeEnd}
           reopenable={closingKey === currentKey}
+          lbpRateAtClose={lbpRateAtClose}
           onCancel={() => setClosing(null)}
           onConfirm={commitClose}
         />

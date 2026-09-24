@@ -139,7 +139,7 @@ describe("3. the close instant and the record", () => {
     const rec = buildPeriodClose({
       cycleKey: AUG, startDay: 27, closedAt: new Date("2026-09-27T06:00:00.000Z"),
       lbpRate: DEFAULT_LBP_RATE,
-      accounts: [{ tb, actual: 430, expectedAtClose: 461 }],
+      accounts: [{ tb, actual: 430, actualUSD: 430, expectedAtClose: 461 }],
     });
     expect(rec.cycleKey).toBe(AUG);
     expect(rec.startDayAtClose).toBe(27);
@@ -171,24 +171,36 @@ describe("3. the close instant and the record", () => {
   });
 
   it("several accounts, including LBP, each keep their own currency and rate", () => {
+    // CORRECTED. As shipped this fixture passed `expectedAtClose: 900_000`
+    // for the LBP account and asserted a discrepancy of 100,000 -- it read
+    // expectedAtClose as a LIRA figure. It is USD (trackedBalanceExpectedAsOf
+    // converts the baseline and every transaction), so the fixture encoded
+    // the very defect the close had, and the assertion locked it in. A test
+    // written from the same misunderstanding as the code cannot catch it.
     const usd = TB();
     const lbp = TB({ id: "tb2", name: "LBP cash", currency: "LBP", lbpRateAtEntry: 89_000 });
     const rec = buildPeriodClose({
       cycleKey: AUG, startDay: 27, closedAt: new Date("2026-09-27T06:00:00.000Z"),
       lbpRate: 89_500,
-      accounts: [{ tb: usd, actual: 430, expectedAtClose: 461 }, { tb: lbp, actual: 1_000_000, expectedAtClose: 900_000 }],
+      accounts: [
+        { tb: usd, actual: 430, actualUSD: 430, expectedAtClose: 461 },
+        // 1,000,000 lira at 89,500 is $11.17, against a $12.00 expectation.
+        { tb: lbp, actual: 1_000_000, actualUSD: 11.17, expectedAtClose: 12 },
+      ],
     });
     expect(rec.accounts).toHaveLength(2);
     expect(rec.accounts.map((a) => a.currency)).toEqual(["USD", "LBP"]);
     expect(rec.accounts.every((a) => a.lbpRateAtClose === 89_500)).toBe(true);
-    expect(rec.accounts[1].discrepancy).toBe(100_000);
+    // The native figure is kept for the anchor; the comparison is in USD.
+    expect(rec.accounts[1].actual).toBe(1_000_000);
+    expect(rec.accounts[1].discrepancy).toBe(-0.83);
   });
 
   it("a legacy account with no startingAt records priorState without one", () => {
     const legacy = TB({ startingAt: undefined, actualBalance: undefined });
     const rec = buildPeriodClose({
       cycleKey: AUG, startDay: 27, closedAt: new Date("2026-09-27T06:00:00.000Z"),
-      lbpRate: DEFAULT_LBP_RATE, accounts: [{ tb: legacy, actual: 430, expectedAtClose: 461 }],
+      lbpRate: DEFAULT_LBP_RATE, accounts: [{ tb: legacy, actual: 430, actualUSD: 430, expectedAtClose: 461 }],
     });
     expect(rec.accounts[0].priorState.startingAt).toBeUndefined();
     expect(rec.accounts[0].priorState.actualBalance).toBeUndefined();
@@ -202,7 +214,7 @@ const ackRecord = (over: Partial<{ startingAt: string; discrepancy: number }> = 
   cycleKey: AUG, rangeStart: "2026-08-27", rangeEnd: "2026-09-26",
   startDayAtClose: 27, closedAt: "2026-09-27T06:00:00.000Z",
   accounts: [{
-    trackedBalanceId: "tb1", actual: 430, expectedAtClose: 461, discrepancy: -31,
+    trackedBalanceId: "tb1", actual: 430, actualUSD: 430, expectedAtClose: 461, discrepancy: -31,
     currency: "USD", lbpRateAtClose: DEFAULT_LBP_RATE,
     priorState: { startingBalance: 500, startingDate: "2026-08-01" },
     acknowledgement: {
