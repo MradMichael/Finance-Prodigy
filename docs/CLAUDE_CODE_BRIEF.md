@@ -271,6 +271,20 @@ A change is complete when:
 
 ---
 
+## 6.5 Before a plan is approved
+
+Section 6 is the definition of *done*; this is the definition of *ready*. The three checks below are here because each has already cost something: every one was learned from a defect that shipped or was one approval away from shipping.
+
+**Every plan includes a section answering all three, by name.** "Not applicable" is a valid answer, with a reason. **A plan without that section is incomplete** -- and that is the point of requiring the section rather than the answers: an absent section is visible at approval, whereas an unasked question is not. Both of the checks below that have a track record were satisfied during implementation by someone thinking to ask, not at approval by anyone consulting a list.
+
+1. **What reverses it.** If the feature has an undo, name the reverse operation, and for each thing the new forward operation writes or overwrites say which of three it is: **restored** from a captured prior state -- and whether that capture is complete; **removed**, because this operation created it; or **deliberately left standing**, with the reason. Anything outside those three was inherited, not designed. Twice a plan specified a forward operation and inherited its undo silently: period close Phase 4 planned "restore `priorState`" when that held four of the seven fields a close overwrites, and Phase 5a specified its close in full while saying nothing about reopen, which would have left its ledger corrections standing while the record said the close never happened. Neither was catchable by `tsc` or a green suite -- **a reverse operation that silently does nothing for a case it has never seen is the default behaviour of almost any such function.** (2.4.135, 2.4.141, 2.4.142.)
+
+2. **Which claims are inherited.** Standing rule 18, both tells. Any **directional** claim -- which way a value flips, whether a conversion inverts -- is re-derived from the formula rather than from an earlier write-up. Any **scope or location** claim is checked by grepping the misbehaving function's callers and stating the number; the tell is a finding whose title names something the *user* does rather than something the *code* does. Four sign errors and two misframed findings on record, and in the scope cases the caller count is what falsified the title. (Rule 18, 2.4.115.)
+
+3. **What units each figure carries.** Every figure that crosses a boundary states its unit in its name or its type, decided before the first line is written rather than inferred afterwards. **Evidence, stated plainly because it is thinner than the other two: one live defect and one clean application.** The defect is 2.4.137 -- the close dialog subtracted a USD expectation from a native-currency figure, storing a discrepancy of 9,499,888.27 where the truth was -$5.58, and silently disabling the acknowledgement that fed on it, because a lira-scale figure can never match the USD one the badge compares against. The application is period close Phase 5a, whose unit inventory was written before any code and which consequently stores no USD figure for a debt at all. **Thin in count, not in cost** -- and the deeper finding behind it is that the identical bug had already been found, fixed and documented in `computeDashboard`, and was repeated anyway because the fix was never turned into anything a second implementation had to pass through. (2.4.137, 2.4.138, 2.4.141.)
+
+---
+
 ## 7. Session kickoff
 
 Begin the first session by reading this document in full, then produce a short plan for Phase 1 stating which files you intend to examine and in what order. Await confirmation before executing.
