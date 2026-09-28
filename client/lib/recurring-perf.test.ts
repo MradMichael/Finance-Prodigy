@@ -298,14 +298,34 @@ describe("E. the 3N display path stays cheap now that it reads the ledger (2.4.1
     // calls, because that scan is all the wrapper legitimately does.
     // Measured 0.98x. A per-call cycle walk is what pushes this up.
     expect(recurringPaidSoFar(items[0], txs)).toBeGreaterThan(0); // premise: the scan runs
-    const withWrapper = median(render, { batch: 20 });
-    const bareScans = median(() => {
+    const bare = () => {
       let t = 0;
       for (let c = 0; c < CALLS; c++) for (const r of items) t += recurringPaidSoFar(r, txs);
       return t;
-    }, { batch: 20 });
-    expect(bareScans).toBeGreaterThan(0);
-    expect(withWrapper / bareScans).toBeLessThan(3);
+    };
+    // Premise: the control does measurable work, so the ratio is not
+    // dividing by a timer-resolution artifact.
+    expect(median(bare, { batch: 20 })).toBeGreaterThan(0);
+    // PAIRED since 2.4.157 -- B's exact pre-pairing shape (a ratio of two
+    // separately timed medians). On the CI runner that failed in 14 of 52
+    // runs, at 3.01x-6.29x; the worst seen on the owner's machine is ~1.9x.
+    // Locally pairing narrows the spread (isolated p90 1.45x -> 1.13x) at
+    // the same centre (~1.04x). Whether it fixes the runner is unknown.
+    const ratio = pairedRatio(render, bare, { batch: 20 });
+    // PRINTED ON EVERY RUN, pass or fail, so CI supplies the distribution
+    // on the runner. The assertion message only ever showed FAILING values,
+    // so the logs so far hold the upper tail and nothing else.
+    //
+    // process.stdout.write, NOT console.log: Vitest 4's default reporter
+    // drops console output from passing tests (only --reporter=verbose shows
+    // it), which would have reproduced exactly the failing-only view this
+    // exists to end. Checked: the line appears under the default reporter,
+    // alone and inside the full suite. Greppable: E1_PAIRED_RATIO=<x>.
+    process.stdout.write(`E1_PAIRED_RATIO=${ratio.toFixed(3)} limit=3\n`);
+    // LIMIT NOT YET SET (2.4.111). 3x is the value it had before pairing,
+    // kept only so nothing changes until there is runner data. It gets set
+    // from the printed distribution, with its margin stated, as B's was.
+    expect(ratio).toBeLessThan(3);
   });
 
   it("and stays under 50ms in absolute terms at 100x the real ledger", () => {
