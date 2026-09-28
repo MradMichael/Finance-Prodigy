@@ -129,6 +129,19 @@ export async function pushToServer(email: string, data: LocalFinancials): Promis
 }
 
 /**
+ * The push that follows regenerating a recovery code, so the new code works
+ * from another device (audit 2.4.153). Gated like every other automatic
+ * upload: with backup off or undecided it does nothing, which also means
+ * the new recovery code only works on this device -- the honest consequence
+ * of not keeping a server copy, and one the backup choice must state.
+ */
+export async function pushRecoveryUpdate(email: string, data: LocalFinancials): Promise<SyncResult | { ok: false; skipped: true }> {
+  const { syncAllowed } = await import("./localData");
+  if (!syncAllowed(data)) return { ok: false, skipped: true };
+  return pushToServer(email, data);
+}
+
+/**
  * Re-registers sync ownership after a password reset, proving it via the
  * *previous* recovery token instead of the (now-changed) sync token — see
  * server/src/routes/sync.ts's /relink. Called fire-and-forget from

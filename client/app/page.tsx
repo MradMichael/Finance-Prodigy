@@ -21,7 +21,7 @@ import Sidebar from "../components/shell/Sidebar";
 import BottomNav from "../components/shell/BottomNav";
 import TopBar from "../components/shell/TopBar";
 import type { Screen, SyncStatus } from "../components/screens/shared";
-import { cycleStartDayOf, loadData, saveData, isEmptyFinancials, buildRecurringConfirmLog, nextConfirmTarget, autoPurgeExpired, DEFAULT_LBP_RATE } from "../lib/localData";
+import { cycleStartDayOf, loadData, saveData, isEmptyFinancials, buildRecurringConfirmLog, nextConfirmTarget, autoPurgeExpired, DEFAULT_LBP_RATE, syncAllowed } from "../lib/localData";
 import type { LocalFinancials } from "../lib/localData";
 import { computeDashboard } from "../lib/computeDashboard";
 import {currentCycleKey, calendarKeyForDate, type CycleKey, type CycleHistory } from "../lib/period";
@@ -99,6 +99,11 @@ export default function Home() {
   useEffect(() => { sessionRef.current = session; }, [session]);
 
   const autoSync = useCallback(async (data: LocalFinancials, email: string) => {
+    // Audit 2.4.153: the gate. Every automatic upload in this file reaches
+    // the network through here -- an edit, the monthly-snapshot write on
+    // load, the auto-purge write on load, and the conflict merge below -- so
+    // one check stops all four. Undecided is paused, not on.
+    if (!syncAllowed(data)) return;
     setSyncStatus("syncing");
     const result = await pushToServer(email, data);
     // 2.4.38: a conflict isn't a transient failure a retry would fix.

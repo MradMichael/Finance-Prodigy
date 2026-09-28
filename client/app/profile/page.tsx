@@ -9,7 +9,7 @@ import type { Session } from "../../lib/auth";
 import { loadData, saveData, activeTransactions } from "../../lib/localData";
 import { computeDashboard } from "../../lib/computeDashboard";
 import { buildReportHtml } from "../../lib/printReport";
-import { pushToServer, pullFromServer, getLastSyncTime, confirmOverwriteIfNeeded, mergeAndPush, buildMergeNoticeText } from "../../lib/syncService";
+import { pushToServer, pullFromServer, getLastSyncTime, confirmOverwriteIfNeeded, mergeAndPush, buildMergeNoticeText, pushRecoveryUpdate } from "../../lib/syncService";
 import type { LocalFinancials } from "../../lib/localData";
 import { isAnalyticsOptedIn, setAnalyticsOptIn } from "../../lib/analytics";
 import { useTheme, useThemeControl } from "../../contexts/ThemeContext";
@@ -291,7 +291,9 @@ export default function ProfilePage() {
       // unrelated data edit to carry it up (the gap that made an already-
       // regenerated code fail to recover from a second device).
       const data = await loadData(session.userId);
-      await pushToServer(session.email, data);
+      // Gated (audit 2.4.153): with backup off this uploads nothing, and the
+      // new code then works on this device only.
+      await pushRecoveryUpdate(session.email, data);
     } finally {
       setRegenerating(false);
     }
