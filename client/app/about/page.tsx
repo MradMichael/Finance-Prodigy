@@ -29,7 +29,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: "What currencies are supported?",
-    a: "USD and LBP (Lebanese Pound). Set your LBP rate in My Finances → Settings and all amounts are converted automatically.",
+    a: "USD and LBP (Lebanese Pound). Set your LBP rate on the Currency screen and all amounts are converted automatically.",
   },
   {
     q: "How is the health score calculated?",
@@ -41,7 +41,7 @@ const FAQ: { q: string; a: string }[] = [
   },
   {
     q: "How do I record a debt payment?",
-    a: "Go to My Finances → Debts. Hover over a debt and click 'Pay'. Enter the payment amount, and the balance is reduced automatically.",
+    a: "Go to Debts and click 'pay' on the debt. Enter the payment amount, and the balance is reduced automatically.",
   },
 ];
 
