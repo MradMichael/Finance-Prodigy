@@ -21,7 +21,7 @@
 //     autoSync), needs an expired soft-deleted transaction; the snapshot
 //     effect already proves the funnel is gated.
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import type { LocalFinancials } from "../lib/localData";
 
 const SESSION = { userId: "u1", email: "u1@example.com", name: "U One" };
@@ -38,6 +38,13 @@ vi.mock("../lib/localData", async (importOriginal) => {
 
 const push = vi.fn(async () => ({ ok: true }));
 const merge = vi.fn(async () => ({ ok: false }));
+let serverHasCopy = false;
+let lastSyncHere: string | null = null;
+const applied: string[] = [];
+const applyChoice = vi.fn(async (_e: string, d: LocalFinancials, c: string) => {
+  applied.push(c);
+  return { data: { ...d, syncChoice: { enabled: c === "on", decidedAt: "2026-09-28T12:00:00.000Z" } }, result: { ok: true } };
+});
 vi.mock("../lib/syncService", () => ({
   pullFromServer: vi.fn(async () => ({ ok: false, error: "none" })),
   pushToServer: (...a: unknown[]) => push(...(a as [])),
@@ -45,13 +52,18 @@ vi.mock("../lib/syncService", () => ({
   buildMergeNoticeText: () => ({ text: "" }),
   hasAutoPulled: vi.fn(() => true),
   markAutoPulled: vi.fn(),
-  getLastSyncTime: () => null,
+  getLastSyncTime: () => lastSyncHere,
+  checkEmailExists: vi.fn(async () => serverHasCopy),
+  applyBackupChoice: (...a: unknown[]) => applyChoice(...(a as [string, LocalFinancials, string])),
 }));
 
 import Home from "./page";
 import { DEFAULT_DATA } from "../lib/localData";
 
-beforeEach(() => { localStorage.clear(); saved.length = 0; push.mockClear(); merge.mockClear(); });
+beforeEach(() => {
+  localStorage.clear(); saved.length = 0; push.mockClear(); merge.mockClear();
+  serverHasCopy = false; lastSyncHere = null; applied.length = 0; applyChoice.mockClear();
+});
 
 /** Render, let the snapshot effect write, and wait past the 2.5s debounce. */
 async function openAndWait() {
@@ -84,5 +96,54 @@ describe("opening the app uploads nothing unless backup is on", () => {
     seed = { ...DEFAULT_DATA, income: 3000, syncChoice: { enabled: true, decidedAt: "2026-09-28T10:00:00.000Z" } } as LocalFinancials;
     await openAndWait();
     expect(push).toHaveBeenCalledTimes(1);
+  }, 15000);
+});
+
+// ───────── part 3: the load-time choice ─────────
+
+describe("an undecided account is asked on open, and nothing uploads until it answers", () => {
+  const open = async () => { render(<Home />); await screen.findByRole("button", { name: "Setup" }, { timeout: 10000 }); };
+
+  it("an account WITH a server copy is told, and offered delete", async () => {
+    serverHasCopy = true;
+    seed = { ...DEFAULT_DATA, income: 3000 } as LocalFinancials;
+    await open();
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /stop, and delete the copy/i })).toBeTruthy();
+  }, 15000);
+
+  it("a device that has synced before counts as having a copy, even if the server check says no", async () => {
+    // An offline check reports "no copy"; withholding delete from someone
+    // who has one is the worse error, so the local signal is enough.
+    lastSyncHere = "2026-09-20T08:00:00.000Z";
+    seed = { ...DEFAULT_DATA, income: 3000 } as LocalFinancials;
+    await open();
+    await screen.findByRole("dialog");
+    expect(screen.getByRole("button", { name: /stop, and delete the copy/i })).toBeTruthy();
+  }, 15000);
+
+  it("an account with no copy anywhere gets the plain question, no delete", async () => {
+    seed = { ...DEFAULT_DATA, income: 3000 } as LocalFinancials;
+    await open();
+    await screen.findByRole("dialog");
+    expect(screen.getByRole("button", { name: /turn backup on/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /delete/i })).toBeNull();
+  }, 15000);
+
+  it("an account that has already chosen is not asked", async () => {
+    seed = { ...DEFAULT_DATA, income: 3000, syncChoice: { enabled: false, decidedAt: "2026-09-28T10:00:00.000Z" } } as LocalFinancials;
+    await open();
+    await new Promise((r) => setTimeout(r, 400));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  }, 15000);
+
+  it("answering records the choice, saves it, and closes the prompt", async () => {
+    serverHasCopy = true;
+    seed = { ...DEFAULT_DATA, income: 3000 } as LocalFinancials;
+    await open();
+    fireEvent.click(await screen.findByRole("button", { name: /keep backing up/i }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(applied).toEqual(["on"]);
+    expect(saved[saved.length - 1].syncChoice?.enabled).toBe(true);
   }, 15000);
 });
