@@ -111,14 +111,29 @@ describe("1. REGRESSION — an instant-pinned close must not break isAfterBalanc
 // ───────── 2. the derivation is LOCAL, not a UTC slice ─────────
 
 describe("2. startingDate is the instant's LOCAL day", () => {
-  it("a late-evening UTC instant rolls to the next local day (UTC+3)", () => {
+  // The condition this test needs, stated rather than assumed (2.4.157):
+  // it can only tell a local-day implementation from a UTC-slice one where
+  // this instant's LOCAL calendar day differs from its UTC day -- east of
+  // UTC by more than 90 minutes. In UTC the two implementations agree, so
+  // the test would fail for a correct implementation and prove nothing.
+  // CI runs this file under UTC and Asia/Beirut; the Beirut leg is where
+  // it runs, and the companion check below makes sure it does.
+  const INSTANT = "2026-09-26T22:30:00.000Z";
+  const DISCRIMINATES = localISO(new Date(INSTANT)) !== INSTANT.slice(0, 10);
+
+  it.runIf(DISCRIMINATES)("a late-evening UTC instant rolls to the next local day (east of UTC)", () => {
     // 22:30Z on the 26th is 01:30 on the 27th in Asia/Beirut. A
     // `.toISOString().slice(0,10)` implementation returns 2026-09-26 and is
-    // wrong; the local derivation returns 2026-09-27. This is the only test
-    // here that tells the two apart, and it does so only east of UTC.
-    const closed = reanchorTrackedBalance(TB(), 430, 461, DEFAULT_LBP_RATE, "2026-09-26T22:30:00.000Z");
-    expect(closed.startingDate).toBe(localISO(new Date("2026-09-26T22:30:00.000Z")));
-    expect(closed.startingDate).not.toBe("2026-09-26T22:30:00.000Z".slice(0, 10));
+    // wrong; the local derivation returns 2026-09-27.
+    const closed = reanchorTrackedBalance(TB(), 430, 461, DEFAULT_LBP_RATE, INSTANT);
+    expect(closed.startingDate).toBe(localISO(new Date(INSTANT)));
+    expect(closed.startingDate).not.toBe(INSTANT.slice(0, 10));
+  });
+
+  it("the local-day test above is live wherever the owner's zone is", () => {
+    // A runIf can go quiet without anyone noticing. In Asia/Beirut -- the
+    // real users' zone, and one of CI's two legs -- it must be running.
+    if (Intl.DateTimeFormat().resolvedOptions().timeZone === "Asia/Beirut") expect(DISCRIMINATES).toBe(true);
   });
 });
 
