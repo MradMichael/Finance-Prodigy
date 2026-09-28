@@ -166,7 +166,7 @@ describe("B. monthly must not cost dramatically more than weekly (cause 2: the l
   // single call cheaper. After Fix 2: 1.71us vs 0.53us, 3.21x. The residual
   // gap is the month-index arithmetic and the one or two clamp corrections,
   // which is what a closed form costs over a subtraction.
-  it("monthly nextOccurrence is within 5x of weekly at the same item age (WAS ~98x)", () => {
+  it("monthly nextOccurrence is within 10x of weekly at the same item age (WAS ~98x)", () => {
     const monthly = item("monthly", 2006);
     const weekly  = item("weekly", 2006);
     // Premise: weekly is measurable at this batch size, so the ratio is not
@@ -176,7 +176,19 @@ describe("B. monthly must not cost dramatically more than weekly (cause 2: the l
     // its own interruptions, which put this past 5x in 1 of 50 full-suite
     // runs with no change to the code. See pairedRatio.
     const ratio = pairedRatio(() => nextOccurrence(monthly, NOW), () => nextOccurrence(weekly, NOW), { batch: 500 });
-    expect(ratio).toBeLessThan(5);
+    // LIMIT 10x, RAISED FROM 5x (2.4.152), with the margin stated rather
+    // than implied. Paired, B's TRUE ratio is ~3.8x -- the closed form's
+    // month arithmetic over a subtraction -- and its worst observed across
+    // 80 probe runs, isolated and under full-suite load, is ~4.4x. At 5x
+    // that left 1.15x headroom, which pairing could not widen: pairing
+    // removes noise, not cost. At 10x:
+    //   headroom over the worst observed   10 / 4.4   = ~2.3x
+    //   below the regression it guards     98 / 10    = ~10x  (on main
+    //     before Fix 2; today's perturbation reads ~190x, ~19x below)
+    // Not a budget widened until it stopped failing: the regression is an
+    // order of magnitude past the limit either way, and step 3 of 2.4.152
+    // re-verified it goes RED (184-199x, 5/5) with the walk reintroduced.
+    expect(ratio).toBeLessThan(10);
   });
 });
 
