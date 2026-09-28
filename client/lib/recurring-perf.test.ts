@@ -86,6 +86,40 @@ function median(fn: () => unknown, { batch = 1, samples = 7 } = {}): number {
   return times[Math.floor(times.length / 2)];
 }
 
+/**
+ * Median of PAIRED ratios: `num` and `den` are timed back to back inside each
+ * sample, the ratio is taken per pair, and the median is over those ratios.
+ * Their order alternates between samples, so neither side is always the one
+ * measured second (warmer cache, or later in a scheduler slice).
+ *
+ * Why B and C use this instead of median(num) / median(den) (2.4.151): a
+ * ratio of two independently timed medians lets each side draw its own
+ * interruptions. Under load one side can land a slow sample the other never
+ * sees, and the ratio moves although the code did not. That put B past its
+ * limit in 1 of 50 full-suite runs. Pairing makes both sides share whatever
+ * the machine is doing at that moment, so load cancels in the ratio rather
+ * than being counted twice. Switching to min (the held estimator question)
+ * does not do this: min/min pairs the luckiest sample of one side with the
+ * luckiest of the other, which is not a better estimate of their ratio.
+ */
+function pairedRatio(num: () => unknown, den: () => unknown, { batch = 1, samples = 7 } = {}): number {
+  for (let i = 0; i < batch; i++) { num(); den(); }
+  const ratios: number[] = [];
+  for (let s = 0; s < samples; s++) {
+    const numFirst = s % 2 === 0;
+    const [first, second] = numFirst ? [num, den] : [den, num];
+    const t0 = performance.now();
+    for (let i = 0; i < batch; i++) first();
+    const t1 = performance.now();
+    for (let i = 0; i < batch; i++) second();
+    const t2 = performance.now();
+    const [tNum, tDen] = numFirst ? [t1 - t0, t2 - t1] : [t2 - t1, t1 - t0];
+    ratios.push(tNum / tDen);
+  }
+  ratios.sort((a, b) => a - b);
+  return ratios[Math.floor(ratios.length / 2)];
+}
+
 describe("A. the walk must not build cycles it discards (cause 1: the 100-year horizon)", () => {
   // The control is the same item with an endDate that yields the IDENTICAL
   // answer -- so the two calls do the same job and differ only in how much
@@ -135,12 +169,14 @@ describe("B. monthly must not cost dramatically more than weekly (cause 2: the l
   it("monthly nextOccurrence is within 5x of weekly at the same item age (WAS ~98x)", () => {
     const monthly = item("monthly", 2006);
     const weekly  = item("weekly", 2006);
-    const tMonthly = median(() => nextOccurrence(monthly, NOW), { batch: 500 });
-    const tWeekly  = median(() => nextOccurrence(weekly, NOW),  { batch: 500 });
     // Premise: weekly is measurable at this batch size, so the ratio is not
     // dividing by a timer-resolution artifact.
-    expect(tWeekly).toBeGreaterThan(0);
-    expect(tMonthly / tWeekly).toBeLessThan(5);
+    expect(median(() => nextOccurrence(weekly, NOW), { batch: 500 })).toBeGreaterThan(0);
+    // PAIRED since 2.4.151: independently timed medians let each side draw
+    // its own interruptions, which put this past 5x in 1 of 50 full-suite
+    // runs with no change to the code. See pairedRatio.
+    const ratio = pairedRatio(() => nextOccurrence(monthly, NOW), () => nextOccurrence(weekly, NOW), { batch: 500 });
+    expect(ratio).toBeLessThan(5);
   });
 });
 
@@ -166,11 +202,12 @@ describe("C. cost must not grow with an item's age (cause 2, from the other side
   it("a 1950-start item costs no more than 2x a 2026-start one (WAS ~3.3x, and 70.7x after Fix 1 alone)", () => {
     const fresh = item("monthly", 2026);
     const aged  = item("monthly", 1950);
-    const tFresh = median(() => capacityFreedFrom(fresh, [], NOW), { batch: 4, samples: 5 });
-    const tAged  = median(() => capacityFreedFrom(aged, [], NOW),  { batch: 4, samples: 5 });
     // Premise: both did real, measurable work.
-    expect(tFresh).toBeGreaterThan(0);
-    expect(tAged / tFresh).toBeLessThan(2);
+    expect(median(() => capacityFreedFrom(fresh, [], NOW), { batch: 4, samples: 5 })).toBeGreaterThan(0);
+    // PAIRED since 2.4.151 -- same shape as B (a ratio of two separately
+    // timed calls), so the same fix. See pairedRatio.
+    const ratio = pairedRatio(() => capacityFreedFrom(aged, [], NOW), () => capacityFreedFrom(fresh, [], NOW), { batch: 4, samples: 5 });
+    expect(ratio).toBeLessThan(2);
   });
 });
 
