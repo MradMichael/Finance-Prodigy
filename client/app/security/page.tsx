@@ -64,9 +64,8 @@ export default function SecurityPage() {
 
         <Section title="Sync backup: not the same guarantee (read this if you use it)">
           <p>
-            While you&apos;re signed in, a copy of your data is uploaded automatically to our server so you
-            can restore it on another device (we&apos;re changing this so it only happens if you turn backup on).
-            There is currently no setting to stop the upload; deleting your account is the only way to remove the copy. <strong style={{ color: T.text }}>That copy is not encrypted the
+            If you turn on automatic backup, a copy of your data is uploaded to our server so you
+            can restore it on another device. <strong style={{ color: T.text }}>That copy is not encrypted the
             way your local data is</strong>: it&apos;s stored as plain, readable data, because it has to be
             restorable on a device that does not hold this device&apos;s key — a second device that joins by
             pulling your data generates its own independent key, and could not read a copy encrypted under the
