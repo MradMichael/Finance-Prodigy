@@ -4,7 +4,7 @@ import { useState, useRef } from "react";
 import type { LocalFinancials, StoredTransaction, StoredGoal, StoredDebt, StoredRecurring, StoredCard, RecurringFrequency, Currency, PaymentMethod, BudgetRuleKey } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, remainingInstallments, toUSD as toUSDShared, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, roundMoney, moneyMaxFor, MONEY_MAX_USD, derivedDebtBalance, activeTransactions, DEFAULT_DATA, DEFAULT_LBP_RATE, cycleStartDayOf } from "../lib/localData";
+import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, remainingInstallments, toUSD as toUSDShared, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, buildExtraPaymentTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, roundMoney, moneyMaxFor, MONEY_MAX_USD, derivedDebtBalance, activeTransactions, DEFAULT_DATA, DEFAULT_LBP_RATE, cycleStartDayOf } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker } from "./form/Primitives";
@@ -480,22 +480,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   function logExtraPayment(rec: StoredRecurring) {
     const amt = parseFloat(extraRecAmt.replace(/,/g, ""));
     if (!amt || amt <= 0) return;
-    const now = new Date().toISOString();
-    const tx: StoredTransaction = {
-      id: uid(), amount: amt, currency: rec.currency,
-      bucket: rec.bucket,
-      ...(rec.category ? { category: rec.category } : {}),
-      ...withRate(rec.currency, financials.lbpRate ?? DEFAULT_LBP_RATE),
-      description: `Extra: ${rec.name}`,
-      date: todayISO(),
-      paymentMethod: "cash",
-      // 2.4.126 -- the key, so the link is not the sentence. Deliberately
-      // NOT recurringId: see the field's own comment in localData.ts for
-      // the three readers that would misinterpret it, the first of which
-      // (isCycleConfirmed) would read this as settling a cycle.
-      extraForRecurringId: rec.id,
-      createdAt: now, updatedAt: now,
-    };
+    const tx = buildExtraPaymentTx(rec, amt, financials.lbpRate ?? DEFAULT_LBP_RATE);
     update({ transactions: [tx, ...financials.transactions] });
     setExtraRecId(null); setExtraRecAmt("");
   }

@@ -1,8 +1,9 @@
 // 2.4.126, the two sites that only exist in the component: the stamp and
 // the delete strip. Every CONSEQUENCE of the field choice is pure and lives
 // in lib/extra-payment-key.test.ts; what is here is the wiring, driven
-// through the real UI because logExtraPayment builds its transaction inline
-// rather than through an extracted builder.
+// through the real UI. (Written when logExtraPayment built its transaction
+// inline; it now uses buildExtraPaymentTx, and the full written shape is
+// pinned by InputPanel.extra-payment.zero-diff.test.tsx.)
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
