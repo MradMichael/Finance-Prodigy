@@ -5,7 +5,7 @@ import type { LocalFinancials, TrackedBalance, PaymentMethod, StoredCard, Curren
 import {
   uid, todayISO, fmtDate, withRate, reanchorTrackedBalance, moneyMaxFor, DEFAULT_LBP_RATE,
   buildPeriodClose, cycleStartDayOf, unclosedCycles, isCycleClosedBySpan,
-  closeMovesBaselineBackwards, canReopen, reopenCycle, activeCloseForCycle, rateForMonth,
+  closeMovesBaselineBackwards, canReopen, reopenCycle, planReopen, activeCloseForCycle, rateForMonth,
   derivedEfBalance, derivedDebtBalance, planEfClose, planDebtClose,
 } from "../../lib/localData";
 import { balanceCheckReconciliation, trackedBalanceExpectedAsOf, type computeDashboard } from "../../lib/computeDashboard";
@@ -114,6 +114,9 @@ export default function BalanceCheckScreen({
       lbpRate: lbpRateAtClose,
       accounts: entries.map((e) => ({
         tb: e.tb, actual: e.actual, actualUSD: e.actualUSD, expectedAtClose: e.expectedAtClose,
+        // 2.4.144: the startingAt this close actually writes, so a later
+        // reopen can tell an untouched account from one checked in since.
+        ...(backwards(e.tb) ? {} : { anchoredAt: at }),
         // `!backwards` here is a SECOND layer and no test can redden it:
         // the dialog already withholds the acknowledgement control from a
         // recorded-only row, so nothing reachable through the UI arrives
@@ -177,15 +180,30 @@ export default function BalanceCheckScreen({
     // reopenCycle already returns null on the same condition. Nothing is
     // written until update(), so computing the result before confirming
     // costs nothing.
-    const next = reopenCycle(financials, currentKey, new Date());
-    if (!next) return;
+    const now = new Date();
+    const plan = planReopen(financials, currentKey, now);
+    const next = reopenCycle(financials, currentKey, now);
+    if (!plan || !next) return;
+    // 2.4.144: an account checked in since the close keeps its newer figure,
+    // and the owner is told which -- nothing is kept silently.
+    const kept = plan.keptTrackedIds
+      .map((id) => tracked.find((t) => t.id === id)?.name)
+      .filter((n): n is string => !!n);
+    const keptLine = kept.length
+      ? ` ${kept.join(", ")} ${kept.length === 1 ? "has" : "have"} been checked in since, so ${kept.length === 1 ? "it keeps its" : "they keep their"} newer figure${kept.length === 1 ? "" : "s"}.`
+      : "";
+    const keptRows = plan.keptTransactionIds.length
+      ? " A correction you entered afterwards is built on this close's own correction, so that one stays too."
+      : "";
     if (!confirm(
-      "Reopen this cycle? Every account goes back to the balance and baseline it " +
-      "had before the close. Transactions you have logged since are untouched, and " +
-      "any note you wrote to account for a gap stops applying -- it stays on the " +
-      "record as history."
+      "Reopen this cycle? Accounts go back to the balance and baseline they had before the close." +
+      keptLine + keptRows +
+      " Transactions you have logged since are untouched, and any note you wrote to account for a gap " +
+      "stops applying -- it stays on the record as history."
     )) return;
-    update({ trackedBalances: next.trackedBalances, periodCloses: next.periodCloses });
+    // transactions too: until 2.4.144 this write dropped them, so Phase 5a's
+    // undo of EF/debt corrections was computed and never saved.
+    update({ trackedBalances: next.trackedBalances, periodCloses: next.periodCloses, transactions: next.transactions });
   }
   // THE rate for this close, chosen in one place. rateForMonth against the
   // CLOSING cycle, not the live rate: a late close states what an account

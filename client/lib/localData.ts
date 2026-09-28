@@ -1,7 +1,7 @@
 "use client";
 
 import type { CycleKey, CycleHistory, CalendarHistory } from "./period";
-import {CYCLE_START_DAY, cycleKeyForISO, cycleLabel, cycleBounds, cycleKeyMinus, currentCycleKey } from "./period";
+import {CYCLE_START_DAY, cycleKeyForISO, cycleLabel, cycleBounds, cycleKeyMinus, currentCycleKey, cycleCloseInstant } from "./period";
 export type { CycleKey, CalendarKey, CycleHistory, CalendarHistory } from "./period";
 
 export type Currency = "USD" | "LBP";
@@ -181,6 +181,19 @@ export interface PeriodCloseAccount {
    * guess. Its useful life is about one cycle.
    */
   priorStateComplete?: true;
+  /**
+   * The `startingAt` this close WROTE (2.4.144). Absent when the account was
+   * recorded but not re-anchored (Phase 3's backwards case), and on every
+   * record written before this field existed.
+   *
+   * Reopen compares it with the account's current `startingAt`: if they
+   * differ, the account was checked in since, and the later observation is
+   * left standing. Stored rather than reconstructed (2.4.138) -- the legacy
+   * derivation depends on the device's timezone, and a mismatch there reads
+   * as "re-anchored", which is the safe direction but not the exact one.
+   * A UTC INSTANT, compared only with instants.
+   */
+  anchoredAt?: string;
   /**
    * 2.4.124 -- the owner marked this account's gap as accounted for. Absent
    * means not acknowledged, which is the normal state.
@@ -1421,7 +1434,7 @@ export function buildPeriodClose(input: {
    * owns the one the dialog renders from. Required rather than optional so
    * tsc refuses a caller that forgets.
    */
-  accounts: { tb: TrackedBalance; actual: number; actualUSD: number; expectedAtClose: number; acknowledgement?: PeriodCloseAcknowledgement }[];
+  accounts: { tb: TrackedBalance; actual: number; actualUSD: number; expectedAtClose: number; acknowledgement?: PeriodCloseAcknowledgement; anchoredAt?: string }[];
   /** Phase 5a. Already planned by planEfClose/planDebtClose -- this only files them. */
   emergencyFund?: PeriodCloseEmergencyFund;
   debts?: PeriodCloseDebt[];
@@ -1436,7 +1449,7 @@ export function buildPeriodClose(input: {
     closedAt: closedAt.toISOString(),
     ...(emergencyFund ? { emergencyFund } : {}),
     ...(debts && debts.length ? { debts } : {}),
-    accounts: accounts.map(({ tb, actual, actualUSD, expectedAtClose, acknowledgement }) => ({
+    accounts: accounts.map(({ tb, actual, actualUSD, expectedAtClose, acknowledgement, anchoredAt }) => ({
       trackedBalanceId: tb.id,
       actual,
       actualUSD,
@@ -1462,6 +1475,7 @@ export function buildPeriodClose(input: {
       // overwrites, which is what makes an absent optional above mean "was
       // absent before the close" rather than "was not captured".
       priorStateComplete: true,
+      ...(anchoredAt ? { anchoredAt } : {}),
       ...(acknowledgement ? { acknowledgement } : {}),
     })),
   };
@@ -1535,51 +1549,107 @@ export function canReopen(
   return { ok: true, close };
 }
 
+/** A ledger row that states a balance, as opposed to one that moves it. */
+function isCorrectionFor(t: StoredTransaction, account: "ef" | { debtId: string }): boolean {
+  if (t.deletedAt != null) return false;
+  if (account === "ef") return t.amount === 0 && t.efAmount != null && t.debtId == null;
+  return t.debtId === account.debtId && t.debtAdjustment != null;
+}
+
 /**
- * Undo a close: restore every account's pre-close state and mark the record
- * reopened. Returns null -- changing nothing -- for any refusal, so a caller
- * can never half-apply.
+ * What a reopen would do, decided once (2.4.144). Used by reopenCycle to
+ * act and by the screen to say, in the confirm, what will be kept.
  *
- * The acknowledgements on the record are NOT erased. They stop APPLYING,
- * because they bind to the close's `startingAt` and this restores the
- * earlier one; the note survives as history. "Discarded" means "no longer
- * in force", not "deleted", and marking over deleting is what lets both be
- * true at once.
+ * THE RULE is Phase 3's, applied to the undo: a later observation beats the
+ * one being undone, so nothing is moved backwards.
+ *
+ *   * A tracked balance is RESTORED only if its `startingAt` is still the one
+ *     the close wrote. Otherwise it was checked in since, and is KEPT.
+ *     Recorded-only accounts (never re-anchored) never match, so they are
+ *     kept too -- which is exactly right: the close changed nothing on them,
+ *     and restoring could only roll back a check-in made after it.
+ *   * A close's correction row is REMOVED only if it is still the latest
+ *     correction for that account. A later correction was computed against
+ *     a balance that included it, so removing it would move the account away
+ *     from the figure stated most recently; it is KEPT.
+ *
+ * Instants compared with instants throughout: `startingAt` and `createdAt`,
+ * never `startingDate` or `date` (2.4.65).
+ */
+export function planReopen(
+  data: LocalFinancials,
+  cycleKey: CycleKey,
+  now: Date,
+): {
+  close: PeriodClose;
+  restoredTrackedIds: string[];
+  keptTrackedIds: string[];
+  removedTransactionIds: string[];
+  keptTransactionIds: string[];
+} | null {
+  const verdict = canReopen(data, cycleKey, now);
+  if (!verdict.ok) return null;
+  const { close } = verdict;
+  // Legacy records carry no anchoredAt. The close wrote the end instant of its
+  // own span, at the payday stored ON the record -- not today's.
+  const derived = cycleCloseInstant(close.cycleKey, close.startDayAtClose);
+  const byId = new Map((data.trackedBalances ?? []).map((tb) => [tb.id, tb]));
+  const restoredTrackedIds: string[] = [], keptTrackedIds: string[] = [];
+  for (const a of close.accounts) {
+    const tb = byId.get(a.trackedBalanceId);
+    if (!tb) continue; // deleted since; nothing to restore (Phase 4)
+    (tb.startingAt === (a.anchoredAt ?? derived) ? restoredTrackedIds : keptTrackedIds).push(tb.id);
+  }
+
+  const txs = data.transactions ?? [];
+  const byTxId = new Map(txs.map((t) => [t.id, t]));
+  const rows: { id: string; account: "ef" | { debtId: string } }[] = [
+    ...(close.emergencyFund?.transactionId ? [{ id: close.emergencyFund.transactionId, account: "ef" as const }] : []),
+    ...(close.debts ?? []).flatMap((d) => (d.transactionId ? [{ id: d.transactionId, account: { debtId: d.debtId } }] : [])),
+  ];
+  const removedTransactionIds: string[] = [], keptTransactionIds: string[] = [];
+  for (const { id, account } of rows) {
+    const row = byTxId.get(id);
+    if (!row || row.deletedAt != null) continue;
+    const laterCorrection = txs.some((t) =>
+      t.id !== id && isCorrectionFor(t, account) && (t.createdAt ?? "") > (row.createdAt ?? ""));
+    (laterCorrection ? keptTransactionIds : removedTransactionIds).push(id);
+  }
+  return { close, restoredTrackedIds, keptTrackedIds, removedTransactionIds, keptTransactionIds };
+}
+
+/**
+ * Undo a close, per planReopen. Returns null -- changing nothing -- for any
+ * refusal, so a caller can never half-apply. A PARTIAL reopen is not a
+ * refusal: the record is marked reopened and whatever planReopen kept is
+ * kept, because refusing the whole reopen would withhold the accounts that
+ * genuinely can be restored.
+ *
+ * Acknowledgements are not erased: they bind to the close's startingAt, so
+ * they stop applying once that anchor is gone, and survive as history.
  */
 export function reopenCycle(
   data: LocalFinancials,
   cycleKey: CycleKey,
   now: Date,
 ): LocalFinancials | null {
-  const verdict = canReopen(data, cycleKey, now);
-  if (!verdict.ok) return null;
-  const byId = new Map(verdict.close.accounts.map((a) => [a.trackedBalanceId, a]));
-
-  // Phase 5a: the adjustments this close wrote are undone too, and the
-  // mechanism differs because the correction did. A tracked balance had its
-  // anchor overwritten and needs priorState put back; the fund and debts had
-  // a ledger row ADDED and need it taken away. Soft-deleted, not spliced:
-  // derivedEfBalance and derivedDebtBalance both already ignore deletedAt,
-  // so the balances fall back on their own, and 2.6.3b's tombstones are the
-  // standing answer to hard deletion in this model.
-  const undone = new Set<string>([
-    ...(verdict.close.emergencyFund?.transactionId ? [verdict.close.emergencyFund.transactionId] : []),
-    ...(verdict.close.debts ?? []).flatMap((d) => (d.transactionId ? [d.transactionId] : [])),
-  ]);
+  const plan = planReopen(data, cycleKey, now);
+  if (!plan) return null;
+  const restore = new Set(plan.restoredTrackedIds);
+  const remove = new Set(plan.removedTransactionIds);
+  const byId = new Map(plan.close.accounts.map((a) => [a.trackedBalanceId, a]));
   const at = now.toISOString();
-
   return {
     ...data,
-    transactions: undone.size
-      ? (data.transactions ?? []).map((t) =>
-          undone.has(t.id) && t.deletedAt == null ? { ...t, deletedAt: at, updatedAt: at } : t)
+    // Soft-deleted, not spliced: both derivations ignore deletedAt, and a
+    // close that removed nothing returns the array by reference.
+    transactions: remove.size
+      ? (data.transactions ?? []).map((t) => (remove.has(t.id) ? { ...t, deletedAt: at, updatedAt: at } : t))
       : data.transactions,
-    trackedBalances: (data.trackedBalances ?? []).map((tb) => {
-      const acc = byId.get(tb.id);
-      return acc ? restoreTrackedBalance(tb, acc.priorState) : tb;
-    }),
+    trackedBalances: (data.trackedBalances ?? []).map((tb) =>
+      restore.has(tb.id) ? restoreTrackedBalance(tb, byId.get(tb.id)!.priorState) : tb),
     periodCloses: (data.periodCloses ?? []).map(
-      (c) => (c === verdict.close ? { ...c, reopenedAt: now.toISOString() } : c),
+      (c) => (c === plan.close ? { ...c, reopenedAt: at } : c),
     ),
   };
 }
