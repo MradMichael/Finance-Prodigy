@@ -2705,6 +2705,36 @@ export function historizedRecurringContribution(r: StoredRecurring, ym: CycleKey
 }
 
 /**
+ * The "+extra" payment on a recurring item: money paid toward it outside
+ * its schedule. Extracted from InputPanel's logExtraPayment, which built
+ * this inline while its five siblings used builders here -- the shape that
+ * let commitEfBalance drift from its twin. Zero behaviour change: key order
+ * included, pinned by InputPanel.extra-payment.zero-diff.test.tsx.
+ *
+ * `amount` is in the recurring item's OWN currency (`rec.currency`); nothing
+ * converts. `paymentMethod` is always "cash", as it always was inline.
+ *
+ * 2.4.126 -- the link is the key, not the sentence. Deliberately NOT
+ * recurringId: see that field's comment for the three readers that would
+ * misinterpret it, the first of which (isCycleConfirmed) would read this as
+ * settling a cycle.
+ */
+export function buildExtraPaymentTx(rec: StoredRecurring, amount: number, lbpRate: number): StoredTransaction {
+  const now = new Date().toISOString();
+  return {
+    id: uid(), amount, currency: rec.currency,
+    bucket: rec.bucket,
+    ...(rec.category ? { category: rec.category } : {}),
+    ...withRate(rec.currency, lbpRate),
+    description: `Extra: ${rec.name}`,
+    date: todayISO(),
+    paymentMethod: "cash",
+    extraForRecurringId: rec.id,
+    createdAt: now, updatedAt: now,
+  };
+}
+
+/**
  * Builds the transaction logged for a contribution toward a goal (Phase
  * 1.4) -- always in the GOAL's own currency, never USD by default. Two
  * independent call sites (GoalsScreen.pay, InputPanel.contributeToGoal)
