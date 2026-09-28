@@ -296,7 +296,7 @@ export default function BudgetScreen({
         {moneyEquals(income, 0) ? (
           <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
             <p className="text-sm" style={{ color: T.mute }}>
-              Set your monthly income in <strong style={{ color: T.text }}>My Finances → Setup</strong> to see how your spending compares to this budget.
+              Set your monthly income in <strong style={{ color: T.text }}>Setup</strong> to see how your spending compares to this budget.
             </p>
           </div>
         ) : (

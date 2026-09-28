@@ -358,7 +358,7 @@ export default function ProjectionsScreen({
               </p>
             </>
           ) : (
-            <p className="text-sm" style={{ color: T.mute }}>Set your monthly income in My Finances to see a recommended figure here.</p>
+            <p className="text-sm" style={{ color: T.mute }}>Set your monthly income in Setup to see a recommended figure here.</p>
           )}
         </div>
 
