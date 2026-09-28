@@ -1205,6 +1205,16 @@ export function migrateFinancials(raw: unknown, migrations: typeof MIGRATIONS = 
 }
 
 /**
+ * The data "Reset all data" leaves behind: DEFAULT_DATA, with the backup
+ * choice carried over. A reset erases financial records, not a consent
+ * decision -- turning backup off (or back to undecided) as a side effect
+ * would be a second change nobody asked for.
+ */
+export function resetFinancials(d: Pick<LocalFinancials, "syncChoice">): LocalFinancials {
+  return { ...DEFAULT_DATA, ...(d.syncChoice ? { syncChoice: d.syncChoice } : {}) };
+}
+
+/**
  * May this account upload automatically? The ONE decision behind every
  * automatic upload (audit 2.4.153): autoSync -- which the edit, snapshot,
  * auto-purge and conflict-merge paths all funnel through -- and the

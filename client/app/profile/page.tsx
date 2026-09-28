@@ -6,8 +6,9 @@ import Link from "next/link";
 import { getSession, hasValidSession, updateProfile, deleteAccount, signOut, ensureFirstUserIsAdmin, regenerateRecoveryCode } from "../../lib/auth";
 import RecoveryCodeModal from "../../components/RecoveryCodeModal";
 import BackupSwitch from "../../components/BackupSwitch";
+import ResetDataPanel from "../../components/ResetDataPanel";
 import type { Session } from "../../lib/auth";
-import { loadData, saveData, activeTransactions, syncAllowed } from "../../lib/localData";
+import { loadData, saveData, activeTransactions, syncAllowed, resetFinancials } from "../../lib/localData";
 import { computeDashboard } from "../../lib/computeDashboard";
 import { buildReportHtml } from "../../lib/printReport";
 import { pushToServer, pullFromServer, getLastSyncTime, confirmOverwriteIfNeeded, mergeAndPush, buildMergeNoticeText, pushRecoveryUpdate, applyBackupChoice, type BackupChoice } from "../../lib/syncService";
@@ -52,6 +53,8 @@ export default function ProfilePage() {
   const [analyticsOn,   setAnalyticsOn]   = useState(false);
   // Audit 2.4.153: null until loaded, so the switch never flashes a wrong state.
   const [backupOn,      setBackupOn]      = useState<boolean | null>(null);
+  const [resetCounts,   setResetCounts]   = useState<{ transactions: number; goals: number; debts: number; recurring: number } | null>(null);
+  const [resetMsg,      setResetMsg]      = useState("");
 
   useEffect(() => {
     ensureFirstUserIsAdmin();
@@ -67,8 +70,35 @@ export default function ProfilePage() {
     setName(s.name);
     setLastSync(getLastSyncTime());
     setAnalyticsOn(isAnalyticsOptedIn());
-    loadData(s.userId).then((d) => setBackupOn(syncAllowed(d)));
+    loadData(s.userId).then((d) => {
+      setBackupOn(syncAllowed(d));
+      setResetCounts(countsOf(d));
+    });
   }, [router]);
+
+  /** What "Reset all data" is about to erase, named in its confirm. */
+  function countsOf(d: LocalFinancials) {
+    return { transactions: activeTransactions(d.transactions).length, goals: d.goals.length, debts: d.debts.length, recurring: (d.recurring ?? []).length };
+  }
+
+  /**
+   * "Reset all data" (moved here from My Finances). Keeps the account and the
+   * backup choice. With backup on it uploads the empty copy now -- the
+   * confirm said so -- rather than leaving the server copy to be replaced by
+   * a later auto-sync the owner cannot see from this page.
+   */
+  async function handleResetData() {
+    if (!session) return;
+    const next = resetFinancials(await loadData(session.userId));
+    await saveData(next, session.userId);
+    setResetCounts(countsOf(next));
+    if (syncAllowed(next)) {
+      const r = await pushToServer(session.email, next);
+      setResetMsg(r.ok ? "✓ All data erased, here and in your server backup." : "All data erased on this device, but updating the server backup failed: " + r.error);
+    } else {
+      setResetMsg("✓ All data erased on this device.");
+    }
+  }
 
   /** Audit 2.4.153: record the backup choice and perform its one consequence. */
   async function chooseBackup(choice: BackupChoice) {
@@ -704,6 +734,10 @@ export default function ProfilePage() {
           <h2 className="text-sm font-semibold" style={{ color: T.coral, fontFamily: "Spectral, Georgia, serif" }}>
             Danger zone
           </h2>
+          {resetCounts && backupOn !== null && (
+            <ResetDataPanel counts={resetCounts} backupOn={backupOn} onConfirm={handleResetData} />
+          )}
+          {resetMsg && <p className="text-xs" style={{ color: T.mute }}>{resetMsg}</p>}
           {!showDelete ? (
             <button
               onClick={() => setShowDelete(true)}

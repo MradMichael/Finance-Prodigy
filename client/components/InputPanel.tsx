@@ -4,7 +4,7 @@ import { useState, useRef } from "react";
 import type { LocalFinancials, StoredTransaction, StoredGoal, StoredDebt, StoredRecurring, StoredCard, RecurringFrequency, Currency, PaymentMethod, BudgetRuleKey } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, remainingInstallments, toUSD as toUSDShared, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, buildExtraPaymentTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, roundMoney, moneyMaxFor, MONEY_MAX_USD, derivedDebtBalance, activeTransactions, DEFAULT_DATA, DEFAULT_LBP_RATE, cycleStartDayOf } from "../lib/localData";
+import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, remainingInstallments, toUSD as toUSDShared, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, buildExtraPaymentTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, roundMoney, moneyMaxFor, MONEY_MAX_USD, derivedDebtBalance, activeTransactions, DEFAULT_LBP_RATE, cycleStartDayOf, syncAllowed } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker } from "./form/Primitives";
@@ -515,8 +515,6 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   const [activeTab, setActiveTab] = useState<"daily" | "setup">("daily");
 
   // ── reset-all-data confirmation ──────────────────────────────────── //
-  const [showResetConfirm, setShowResetConfirm] = useState(false);
-  const [resetConfirmText, setResetConfirmText] = useState("");
 
   // ── derived ───────────────────────────────────────────────────── //
 
@@ -1997,56 +1995,13 @@ export default function InputPanel({ financials, dashData, onChange, session, on
         className="px-6 py-3 flex-shrink-0"
         style={{ borderTop: `1px solid ${T.line}` }}
       >
-        {!showResetConfirm ? (
-          <div className="flex items-center justify-between">
-            <p className="text-[10px]" style={{ color: T.mute }}>Saved in your browser</p>
-            <button
-              onClick={() => setShowResetConfirm(true)}
-              className="text-[10px] px-2.5 py-1.5 rounded-lg transition-opacity hover:opacity-80"
-              style={{ color: T.coral }}
-            >
-              Reset all data
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            <p className="text-[10px]" style={{ color: T.coral }}>
-              This permanently erases every transaction, goal, debt, recurring item, card, asset, and tracked balance. Type <strong>reset</strong> to confirm.
-            </p>
-            <div className="flex items-center gap-2">
-              <input
-                value={resetConfirmText}
-                onChange={(e) => setResetConfirmText(e.target.value)}
-                placeholder="reset"
-                className="flex-1 min-w-0 rounded-lg px-2.5 py-1.5 text-xs"
-                style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
-              />
-              <button
-                onClick={() => {
-                  // DEFAULT_DATA directly, not a hand-maintained copy of its
-                  // shape -- this literal had already drifted from it (missing
-                  // customCategories/categoryRules/wishlist/budgetRule and the
-                  // history arrays, all silently allowed since those fields are
-                  // optional) before schemaVersion made the gap a type error.
-                  onChange({ ...DEFAULT_DATA });
-                  setShowResetConfirm(false); setResetConfirmText("");
-                }}
-                disabled={resetConfirmText.toLowerCase() !== "reset"}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold flex-shrink-0 transition-all disabled:opacity-40 disabled:pointer-events-none"
-                style={{ background: T.coral, color: T.ink }}
-              >
-                Confirm
-              </button>
-              <button
-                onClick={() => { setShowResetConfirm(false); setResetConfirmText(""); }}
-                className="px-2.5 py-1.5 rounded-lg text-xs flex-shrink-0 hover:opacity-70"
-                style={{ color: T.mute }}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
+        {/* "Reset all data" lived here until it moved to Profile's Danger zone,
+            next to Delete account: a destructive control in this footer was one
+            misclick-and-type from wiping the account, and its confirm never said
+            it overwrote the server copy too. */}
+        <p className="text-[10px]" style={{ color: T.mute }}>
+          {syncAllowed(financials) ? "Saved in your browser · backed up to ESSA's server" : "Saved in your browser"}
+        </p>
       </div>
     </aside>
     {showImport && (
