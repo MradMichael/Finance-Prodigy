@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useTheme } from "../../contexts/ThemeContext";
 
 const SERIF: React.CSSProperties = { fontFamily: "Spectral, Georgia, serif" };
-const LAST_UPDATED = "24 September 2026";
+const LAST_UPDATED = "28 September 2026";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   const T = useTheme();
@@ -52,8 +52,8 @@ export default function PrivacyPage() {
 
         <Section title="What we collect">
           <p><strong style={{ color: T.text }}>Account info:</strong> your name, email address, and a password hash, never your raw password.</p>
-          <p><strong style={{ color: T.text }}>Financial data:</strong> transactions, goals, debts, recurring payments, and anything else you enter — including any notes you write, such as the explanation required when you mark a balance difference as accounted for. <strong style={{ color: T.text }}>Some entries are written by ESSA rather than typed by you</strong>: when you confirm what your emergency fund or a debt actually holds and it differs from ESSA&apos;s own figure, the difference is recorded as a correction in your transaction list — visible and reversible, rather than a number changing silently. This is encrypted (AES-256-GCM) and stored in your own browser&apos;s local storage. It never touches our servers unless you turn on Database sync.</p>
-          <p><strong style={{ color: T.text }}>Optional sync backup:</strong> if you use Profile → Push, a copy of your data is sent to our database (currently hosted on Neon/Postgres) so you can restore it on another device. This is opt-in: nothing is uploaded unless you choose to push. <strong style={{ color: T.text }}>Unlike your local browser storage, this server-side copy is not client-side-encrypted:</strong> it&apos;s stored as readable data, because it has to be restorable on a device that does not hold this device&apos;s encryption key — a second device that joins by pulling your data generates its own. It&apos;s protected instead by database access controls, TLS in transit, and requiring your password-derived sync token to read it back, a materially different guarantee than the local encryption, and worth knowing plainly rather than assuming it carries over.</p>
+          <p><strong style={{ color: T.text }}>Financial data:</strong> transactions, goals, debts, recurring payments, and anything else you enter — including any notes you write, such as the explanation required when you mark a balance difference as accounted for. <strong style={{ color: T.text }}>Some entries are written by ESSA rather than typed by you</strong>: when you confirm what your emergency fund or a debt actually holds and it differs from ESSA&apos;s own figure, the difference is recorded as a correction in your transaction list — visible and reversible, rather than a number changing silently. This is encrypted (AES-256-GCM) and stored in your own browser&apos;s local storage. While you&apos;re signed in, a copy is also backed up to our servers automatically &mdash; see the next paragraph.</p>
+          <p><strong style={{ color: T.text }}>Sync backup &mdash; currently automatic.</strong> While you&apos;re signed in, ESSA sends a copy of your data to our database (currently hosted on Neon/Postgres) a few seconds after each change, and when you open the app if anything needs updating, so you can restore it on another device. <strong style={{ color: T.text }}>This is not yet opt-in.</strong> Earlier versions of this page said nothing was uploaded unless you chose to push; that was not accurate. <strong style={{ color: T.text }}>There is currently no setting to stop this upload, and deleting your account is the only way to remove the server copy.</strong> We are changing ESSA so that backup is off unless you turn it on, and until that ships, every signed-in account is backed up. <strong style={{ color: T.text }}>Unlike your local browser storage, this server-side copy is not client-side-encrypted:</strong> it&apos;s stored as readable data, because it has to be restorable on a device that does not hold this device&apos;s encryption key — a second device that joins by pulling your data generates its own. It&apos;s protected instead by database access controls, TLS in transit, and requiring your password-derived sync token to read it back, a materially different guarantee than the local encryption, and worth knowing plainly rather than assuming it carries over.</p>
         </Section>
 
         <Section title="How it's protected">
@@ -92,7 +92,7 @@ export default function PrivacyPage() {
             immediately.
           </p>
           <p>
-            <strong style={{ color: T.text }}>If you&apos;ve ever used Database sync</strong>, deleting your account
+            <strong style={{ color: T.text }}>Because backup has been automatic for signed-in accounts</strong>, deleting your account
             also removes that backup copy (and anything derived from it) from our server automatically, on a
             best-effort basis. If you&apos;re offline at the moment you delete, or the server is unreachable, that
             part won&apos;t complete. Email us and we&apos;ll remove it by hand.

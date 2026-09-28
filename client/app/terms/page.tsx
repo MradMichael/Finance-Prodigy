@@ -53,7 +53,7 @@ export default function TermsPage() {
         </Section>
 
         <Section title="What ESSA is">
-          <p>ESSA is a personal budgeting and financial-tracking tool. Your financial data is stored encrypted in your own browser; an optional sync feature backs it up to our database if you turn it on.</p>
+          <p>ESSA is a personal budgeting and financial-tracking tool. Your financial data is stored encrypted in your own browser; while you&apos;re signed in, a sync feature currently backs it up to our database automatically. We&apos;re changing this so backup only happens if you turn it on.</p>
         </Section>
 
         <Section title="Eligibility">
