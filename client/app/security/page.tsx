@@ -54,7 +54,8 @@ export default function SecurityPage() {
           </p>
           <p>
             This is why the recovery code exists: forgetting your password doesn&apos;t mean losing your data, as
-            long as you saved the code &mdash; it works from any device, not just the one you set it up on. But it
+            long as you saved the code. With backup on, it works from any device, not just the one you set it up
+            on; with backup off, it works only on this device, because your data exists nowhere else. But it
             also means there&apos;s no back door: <strong style={{ color: T.text }}>
             if you lose access to both your password and your recovery code, nobody, including us, can recover
             that account&apos;s data.</strong> That&apos;s the tradeoff real encryption requires, not a support
