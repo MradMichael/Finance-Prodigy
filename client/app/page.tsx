@@ -21,16 +21,17 @@ import Sidebar from "../components/shell/Sidebar";
 import BottomNav from "../components/shell/BottomNav";
 import TopBar from "../components/shell/TopBar";
 import type { Screen, SyncStatus } from "../components/screens/shared";
-import { cycleStartDayOf, loadData, saveData, isEmptyFinancials, buildRecurringConfirmLog, nextConfirmTarget, autoPurgeExpired, DEFAULT_LBP_RATE } from "../lib/localData";
+import { cycleStartDayOf, loadData, saveData, isEmptyFinancials, buildRecurringConfirmLog, nextConfirmTarget, autoPurgeExpired, DEFAULT_LBP_RATE, syncAllowed } from "../lib/localData";
 import type { LocalFinancials } from "../lib/localData";
 import { computeDashboard } from "../lib/computeDashboard";
 import {currentCycleKey, calendarKeyForDate, type CycleKey, type CycleHistory } from "../lib/period";
 import { getSession, hasValidSession, signOut } from "../lib/auth";
 import type { Session } from "../lib/auth";
-import { pushToServer, pullFromServer, hasAutoPulled, markAutoPulled, mergeAndPush, buildMergeNoticeText } from "../lib/syncService";
+import { pushToServer, pullFromServer, hasAutoPulled, markAutoPulled, mergeAndPush, buildMergeNoticeText, checkEmailExists, applyBackupChoice, getLastSyncTime, type BackupChoice } from "../lib/syncService";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "../components/EssaBrand";
 import RecurringModelNoticeModal from "../components/RecurringModelNoticeModal";
+import SyncChoicePrompt from "../components/SyncChoicePrompt";
 import EditDebtSheet from "../components/EditDebtSheet";
 import EditRecurringSheet from "../components/EditRecurringSheet";
 import EditGoalSheet from "../components/EditGoalSheet";
@@ -68,6 +69,10 @@ export default function Home() {
   const justConfirmedTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const syncTimer   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Audit 2.4.153, opt-in sync part 3. null = not yet known; the prompt waits
+  // for it rather than guessing, so it never shows the wrong variant.
+  const [serverHasCopy, setServerHasCopy] = useState<boolean | null>(null);
+  const [choosingBackup, setChoosingBackup] = useState(false);
   const sessionRef  = useRef<Session | null>(null);
   // Synchronous re-entrancy guard for handleLogRecurringPayment -- a second
   // click for the same item, arriving before the first click's handleChange
@@ -99,6 +104,11 @@ export default function Home() {
   useEffect(() => { sessionRef.current = session; }, [session]);
 
   const autoSync = useCallback(async (data: LocalFinancials, email: string) => {
+    // Audit 2.4.153: the gate. Every automatic upload in this file reaches
+    // the network through here -- an edit, the monthly-snapshot write on
+    // load, the auto-purge write on load, and the conflict merge below -- so
+    // one check stops all four. Undecided is paused, not on.
+    if (!syncAllowed(data)) return;
     setSyncStatus("syncing");
     const result = await pushToServer(email, data);
     // 2.4.38: a conflict isn't a transient failure a retry would fix.
@@ -214,6 +224,32 @@ export default function Home() {
   // fails if this dependency ever comes back.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Part 3: an undecided account is asked on its next open. "Has a copy" is
+  // true if this device has synced before OR the server has a row -- either
+  // signal alone can be wrong, and the worse error is withholding "delete"
+  // from someone who has a copy. Uploads stay paused until the answer (part
+  // 1's gate), so the prompt is not a formality in front of a live upload.
+  const undecided = !!financials && !financials.syncChoice;
+  useEffect(() => {
+    if (!session || !undecided || serverHasCopy !== null) return;
+    let live = true;
+    checkEmailExists(session.email).then((exists) => {
+      if (live) setServerHasCopy(exists || getLastSyncTime() !== null);
+    });
+    return () => { live = false; };
+  }, [session, undecided, serverHasCopy]);
+
+  async function handleBackupChoice(choice: BackupChoice) {
+    if (!session || !financials) return;
+    setChoosingBackup(true);
+    // Not through handleChange: applyBackupChoice has already done the one
+    // upload "on" needs, and routing through autoSync would do it again.
+    const { data: next } = await applyBackupChoice(session.email, financials, choice);
+    setFinancials(next);
+    await saveData(next, session.userId);
+    setChoosingBackup(false);
+  }
 
   async function handleChange(updated: LocalFinancials) {
     if (!session) return;
@@ -536,6 +572,10 @@ export default function Home() {
         </div>
       )}
 
+      {/* Audit 2.4.153: the backup choice for an undecided account -- blocking, asked once. */}
+      {undecided && session && serverHasCopy !== null && (
+        <SyncChoicePrompt hasServerCopy={serverHasCopy} busy={choosingBackup} onChoose={handleBackupChoice} />
+      )}
       {/* One-time notice: shown once per account migrated onto the confirm-on-due model (Phase 2.5.3) */}
       {!financials.recurringModelNoticeSeen && financials.recurring.some((r) => r.confirmCutoverDate) && (
         <RecurringModelNoticeModal

@@ -128,6 +128,47 @@ export async function pushToServer(email: string, data: LocalFinancials): Promis
   }
 }
 
+export type BackupChoice = "on" | "off-delete" | "off-keep";
+
+/**
+ * Records the owner's backup choice and performs its ONE network
+ * consequence (audit 2.4.153). The only place the choice is written, so the
+ * Profile switch and the load-time prompt cannot disagree about what a
+ * choice does.
+ *
+ *   on          -> uploads immediately, so the server copy carries the
+ *                  choice and another device pulling it sees backup on
+ *   off-keep    -> no network at all; the existing copy is deliberately
+ *                  left standing and will go stale
+ *   off-delete  -> deletes the server copy. Never pushes first.
+ *
+ * The returned data carries the choice whatever the network did: a server
+ * that could not be reached does not turn backup back on, and a failed
+ * upload does not turn it off. The caller saves it and shows `result`.
+ * `decidedAt` is a UTC instant.
+ */
+export async function applyBackupChoice(
+  email: string, data: LocalFinancials, choice: BackupChoice, now: Date = new Date(),
+): Promise<{ data: LocalFinancials; result: SyncResult | null }> {
+  const next: LocalFinancials = { ...data, syncChoice: { enabled: choice === "on", decidedAt: now.toISOString() } };
+  if (choice === "on") return { data: next, result: await pushToServer(email, next) };
+  if (choice === "off-delete") return { data: next, result: await deleteFromServer(email, getSyncToken() ?? "") };
+  return { data: next, result: null };
+}
+
+/**
+ * The push that follows regenerating a recovery code, so the new code works
+ * from another device (audit 2.4.153). Gated like every other automatic
+ * upload: with backup off or undecided it does nothing, which also means
+ * the new recovery code only works on this device -- the honest consequence
+ * of not keeping a server copy, and one the backup choice must state.
+ */
+export async function pushRecoveryUpdate(email: string, data: LocalFinancials): Promise<SyncResult | { ok: false; skipped: true }> {
+  const { syncAllowed } = await import("./localData");
+  if (!syncAllowed(data)) return { ok: false, skipped: true };
+  return pushToServer(email, data);
+}
+
 /**
  * Re-registers sync ownership after a password reset, proving it via the
  * *previous* recovery token instead of the (now-changed) sync token — see

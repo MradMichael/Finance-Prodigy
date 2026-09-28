@@ -5,11 +5,12 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getSession, hasValidSession, updateProfile, deleteAccount, signOut, ensureFirstUserIsAdmin, regenerateRecoveryCode } from "../../lib/auth";
 import RecoveryCodeModal from "../../components/RecoveryCodeModal";
+import BackupSwitch from "../../components/BackupSwitch";
 import type { Session } from "../../lib/auth";
-import { loadData, saveData, activeTransactions } from "../../lib/localData";
+import { loadData, saveData, activeTransactions, syncAllowed } from "../../lib/localData";
 import { computeDashboard } from "../../lib/computeDashboard";
 import { buildReportHtml } from "../../lib/printReport";
-import { pushToServer, pullFromServer, getLastSyncTime, confirmOverwriteIfNeeded, mergeAndPush, buildMergeNoticeText } from "../../lib/syncService";
+import { pushToServer, pullFromServer, getLastSyncTime, confirmOverwriteIfNeeded, mergeAndPush, buildMergeNoticeText, pushRecoveryUpdate, applyBackupChoice, type BackupChoice } from "../../lib/syncService";
 import type { LocalFinancials } from "../../lib/localData";
 import { isAnalyticsOptedIn, setAnalyticsOptIn } from "../../lib/analytics";
 import { useTheme, useThemeControl } from "../../contexts/ThemeContext";
@@ -49,6 +50,8 @@ export default function ProfilePage() {
   const [regenerating,    setRegenerating]    = useState(false);
   const [lastSync,      setLastSync]      = useState<string | null>(null);
   const [analyticsOn,   setAnalyticsOn]   = useState(false);
+  // Audit 2.4.153: null until loaded, so the switch never flashes a wrong state.
+  const [backupOn,      setBackupOn]      = useState<boolean | null>(null);
 
   useEffect(() => {
     ensureFirstUserIsAdmin();
@@ -64,7 +67,29 @@ export default function ProfilePage() {
     setName(s.name);
     setLastSync(getLastSyncTime());
     setAnalyticsOn(isAnalyticsOptedIn());
+    loadData(s.userId).then((d) => setBackupOn(syncAllowed(d)));
   }, [router]);
+
+  /** Audit 2.4.153: record the backup choice and perform its one consequence. */
+  async function chooseBackup(choice: BackupChoice) {
+    if (!session) return;
+    setSyncing(true); setSyncMsg("");
+    const current = await loadData(session.userId);
+    const { data: next, result } = await applyBackupChoice(session.email, current, choice);
+    await saveData(next, session.userId);
+    setBackupOn(choice === "on");
+    setSyncing(false);
+    if (choice === "on") {
+      if (result?.ok) { setLastSync(result.syncedAt ?? null); setSyncMsg("✓ Backup is on. Your data has been copied to the server."); }
+      else setSyncMsg("Backup is on, but the first upload failed: " + (result?.error ?? "unknown error") + " It will retry after your next change.");
+    } else if (choice === "off-delete") {
+      setSyncMsg(result?.ok
+        ? "✓ Backup is off and the server copy has been deleted."
+        : "Backup is off, but deleting the server copy failed: " + (result?.error ?? "unknown error") + " Try again, or delete your account to remove it.");
+    } else {
+      setSyncMsg("✓ Backup is off. The copy already on the server was kept and will no longer update.");
+    }
+  }
 
   function toggleAnalytics() {
     const next = !analyticsOn;
@@ -291,7 +316,9 @@ export default function ProfilePage() {
       // unrelated data edit to carry it up (the gap that made an already-
       // regenerated code fail to recover from a second device).
       const data = await loadData(session.userId);
-      await pushToServer(session.email, data);
+      // Gated (audit 2.4.153): with backup off this uploads nothing, and the
+      // new code then works on this device only.
+      await pushRecoveryUpdate(session.email, data);
     } finally {
       setRegenerating(false);
     }
@@ -442,12 +469,13 @@ export default function ProfilePage() {
             <h2 className="text-sm font-semibold" style={{ color: T.text, fontFamily: "Spectral, Georgia, serif" }}>
               Database sync
             </h2>
-            <p className="text-xs mt-1" style={{ color: T.mute }}>
-              Most changes sync to the database automatically a few seconds after you make them. Use the buttons below to push or restore immediately instead of waiting.
-            </p>
-            <p className="text-xs mt-2 leading-relaxed" style={{ color: T.mute }}>
-              <strong style={{ color: T.text }}>Privacy note:</strong> Your financial data is encrypted in this browser (AES-256). The sync backup stored on the server is protected by your password but is not end-to-end encrypted: the server can read it. If you prefer full privacy, disable sync by not pushing, and use <em>Download my data</em> below to back up locally.
-            </p>
+            {/* Audit 2.4.153: the choice. Replaces two sentences that were or
+                would become false -- "most changes sync automatically" (only
+                with backup on) and "disable sync by not pushing" (never true:
+                every edit pushed on its own). */}
+            <div className="mt-3">
+              {backupOn !== null && <BackupSwitch on={backupOn} busy={syncing} onChoose={chooseBackup} />}
+            </div>
             {lastSync && (
               <p className="text-[11px] mt-2 flex items-center gap-1.5" style={{ color: T.jade }}>
                 <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: T.jade }} />

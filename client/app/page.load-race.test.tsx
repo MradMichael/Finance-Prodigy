@@ -69,6 +69,10 @@ vi.mock("../lib/syncService", () => ({
   hasAutoPulled: vi.fn(() => localStorage.getItem("ap") === "1"),
   markAutoPulled: vi.fn(() => localStorage.setItem("ap", "1")),
   getLastSyncTime: () => null,
+  // Opt-in sync part 3 (audit 2.4.153): the undecided-account prompt asks the
+  // server whether a copy exists. Not under test here.
+  checkEmailExists: vi.fn(async () => false),
+  applyBackupChoice: vi.fn(async (_e: string, d: unknown) => ({ data: d, result: null })),
 }));
 
 import Home from "./page";
