@@ -202,9 +202,13 @@ export async function pullFromServer(email: string): Promise<{ ok: true; data: L
     // Token travels as a header, not a query param — push/relink/delete
     // already send it in the POST body; a bearer secret in a URL is prone
     // to leaking via server access logs, browser history, and proxy/CDN
-    // logs in ways a header isn't.
-    const res = await fetch(`/api/sync/pull?email=${encodeURIComponent(email)}`, {
-      headers: { Authorization: `Bearer ${token}` },
+    // logs in ways a header isn't. The address travels in the body for the
+    // same reason (2.4.165): Vercel's rewrite logs record a URL's search
+    // params and Render's request logs record the whole URL.
+    const res = await fetch("/api/sync/pull", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
       signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
     });
     const json = await parseJsonSafe(res);
@@ -455,11 +459,17 @@ export async function deleteFromServer(email: string, token: string): Promise<Sy
  * device — the only cross-device signal the server can give, since sign-up
  * itself never touches it (see routes/auth.ts). Best-effort UX warning,
  * not a hard block: returns false on any network failure so an offline or
- * server-down moment never prevents signing up.
+ * server-down moment never prevents signing up. The address goes in the
+ * body, never the URL, so it stays out of the hosts' request logs (2.4.165).
  */
 export async function checkEmailExists(email: string): Promise<boolean> {
   try {
-    const res = await fetch(`/api/auth/check-email?email=${encodeURIComponent(email)}`, { signal: AbortSignal.timeout(SYNC_TIMEOUT_MS) });
+    const res = await fetch("/api/auth/check-email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+      signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
+    });
     if (!res.ok) return false;
     const json = await res.json();
     return json.exists === true;
