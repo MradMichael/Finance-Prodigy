@@ -8,7 +8,20 @@ on:
 
 jobs:
   client:
+    # Two timezone legs (audit 2.4.157, 2.4.159). The runner is UTC; every
+    # real user is in Asia/Beirut; and several defects this project has had
+    # were timezone-specific. The zero-diff gate keeps one baseline per zone,
+    # and the local-day test only discriminates east of UTC -- so each leg
+    # checks something the other cannot. Not pinned to Beirut alone: that
+    # would hide every UTC-only failure instead.
+    name: client (${{ matrix.tz }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false        # both legs report, so a zone-specific failure is visible as one
+      matrix:
+        tz: [UTC, Asia/Beirut]
+    env:
+      TZ: ${{ matrix.tz }}
     defaults:
       run:
         working-directory: client
@@ -20,10 +33,20 @@ jobs:
           cache: npm
           cache-dependency-path: client/package-lock.json
       - run: npm ci
-      - run: npx tsc --noEmit
-      - run: npm run lint
+      # Premise: the leg really is in the zone it claims. Node ignores an
+      # unknown TZ silently and falls back to the machine's zone (observed
+      # on Windows for every name but UTC); failing here beats a Beirut leg
+      # that quietly ran as UTC.
+      - run: |
+          node -e "const z = Intl.DateTimeFormat().resolvedOptions().timeZone; console.log('zone', z); if (z !== process.env.TZ) { console.error('TZ not honoured - wanted ' + process.env.TZ + ', got ' + z); process.exit(1); }"
+      # Zone-independent steps run once, in the UTC leg, to save runner minutes.
+      - if: matrix.tz == 'UTC'
+        run: npx tsc --noEmit
+      - if: matrix.tz == 'UTC'
+        run: npm run lint
       - run: npm test
-      - run: npm run build
+      - if: matrix.tz == 'UTC'
+        run: npm run build
 
   server:
     runs-on: ubuntu-latest

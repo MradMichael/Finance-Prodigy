@@ -148,26 +148,61 @@ function makeData(): LocalFinancials {
   } as LocalFinancials;
 }
 
+// ONE BASELINE PER TIMEZONE (2.4.157, 2.4.159). The fixture clock is a local
+// midnight and the app computes local-day boundaries, so the payload
+// legitimately depends on the offset. Measured: across UTC and Asia/Beirut
+// exactly one line of it differs -- `anchor` -- and the headline snapshot is
+// identical. The Beirut baseline is the original (recorded at UTC+3, where
+// the owner and every real user are). The UTC baseline was GENERATED AT
+// f1a3362 -- the last intentional change to this file and its snapshot, so
+// the same fixture -- under TZ=UTC in a worktree, and confirmed against
+// today's code: it carries the same history as the Beirut one rather than
+// being recorded fresh from whatever the code does now.
+//
+// CI runs this file under both zones. Each payload test is DECLARED in every
+// run but SKIPPED outside its own zone -- a skipped test keeps its snapshot,
+// so `vitest -u` in one zone cannot prune the other zone's baseline as
+// obsolete. A run in any third zone fails the guard below instead of
+// silently writing a new, unreviewed baseline for itself.
+const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
+const BASELINE_ZONES = ["UTC", "Asia/Beirut"] as const;
+
+function payloadSnapshot() {
+  const dash = computeDashboard(makeData());
+  // `anchor` is a live Date; with fake timers it is deterministic, but it
+  // is serialised explicitly so a change in its TYPE would also show.
+  // `periodLabel` is ADDED by Phase 2b and has no pre-change counterpart,
+  // so it is held out rather than regenerating the baseline with -u. The
+  // gate's claim is "no figure that existed before has moved"; a new key
+  // cannot be checked against a baseline that predates it, and -u would
+  // relicense every other value in the payload at the same time (the
+  // exact failure this file's own header warns about). Asserted
+  // separately below instead.
+  const { periodLabel, ...rest } = dash;
+  return { periodLabel, serialisable: { ...rest, anchor: dash.anchor.toISOString() } };
+}
+
 describe("period primitive — zero-diff gate", () => {
-  it("the entire computeDashboard payload is unchanged", () => {
-    const dash = computeDashboard(makeData());
-    // `anchor` is a live Date; with fake timers it is deterministic, but it
-    // is serialised explicitly so a change in its TYPE would also show.
-    // `periodLabel` is ADDED by Phase 2b and has no pre-change counterpart,
-    // so it is held out rather than regenerating the baseline with -u. The
-    // gate's claim is "no figure that existed before has moved"; a new key
-    // cannot be checked against a baseline that predates it, and -u would
-    // relicense every other value in the payload at the same time (the
-    // exact failure this file's own header warns about). Asserted
-    // separately below instead.
-    const { periodLabel, ...rest } = dash;
-    const serialisable = { ...rest, anchor: dash.anchor.toISOString() };
-    expect(serialisable).toMatchSnapshot();
-    // At startDay 1 the label must still read as a plain month, or the
-    // hold-out above would be hiding a real change to existing behaviour.
-    expect(periodLabel).toBe("Sep 2026");
+  it("runs in a timezone that has a recorded baseline", () => {
+    // Fails closed (2.4.123): outside these zones both payload tests skip,
+    // and without this the file would pass having checked nothing.
+    expect(BASELINE_ZONES as readonly string[]).toContain(ZONE);
   });
 
+  for (const zone of BASELINE_ZONES) {
+    it.runIf(ZONE === zone)(`the entire computeDashboard payload is unchanged [${zone}]`, () => {
+      const { periodLabel, serialisable } = payloadSnapshot();
+      expect(serialisable).toMatchSnapshot();
+      // At startDay 1 the label must still read as a plain month, or the
+      // hold-out above would be hiding a real change to existing behaviour.
+      expect(periodLabel).toBe("Sep 2026");
+    });
+  }
+
+  // ONE entry, shared by both zones, on purpose: these figures are
+  // timezone-invariant (measured -- identical under UTC and Asia/Beirut), so
+  // this test is also the cross-zone check. A change that made any of them
+  // depend on the offset fails here in one leg or the other.
   it("headline figures, asserted explicitly so the gate survives a snapshot regeneration", () => {
     const d = computeDashboard(makeData());
     // Deliberately spread across every subsystem a boundary change touches:
