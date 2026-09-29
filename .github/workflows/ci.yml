@@ -67,3 +67,8 @@ jobs:
           cache-dependency-path: server/package-lock.json
       - run: npm ci
       - run: npm run build
+      # Server tests (audit 2.4.156). They never reach a database: the setup
+      # file refuses any DATABASE_URL/DIRECT_URL other than the placeholder
+      # above, pins both to it before Prisma can load an .env, and replaces
+      # the Prisma client with an in-memory fake.
+      - run: npm test
