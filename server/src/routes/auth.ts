@@ -1,16 +1,23 @@
-import { Router } from "express";
+import { Router, type RequestHandler } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { emailSchema } from "../lib/validation";
 
 const router = Router();
 
-const emailQuerySchema = z.object({
+const checkEmailSchema = z.object({
   email: emailSchema,
 });
 
 /**
- * GET /api/auth/check-email?email=x — { exists: boolean }
+ * POST /api/auth/check-email — body: { email } — { exists: boolean }
+ *
+ * 2.4.165 B: the address travels in the body, not the URL, because a query
+ * string is written into the hosts' request logs and a body is not. Same
+ * three-step transition as /api/sync/pull (see routes/sync.ts): POST is
+ * accepted alongside the old GET until the client has switched and no open
+ * tab can still be running the old one; then GET is removed. Each method
+ * reads only its own source.
  *
  * There's no real server-side user registry (see README's roadmap: sign-up
  * only ever writes to that browser's own localStorage), so "exists" here
@@ -23,14 +30,17 @@ const emailQuerySchema = z.object({
  * data elsewhere, before they invest in an account that'll conflict with
  * it the first time they push.
  */
-router.get("/check-email", async (req, res, next) => {
+const checkEmail = (from: "body" | "query"): RequestHandler => async (req, res, next) => {
   try {
-    const { email } = emailQuerySchema.parse(req.query);
+    const { email } = checkEmailSchema.parse(from === "body" ? req.body : req.query);
     const record = await prisma.userSync.findUnique({ where: { email }, select: { id: true } });
     res.json({ exists: record !== null });
   } catch (err) {
     next(err);
   }
-});
+};
+router.post("/check-email", checkEmail("body"));
+// TRANSITIONAL (2.4.165 B step 1): the old shape, kept only until step 3.
+router.get("/check-email", checkEmail("query"));
 
 export default router;

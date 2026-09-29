@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type RequestHandler } from "express";
 import { createHash, timingSafeEqual } from "crypto";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
@@ -79,11 +79,12 @@ const pushSchema = z.object({
   ),
 });
 
-// Only `email` travels in the query string; the token comes from the
-// Authorization header instead (see the route handler below) — push/relink/
+// The token comes from the Authorization header, never the URL — push/relink/
 // delete already send their token in a POST body, so pull was the one
 // exception putting a bearer secret somewhere as log/history-prone as a URL.
-const pullQuerySchema = z.object({
+// The address follows it out (2.4.165): a URL is written into the hosts'
+// request logs, a body is not. See the pull route below for the transition.
+const pullEmailSchema = z.object({
   email: emailSchema,
 });
 
@@ -220,10 +221,20 @@ router.post("/push", async (req, res, next) => {
   }
 });
 
-// GET /api/sync/pull?email=xxx&token=yyy — returns latest saved data
-router.get("/pull", async (req, res, next) => {
+// POST /api/sync/pull — body: { email }, token as `Authorization: Bearer` —
+// returns latest saved data.
+//
+// 2.4.165 B: the address moves out of the URL, because the query string is
+// written into the hosts' request logs (Render's "Requested URL", Vercel's
+// "Search Params") and a body is not. The client and server deploy
+// separately, so the order is: (1) this server accepts POST alongside the old
+// GET and is deployed; (2) the client switches to POST; (3) GET is removed,
+// once no open tab can still be running the old client. Each source is read
+// only by its own method: a POST never falls back to the query string, so a
+// client that still put the address in the URL would be refused, not served.
+const pull = (from: "body" | "query"): RequestHandler => async (req, res, next) => {
   try {
-    const { email } = pullQuerySchema.parse(req.query);
+    const { email } = pullEmailSchema.parse(from === "body" ? req.body : req.query);
     const auth = req.header("authorization") ?? "";
     const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
     tokenSchema.parse(token);
@@ -256,7 +267,10 @@ router.get("/pull", async (req, res, next) => {
   } catch (err) {
     next(err);
   }
-});
+};
+router.post("/pull", pull("body"));
+// TRANSITIONAL (2.4.165 B step 1): the old shape, kept only until step 3.
+router.get("/pull", pull("query"));
 
 // POST /api/sync/relink — body: { email, token, recoveryToken, oldRecoveryToken? }
 // Called after a password reset (client/lib/auth.ts recoverAccount), which
