@@ -38,7 +38,8 @@ describe.each(Object.entries(SHAPES))("%s: check-email says whether a copy exist
   });
 
   it("checking never writes", async () => {
-    await check("anyone@example.com");
+    // Premise: the request reached the route (a missing one writes nothing too).
+    expect((await check("anyone@example.com")).body).toEqual({ exists: false });
     expect(store.writes).toEqual([]);
   });
 });

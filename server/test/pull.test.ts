@@ -50,9 +50,13 @@ describe.each(Object.entries(SHAPES))("%s: reading a server copy requires the ac
     expect(leaks(res)).toBe(false);
   });
 
-  it("no copy on the server: 404, with nothing to leak", async () => {
+  it("no copy on the server: the API's own 404, with nothing to leak", async () => {
     const res = await pull("absent@example.com", "anything");
     expect(res.status).toBe(404);
+    // The API's shaped body, which the client trusts as "no copy" (2.4.22) --
+    // a missing route also answers 404, so the status alone would pass
+    // against a route that isn't there.
+    expect(res.body.error).toBe("No sync data found for this account.");
   });
 
   it("the right token returns the copy (the control, so the refusals are the check and not a broken route)", async () => {
@@ -64,8 +68,9 @@ describe.each(Object.entries(SHAPES))("%s: reading a server copy requires the ac
 
   it("reading never writes", async () => {
     store.seedUserSync({ email: A, authTokenHash: hash("token-of-A"), dataJson: storedData() });
-    await pull(A, "token-of-A");
-    await pull(A, "wrong");
+    // Premise: both requests reached the route (a missing one writes nothing too).
+    expect((await pull(A, "token-of-A")).status).toBe(200);
+    expect((await pull(A, "wrong")).status).toBe(401);
     expect(store.writes).toEqual([]);
   });
 });
