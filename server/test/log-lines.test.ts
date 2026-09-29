@@ -18,7 +18,7 @@ const UA = "LogLineTest/1.0";
 const expectedRef = createHmac("sha256", KEY).update(A).digest("hex").slice(0, 16);
 
 const pull = (token: string) =>
-  api().get("/api/sync/pull").query({ email: A }).set("User-Agent", UA).set("Authorization", `Bearer ${token}`);
+  api().post("/api/sync/pull").set("User-Agent", UA).set("Authorization", `Bearer ${token}`).send({ email: A });
 const push = (body: Record<string, unknown>) => api().post("/api/sync/push").set("User-Agent", UA).send({ email: A, ...body });
 const relink = (body: Record<string, unknown>) => api().post("/api/sync/relink").set("User-Agent", UA).send({ email: A, ...body });
 const del = (token: string) => api().delete("/api/sync").set("User-Agent", UA).send({ email: A, token });
