@@ -10,12 +10,25 @@
 
 type Level = "info" | "warn" | "error";
 
+/**
+ * The fields every line owns. Caller-supplied data must never overwrite one
+ * (audit 2.4.163): events.ts once passed { event } and every analytics line
+ * lost its `analytics_event` label, so the counts could not be selected on
+ * the host. A colliding caller key is KEPT as meta_<key> rather than dropped
+ * -- refusing an overwrite should not become a second silent loss.
+ */
+const OWNED_FIELDS = ["ts", "level", "event"] as const;
+
 function write(level: Level, event: string, meta?: Record<string, unknown>) {
+  const safe: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(meta ?? {})) {
+    safe[(OWNED_FIELDS as readonly string[]).includes(key) ? `meta_${key}` : key] = value;
+  }
   const line = JSON.stringify({
     ts: new Date().toISOString(),
     level,
     event,
-    ...meta,
+    ...safe,
   });
   if (level === "error") process.stderr.write(line + "\n");
   else process.stdout.write(line + "\n");

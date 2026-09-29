@@ -22,7 +22,10 @@ const eventSchema = z.object({
 router.post("/", (req, res, next) => {
   try {
     const { event } = eventSchema.parse(req.body);
-    logger.info("analytics_event", { event });
+    // `action`, not `event`: the logger owns `event` (its label), and a meta
+    // key of that name used to overwrite it (audit 2.4.163). "Action" is the
+    // privacy page's own word -- "named product actions".
+    logger.info("analytics_event", { action: event });
     res.json({ ok: true });
   } catch (err) {
     next(err);
