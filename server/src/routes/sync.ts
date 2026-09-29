@@ -3,6 +3,7 @@ import { createHash, timingSafeEqual } from "crypto";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { deleteAllDataForEmail } from "../lib/normalizeSync";
+import { emailRef } from "../lib/emailRef";
 import { logger } from "../lib/logger";
 import { prisma } from "../lib/prisma";
 import { emailSchema, tokenSchema } from "../lib/validation";
@@ -142,7 +143,7 @@ router.post("/push", async (req, res, next) => {
       syncedAt = await withTransactionRetry(() => prisma.$transaction(async (tx) => {
         const existing = await tx.userSync.findUnique({ where: { email: normalizedEmail } });
         if (existing?.authTokenHash && !hashesEqual(existing.authTokenHash, tokenHash)) {
-          logger.warn("push_denied_token_mismatch", { email: normalizedEmail, userAgent: req.header("user-agent") ?? null, lastSyncedAt: existing.syncedAt });
+          logger.warn("push_denied_token_mismatch", { emailRef: emailRef(normalizedEmail), userAgent: req.header("user-agent") ?? null, lastSyncedAt: existing.syncedAt });
           throw new SyncAuthError();
         }
         // 2.4.38: reject a push that's building on data older than what's
@@ -155,7 +156,7 @@ router.post("/push", async (req, res, next) => {
         // doesn't send it yet must keep working exactly as before, not
         // start getting rejected the moment this ships.
         if (existing?.syncedAt && baseSyncedAt && new Date(baseSyncedAt).getTime() < existing.syncedAt.getTime()) {
-          logger.warn("push_denied_stale", { email: normalizedEmail, userAgent: req.header("user-agent") ?? null, baseSyncedAt, serverSyncedAt: existing.syncedAt });
+          logger.warn("push_denied_stale", { emailRef: emailRef(normalizedEmail), userAgent: req.header("user-agent") ?? null, baseSyncedAt, serverSyncedAt: existing.syncedAt });
           throw new SyncConflictError();
         }
         const now = new Date();
@@ -229,8 +230,9 @@ router.get("/pull", async (req, res, next) => {
     // Metadata only — never the token/password or anything derived from
     // them. This is currently the ONLY place a failed sign-in-on-new-device
     // attempt leaves any trace at all; without it, diagnosing a real report
-    // of "wrong password" from a specific device is pure guesswork.
-    const meta = { email, userAgent: req.header("user-agent") ?? null };
+    // of "wrong password" from a specific device is pure guesswork. The
+    // account is named by its keyed reference, not its address (2.4.165).
+    const meta = { emailRef: emailRef(email), userAgent: req.header("user-agent") ?? null };
 
     const record = await prisma.userSync.findUnique({ where: { email } });
     if (!record) {
@@ -268,7 +270,7 @@ router.post("/relink", async (req, res, next) => {
     const { email, token, recoveryToken, oldRecoveryToken } = relinkSchema.parse(req.body);
     const tokenHash = hashToken(token);
     const recoveryTokenHash = hashToken(recoveryToken);
-    const meta = { email, userAgent: req.header("user-agent") ?? null };
+    const meta = { emailRef: emailRef(email), userAgent: req.header("user-agent") ?? null };
 
     try {
       await withTransactionRetry(() => prisma.$transaction(async (tx) => {
@@ -336,7 +338,7 @@ router.delete("/", async (req, res, next) => {
     const tokenHash = hashToken(token);
     // Metadata only, matching the same pattern already on /pull/relink —
     // this was the one auth-denial path on this route with zero trace.
-    const meta = { email, userAgent: req.header("user-agent") ?? null };
+    const meta = { emailRef: emailRef(email), userAgent: req.header("user-agent") ?? null };
 
     const record = await prisma.userSync.findUnique({ where: { email } });
     if (!record) {

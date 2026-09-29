@@ -3,6 +3,7 @@
  * npm run dev → http://localhost:4000
  */
 import { createApp } from "./app";
+import { logKeyStatus } from "./lib/emailRef";
 import { logger } from "./lib/logger";
 
 
@@ -23,6 +24,12 @@ process.on("unhandledRejection", (reason) => {
   logger.error("unhandled_rejection", reason);
   process.exit(1);
 });
+
+// 2.4.165: without a usable LOG_EMAIL_KEY every account is logged as
+// "unkeyed" -- no address, no unkeyed hash, and no way to tell accounts
+// apart. Said once, by status only: the key's value never goes in a line.
+const logKey = logKeyStatus();
+if (logKey !== "ok") logger.warn("log_email_key_unset", { status: logKey });
 
 const app = createApp();
 

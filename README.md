@@ -112,6 +112,7 @@ Then in the app: Profile → Push (uploads your local data) or Pull (restores fr
 | `DIRECT_URL` | `server/.env` | `postgresql://USER:PASSWORD@HOST/DBNAME?sslmode=require` | Non-pooled connection — Prisma Migrate needs this because PgBouncer's transaction pooling mode doesn't support the prepared statements migrations use |
 | `PORT` | `server/.env` | `4000` | Express listen port |
 | `CLIENT_ORIGIN` | `server/.env` | `http://localhost:3000` | CORS allow-origin |
+| `LOG_EMAIL_KEY` | `server/.env` | 32 random bytes as hex (64 characters) | Key for the HMAC references that stand in for email addresses in log lines. Unset or shorter than 32 characters: accounts are logged as `unkeyed` and the server warns at startup |
 | `API_URL` | `client/.env` | `http://localhost:4000` | Where `next.config.js` proxies `/api/*` to — the browser only ever calls relative `/api/*` paths, so this is the one place that needs to change for a deployed setup (e.g. your Railway API URL) |
 
 On Neon specifically: both URLs come from the same project's Connect panel — `DATABASE_URL` is the default pooled one it shows you, `DIRECT_URL` is the same string with `-pooler` dropped from the hostname and `pgbouncer=true` removed.

@@ -14,6 +14,7 @@
  */
 
 import { Prisma } from "@prisma/client";
+import { emailRef } from "./emailRef";
 import { logger } from "./logger";
 import { prisma } from "./prisma";
 
@@ -176,7 +177,7 @@ export async function normalizeToTables(email: string, raw: LocalFinancials): Pr
   // account's sync record is gone by the time we actually get to write.
   const stillSynced = await prisma.userSync.findUnique({ where: { email: email.toLowerCase() }, select: { id: true } });
   if (!stillSynced) {
-    logger.info("normalize_skipped_deleted", { email: email.toLowerCase() });
+    logger.info("normalize_skipped_deleted", { emailRef: emailRef(email) });
     return;
   }
 
@@ -475,7 +476,7 @@ export async function normalizeToTables(email: string, raw: LocalFinancials): Pr
     }, { timeout: 30_000, maxWait: 10_000 });
   } catch (err) {
     if (err instanceof NormalizeAbortedError) {
-      logger.info("normalize_skipped_deleted_mid_transaction", { email: email.toLowerCase() });
+      logger.info("normalize_skipped_deleted_mid_transaction", { emailRef: emailRef(email) });
       return;
     }
     throw err;
