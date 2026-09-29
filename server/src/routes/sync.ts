@@ -224,17 +224,15 @@ router.post("/push", async (req, res, next) => {
 // POST /api/sync/pull — body: { email }, token as `Authorization: Bearer` —
 // returns latest saved data.
 //
-// 2.4.165 B: the address moves out of the URL, because the query string is
-// written into the hosts' request logs (Render's "Requested URL", Vercel's
-// "Search Params") and a body is not. The client and server deploy
-// separately, so the order is: (1) this server accepts POST alongside the old
-// GET and is deployed; (2) the client switches to POST; (3) GET is removed,
-// once no open tab can still be running the old client. Each source is read
-// only by its own method: a POST never falls back to the query string, so a
-// client that still put the address in the URL would be refused, not served.
-const pull = (from: "body" | "query"): RequestHandler => async (req, res, next) => {
+// 2.4.165 B: the address is in the body, not the URL, because a query string
+// is written into the hosts' request logs (Render's "Requested URL", Vercel's
+// "Search Params") and a body is not. The old GET ?email= form was accepted
+// alongside this until the client had switched, and is now gone (step 3). An
+// address in a POST's URL is never read: a client that put it there is
+// refused, not served.
+const pull: RequestHandler = async (req, res, next) => {
   try {
-    const { email } = pullEmailSchema.parse(from === "body" ? req.body : req.query);
+    const { email } = pullEmailSchema.parse(req.body);
     const auth = req.header("authorization") ?? "";
     const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
     tokenSchema.parse(token);
@@ -268,9 +266,7 @@ const pull = (from: "body" | "query"): RequestHandler => async (req, res, next) 
     next(err);
   }
 };
-router.post("/pull", pull("body"));
-// TRANSITIONAL (2.4.165 B step 1): the old shape, kept only until step 3.
-router.get("/pull", pull("query"));
+router.post("/pull", pull);
 
 // POST /api/sync/relink — body: { email, token, recoveryToken, oldRecoveryToken? }
 // Called after a password reset (client/lib/auth.ts recoverAccount), which
