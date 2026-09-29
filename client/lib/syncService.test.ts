@@ -150,6 +150,18 @@ describe("pullFromServer", () => {
     expect(opts.headers.Authorization).toBe("Bearer token-abc");
   });
 
+  // 2.4.165: a URL is written into the hosts' request logs; a body is not.
+  it("keeps the address out of the URL: POST, with the address in a JSON body", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ syncedAt: "2026-01-01T00:00:00.000Z", data: DEFAULT_DATA, hasRecoveryCode: true }) });
+    vi.stubGlobal("fetch", fetchSpy);
+    await pullFromServer("a@test.com");
+    const [url, opts] = fetchSpy.mock.calls[0];
+    expect(url).toBe("/api/sync/pull");
+    expect(opts.method).toBe("POST");
+    expect(opts.headers["Content-Type"]).toBe("application/json");
+    expect(JSON.parse(opts.body)).toEqual({ email: "a@test.com" });
+  });
+
   it("passes through hasRecoveryCode from the server response (defaulting to false if absent, never crashing on an older/malformed response)", async () => {
     mockFetchOnce(200, { syncedAt: "2026-01-01T00:00:00.000Z", data: DEFAULT_DATA, hasRecoveryCode: true });
     const withFlag = await pullFromServer("a@test.com");
@@ -469,6 +481,18 @@ describe("checkEmailExists", () => {
     expect(await checkEmailExists("a@test.com")).toBe(true);
     mockFetchOnce(200, { exists: false });
     expect(await checkEmailExists("b@test.com")).toBe(false);
+  });
+
+  // 2.4.165: a URL is written into the hosts' request logs; a body is not.
+  it("keeps the address out of the URL: POST, with the address in a JSON body", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ exists: false }) });
+    vi.stubGlobal("fetch", fetchSpy);
+    await checkEmailExists("a@test.com");
+    const [url, opts] = fetchSpy.mock.calls[0];
+    expect(url).toBe("/api/auth/check-email");
+    expect(opts.method).toBe("POST");
+    expect(opts.headers["Content-Type"]).toBe("application/json");
+    expect(JSON.parse(opts.body)).toEqual({ email: "a@test.com" });
   });
 
   it("fails open to false on a network error or non-2xx -- never blocks sign-up on a server hiccup", async () => {

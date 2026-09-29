@@ -263,7 +263,7 @@ function AdminPageContent() {
             <Row label="API base URL" value="/api (proxied, see API_URL in client/.env)" mono />
             <Row label="Health endpoint" value={`${API}/api/health`} mono copyable />
             <Row label="Sync push" value={`POST ${API}/api/sync/push`} mono copyable />
-            <Row label="Sync pull" value={`GET ${API}/api/sync/pull?email=…`} mono />
+            <Row label="Sync pull" value={`POST ${API}/api/sync/pull`} mono copyable />
           </div>
 
           {/* Offline troubleshooting guide */}
