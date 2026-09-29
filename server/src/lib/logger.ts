@@ -8,6 +8,8 @@
  * covers "a failed sync doesn't just vanish" without that dependency.
  */
 
+import { scrubAddresses } from "./emailRef";
+
 type Level = "info" | "warn" | "error";
 
 /**
@@ -19,6 +21,15 @@ type Level = "info" | "warn" | "error";
  */
 const OWNED_FIELDS = ["ts", "level", "event"] as const;
 
+/**
+ * No email address reaches a line in plaintext (audit 2.4.165). Callers name
+ * an account by emailRef(); this is the backstop for one that slips through,
+ * applied here, where every line is built, for the same reason as the rule
+ * above. Every string value at any depth, error messages and stacks included,
+ * has address-shaped text replaced by its keyed reference.
+ */
+const scrub = (_key: string, value: unknown) => (typeof value === "string" ? scrubAddresses(value) : value);
+
 function write(level: Level, event: string, meta?: Record<string, unknown>) {
   const safe: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(meta ?? {})) {
@@ -29,7 +40,7 @@ function write(level: Level, event: string, meta?: Record<string, unknown>) {
     level,
     event,
     ...safe,
-  });
+  }, scrub);
   if (level === "error") process.stderr.write(line + "\n");
   else process.stdout.write(line + "\n");
 }
