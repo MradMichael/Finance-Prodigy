@@ -22,9 +22,22 @@ const PBKDF2_ITERATIONS = 120_000;
 
 export type Envelope = { v: 1; iv: string; ct: string };
 
+// DI-07 (2026-10-01): never hand String.fromCharCode every
+// byte in one call. Each byte becomes a separate argument, and past ~124,000
+// of them the engine throws "Maximum call stack size exceeded" -- which failed
+// every save once stored data passed ~124 KB (about 480 transactions). 32,768
+// per call stays far under any engine's argument limit (JavaScriptCore caps
+// arguments at 65,536).
+const B64_CHUNK = 0x8000;
+
 export function toB64(bytes: Uint8Array): string {
-  return btoa(String.fromCharCode(...bytes));
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += B64_CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + B64_CHUNK));
+  }
+  return btoa(binary);
 }
+// No spread on this side: Uint8Array.from walks the string one character at a time.
 export function fromB64(s: string): Uint8Array {
   return Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 }

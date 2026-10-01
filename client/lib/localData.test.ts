@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
-import { monthlyEquivalent, nominalMonthlyEquivalent, isRecurringActive, isPaidThisCycle, nextOccurrence, recurringPaidSoFar, capacityFreedFrom, buildRecurringPaymentLog, buildGoalContributionTx, fmtDate, valueForMonth, loadData, saveData, DEFAULT_DATA, type StoredRecurring, type StoredGoal, type StoredTransaction, type StoredDebt, allCategories, categoryLabel, categoryIcon, CATEGORIES, matchCategoryRule, type CategoryRule, roundMoney, moneyEquals, isEmptyFinancials, type LocalFinancials, toUSD, DEFAULT_LBP_RATE, rateOrDefault, rateForMonth, makeToUSDForMonth, migrateFinancials, CURRENT_SCHEMA_VERSION, todayISO, dueCycles, remainingInstallments, isCycleConfirmed, isCycleOverdue, buildRecurringConfirmLog, cycleMonthDivergence, nextConfirmTarget, historizedRecurringContribution, pendingBackfillCycles, derivedEfBalance, derivedDebtBalance, activeTransactions, purgeTransaction, autoPurgeExpired, buildDebtPaymentTx, buildEfAdjustmentTx, buildDebtAdjustmentTx, applyGoalContribution, mergeTransactions, buildTransferTx, retagBucketAmount, reanchorTrackedBalance, type TrackedBalance } from "./localData";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { monthlyEquivalent, nominalMonthlyEquivalent, isRecurringActive, isPaidThisCycle, nextOccurrence, recurringPaidSoFar, capacityFreedFrom, buildRecurringPaymentLog, buildGoalContributionTx, fmtDate, valueForMonth, loadData, saveData, DEFAULT_DATA, type StoredRecurring, type StoredGoal, type StoredTransaction, type StoredDebt, allCategories, categoryLabel, categoryIcon, CATEGORIES, matchCategoryRule, type CategoryRule, roundMoney, moneyEquals, isEmptyFinancials, type LocalFinancials, toUSD, DEFAULT_LBP_RATE, rateOrDefault, rateForMonth, makeToUSDForMonth, migrateFinancials, CURRENT_SCHEMA_VERSION, todayISO, dueCycles, remainingInstallments, isCycleConfirmed, isCycleOverdue, buildRecurringConfirmLog, cycleMonthDivergence, nextConfirmTarget, historizedRecurringContribution, pendingBackfillCycles, derivedEfBalance, derivedDebtBalance, activeTransactions, purgeTransaction, autoPurgeExpired, buildDebtPaymentTx, buildEfAdjustmentTx, buildDebtAdjustmentTx, applyGoalContribution, mergeTransactions, buildTransferTx, retagBucketAmount, reanchorTrackedBalance, type TrackedBalance, saveFailureKind } from "./localData";
 import { trackedBalanceExpected } from "./computeDashboard";
 import { asCycleKey, asCalendarKey } from "./period";
 
@@ -2493,5 +2493,79 @@ describe("makeToUSDForMonth — the historized converter, built once instead of 
     const result = conv(89_500, "LBP", asCycleKey("2026-04"));
     expect(Number.isFinite(result)).toBe(true);
     expect(result).toBeCloseTo(1, 5);
+  });
+});
+
+// DI-07 (2026-10-01): every save failed once stored data
+// passed ~124 KB, because the encoder spread the whole ciphertext into one
+// call. "Identical" is against migrateFinancials(data) -- what saveData stores
+// and loadData hands back -- so nothing here leans on migration being a no-op.
+describe("saveData / loadData well past the old ~124 KB encoder ceiling (DI-07)", () => {
+  beforeEach(() => localStorage.clear()); // jsdom's quota is 5,000,000 code units; keep each test's record alone in it
+
+  // One in three in lira at the entry's rate, the rest in dollars; half the
+  // descriptions in Arabic, which costs two UTF-8 bytes a character.
+  function bigFinancials(n: number): LocalFinancials {
+    const transactions = Array.from({ length: n }, (_, i): StoredTransaction => {
+      const date = new Date(Date.UTC(2024, 0, 1) + (i % 900) * 86_400_000).toISOString().slice(0, 10);
+      const lbp = i % 3 === 0;
+      return {
+        id: `tx-${i}`, date, bucket: i % 4 === 0 ? "WANTS" : "NEEDS", category: "groceries",
+        description: i % 2 ? "Supermarket" : "سوبرماركت مع العائلة",
+        amount: lbp ? 450_000 + (i % 50) * 10_000 : Math.round((5 + (i % 90) * 1.37) * 100) / 100,
+        currency: lbp ? "LBP" : "USD", ...(lbp ? { lbpRateAtEntry: 89_500 } : {}),
+        paymentMethod: "cash", createdAt: `${date}T12:34:56.789Z`, updatedAt: `${date}T12:34:56.789Z`,
+      };
+    });
+    return { ...DEFAULT_DATA, userName: "Quartz Runner", income: 1000, transactions };
+  }
+  const utf8Bytes = (d: unknown) => new TextEncoder().encode(JSON.stringify(d)).length;
+
+  async function saveThenReload(n: number, userId: string) {
+    const { createEnvelopes, activateSessionKey } = await import("./crypto");
+    const { dek } = await createEnvelopes("pw", userId);
+    activateSessionKey(dek);
+    const data = bigFinancials(n);
+    await saveData(data, userId); // encrypt + store
+    const loaded = await loadData(userId); // read back from storage + decrypt
+    return { data, loaded };
+  }
+
+  it("about 400 KB, over 3x the old ceiling: encrypt, save, reload, decrypt gives identical data", async () => {
+    const { data, loaded } = await saveThenReload(1600, "big-user-400k");
+    expect(utf8Bytes(data)).toBeGreaterThan(372_000);
+    expect(loaded).toEqual(migrateFinancials(data));
+  });
+
+  it("past 2.5 MB, beyond the server's 2 MB backup cap: the same round trip holds", async () => {
+    const { data, loaded } = await saveThenReload(10_000, "big-user-2m5");
+    expect(utf8Bytes(data)).toBeGreaterThan(2_500_000);
+    // String equality, not toEqual: a diff of 10,000 rows would bury the report.
+    expect(JSON.stringify(loaded) === JSON.stringify(migrateFinancials(data))).toBe(true);
+  }, 60_000);
+});
+
+// ERR-01: a failed save has to be named to the user, so the reason has to be
+// told apart first. Browsers disagree on what a full store is called.
+describe("saveFailureKind (ERR-01)", () => {
+  it("a real over-quota write in this environment reads as full", () => {
+    let caught: unknown = null;
+    try { localStorage.setItem("essa_quota_probe", "x".repeat(5_000_001)); } catch (e) { caught = e; }
+    localStorage.removeItem("essa_quota_probe");
+    expect(caught).not.toBeNull();
+    expect(saveFailureKind(caught)).toBe("full");
+  });
+
+  it("names a full store whatever the browser calls it", () => {
+    expect(saveFailureKind(new DOMException("The quota has been exceeded.", "QuotaExceededError"))).toBe("full");
+    expect(saveFailureKind({ name: "NS_ERROR_DOM_QUOTA_REACHED" })).toBe("full"); // older Firefox
+    expect(saveFailureKind({ name: "Error", code: 22 })).toBe("full"); // legacy code
+  });
+
+  it("names storage the browser refuses outright, a missing key, and nothing else", () => {
+    expect(saveFailureKind(new DOMException("The operation is insecure.", "SecurityError"))).toBe("blocked");
+    expect(saveFailureKind(new Error("ENCRYPTION_KEY_MISSING"))).toBe("signed-out");
+    expect(saveFailureKind(new Error("something else"))).toBe("unknown");
+    expect(saveFailureKind(undefined)).toBe("unknown");
   });
 });
