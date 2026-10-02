@@ -1346,6 +1346,33 @@ export async function saveData(data: LocalFinancials, userId: string): Promise<v
 }
 
 /**
+ * Why a saveData call failed, in terms a user can act on (ERR-01). A failed
+ * setItem leaves the previous record untouched, so every kind here means
+ * "nothing changed on disk". Browsers disagree on what a full store is called:
+ * QuotaExceededError (legacy code 22) almost everywhere, NS_ERROR_DOM_QUOTA_REACHED
+ * (1014) in older Firefox. SecurityError is storage refused outright (site data
+ * blocked). ENCRYPTION_KEY_MISSING is encryptJSON's own throw for a session that
+ * outlived its per-tab key.
+ */
+export type SaveFailureKind = "full" | "blocked" | "signed-out" | "unknown";
+
+export function saveFailureKind(err: unknown): SaveFailureKind {
+  if (err instanceof Error && err.message === "ENCRYPTION_KEY_MISSING") return "signed-out";
+  const { name, code } = (err ?? {}) as { name?: unknown; code?: unknown };
+  if (name === "QuotaExceededError" || name === "NS_ERROR_DOM_QUOTA_REACHED" || code === 22 || code === 1014) return "full";
+  if (name === "SecurityError") return "blocked";
+  return "unknown";
+}
+
+/** One plain sentence per kind, for any screen that has to say a save failed. */
+export const SAVE_FAILURE_REASON: Record<SaveFailureKind, string> = {
+  full: "This browser has run out of storage space for ESSA.",
+  blocked: "This browser isn't letting ESSA store data. Private browsing or a privacy setting can do this.",
+  "signed-out": "Your session has ended. Sign in again to keep making changes.",
+  unknown: "Something went wrong while writing to this device's storage.",
+};
+
+/**
  * The closes recorded for one cycle, oldest first. Phase 1's only reader,
  * and it is not wired to anything -- it exists so the record has a defined
  * way in before Phase 2 needs one.

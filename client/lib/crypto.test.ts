@@ -3,7 +3,7 @@ import {
   createEnvelopes, migrateLegacyEnvelope, rewrapEnvelopes,
   unwrapWithPassword, unwrapWithRecoveryCode, generateRecoveryCode,
   activateSessionKey, clearEncryptionKey, encryptJSON, decryptJSON,
-  deriveRecoveryToken,
+  deriveRecoveryToken, toB64, fromB64,
 } from "./crypto";
 
 beforeEach(() => {
@@ -228,5 +228,41 @@ describe("deriveRecoveryToken", () => {
     const a = await deriveRecoveryToken("K7QM-4XPZ-9RTL-2WJC", "user@example.com");
     const b = await deriveRecoveryToken("ZZZZ-ZZZZ-ZZZZ-ZZZZ", "user@example.com");
     expect(a).not.toBe(b);
+  });
+});
+
+// DI-07 (2026-10-01). toB64 used to spread every byte of
+// its input into ONE String.fromCharCode call. Past ~124,000 arguments the
+// engine throws "Maximum call stack size exceeded", so every save failed once
+// stored data passed ~124 KB -- about 480 transactions, measured in Edge 154.
+describe("toB64 / fromB64 at any size (DI-07)", () => {
+  // Node's own base64, independent of the code under test.
+  const reference = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64");
+  // Every byte value appears, so a wrong char code anywhere shows up.
+  const pattern = (n: number) => Uint8Array.from({ length: n }, (_, i) => (i * 31 + 7) & 255);
+
+  it("matches a reference encoder at every chunk boundary, and decodes back", () => {
+    for (const n of [0, 1, 2, 3, 32767, 32768, 32769, 65535, 65536, 65537, 98305]) {
+      const bytes = pattern(n);
+      const b64 = toB64(bytes);
+      expect(b64, `n=${n}`).toBe(reference(bytes));
+      expect(Buffer.from(fromB64(b64)).equals(Buffer.from(bytes)), `n=${n}`).toBe(true);
+    }
+  });
+
+  it("encodes and decodes 8 MB, 64x the old ~124 KB ceiling", () => {
+    const bytes = pattern(8 * 1024 * 1024);
+    const b64 = toB64(bytes);
+    expect(b64).toBe(reference(bytes));
+    expect(Buffer.from(fromB64(b64)).equals(Buffer.from(bytes))).toBe(true);
+  });
+
+  it("encryptJSON / decryptJSON round-trip a plaintext well past 2 MB (the server's backup cap), not just past the old ceiling", async () => {
+    const { dek } = await createEnvelopes("pw", "user-1");
+    activateSessionKey(dek);
+    const plaintext = JSON.stringify({ rows: Array.from({ length: 40000 }, (_, i) => ({ i, note: "Supermarket سوبرماركت", amount: 450000 + i })) });
+    expect(new TextEncoder().encode(plaintext).length).toBeGreaterThan(2_500_000);
+    const decrypted = await decryptJSON(await encryptJSON(plaintext));
+    expect(decrypted === plaintext).toBe(true); // not toBe: a 2.5 MB diff would bury the report
   });
 });

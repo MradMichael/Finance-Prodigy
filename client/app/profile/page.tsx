@@ -8,7 +8,7 @@ import RecoveryCodeModal from "../../components/RecoveryCodeModal";
 import BackupSwitch from "../../components/BackupSwitch";
 import ResetDataPanel from "../../components/ResetDataPanel";
 import type { Session } from "../../lib/auth";
-import { loadData, saveData, activeTransactions, syncAllowed, resetFinancials } from "../../lib/localData";
+import { loadData, saveData, activeTransactions, syncAllowed, resetFinancials, saveFailureKind, SAVE_FAILURE_REASON } from "../../lib/localData";
 import { computeDashboard } from "../../lib/computeDashboard";
 import { buildReportHtml } from "../../lib/printReport";
 import { pushToServer, pullFromServer, getLastSyncTime, confirmOverwriteIfNeeded, mergeAndPush, buildMergeNoticeText, pushRecoveryUpdate, applyBackupChoice, type BackupChoice } from "../../lib/syncService";
@@ -90,7 +90,12 @@ export default function ProfilePage() {
   async function handleResetData() {
     if (!session) return;
     const next = resetFinancials(await loadData(session.userId));
-    await saveData(next, session.userId);
+    try {
+      await saveData(next, session.userId);
+    } catch (err) {
+      setResetMsg("✗ Couldn't erase your data on this device. " + SAVE_FAILURE_REASON[saveFailureKind(err)] + " Nothing was changed.");
+      return;
+    }
     setResetCounts(countsOf(next));
     if (syncAllowed(next)) {
       const r = await pushToServer(session.email, next);
@@ -106,7 +111,16 @@ export default function ProfilePage() {
     setSyncing(true); setSyncMsg("");
     const current = await loadData(session.userId);
     const { data: next, result } = await applyBackupChoice(session.email, current, choice);
-    await saveData(next, session.userId);
+    try {
+      await saveData(next, session.userId);
+    } catch (err) {
+      // The server half has already happened by now, so say what it did.
+      const serverSide = choice === "on" && result?.ok ? " A copy did reach the server."
+        : choice === "off-delete" && result?.ok ? " The server copy was deleted." : "";
+      setSyncing(false);
+      setSyncMsg("✗ Couldn't save your backup choice on this device. " + SAVE_FAILURE_REASON[saveFailureKind(err)] + serverSide);
+      return;
+    }
     setBackupOn(choice === "on");
     setSyncing(false);
     if (choice === "on") {
@@ -136,7 +150,13 @@ export default function ProfilePage() {
     setSyncing(true); setSyncMsg("");
     const result = await pullFromServer(session.email);
     if (result.ok) {
-      await saveData(result.data, session.userId);
+      try {
+        await saveData(result.data, session.userId);
+      } catch (err) {
+        setSyncing(false);
+        setSyncMsg("✗ Couldn't save the server's copy on this device. " + SAVE_FAILURE_REASON[saveFailureKind(err)] + " Nothing was changed.");
+        return;
+      }
       setLastSync(result.syncedAt);
       setSyncMsg("✓ Data restored from database. Reloading…");
       // The dashboard (app/page.tsx) only reads localStorage once, into React
@@ -167,7 +187,13 @@ export default function ProfilePage() {
       setSyncMsg("✗ " + result.error);
       return;
     }
-    await saveData(result.mergedData, session.userId);
+    try {
+      await saveData(result.mergedData, session.userId);
+    } catch (err) {
+      setSyncing(false);
+      setSyncMsg("✗ The merge reached the server, but couldn't be saved on this device. " + SAVE_FAILURE_REASON[saveFailureKind(err)]);
+      return;
+    }
     setLastSync(result.syncedAt);
     const notice = buildMergeNoticeText(result.addedFromServer, result.conflictDetails, result.nonTransactionDivergence);
     setSyncMsg("✓ Merged. " + (notice.text || "Nothing new from your other device."));
@@ -288,8 +314,17 @@ export default function ProfilePage() {
       setImportMsg("✓ Data restored from file. Reloading…");
       // Same reload requirement as handlePull — see its own comment.
       setTimeout(() => { window.location.href = "/"; }, 700);
-    } catch {
-      setImportMsg("✗ Couldn't restore that file.");
+    } catch (err) {
+      // Name the cause. "Couldn't restore that file" blamed the file even when
+      // the file was fine and this browser couldn't hold that much (DI-07, and
+      // a genuinely full store). Only an unrecognised failure, most likely the
+      // file's own content, still points at the file.
+      const kind = saveFailureKind(err);
+      setImportMsg(
+        kind === "full" ? "✗ That file is too large to store in this browser. Nothing was changed."
+        : kind === "unknown" ? "✗ Couldn't restore that file. Nothing was changed."
+        : "✗ Couldn't restore the file on this device. " + SAVE_FAILURE_REASON[kind] + " Nothing was changed.",
+      );
       setImporting(false);
     }
   }

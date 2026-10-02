@@ -21,7 +21,7 @@ import Sidebar from "../components/shell/Sidebar";
 import BottomNav from "../components/shell/BottomNav";
 import TopBar from "../components/shell/TopBar";
 import type { Screen, SyncStatus } from "../components/screens/shared";
-import { cycleStartDayOf, loadData, saveData, isEmptyFinancials, buildRecurringConfirmLog, nextConfirmTarget, autoPurgeExpired, DEFAULT_LBP_RATE, syncAllowed } from "../lib/localData";
+import { cycleStartDayOf, loadData, saveData, isEmptyFinancials, buildRecurringConfirmLog, nextConfirmTarget, autoPurgeExpired, DEFAULT_LBP_RATE, syncAllowed, saveFailureKind, SAVE_FAILURE_REASON } from "../lib/localData";
 import type { LocalFinancials } from "../lib/localData";
 import { computeDashboard } from "../lib/computeDashboard";
 import {currentCycleKey, calendarKeyForDate, type CycleKey, type CycleHistory } from "../lib/period";
@@ -103,6 +103,48 @@ export default function Home() {
   // keep a stable ref so the debounce closure always sees the latest session
   useEffect(() => { sessionRef.current = session; }, [session]);
 
+  // ERR-01 (2026-10-01): a failed save used to be silent. The screen
+  // updates before the save, so a refused write left an edit that looked kept
+  // and was gone on reload. Now every save in this file goes through persist:
+  // on failure the screen goes back to the last state actually stored, and
+  // the reason stays on screen until dismissed (like mergeNotice below).
+  //
+  // lastSaved is that last stored state. saveSeq tells the latest save from a
+  // superseded one: a newer change is built on top of an older one, so if the
+  // older save fails while the newer is still in flight, the newer one's own
+  // save reports for both. autoWritesPaused stops the load-time snapshot and
+  // purge writes from retrying a refused write on every render; the user's
+  // next change is the retry, and a success lifts the pause.
+  const lastSavedRef = useRef<LocalFinancials | null>(null);
+  const saveSeqRef = useRef(0);
+  const lastSavedSeqRef = useRef(0);
+  const autoWritesPausedRef = useRef(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const persist = useCallback(async (next: LocalFinancials, userId: string): Promise<boolean> => {
+    const seq = ++saveSeqRef.current;
+    try {
+      await saveData(next, userId);
+    } catch (err) {
+      if (seq !== saveSeqRef.current) return false;
+      autoWritesPausedRef.current = true;
+      setSaveError(SAVE_FAILURE_REASON[saveFailureKind(err)]);
+      if (lastSavedRef.current) setFinancials(lastSavedRef.current);
+      return false;
+    }
+    if (seq > lastSavedSeqRef.current) {
+      lastSavedSeqRef.current = seq;
+      lastSavedRef.current = next;
+    }
+    // Only the latest save speaks for the screen: an older one landing late
+    // mustn't clear a failure the newer one just reported.
+    if (seq === saveSeqRef.current) {
+      autoWritesPausedRef.current = false;
+      setSaveError(null);
+    }
+    return true;
+  }, []);
+
   const autoSync = useCallback(async (data: LocalFinancials, email: string) => {
     // Audit 2.4.153: the gate. Every automatic upload in this file reaches
     // the network through here -- an edit, the monthly-snapshot write on
@@ -123,10 +165,7 @@ export default function Home() {
       const merged = await mergeAndPush(email, data);
       if (!merged.ok) { setSyncStatus("conflict"); return; }
       const userId = sessionRef.current?.userId;
-      if (userId) {
-        await saveData(merged.mergedData, userId);
-        setFinancials(merged.mergedData);
-      }
+      if (userId && await persist(merged.mergedData, userId)) setFinancials(merged.mergedData);
       const notice = buildMergeNoticeText(merged.addedFromServer, merged.conflictDetails, merged.nonTransactionDivergence);
       if (notice.text) setMergeNotice(notice);
       setSyncStatus("synced");
@@ -136,7 +175,7 @@ export default function Home() {
     setSyncStatus(result.ok ? "synced" : "offline");
     // fade back to idle after 4 s so the indicator doesn't stay forever
     setTimeout(() => setSyncStatus((s) => s !== "syncing" ? "idle" : s), 4000);
-  }, []);
+  }, [persist]);
 
   // 2.4.69 -- identifies which load run is the current one, so a superseded
   // run cannot apply the snapshot it captured before its await.
@@ -192,14 +231,20 @@ export default function Home() {
         if (superseded()) return;
         if (result.ok && !isEmptyFinancials(result.data)) {
           const pulled = { ...result.data, userName: s.name };
-          await saveData(pulled, s.userId);
+          const stored = await persist(pulled, s.userId);
           if (superseded()) return;
-          setFinancials(pulled);
-          return;
+          if (stored) {
+            setFinancials(pulled);
+            return;
+          }
+          // Couldn't store the restore (persist has said so): show what IS
+          // stored rather than a server copy that would vanish on reload.
         }
       }
       if (superseded()) return;
-      setFinancials({ ...data, userName: s.name });
+      const local = { ...data, userName: s.name };
+      lastSavedRef.current = local;
+      setFinancials(local);
     });
   // Mount-only, and deliberately NOT keyed on `router`.
   //
@@ -247,14 +292,16 @@ export default function Home() {
     // upload "on" needs, and routing through autoSync would do it again.
     const { data: next } = await applyBackupChoice(session.email, financials, choice);
     setFinancials(next);
-    await saveData(next, session.userId);
+    await persist(next, session.userId);
     setChoosingBackup(false);
   }
 
-  async function handleChange(updated: LocalFinancials) {
-    if (!session) return;
+  /** Resolves false when the change couldn't be stored (and so was undone on screen). */
+  async function handleChange(updated: LocalFinancials): Promise<boolean> {
+    if (!session) return false;
     setFinancials(updated);
-    await saveData(updated, session.userId);
+    // ERR-01: nothing was stored, so there's nothing to back up either.
+    if (!(await persist(updated, session.userId))) return false;
 
     // Debounced auto-sync: reset the timer on every change
     if (syncTimer.current) clearTimeout(syncTimer.current);
@@ -263,6 +310,7 @@ export default function Home() {
       const s = sessionRef.current;
       if (s) autoSync(updated, s.email);
     }, SYNC_DEBOUNCE_MS);
+    return true;
   }
 
   // Confirms a recurring item's oldest outstanding cycle (Phase 2.5.3) --
@@ -288,10 +336,11 @@ export default function Home() {
     loggingRecurringRef.current.add(recurringId);
     setLoggingRecurringIds(new Set(loggingRecurringRef.current));
     try {
-      await handleChange({
+      const stored = await handleChange({
         ...financials,
         transactions: [result.tx, ...financials.transactions],
       });
+      if (!stored) return; // not kept, so never show "Confirmed"
       // Brief "Confirmed" state (2.4.30, finding 3) -- cleared on its own
       // timer, not tied to the next render, so it's visible even though the
       // button's own target has already moved on to the next cycle.
@@ -353,6 +402,10 @@ export default function Home() {
   // actually stale (new month, or this month's value changed), so it can't loop.
   useEffect(() => {
     if (!financials || !dashboardData) return;
+    // A refused save puts financials back to the last stored state, which is
+    // stale here again; without this, that would retry the refused write on
+    // every render (persist's autoWritesPaused).
+    if (autoWritesPausedRef.current) return;
     const now = new Date();
     // The one write path for all four histories, and now the one place their
     // two key spaces are distinguished. Identical strings at startDay 1; the
@@ -436,7 +489,7 @@ export default function Home() {
   // open). autoPurgeExpired returns the same array reference when nothing
   // needs purging, so this can't loop.
   useEffect(() => {
-    if (!financials) return;
+    if (!financials || autoWritesPausedRef.current) return; // same guard as the snapshot effect
     const purged = autoPurgeExpired(financials.transactions);
     if (purged === financials.transactions) return;
     handleChange({ ...financials, transactions: purged });
@@ -564,6 +617,29 @@ export default function Home() {
           <button
             onClick={() => setMergeNotice(null)}
             aria-label="Dismiss"
+            className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-lg hover:opacity-70 transition-opacity"
+            style={{ color: T.mute }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* ERR-01: a save that failed, said plainly. At the top so it can't sit
+          under the merge notice; not auto-dismissed, for the same reason. */}
+      {saveError && (
+        <div
+          role="alert"
+          className="fixed top-4 left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50 flex items-start gap-3"
+          style={{ background: T.panel, border: `1px solid ${T.coral}` }}
+        >
+          <span className="text-sm flex-1" style={{ color: T.text }}>
+            <strong style={{ color: T.coral }}>Couldn&apos;t save on this device.</strong>{" "}
+            {saveError} Anything that wasn&apos;t saved has been undone, so the screen shows only what&apos;s stored.
+          </span>
+          <button
+            onClick={() => setSaveError(null)}
+            aria-label="Dismiss save error"
             className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-lg hover:opacity-70 transition-opacity"
             style={{ color: T.mute }}
           >
