@@ -878,8 +878,15 @@ export interface LocalFinancials {
    * automatically until the owner has chosen. Never defaulted, never
    * backfilled -- an account that has made no choice must not be recorded
    * as having made one. `decidedAt` is a UTC instant.
+   *
+   * `serverCopy` (FB-1b2) is what this device knows about a server copy
+   * after an off choice: "kept" (kept on purpose, or a delete that failed),
+   * "deleted" (the server confirmed the delete), "none" (the server check
+   * confirmed there never was one). Absent means not known: an off choice
+   * recorded before this field existed, or a "nothing to keep" answer the
+   * check couldn't confirm. See serverCheckNeeded.
    */
-  syncChoice?: { enabled: boolean; decidedAt: string };
+  syncChoice?: { enabled: boolean; decidedAt: string; serverCopy?: "kept" | "deleted" | "none" };
   /**
    * Phase 1 of the period close. One PeriodClose per cycle the owner has
    * closed, newest-last (cycleClosesFor sorts rather than relying on it).
@@ -1217,12 +1224,28 @@ export function resetFinancials(d: Pick<LocalFinancials, "syncChoice">): LocalFi
 /**
  * May this account upload automatically? The ONE decision behind every
  * automatic upload (audit 2.4.153): autoSync -- which the edit, snapshot,
- * auto-purge and conflict-merge paths all funnel through -- and the
- * recovery-code push. True only on an explicit "on"; undecided is paused.
- * An explicit Push from Profile is the owner's own act and is not gated.
+ * auto-purge and conflict-merge paths all funnel through. True only on an
+ * explicit "on"; undecided is paused. An explicit Push from Profile is the
+ * owner's own act and is not gated.
  */
 export function syncAllowed(d: Pick<LocalFinancials, "syncChoice">): boolean {
   return d.syncChoice?.enabled === true;
+}
+
+/**
+ * Must regenerating a recovery code ask the server first (FB-1b2)? Only a
+ * server copy can hold an old code that keeps working, so the answer is no
+ * only when this device KNOWS there's none: backup off, and the copy deleted
+ * or confirmed never to have existed. Then nothing is sent at all, not even
+ * the address (COPY-11). Every other state asks, including an older off
+ * choice with nothing recorded and an account that has never answered.
+ * Something might exist there, and showing a code the server doesn't know is
+ * SEC-09 again (owner, 2026-10-05: fail closed).
+ */
+export function serverCheckNeeded(d: Pick<LocalFinancials, "syncChoice">): boolean {
+  const c = d.syncChoice;
+  if (!c || c.enabled) return true;
+  return c.serverCopy !== "deleted" && c.serverCopy !== "none";
 }
 
 /** True when an account has literally nothing entered yet (fresh sign-up defaults) — used to gate the one-time auto-pull-on-first-load in app/page.tsx so it only ever fires for a genuinely blank local account, never silently overwriting real local data. */

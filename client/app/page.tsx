@@ -72,6 +72,7 @@ export default function Home() {
   // Audit 2.4.153, opt-in sync part 3. null = not yet known; the prompt waits
   // for it rather than guessing, so it never shows the wrong variant.
   const [serverHasCopy, setServerHasCopy] = useState<boolean | null>(null);
+  const [noCopyConfirmed, setNoCopyConfirmed] = useState(false);
   const [choosingBackup, setChoosingBackup] = useState(false);
   const sessionRef  = useRef<Session | null>(null);
   // Synchronous re-entrancy guard for handleLogRecurringPayment -- a second
@@ -280,7 +281,14 @@ export default function Home() {
     if (!session || !undecided || serverHasCopy !== null) return;
     let live = true;
     checkEmailExists(session.email).then((exists) => {
-      if (live) setServerHasCopy(exists || getLastSyncTime() !== null);
+      if (!live) return;
+      const syncedHere = getLastSyncTime() !== null;
+      // FB-1b2: only a definite "no" from the server, on a device that has
+      // never synced, confirms there's no copy. An offline check (null) still
+      // shows the no-copy question, but its "Keep it off" records nothing
+      // about a copy, so a later recovery-code change still asks the server.
+      setNoCopyConfirmed(exists === false && !syncedHere);
+      setServerHasCopy(exists === true || syncedHere);
     });
     return () => { live = false; };
   }, [session, undecided, serverHasCopy]);
@@ -290,7 +298,7 @@ export default function Home() {
     setChoosingBackup(true);
     // Not through handleChange: applyBackupChoice has already done the one
     // upload "on" needs, and routing through autoSync would do it again.
-    const { data: next } = await applyBackupChoice(session.email, financials, choice);
+    const { data: next } = await applyBackupChoice(session.email, financials, choice, undefined, { noCopyConfirmed });
     setFinancials(next);
     await persist(next, session.userId);
     setChoosingBackup(false);

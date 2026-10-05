@@ -1,9 +1,13 @@
-// Opt-in sync, part 1 (audit 2.4.153) -- the decision function, and the one
-// upload site outside autoSync: Profile's recovery-code regenerate, which
-// used to push as a side effect of an unrelated action.
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { syncAllowed, DEFAULT_DATA, type LocalFinancials } from "./localData";
-import { pushRecoveryUpdate } from "./syncService";
+// Opt-in sync, part 1 (audit 2.4.153) -- the decision function.
+//
+// FB-1b2 (2026-10-05): the one upload site that used to sit outside autoSync,
+// Profile's push after regenerating a recovery code, is gone, and so are its
+// tests here. That push never did what it was for (a push keeps an
+// already-registered recovery hash); regenerate now replaces the server's
+// code through /relink, and regenerate-reaches-server.test.ts covers it,
+// including that it sends nothing when nothing can exist.
+import { describe, it, expect } from "vitest";
+import { syncAllowed, DEFAULT_DATA } from "./localData";
 
 const at = "2026-09-28T10:00:00.000Z";
 
@@ -23,21 +27,3 @@ describe("syncAllowed -- the single decision", () => {
   });
 });
 
-describe("pushRecoveryUpdate -- the regenerate side effect is gated too", () => {
-  const fetchMock = vi.fn(async () => new Response(JSON.stringify({ syncedAt: at }), { status: 200 }));
-  beforeEach(() => { vi.stubGlobal("fetch", fetchMock); fetchMock.mockClear(); sessionStorage.setItem("essa_st_v1", "tok"); });
-  afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear(); });
-
-  it("backup off: nothing reaches the network", async () => {
-    const r = await pushRecoveryUpdate("u1@example.com", { ...DEFAULT_DATA } as LocalFinancials);
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(r).toEqual({ ok: false, skipped: true });
-  });
-
-  it("backup on: it pushes, as it did before", async () => {
-    const data = { ...DEFAULT_DATA, syncChoice: { enabled: true, decidedAt: at } } as LocalFinancials;
-    await pushRecoveryUpdate("u1@example.com", data);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(String((fetchMock.mock.calls[0] as unknown[])[0])).toBe("/api/sync/push");
-  });
-});

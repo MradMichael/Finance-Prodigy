@@ -128,7 +128,7 @@ export async function pushToServer(email: string, data: LocalFinancials): Promis
   }
 }
 
-export type BackupChoice = "on" | "off-delete" | "off-keep";
+export type BackupChoice = "on" | "off-delete" | "off-keep" | "off-none";
 
 /**
  * Records the owner's backup choice and performs its ONE network
@@ -141,6 +141,17 @@ export type BackupChoice = "on" | "off-delete" | "off-keep";
  *   off-keep    -> no network at all; the existing copy is deliberately
  *                  left standing and will go stale
  *   off-delete  -> deletes the server copy. Never pushes first.
+ *   off-none    -> no network; the prompt's "Keep it off" for an account
+ *                  with no copy to keep (FB-1b2)
+ *
+ * Each off choice also records `serverCopy`, what this device now knows
+ * about a server copy, which decides whether regenerating a recovery code
+ * asks the server (serverCheckNeeded). "deleted" only when the server said
+ * so: a failed delete records "kept", because the copy may still be there.
+ * off-none records "none" only when `noCopyConfirmed` -- the server check
+ * answered "no copy" and this device has never synced. Without that it
+ * records nothing, which counts as "may exist" (owner, 2026-10-05: fail
+ * closed).
  *
  * The returned data carries the choice whatever the network did: a server
  * that could not be reached does not turn backup back on, and a failed
@@ -149,24 +160,68 @@ export type BackupChoice = "on" | "off-delete" | "off-keep";
  */
 export async function applyBackupChoice(
   email: string, data: LocalFinancials, choice: BackupChoice, now: Date = new Date(),
+  opts: { noCopyConfirmed?: boolean } = {},
 ): Promise<{ data: LocalFinancials; result: SyncResult | null }> {
-  const next: LocalFinancials = { ...data, syncChoice: { enabled: choice === "on", decidedAt: now.toISOString() } };
-  if (choice === "on") return { data: next, result: await pushToServer(email, next) };
-  if (choice === "off-delete") return { data: next, result: await deleteFromServer(email, getSyncToken() ?? "") };
-  return { data: next, result: null };
+  const decided = { enabled: choice === "on", decidedAt: now.toISOString() };
+  if (choice === "on") {
+    const next: LocalFinancials = { ...data, syncChoice: decided };
+    return { data: next, result: await pushToServer(email, next) };
+  }
+  if (choice === "off-delete") {
+    const result = await deleteFromServer(email, getSyncToken() ?? "");
+    return { data: { ...data, syncChoice: { ...decided, serverCopy: result.ok ? "deleted" : "kept" } }, result };
+  }
+  if (choice === "off-keep") return { data: { ...data, syncChoice: { ...decided, serverCopy: "kept" } }, result: null };
+  return { data: { ...data, syncChoice: opts.noCopyConfirmed ? { ...decided, serverCopy: "none" } : decided }, result: null };
 }
 
+export type ServerCopyProbe =
+  | { kind: "copy"; hasRecoveryCode: boolean }
+  | { kind: "none" }
+  | { kind: "wrong-password" }
+  | { kind: "unregistered" }
+  | { kind: "unreachable" };
+
 /**
- * The push that follows regenerating a recovery code, so the new code works
- * from another device (audit 2.4.153). Gated like every other automatic
- * upload: with backup off or undecided it does nothing, which also means
- * the new recovery code only works on this device -- the honest consequence
- * of not keeping a server copy, and one the backup choice must state.
+ * What the server holds for this account, without changing anything
+ * (FB-1b2). Regenerating a recovery code asks this before touching
+ * anything, so it knows whether a server copy holds a code that must be
+ * replaced through /relink.
+ *
+ * It's /pull with the bearer token, read for its status only. The body is
+ * discarded, and unlike pullFromServer it doesn't record a last-sync time:
+ * that time is 2.4.38's stale-push baseline, and only a pull whose data was
+ * actually taken may move it.
+ *
+ *   copy           200: a copy exists and this device's password token is
+ *                  the one it holds (sync.ts:255); hasRecoveryCode says
+ *                  whether any recovery code is registered for it
+ *   none           404 from the API itself: no copy at all
+ *   wrong-password 401: a copy whose password token isn't this device's
+ *   unregistered   401: a row with no password token at all (pre-token)
+ *   unreachable    anything else, including a platform 404 page
  */
-export async function pushRecoveryUpdate(email: string, data: LocalFinancials): Promise<SyncResult | { ok: false; skipped: true }> {
-  const { syncAllowed } = await import("./localData");
-  if (!syncAllowed(data)) return { ok: false, skipped: true };
-  return pushToServer(email, data);
+export async function probeServerCopy(email: string): Promise<ServerCopyProbe> {
+  const token = getSyncToken();
+  if (!token) return { kind: "unreachable" };
+  try {
+    const res = await fetch("/api/sync/pull", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+      signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
+    });
+    const json = await parseJsonSafe(res);
+    const apiError = json !== null && typeof json.error === "string" ? json.error : null;
+    if (res.status === 404 && apiError !== null) return { kind: "none" };
+    if (res.status === 401 && apiError !== null) {
+      return apiError.includes("no sync credentials registered") ? { kind: "unregistered" } : { kind: "wrong-password" };
+    }
+    if (res.ok && json !== null && typeof json.syncedAt === "string") return { kind: "copy", hasRecoveryCode: json.hasRecoveryCode === true };
+    return { kind: "unreachable" };
+  } catch {
+    return { kind: "unreachable" };
+  }
 }
 
 /**
@@ -458,11 +513,15 @@ export async function deleteFromServer(email: string, token: string): Promise<Sy
  * Checks whether this email already has synced data from some other
  * device — the only cross-device signal the server can give, since sign-up
  * itself never touches it (see routes/auth.ts). Best-effort UX warning,
- * not a hard block: returns false on any network failure so an offline or
- * server-down moment never prevents signing up. The address goes in the
- * body, never the URL, so it stays out of the hosts' request logs (2.4.165).
+ * not a hard block. The address goes in the body, never the URL, so it
+ * stays out of the hosts' request logs (2.4.165).
+ *
+ * null means it couldn't tell (offline, server down, an unexpected answer).
+ * FB-1b2: that used to read as false, and a false is now recorded as
+ * "confirmed no copy", which stops a later recovery-code change from asking
+ * the server. Sign-up acts only on true, so it still never blocks.
  */
-export async function checkEmailExists(email: string): Promise<boolean> {
+export async function checkEmailExists(email: string): Promise<boolean | null> {
   try {
     const res = await fetch("/api/auth/check-email", {
       method: "POST",
@@ -470,10 +529,10 @@ export async function checkEmailExists(email: string): Promise<boolean> {
       body: JSON.stringify({ email }),
       signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
     });
-    if (!res.ok) return false;
+    if (!res.ok) return null;
     const json = await res.json();
-    return json.exists === true;
+    return typeof json?.exists === "boolean" ? json.exists : null;
   } catch {
-    return false;
+    return null;
   }
 }

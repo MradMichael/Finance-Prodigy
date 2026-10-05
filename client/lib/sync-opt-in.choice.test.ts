@@ -2,6 +2,11 @@
 // network consequence each choice has. applyBackupChoice is the only place
 // the choice is written, so the switch and part 3's load-time prompt cannot
 // disagree about what "off, delete" does.
+//
+// FB-1b2 (2026-10-05): an off choice also records what this device knows
+// about a server copy -- kept, deleted, or confirmed never to have existed --
+// because regenerating a recovery code asks the server only when a copy may
+// exist. A delete counts as deleted only when the server said it was.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { DEFAULT_DATA, syncAllowed, type LocalFinancials } from "./localData";
 import { applyBackupChoice } from "./syncService";
@@ -30,9 +35,9 @@ describe("turning backup ON", () => {
 });
 
 describe("turning backup OFF", () => {
-  it("off, keep: records off and touches the network not at all", async () => {
+  it("off, keep: records off with the copy kept, and touches the network not at all", async () => {
     const { data: next, result } = await applyBackupChoice("u1@example.com", data, "off-keep", NOW);
-    expect(next.syncChoice).toEqual({ enabled: false, decidedAt: "2026-09-28T11:42:05.000Z" });
+    expect(next.syncChoice).toEqual({ enabled: false, decidedAt: "2026-09-28T11:42:05.000Z", serverCopy: "kept" });
     expect(fetchMock).not.toHaveBeenCalled();
     expect(result).toBeNull();
   });
@@ -44,6 +49,7 @@ describe("turning backup OFF", () => {
     expect(call()[0]).toBe("/api/sync");
     expect(call()[1].method).toBe("DELETE");
     expect(result?.ok).toBe(true);
+    expect(next.syncChoice).toEqual({ enabled: false, decidedAt: "2026-09-28T11:42:05.000Z", serverCopy: "deleted" });
   });
 
   it("a failed delete is reported, and the choice still stands as off", async () => {
@@ -53,6 +59,23 @@ describe("turning backup OFF", () => {
     const { data: next, result } = await applyBackupChoice("u1@example.com", data, "off-delete", NOW);
     expect(syncAllowed(next)).toBe(false);
     expect(result?.ok).toBe(false);
+    // The copy may still be there, so it is recorded as kept, not deleted.
+    expect(next.syncChoice?.serverCopy).toBe("kept");
+  });
+
+  it("off with nothing to keep, confirmed by the server check: records none, and no network", async () => {
+    const { data: next, result } = await applyBackupChoice("u1@example.com", data, "off-none", NOW, { noCopyConfirmed: true });
+    expect(next.syncChoice).toEqual({ enabled: false, decidedAt: "2026-09-28T11:42:05.000Z", serverCopy: "none" });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result).toBeNull();
+  });
+
+  it("off with nothing to keep, but the check couldn't confirm it: records nothing about a copy (fail closed)", async () => {
+    // An offline check reads as "no copy", and one may exist, made by another device.
+    const { data: next, result } = await applyBackupChoice("u1@example.com", data, "off-none", NOW);
+    expect(next.syncChoice).toEqual({ enabled: false, decidedAt: "2026-09-28T11:42:05.000Z" });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result).toBeNull();
   });
 });
 

@@ -495,11 +495,17 @@ describe("checkEmailExists", () => {
     expect(JSON.parse(opts.body)).toEqual({ email: "a@test.com" });
   });
 
-  it("fails open to false on a network error or non-2xx -- never blocks sign-up on a server hiccup", async () => {
+  // FB-1b2: "couldn't tell" is null, not false. A false is now recorded as
+  // "confirmed no copy", which stops a later recovery-code change from
+  // asking the server, so a failed check must not pass for one. Sign-up only
+  // acts on a true, so it still never blocks on a server hiccup.
+  it("reports a network error or non-2xx as unknown (null), never as a definite answer", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("down")));
-    expect(await checkEmailExists("a@test.com")).toBe(false);
+    expect(await checkEmailExists("a@test.com")).toBeNull();
     mockFetchOnce(500, { error: "server error" });
-    expect(await checkEmailExists("a@test.com")).toBe(false);
+    expect(await checkEmailExists("a@test.com")).toBeNull();
+    mockFetchOnce(200, { unexpected: true });
+    expect(await checkEmailExists("a@test.com")).toBeNull();
   });
 });
 

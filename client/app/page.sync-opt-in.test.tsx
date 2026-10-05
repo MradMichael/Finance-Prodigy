@@ -38,11 +38,12 @@ vi.mock("../lib/localData", async (importOriginal) => {
 
 const push = vi.fn(async () => ({ ok: true }));
 const merge = vi.fn(async () => ({ ok: false }));
-let serverHasCopy = false;
+let serverHasCopy: boolean | null = false;
 let lastSyncHere: string | null = null;
 const applied: string[] = [];
-const applyChoice = vi.fn(async (_e: string, d: LocalFinancials, c: string) => {
-  applied.push(c);
+const appliedOpts: unknown[] = [];
+const applyChoice = vi.fn(async (_e: string, d: LocalFinancials, c: string, _now?: Date, opts?: unknown) => {
+  applied.push(c); appliedOpts.push(opts);
   return { data: { ...d, syncChoice: { enabled: c === "on", decidedAt: "2026-09-28T12:00:00.000Z" } }, result: { ok: true } };
 });
 vi.mock("../lib/syncService", () => ({
@@ -54,7 +55,7 @@ vi.mock("../lib/syncService", () => ({
   markAutoPulled: vi.fn(),
   getLastSyncTime: () => lastSyncHere,
   checkEmailExists: vi.fn(async () => serverHasCopy),
-  applyBackupChoice: (...a: unknown[]) => applyChoice(...(a as [string, LocalFinancials, string])),
+  applyBackupChoice: (...a: unknown[]) => applyChoice(...(a as [string, LocalFinancials, string, Date?, unknown?])),
 }));
 
 import Home from "./page";
@@ -62,7 +63,7 @@ import { DEFAULT_DATA } from "../lib/localData";
 
 beforeEach(() => {
   localStorage.clear(); saved.length = 0; push.mockClear(); merge.mockClear();
-  serverHasCopy = false; lastSyncHere = null; applied.length = 0; applyChoice.mockClear();
+  serverHasCopy = false; lastSyncHere = null; applied.length = 0; appliedOpts.length = 0; applyChoice.mockClear();
 });
 
 /** Render, let the snapshot effect write, and wait past the 2.5s debounce. */
@@ -145,5 +146,30 @@ describe("an undecided account is asked on open, and nothing uploads until it an
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(applied).toEqual(["on"]);
     expect(saved[saved.length - 1].syncChoice?.enabled).toBe(true);
+  }, 15000);
+});
+
+// FB-1b2: "Keep it off" with no copy records "none" only when the server
+// check positively said so and this device has never synced. Otherwise a
+// copy may exist, and a later recovery-code change must still ask.
+describe("'Keep it off' with no copy: confirmed only by a definite answer", () => {
+  const keepOff = async () => {
+    render(<Home />);
+    await screen.findByRole("button", { name: "Setup" }, { timeout: 10000 });
+    fireEvent.click(await screen.findByRole("button", { name: /keep it off/i }));
+    await waitFor(() => expect(applied).toEqual(["off-none"]));
+  };
+
+  it("the server said no copy, and this device never synced: confirmed", async () => {
+    seed = { ...DEFAULT_DATA, income: 3000 } as LocalFinancials;
+    await keepOff();
+    expect(appliedOpts[0]).toEqual({ noCopyConfirmed: true });
+  }, 15000);
+
+  it("the check couldn't tell (offline): not confirmed", async () => {
+    serverHasCopy = null;
+    seed = { ...DEFAULT_DATA, income: 3000 } as LocalFinancials;
+    await keepOff();
+    expect(appliedOpts[0]).toEqual({ noCopyConfirmed: false });
   }, 15000);
 });

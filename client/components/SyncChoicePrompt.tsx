@@ -22,6 +22,11 @@ import type { BackupChoice } from "../lib/syncService";
  * server copy that they have none would withhold the delete option. So the
  * prompt errs towards offering it.
  *
+ * The no-copy variant's "Keep it off" is "off-none", not "off-keep" (FB-1b2):
+ * there's nothing to keep, and recording a kept copy would make regenerating
+ * a recovery code ask the server. Whether "none" is confirmed is the page's
+ * to say (applyBackupChoice's noCopyConfirmed).
+ *
  * Blocking by design: no close button, no click-outside. The choice is the
  * point of the prompt.
  */
@@ -89,7 +94,7 @@ export default function SyncChoicePrompt({ hasServerCopy, busy, onChoose }: {
           ) : (
             <>
               {btn("Turn backup on", "on", true)}
-              {btn("Keep it off", "off-keep")}
+              {btn("Keep it off", "off-none")}
             </>
           )}
         </div>
