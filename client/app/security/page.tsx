@@ -75,7 +75,9 @@ export default function SecurityPage() {
           <p>
             What protects it instead: our database isn&apos;t publicly reachable outside its access controls,
             all traffic to it runs over TLS, and reading your data back (pull) requires a token derived from
-            your password that we never see or store directly. That&apos;s a real, meaningful set of protections,
+            your password, or one derived from your recovery code, which can reset it. We never receive your
+            password or your recovery code themselves; we store only a one-way hash of the tokens derived from
+            them. That&apos;s a real, meaningful set of protections,
             but it is a different, weaker guarantee than &quot;even if someone got into the database, they couldn&apos;t
             read anything,&quot; which is only true for the copy that stays in your browser. If that distinction
             matters to you, don&apos;t turn on sync. The app is fully functional locally without it.
