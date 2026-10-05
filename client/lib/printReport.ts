@@ -41,6 +41,17 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
   const toUSDForMonth = makeToUSDForMonth(data);
   const BL = { NEEDS: "Needs", WANTS: "Wants", SAVINGS: "Savings", INCOME: "Income", TRANSFER: "Transfer" } as const;
 
+  // SEC-02: this page is same-origin HTML built by interpolation, and stored
+  // data isn't trustworthy -- an imported file can put markup in any field,
+  // including ones typed as dates or numbers. So every interpolated value that
+  // isn't a literal goes through one of these. money() is the exception: it
+  // can only ever produce "$", digits, separators or "NaN".
+  const h = (v: unknown) => escapeHtml(v);
+  // A stored date is YYYY-MM-DD. Anything else is shown as escaped text rather than reshaped.
+  const day = (iso: unknown) => (typeof iso === "string" && /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso.split("-").reverse().join("/") : h(iso));
+  // A rate is a number. A stored value that isn't one shows as "—", never as markup.
+  const pct = (v: unknown) => (v !== "" && v !== null && Number.isFinite(Number(v)) ? `${Number(v)}%` : "—");
+
   const ledgerTx = options.detailed
     // Phase 2.6.3b: a soft-deleted transaction must not appear in the
     // exported ledger.
@@ -57,9 +68,9 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
   const ledgerTotal = ledgerTx.filter((t) => t.bucket !== "INCOME" && t.bucket !== "TRANSFER").reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, cycleKeyForISO(t.date, startDay)), 0);
   const ledgerRows = ledgerTx.map((t) => `
     <tr>
-      <td>${t.date.split("-").reverse().join("/")}</td>
+      <td>${day(t.date)}</td>
       <td>${escapeHtml(t.description)}</td>
-      <td>${BL[t.bucket]}</td>
+      <td>${h(BL[t.bucket] ?? t.bucket)}</td>
       <td>${t.category ? escapeHtml(categoryLabel(t.category, data.customCategories)) : "—"}</td>
       <td class="num">${money(toUSDForMonth(t.amount, t.currency, cycleKeyForISO(t.date, startDay)))}</td>
     </tr>`).join("");
@@ -72,15 +83,15 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
       <td>${escapeHtml(g.emoji ?? "")} ${escapeHtml(g.name)}${g.paused ? ' <span class="tag">paused</span>' : ""}</td>
       <td class="num">${money(toUSD(g.currentAmount, g.currency))}</td>
       <td class="num">${money(toUSD(g.targetAmount, g.currency))}</td>
-      <td class="num">${g.projection.pctComplete}%</td>
-      <td class="num">${g.projection.targetDateDisplay}</td>
+      <td class="num">${h(g.projection.pctComplete)}%</td>
+      <td class="num">${h(g.projection.targetDateDisplay)}</td>
     </tr>`).join("");
 
   const debtRows = data.debts.map((d) => `
     <tr>
       <td>${escapeHtml(d.name)}${d.paidOffAt ? ' <span class="tag">paid off</span>' : ""}</td>
       <td class="num">${money(toUSD(derivedDebtBalance(d, data.transactions), d.currency))}</td>
-      <td class="num">${d.apr}%</td>
+      <td class="num">${pct(d.apr)}</td>
       <td class="num">${money(toUSD(d.minPayment, d.currency))}/mo</td>
     </tr>`).join("");
 
@@ -104,9 +115,9 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
     return `
     <tr>
       <td>${escapeHtml(r.emoji ?? "")} ${escapeHtml(r.name)}${tag}</td>
-      <td>${BL[r.bucket]}</td>
+      <td>${h(BL[r.bucket] ?? r.bucket)}</td>
       <td>${r.category ? escapeHtml(categoryLabel(r.category, data.customCategories)) : "—"}</td>
-      <td>${FREQ_LABEL[r.frequency]}</td>
+      <td>${h(FREQ_LABEL[r.frequency] ?? r.frequency)}</td>
       <td class="num">${money(toUSD(r.amount, r.currency))}</td>
     </tr>`;
   }).join("");
@@ -137,38 +148,38 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
 </head>
 <body>
   <h1>ESSA Financial Report</h1>
-  <p class="sub">${escapeHtml(userName)} · Generated ${generatedAt}</p>
+  <p class="sub">${escapeHtml(userName)} · Generated ${h(generatedAt)}</p>
 
   <h2>Financial health</h2>
   <div class="grid">
-    <div class="card"><div class="label">Score</div><div class="value">${dash.health.score} / 100 &middot; ${escapeHtml(dash.health.grade)}</div></div>
+    <div class="card"><div class="label">Score</div><div class="value">${h(dash.health.score)} / 100 &middot; ${escapeHtml(dash.health.grade)}</div></div>
     <div class="card"><div class="label">Net worth</div><div class="value">${money(dash.netWorth.total)} &middot; ${escapeHtml(dash.netWorth.tier)}</div></div>
   </div>
 
-  <h2>This ${periodNoun(startDay)}${startDay > 1 ? ` &middot; ${cycleLabelLong(reportPeriod, startDay)}` : ""}</h2>
+  <h2>This ${h(periodNoun(startDay))}${startDay > 1 ? ` &middot; ${h(cycleLabelLong(reportPeriod, startDay))}` : ""}</h2>
   <div class="grid">
     <div class="card"><div class="label">Income</div><div class="value">${money(dash.month.income)}</div></div>
     <div class="card"><div class="label">Spent</div><div class="value">${money(dash.month.totalSpend)}</div></div>
-    <div class="card"><div class="label">Saved</div><div class="value">${money(dash.month.income - dash.month.totalSpend)} &middot; ${dash.month.savingsRatePct.toFixed(1)}%</div></div>
+    <div class="card"><div class="label">Saved</div><div class="value">${money(dash.month.income - dash.month.totalSpend)} &middot; ${h(Number(dash.month.savingsRatePct).toFixed(1))}%</div></div>
   </div>
 
   <h2>Budget &middot; ${escapeHtml(ruleLabel)}</h2>
   <table>
     <tr><th>Bucket</th><th class="num">Target %</th><th class="num">Target $</th><th class="num">Spent</th></tr>
-    <tr><td>Needs</td><td class="num">${dash.budgetTargetPct.needs}%</td><td class="num">${money(dash.budgetTargets.needs)}</td><td class="num">${money(dash.month.needsSpend)}</td></tr>
-    <tr><td>Wants</td><td class="num">${dash.budgetTargetPct.wants}%</td><td class="num">${money(dash.budgetTargets.wants)}</td><td class="num">${money(dash.month.wantsSpend)}</td></tr>
-    <tr><td>Savings</td><td class="num">${dash.budgetTargetPct.savings}%</td><td class="num">${money(dash.budgetTargets.savings)}</td><td class="num">${money(dash.month.savingsContrib)}</td></tr>
+    <tr><td>Needs</td><td class="num">${h(dash.budgetTargetPct.needs)}%</td><td class="num">${money(dash.budgetTargets.needs)}</td><td class="num">${money(dash.month.needsSpend)}</td></tr>
+    <tr><td>Wants</td><td class="num">${h(dash.budgetTargetPct.wants)}%</td><td class="num">${money(dash.budgetTargets.wants)}</td><td class="num">${money(dash.month.wantsSpend)}</td></tr>
+    <tr><td>Savings</td><td class="num">${h(dash.budgetTargetPct.savings)}%</td><td class="num">${money(dash.budgetTargets.savings)}</td><td class="num">${money(dash.month.savingsContrib)}</td></tr>
   </table>
 
   <h2>Safety net</h2>
   <div class="grid">
     <div class="card"><div class="label">Balance</div><div class="value">${money(dash.emergencyFund.balance)} / ${money(dash.emergencyFund.targetAmount)}</div></div>
-    <div class="card"><div class="label">Funded</div><div class="value">${dash.emergencyFund.pctFunded}%</div></div>
-    <div class="card"><div class="label">Coverage</div><div class="value">${dash.emergencyFund.coverageMonths} mo of needs</div></div>
+    <div class="card"><div class="label">Funded</div><div class="value">${h(dash.emergencyFund.pctFunded)}%</div></div>
+    <div class="card"><div class="label">Coverage</div><div class="value">${h(dash.emergencyFund.coverageMonths)} mo of needs</div></div>
   </div>
 
   ${data.debts.length > 0 ? `
-  <h2>Debts &middot; ${money(dash.debt.totalBalance)} owed${dash.debt.plan?.feasible && dash.debt.plan.debtFreeDateDisplay ? ` &middot; debt-free ${dash.debt.plan.debtFreeDateDisplay}` : ""}</h2>
+  <h2>Debts &middot; ${money(dash.debt.totalBalance)} owed${dash.debt.plan?.feasible && dash.debt.plan.debtFreeDateDisplay ? ` &middot; debt-free ${h(dash.debt.plan.debtFreeDateDisplay)}` : ""}</h2>
   <table>
     <tr><th>Name</th><th class="num">Balance</th><th class="num">APR</th><th class="num">Min payment</th></tr>
     ${debtRows}
@@ -200,6 +211,7 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
 </html>`;
 }
 
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
+function escapeHtml(v: unknown): string {
+  // Accepts anything: a field typed as text can hold a number (or worse) from an imported file.
+  return (v == null ? "" : String(v)).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 }
