@@ -1,6 +1,6 @@
 "use client";
 
-import { toB64 as b64, fromB64 as unb64, hasActiveKey } from "./crypto";
+import { toB64 as b64, fromB64 as unb64, hasActiveKey, clearEncryptionKey, clearSyncToken, getActiveDek, sealWithDek, openWithDek } from "./crypto";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ESSA — local auth layer (localStorage, no backend required)
@@ -23,14 +23,49 @@ export interface StoredUser {
   wrappedDekPassword?: import("./crypto").Envelope;
   wrappedDekRecovery?: import("./crypto").Envelope;
   /**
-   * A one-way token derived from the current recovery code (deriveRecoveryToken),
-   * persisted locally so it can be sent with a future sync push (registering it
-   * server-side) and, after a password reset, used as proof of the *previous*
-   * recovery code to re-link sync without ever sending the code itself. Safe to
-   * persist — like pwHash, it's a one-way derivation, not the code. Absent on
-   * accounts created before this existed.
+   * The token derived from the current recovery code (deriveRecoveryToken),
+   * ENCRYPTED under this account's data key (sealWithDek). SEC-01 / FB-1b:
+   * this is not a verifier like pwHash -- it's the exact secret the server
+   * checks at /relink, so whoever reads it can relink the account to tokens of
+   * their own. It used to be stored in plain text, readable after sign-out.
+   * Sent with a push so the server can register it on first sync; relink never
+   * reads it (recovery derives its proof from the code the user types). It can
+   * be opened only while the account is unlocked. Absent on devices that
+   * joined by signing in, and on accounts older than recovery codes.
+   */
+  recoveryTokenEnc?: string;
+  /**
+   * LEGACY: the same token in plain text, as devices stored it before FB-1b.
+   * Never written any more. Read only to migrate it into recoveryTokenEnc on
+   * the device's next unlock, and deleted in the same write.
    */
   recoveryTokenForSync?: string;
+}
+
+/** A record without the legacy plaintext token. Every writer of the token goes through this. */
+function withoutLegacyToken(u: StoredUser): StoredUser {
+  const { recoveryTokenForSync: _legacy, ...rest } = u;
+  return rest;
+}
+
+/**
+ * Moves a pre-FB-1b plaintext token into recoveryTokenEnc, under `dek` (this
+ * account's own data key, already unlocked by the caller). The plaintext goes
+ * only after the sealed copy has been opened again and matched, in the same
+ * write that stores it. Any failure leaves the record exactly as it was, so
+ * the token is never lost and the next unlock tries again.
+ */
+async function migrateLegacyRecoveryToken(userId: string, dek: Uint8Array): Promise<void> {
+  const user = getUsers().find((u) => u.id === userId);
+  const legacy = user?.recoveryTokenForSync;
+  if (!user || !legacy) return;
+  try {
+    const sealed = await sealWithDek(dek, legacy);
+    if ((await openWithDek(dek, sealed)) !== legacy) return;
+    putUsers(getUsers().map((u) => (u.id === userId ? withoutLegacyToken({ ...u, recoveryTokenEnc: sealed }) : u)));
+  } catch {
+    // Left as it was: the plaintext still works, and the next unlock retries.
+  }
 }
 
 export interface Session {
@@ -121,14 +156,14 @@ export async function signUp(
   const id = crypto.randomUUID();
   const normalizedEmail = email.toLowerCase().trim();
   const { createEnvelopes, deriveRecoveryToken } = await import("./crypto");
-  const [{ wrappedPassword, wrappedRecovery, recoveryCode }, pwHash] = await Promise.all([
+  const [{ wrappedPassword, wrappedRecovery, recoveryCode, dek }, pwHash] = await Promise.all([
     createEnvelopes(password, id),
     hashPassword(password),
   ]);
-  // Persisted so a future sync push can register it server-side (see
-  // syncService.ts) — safe to store since it's a one-way derivation of the
-  // recovery code, not the code itself.
-  const recoveryTokenForSync = await deriveRecoveryToken(recoveryCode, normalizedEmail);
+  // Kept so a future sync push can register it server-side (see
+  // syncService.ts). Sealed under the new account's own data key, because
+  // it's the secret /relink checks, not a harmless derivation (SEC-01).
+  const recoveryTokenEnc = await sealWithDek(dek, await deriveRecoveryToken(recoveryCode, normalizedEmail));
 
   putUsers([...users, {
     id,
@@ -139,7 +174,7 @@ export async function signUp(
     isAdmin:   users.length === 0, // first account registered is admin
     wrappedDekPassword: wrappedPassword,
     wrappedDekRecovery: wrappedRecovery,
-    recoveryTokenForSync,
+    recoveryTokenEnc,
   }]);
   return { ok: true, recoveryCode };
 }
@@ -311,6 +346,9 @@ export async function signIn(
   const session: Session = { userId: user.id, email: user.email, name: user.name };
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
   activateSessionKey(dek);
+  // FB-1b: this device's first unlock since the change -- move any plaintext
+  // recovery token into its encrypted form while the key is here to do it.
+  await migrateLegacyRecoveryToken(user.id, dek);
   return { ok: true, session, recoveryCode };
 }
 
@@ -333,9 +371,9 @@ export async function regenerateRecoveryCode(userId: string): Promise<{ ok: true
   if (!user) return { ok: false, error: "Account not found." };
 
   const { wrappedRecovery, recoveryCode } = await rewrapRecoveryOnly(dek, userId);
-  const recoveryTokenForSync = await deriveRecoveryToken(recoveryCode, user.email);
+  const recoveryTokenEnc = await sealWithDek(dek, await deriveRecoveryToken(recoveryCode, user.email));
   putUsers(getUsers().map((u) => (u.id === userId
-    ? { ...u, wrappedDekRecovery: wrappedRecovery, recoveryTokenForSync }
+    ? withoutLegacyToken({ ...u, wrappedDekRecovery: wrappedRecovery, recoveryTokenEnc })
     : u)));
   return { ok: true, recoveryCode };
 }
@@ -407,7 +445,7 @@ async function recoverFromSync(
     isAdmin:   existing?.isAdmin ?? users.length === 0,
     wrappedDekPassword: wrappedPassword,
     wrappedDekRecovery: wrappedRecovery,
-    recoveryTokenForSync: newRecoveryToken,
+    recoveryTokenEnc: await sealWithDek(dek, newRecoveryToken),
   };
   // 2.4.37: `existingId` means a local record for this email already exists
   // on this device (its own envelope just failed to unwrap with the typed
@@ -500,8 +538,9 @@ export async function recoverAccount(
     return { ok: false, error: `Your password wasn't reset — couldn't verify it with the server (${relinked.error}). Check your connection and try again.` };
   }
 
+  const recoveryTokenEnc = await sealWithDek(dek, newRecoveryTokenForSync);
   putUsers(getUsers().map((u) => (u.id === user.id
-    ? { ...u, pwHash: newPwHash, wrappedDekPassword: wrappedPassword, wrappedDekRecovery: wrappedRecovery, recoveryTokenForSync: newRecoveryTokenForSync }
+    ? withoutLegacyToken({ ...u, pwHash: newPwHash, wrappedDekPassword: wrappedPassword, wrappedDekRecovery: wrappedRecovery, recoveryTokenEnc })
     : u)));
 
   const session: Session = { userId: user.id, email: user.email, name: user.name };
@@ -532,17 +571,35 @@ export function hasValidSession(): boolean {
 
 export function signOut(): void {
   localStorage.removeItem(SESSION_KEY);
+  // TEST-01 / FB-1b: cleared before this returns. They used to be cleared in
+  // a dynamic import's .then(), a later microtask -- and the data key is what
+  // opens the stored recovery token, so it mustn't outlive the sign-out.
   try {
-    import("./crypto").then(({ clearEncryptionKey, clearSyncToken }) => {
-      clearEncryptionKey();
-      clearSyncToken();
-    });
-  } catch { /* ignore */ }
+    clearEncryptionKey();
+    clearSyncToken();
+  } catch { /* storage unavailable: nothing there to clear */ }
 }
 
-/** The current recovery-derived sync token for this email, if one's been generated (see recoveryTokenForSync). Included on every push so the server can register it (see syncService.ts). */
-export function getRecoveryTokenForSync(email: string): string | undefined {
-  return getUsers().find((u) => u.email === email.toLowerCase().trim())?.recoveryTokenForSync;
+/**
+ * The current recovery-derived token for this email, for a push to register
+ * server-side (see syncService.ts). Readable only in an unlocked session that
+ * belongs to this account: otherwise undefined, by design (SEC-01). A device
+ * still holding the pre-FB-1b plaintext migrates it here, and gets the token
+ * back whether or not the migration succeeds -- it's never lost.
+ */
+export async function getRecoveryTokenForSync(email: string): Promise<string | undefined> {
+  const user = getUsers().find((u) => u.email === email.toLowerCase().trim());
+  const dek = getActiveDek();
+  // The active key must be THIS account's: a device can hold several local
+  // accounts, and another's key must never seal or open this one's token.
+  if (!user || !dek || getSession()?.userId !== user.id) return undefined;
+  if (user.recoveryTokenForSync) {
+    const legacy = user.recoveryTokenForSync;
+    await migrateLegacyRecoveryToken(user.id, dek);
+    return legacy;
+  }
+  if (!user.recoveryTokenEnc) return undefined;
+  return (await openWithDek(dek, user.recoveryTokenEnc)) ?? undefined;
 }
 
 export function updateProfile(userId: string, name: string): void {

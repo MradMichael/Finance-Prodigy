@@ -42,7 +42,7 @@ beforeEach(() => {
   sessionStorage.clear();
   vi.restoreAllMocks();
   vi.mocked(getSyncToken).mockReset().mockReturnValue("token-abc");
-  vi.mocked(getRecoveryTokenForSync).mockReset().mockReturnValue(undefined);
+  vi.mocked(getRecoveryTokenForSync).mockReset().mockResolvedValue(undefined); // async since FB-1b: it decrypts
 });
 
 describe("pushToServer", () => {
@@ -56,7 +56,7 @@ describe("pushToServer", () => {
   });
 
   it("sends the token and (when present) the recovery token in the request body", async () => {
-    vi.mocked(getRecoveryTokenForSync).mockReturnValue("recovery-token-xyz");
+    vi.mocked(getRecoveryTokenForSync).mockResolvedValue("recovery-token-xyz");
     const fetchSpy = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ syncedAt: "2026-01-01T00:00:00.000Z" }) });
     vi.stubGlobal("fetch", fetchSpy);
     await pushToServer("a@test.com", DEFAULT_DATA);
