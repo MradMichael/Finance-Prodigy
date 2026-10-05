@@ -93,7 +93,7 @@ export async function pushToServer(email: string, data: LocalFinancials): Promis
   // exists locally) so a future password reset can relink sync via
   // relinkSync below instead of hitting the old "server rejects every push
   // after a reset" limitation.
-  const recoveryToken = getRecoveryTokenForSync(email);
+  const recoveryToken = await getRecoveryTokenForSync(email);
   // 2.4.38: the last syncedAt this device actually observed (from its own
   // last successful push or pull) -- lets the server tell "I'm still
   // building on what I last saw" apart from "something else has moved the

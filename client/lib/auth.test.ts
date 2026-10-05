@@ -375,14 +375,18 @@ describe("recoverAccount", () => {
   it("rotates the persisted recovery-sync token on every successful recovery (for the /relink fix)", async () => {
     const reg = await signUp("a@test.com", "Alice", "password12345");
     if (!reg.ok) throw new Error("setup failed");
-    const beforeToken = getRecoveryTokenForSync("a@test.com");
+    // FB-1b: the token is stored encrypted and is readable only in an unlocked
+    // session, so this reads it after signing in -- it used to read the
+    // plaintext straight after sign-up, the very exposure SEC-01 closed.
+    await signIn("a@test.com", "password12345");
+    const beforeToken = await getRecoveryTokenForSync("a@test.com");
     expect(beforeToken).toBeTruthy();
     vi.mocked(relinkSync).mockResolvedValue({ ok: true }); // required now, not fire-and-forget
 
     const result = await recoverAccount("a@test.com", reg.recoveryCode, "brandnewpassword");
     expect(result.ok).toBe(true);
 
-    const afterToken = getRecoveryTokenForSync("a@test.com");
+    const afterToken = await getRecoveryTokenForSync("a@test.com");
     expect(afterToken).toBeTruthy();
     expect(afterToken).not.toBe(beforeToken);
   });
@@ -431,7 +435,7 @@ describe("recoverAccount", () => {
     expect(realCode).toBeTruthy();
     // Confirms the precondition this test actually exercises: migration
     // never sets the local cache the OLD gate depended on.
-    expect(getRecoveryTokenForSync("legacy@test.com")).toBeUndefined();
+    expect(await getRecoveryTokenForSync("legacy@test.com")).toBeUndefined();
 
     vi.mocked(relinkSync).mockResolvedValue({ ok: true });
     const result = await recoverAccount("legacy@test.com", realCode, "brandnewpassword1");

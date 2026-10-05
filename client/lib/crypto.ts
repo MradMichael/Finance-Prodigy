@@ -150,6 +150,34 @@ export async function unwrapWithRecoveryCode(code: string, userId: string, wrapp
   return unwrapDek(wrapped, kek);
 }
 
+/**
+ * FB-1b (SEC-01): seals a small secret under a given data key -- the same
+ * AES-GCM envelope encryptJSON writes, but with the key passed in instead of
+ * read from this tab's session. signUp needs that: it holds the new account's
+ * key before any session exists. Used for the recovery token, which must never
+ * sit in localStorage in plain text.
+ */
+export async function sealWithDek(dek: Uint8Array, plaintext: string): Promise<string> {
+  const key = await crypto.subtle.importKey("raw", dek as BufferSource, ALGO, false, ["encrypt"]);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const buf = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(plaintext));
+  const env: Envelope = { v: 1, iv: toB64(iv), ct: toB64(new Uint8Array(buf)) };
+  return JSON.stringify(env);
+}
+
+/** sealWithDek's reverse. Null when it can't be opened -- a different key or a damaged envelope -- never a throw. */
+export async function openWithDek(dek: Uint8Array, sealed: string): Promise<string | null> {
+  try {
+    const env = JSON.parse(sealed) as Partial<Envelope>;
+    if (env.v !== 1 || !env.iv || !env.ct) return null;
+    const key = await crypto.subtle.importKey("raw", dek as BufferSource, ALGO, false, ["decrypt"]);
+    const buf = await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromB64(env.iv) as BufferSource }, key, fromB64(env.ct) as BufferSource);
+    return new TextDecoder().decode(buf);
+  } catch {
+    return null;
+  }
+}
+
 /** Activates a DEK as this session's active encryption key. Call after unwrapping it by whichever path. */
 export function activateSessionKey(dek: Uint8Array): void {
   sessionStorage.setItem(KEY_STORE, toB64(dek));
