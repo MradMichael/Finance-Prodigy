@@ -1,6 +1,7 @@
 /**
  * ESSA — Database seed
- * Run: npx prisma db seed
+ * Run: ESSA_DB_ROLE=local npx prisma db seed   (or ESSA_DB_ROLE=test)
+ * Refuses any database not explicitly marked local or test -- see seedGuard.ts.
  *
  * Seeds:
  *  1. dim_date     — master calendar 2024-01-01 → 2032-12-31
@@ -8,11 +9,21 @@
  *  3. dim_user     — demo user + two accounts
  */
 import { PrismaClient } from "@prisma/client";
+import { checkSeedTarget } from "./seedGuard";
 
 /// NEEDS | WANTS | SAVINGS | INCOME — see DimCategory.bucket (String, not a native DB enum — kept as-is from the original schema)
 type BudgetBucket = "NEEDS" | "WANTS" | "SAVINGS" | "INCOME";
 /// CHECKING | SAVINGS | CREDIT_CARD | CASH | INVESTMENT — see DimAccount.type
 type AccountType = "CHECKING" | "SAVINGS" | "CREDIT_CARD" | "CASH" | "INVESTMENT";
+
+// CODE-03: decided before a client exists. Importing @prisma/client has already
+// loaded server/.env into process.env (2.4.156), so this sees exactly what the
+// client would connect to -- and a refusal never opens a connection at all.
+const verdict = checkSeedTarget(process.env);
+if (!verdict.ok) {
+  console.error(`Refusing to seed: ${verdict.reason}`);
+  process.exit(1);
+}
 
 const prisma = new PrismaClient();
 
