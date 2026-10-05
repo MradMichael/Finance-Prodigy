@@ -72,7 +72,7 @@ describe("the print report escapes what it can't trust (SEC-02, TEST-01)", () =>
     expect(html).toContain("<td>12345</td>");
   });
 
-  it("an unknown bucket or frequency from an imported file shows as escaped text, not \"undefined\"", () => {
+  it("an unknown bucket from an imported file shows as escaped text, not \"undefined\"; an unknown frequency drops the item", () => {
     const html = report({
       ...BASE,
       transactions: [{ ...BASE.transactions[0], bucket: `<b>odd</b>` as unknown as "NEEDS" }],
@@ -80,5 +80,12 @@ describe("the print report escapes what it can't trust (SEC-02, TEST-01)", () =>
     } as LocalFinancials);
     expect(html).not.toMatch(/<b>/);
     expect(html).not.toContain(">undefined<");
+    // The bucket: shown, escaped -- not silently dropped (this is what fails if the fallback goes).
+    expect(html).toContain("&lt;b&gt;odd&lt;/b&gt;");
+    // The frequency: an item with an unknown one has no positive monthly
+    // equivalent, so the report leaves the item out altogether (activeRecurring).
+    // Asserted as such, so this half can't pass by pretending to check a row
+    // that was never rendered. The FREQ_LABEL fallback stays as defence only.
+    expect(html).not.toContain("often");
   });
 });
