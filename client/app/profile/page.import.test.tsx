@@ -20,7 +20,7 @@ vi.mock("../../lib/auth", () => ({
 vi.mock("../../lib/syncService", () => ({
   pushToServer: vi.fn(), pullFromServer: vi.fn(), getLastSyncTime: () => null,
   confirmOverwriteIfNeeded: vi.fn(async () => true), mergeAndPush: vi.fn(), buildMergeNoticeText: () => ({ text: "" }),
-  pushRecoveryUpdate: vi.fn(), applyBackupChoice: vi.fn(),
+  applyBackupChoice: vi.fn(),
 }));
 vi.mock("../../lib/analytics", () => ({ isAnalyticsOptedIn: () => false, setAnalyticsOptIn: vi.fn() }));
 

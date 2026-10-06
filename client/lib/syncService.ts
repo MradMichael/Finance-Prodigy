@@ -156,17 +156,53 @@ export async function applyBackupChoice(
   return { data: next, result: null };
 }
 
+export type ServerCopyProbe =
+  | { kind: "copy"; hasRecoveryCode: boolean }
+  | { kind: "none" }
+  | { kind: "wrong-password" }
+  | { kind: "unregistered" }
+  | { kind: "unreachable" };
+
 /**
- * The push that follows regenerating a recovery code, so the new code works
- * from another device (audit 2.4.153). Gated like every other automatic
- * upload: with backup off or undecided it does nothing, which also means
- * the new recovery code only works on this device -- the honest consequence
- * of not keeping a server copy, and one the backup choice must state.
+ * What the server holds for this account, without changing anything
+ * (FB-1b2). Regenerating a recovery code asks this before touching
+ * anything, so it knows whether a server copy holds a code that must be
+ * replaced through /relink.
+ *
+ * It's /pull with the bearer token, read for its status only. The body is
+ * discarded, and unlike pullFromServer it doesn't record a last-sync time:
+ * that time is 2.4.38's stale-push baseline, and only a pull whose data was
+ * actually taken may move it.
+ *
+ *   copy           200: a copy exists and this device's password token is
+ *                  the one it holds (sync.ts:255); hasRecoveryCode says
+ *                  whether any recovery code is registered for it
+ *   none           404 from the API itself: no copy at all
+ *   wrong-password 401: a copy whose password token isn't this device's
+ *   unregistered   401: a row with no password token at all (pre-token)
+ *   unreachable    anything else, including a platform 404 page
  */
-export async function pushRecoveryUpdate(email: string, data: LocalFinancials): Promise<SyncResult | { ok: false; skipped: true }> {
-  const { syncAllowed } = await import("./localData");
-  if (!syncAllowed(data)) return { ok: false, skipped: true };
-  return pushToServer(email, data);
+export async function probeServerCopy(email: string): Promise<ServerCopyProbe> {
+  const token = getSyncToken();
+  if (!token) return { kind: "unreachable" };
+  try {
+    const res = await fetch("/api/sync/pull", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+      signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
+    });
+    const json = await parseJsonSafe(res);
+    const apiError = json !== null && typeof json.error === "string" ? json.error : null;
+    if (res.status === 404 && apiError !== null) return { kind: "none" };
+    if (res.status === 401 && apiError !== null) {
+      return apiError.includes("no sync credentials registered") ? { kind: "unregistered" } : { kind: "wrong-password" };
+    }
+    if (res.ok && json !== null && typeof json.syncedAt === "string") return { kind: "copy", hasRecoveryCode: json.hasRecoveryCode === true };
+    return { kind: "unreachable" };
+  } catch {
+    return { kind: "unreachable" };
+  }
 }
 
 /**

@@ -11,7 +11,8 @@ import type { Session } from "../../lib/auth";
 import { loadData, saveData, activeTransactions, syncAllowed, resetFinancials, saveFailureKind, SAVE_FAILURE_REASON } from "../../lib/localData";
 import { computeDashboard } from "../../lib/computeDashboard";
 import { buildReportHtml } from "../../lib/printReport";
-import { pushToServer, pullFromServer, getLastSyncTime, confirmOverwriteIfNeeded, mergeAndPush, buildMergeNoticeText, pushRecoveryUpdate, applyBackupChoice, type BackupChoice } from "../../lib/syncService";
+import { pushToServer, pullFromServer, getLastSyncTime, confirmOverwriteIfNeeded, mergeAndPush, buildMergeNoticeText, applyBackupChoice, type BackupChoice } from "../../lib/syncService";
+import { REGENERATE } from "../../lib/recoveryMessages";
 import type { LocalFinancials } from "../../lib/localData";
 import { isAnalyticsOptedIn, setAnalyticsOptIn } from "../../lib/analytics";
 import { useTheme, useThemeControl } from "../../contexts/ThemeContext";
@@ -47,6 +48,7 @@ export default function ProfilePage() {
   const [importing,     setImporting]     = useState(false);
   const [importMsg,     setImportMsg]     = useState("");
   const [newRecoveryCode, setNewRecoveryCode] = useState<string | null>(null);
+  const [newRecoveryNote, setNewRecoveryNote] = useState<string | undefined>(undefined);
   const [recoveryMsg,     setRecoveryMsg]     = useState("");
   const [regenerating,    setRegenerating]    = useState(false);
   const [lastSync,      setLastSync]      = useState<string | null>(null);
@@ -365,25 +367,23 @@ export default function ProfilePage() {
     }
   }
 
+  /**
+   * FB-1b2 (SEC-09): regenerate does the server's half itself -- through
+   * /relink, before anything is kept -- and refuses rather than return a code
+   * the server doesn't know. So a refusal shows its reason and no code, and
+   * nothing is pushed afterwards. (The push that used to follow never
+   * reached the server's recovery hash: a push keeps the registered one.)
+   */
   async function handleRegenerateRecovery() {
     if (!session) return;
     setRecoveryMsg("");
-    if (!confirm("Generate a new recovery code? Your old recovery code will stop working immediately.")) return;
+    if (!confirm(REGENERATE.confirm)) return;
     setRegenerating(true);
     try {
       const result = await regenerateRecoveryCode(session.userId);
       if (!result.ok) { setRecoveryMsg(result.error); return; }
+      setNewRecoveryNote(result.note);
       setNewRecoveryCode(result.recoveryCode);
-      // Regenerating only updates this device's local record — the server
-      // still has whatever recovery token the last push carried, which is
-      // now stale. Push immediately so the new code actually works from
-      // another device right away, instead of silently waiting on the next
-      // unrelated data edit to carry it up (the gap that made an already-
-      // regenerated code fail to recover from a second device).
-      const data = await loadData(session.userId);
-      // Gated (audit 2.4.153): with backup off this uploads nothing, and the
-      // new code then works on this device only.
-      await pushRecoveryUpdate(session.email, data);
     } finally {
       setRegenerating(false);
     }
@@ -495,7 +495,7 @@ export default function ProfilePage() {
           </h2>
           <p className="text-xs" style={{ color: T.mute }}>
             Your recovery code is shown once and never stored, so it can&apos;t be displayed again. Lost it? Generate a
-            new one now, while you know you&apos;re safely signed in. The old code stops working immediately.
+            new one now, while you know you&apos;re safely signed in. Once the new code is accepted, your old one stops working.
           </p>
           <button
             onClick={handleRegenerateRecovery}
@@ -816,7 +816,7 @@ export default function ProfilePage() {
       </div>
 
       {newRecoveryCode && (
-        <RecoveryCodeModal code={newRecoveryCode} onContinue={() => setNewRecoveryCode(null)} />
+        <RecoveryCodeModal code={newRecoveryCode} note={newRecoveryNote} onContinue={() => { setNewRecoveryCode(null); setNewRecoveryNote(undefined); }} />
       )}
     </div>
   );

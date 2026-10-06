@@ -65,6 +65,25 @@ describe("a registered account cannot be overwritten without its token", () => {
   });
 });
 
+// FB-1b2 (SEC-09) rests on this: a push never REPLACES a registered recovery
+// hash. That's why the client's old "push after regenerating" left the old
+// code working, and why regenerating now goes through /relink instead.
+describe("a push keeps an already-registered recovery code", () => {
+  it("a push carrying a DIFFERENT recovery token leaves the registered hash as it was", async () => {
+    store.seedUserSync({ email: A, authTokenHash: hash("token-of-A"), recoveryTokenHash: hash("old-recovery"), dataJson: storedData() });
+    const res = await push({ email: A, token: "token-of-A", recoveryToken: "new-recovery", data: { income: 3 } });
+    expect(res.status).toBe(200);
+    expect(store.userSync.get(A)!.recoveryTokenHash).toBe(hash("old-recovery"));
+  });
+
+  it("the control: a row with NO recovery hash takes the push's", async () => {
+    store.seedUserSync({ email: A, authTokenHash: hash("token-of-A"), recoveryTokenHash: null, dataJson: storedData() });
+    const res = await push({ email: A, token: "token-of-A", recoveryToken: "new-recovery", data: { income: 3 } });
+    expect(res.status).toBe(200);
+    expect(store.userSync.get(A)!.recoveryTokenHash).toBe(hash("new-recovery"));
+  });
+});
+
 describe("PINNED, NOT ACCEPTED (audit 2.4.160): first-push registration", () => {
   it("CURRENT BEHAVIOUR: a row with no registered token hash is claimed by ANY token", async () => {
     store.seedUserSync({ email: A, authTokenHash: null, dataJson: storedData() });

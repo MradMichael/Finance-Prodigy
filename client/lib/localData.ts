@@ -1217,9 +1217,9 @@ export function resetFinancials(d: Pick<LocalFinancials, "syncChoice">): LocalFi
 /**
  * May this account upload automatically? The ONE decision behind every
  * automatic upload (audit 2.4.153): autoSync -- which the edit, snapshot,
- * auto-purge and conflict-merge paths all funnel through -- and the
- * recovery-code push. True only on an explicit "on"; undecided is paused.
- * An explicit Push from Profile is the owner's own act and is not gated.
+ * auto-purge and conflict-merge paths all funnel through. True only on an
+ * explicit "on"; undecided is paused. An explicit Push from Profile is the
+ * owner's own act and is not gated.
  */
 export function syncAllowed(d: Pick<LocalFinancials, "syncChoice">): boolean {
   return d.syncChoice?.enabled === true;

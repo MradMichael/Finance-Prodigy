@@ -28,10 +28,12 @@ export interface StoredUser {
    * this is not a verifier like pwHash -- it's the exact secret the server
    * checks at /relink, so whoever reads it can relink the account to tokens of
    * their own. It used to be stored in plain text, readable after sign-out.
-   * Sent with a push so the server can register it on first sync; relink never
-   * reads it (recovery derives its proof from the code the user types). It can
-   * be opened only while the account is unlocked. Absent on devices that
-   * joined by signing in, and on accounts older than recovery codes.
+   * Sent with a push so the server can register it on first sync. Since
+   * FB-1b2 it's also the proof regenerateRecoveryCode gives /relink to replace
+   * the server's code with a new one. Recovery itself never reads it: it
+   * derives its proof from the code the user types. It can be opened only
+   * while the account is unlocked. Absent on devices that joined by signing
+   * in, and on accounts older than recovery codes.
    */
   recoveryTokenEnc?: string;
   /**
@@ -362,19 +364,69 @@ export async function signIn(
  * original code cannot be recovered or displayed again by design — it was
  * never stored anywhere, only used once to derive a wrapping key — so this
  * is the only way back for someone who's lost it, not a workaround for one.
+ *
+ * FB-1b2 (SEC-09): SERVER FIRST, AND THE CODE IS SHOWN ONLY ON SUCCESS.
+ * This used to re-wrap locally and leave Profile to push, and a push keeps an
+ * already-registered recovery hash (server/src/routes/sync.ts:177). So with
+ * backup on, the old code kept passing /relink and the new one, the one the
+ * owner had just saved, failed. Now the new code exists in memory only until:
+ *   - a server copy holds a code: /relink's existing old-token branch has
+ *     replaced it (sync.ts:309-318), with this device's stored token as the
+ *     proof and the password token the probe just proved current; or
+ *   - there's no server copy for the code to matter to.
+ * Every other outcome refuses, writes nothing anywhere, and says why. Relink
+ * is never called without a server row, so its fresh-registration branch
+ * (2.4.160) is never reached from here.
+ *
+ * It ALWAYS asks the server, whatever the recorded backup state (owner,
+ * 2026-10-06). This device can never know that nothing exists: another
+ * device can create a copy at any time. It's a rare, explicit action, unlike
+ * COPY-11's background request. The wording is in recoveryMessages.ts.
  */
-export async function regenerateRecoveryCode(userId: string): Promise<{ ok: true; recoveryCode: string } | { ok: false; error: string }> {
-  const { getActiveDek, rewrapRecoveryOnly, deriveRecoveryToken } = await import("./crypto");
+export async function regenerateRecoveryCode(
+  userId: string,
+): Promise<{ ok: true; recoveryCode: string; note?: string } | { ok: false; error: string }> {
+  const { getActiveDek, rewrapRecoveryOnly, deriveRecoveryToken, getSyncToken } = await import("./crypto");
+  const { REGENERATE } = await import("./recoveryMessages");
+  const locked = "Your session isn't fully unlocked. Sign out and back in, then try again.";
   const dek = getActiveDek();
-  if (!dek) return { ok: false, error: "Your session isn't fully unlocked. Sign out and back in, then try again." };
+  if (!dek) return { ok: false, error: locked };
   const user = getUsers().find((u) => u.id === userId);
   if (!user) return { ok: false, error: "Account not found." };
+  const { loadData, syncAllowed, saveFailureKind, SAVE_FAILURE_REASON } = await import("./localData");
+  const data = await loadData(userId);
 
+  // In memory only, until the server has taken it or there's nothing there to take it.
   const { wrappedRecovery, recoveryCode } = await rewrapRecoveryOnly(dek, userId);
-  const recoveryTokenEnc = await sealWithDek(dek, await deriveRecoveryToken(recoveryCode, user.email));
-  putUsers(getUsers().map((u) => (u.id === userId
+  const newToken = await deriveRecoveryToken(recoveryCode, user.email);
+  const recoveryTokenEnc = await sealWithDek(dek, newToken);
+  const keep = () => putUsers(getUsers().map((u) => (u.id === userId
     ? withoutLegacyToken({ ...u, wrappedDekRecovery: wrappedRecovery, recoveryTokenEnc })
     : u)));
+  const keepHereOnly = (note: string): { ok: true; recoveryCode: string; note: string } | { ok: false; error: string } => {
+    try { keep(); } catch (err) { return { ok: false, error: REGENERATE.notStored(SAVE_FAILURE_REASON[saveFailureKind(err)]) }; }
+    return { ok: true, recoveryCode, note };
+  };
+
+  const syncToken = getSyncToken();
+  if (!syncToken) return { ok: false, error: locked };
+  const { probeServerCopy, relinkSync } = await import("./syncService");
+  const probe = await probeServerCopy(user.email);
+  if (probe.kind === "unreachable") return { ok: false, error: REGENERATE.unreachable };
+  if (probe.kind === "wrong-password") return { ok: false, error: REGENERATE.newerPassword };
+  if (probe.kind === "none") return keepHereOnly(syncAllowed(data) ? REGENERATE.noCopyYet : REGENERATE.noServerCopy);
+  // /relink refuses a row with no recovery hash whatever it's sent (sync.ts:301).
+  if (probe.kind === "unregistered" || !probe.hasRecoveryCode) return { ok: false, error: REGENERATE.noCodeRegistered };
+
+  const current = await getRecoveryTokenForSync(user.email);
+  if (!current) return { ok: false, error: REGENERATE.notOnThisDevice };
+  const relinked = await relinkSync(user.email, syncToken, newToken, current);
+  if (!relinked.ok) {
+    return { ok: false, error: relinked.error?.includes("verify ownership") ? REGENERATE.notTheBackupsCode : REGENERATE.unreachable };
+  }
+  // The server has it, and the old code is dead there. A failed write here
+  // still shows the code, because it works (see acceptedNotStored).
+  try { keep(); } catch { return { ok: true, recoveryCode, note: REGENERATE.acceptedNotStored }; }
   return { ok: true, recoveryCode };
 }
 

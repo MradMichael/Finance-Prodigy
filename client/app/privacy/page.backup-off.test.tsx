@@ -51,3 +51,20 @@ describe("the backup-off sentence", () => {
     expect(text()).toContain("Last updated: 6 October 2026");
   });
 });
+
+// FB-1b2 (SEC-09): regenerating a recovery code always asks the server
+// first, even with backup off (owner, 2026-10-06). Confirmed from the code
+// before writing this: the check is POST /api/sync/pull carrying the address
+// (body) and the password-derived sync token (Authorization), and nothing
+// else. The replacement, only when a copy holds a code, is POST
+// /api/sync/relink carrying the address, that token, and tokens derived from
+// the current and new codes. Never data, never the codes themselves.
+describe("the recovery-code check, disclosed with the change that makes it", () => {
+  it("says what the check sends, even with backup off", () => {
+    expect(text()).toContain(
+      "Generating a new recovery code always checks with our server first, even with backup off: " +
+      "that check sends your email address and your password-derived sync token, and uploads no data. " +
+      "Replacing a server copy's recovery code also sends tokens derived from your current and new recovery codes, never the codes themselves.",
+    );
+  });
+});
