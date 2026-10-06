@@ -2,7 +2,7 @@
 
 import type { LocalFinancials, StoredTransaction } from "./localData";
 import { mergeFinancials, stableStringify } from "./syncMerge";
-import { cycleLabelLong } from "./period";
+import { cycleLabelLong, dayLabel } from "./period";
 import { getSyncToken } from "./crypto";
 import { getRecoveryTokenForSync } from "./auth";
 
@@ -467,24 +467,39 @@ export function buildMergeNoticeText(
   }
   const mainText = parts.length > 0 ? `Merged with your other device — ${parts.join(", ")}.` : "";
 
-  // DRAFTED WORDING (SYNC-1 step 2), shown to the owner before merge. The
-  // divergence sentence used to end "Check Profile", but most of what it
-  // names now (income, the LBP rate, the budget split, the payday) lives on
-  // Setup, and goals and debts on their own screens.
+  // Owner's wording (SYNC-1 step 2, 2026-10-06). The settings get their own
+  // sentence naming the screens they live on: income, payday and the
+  // emergency fund target on Setup, the budget split on Budget (its custom
+  // figures on Setup too), the LBP rate on Currency. The five lists are on
+  // none of those, so they keep their sentence and its live ending.
+  const settingLabels = new Set(SETTINGS.map(([label]) => label));
+  const lists = nonTransactionDivergence.filter((l) => !settingLabels.has(l));
+  const settings = nonTransactionDivergence.filter((l) => settingLabels.has(l));
+  const kept = (names: string[], ending: string) =>
+    names.length ? `Your ${names.join(", ")} may differ from your other device — this device's copy was kept automatically. ${ending}` : "";
   const sentences = [
     mainText,
-    nonTransactionDivergence.length
-      ? `Your ${nonTransactionDivergence.join(", ")} may differ from your other device — this device's copy was kept automatically. Check those screens if something looks off.`
-      : "",
+    kept(lists, "Check Profile if something looks off."),
+    kept(settings, "Check Setup, Budget and Currency if something looks off."),
+    // "In the cycle's record", not just "kept": the undone close's note shows
+    // on no screen afterwards (Balance Check shows a note only while it
+    // explains the account's current gap, and skips a superseded close).
     ...replacedCloses.map((r) =>
-      `Two devices closed ${r.cycleLabel}. The earlier close, made on another device on ${closeMomentLabel(r.standingClosedAt)}, stands; this device's close was undone, and any note you wrote on it is kept.`),
+      `Two devices closed ${r.cycleLabel}. The earlier close, made on another device on ${closeMomentLabel(r.standingClosedAt)}, stands; this device's close was undone, and any note you wrote on it is kept in the cycle's record.`),
   ].filter(Boolean);
   return sentences.length ? { text: sentences.join(" "), showReviewLink } : { text: "", showReviewLink: false };
 }
 
-/** When a close was made, as the notice says it: day, month, year and local time. */
+/**
+ * When a close was made, as the notice says it: "27 Sep 2026, 11:00", local
+ * time. Months are spelled as in the cycle label beside it; the runtime's
+ * en-GB says "Sept" on current ICU, which would put two spellings in one
+ * sentence.
+ */
 export function closeMomentLabel(iso: string): string {
-  return new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  const d = new Date(iso);
+  const hm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return `${dayLabel(d)}, ${hm}`;
 }
 
 export function getLastSyncTime(): string | null {

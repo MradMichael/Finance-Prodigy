@@ -4,6 +4,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mergeAndPush, buildMergeNoticeText, detectNonTransactionDivergence, closeMomentLabel } from "./syncService";
 import { DEFAULT_DATA, migrateFinancials, CURRENT_SCHEMA_VERSION, type LocalFinancials, type WishlistItem } from "./localData";
 
+/** HH:MM of an instant in this run's zone (the suite runs in UTC and Asia/Beirut). */
+const localHM = (iso: string) => {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+};
+
 const wish = (id: string, name: string, price: number, updatedAt: string): WishlistItem => ({
   id, name, emoji: "✨", price, currency: "USD", priority: "medium", createdAt: updatedAt, updatedAt,
 });
@@ -42,16 +48,41 @@ describe("the divergence notice", () => {
     expect(detectNonTransactionDivergence(local, server)).toEqual(["income", "LBP rate", "budget split", "payday", "emergency fund target"]);
   });
 
-  it("the sentence for settings points at the right screens (drafted wording)", () => {
+  // Owner's wording, 2026-10-06. The settings live on Setup (income, payday,
+  // emergency fund target, the custom split's figures), Budget (the split)
+  // and Currency (the LBP rate), so the sentence names those three screens.
+  it("the sentence for settings names the screens they live on (owner's wording)", () => {
     const { text } = buildMergeNoticeText(0, [], ["income", "LBP rate"]);
-    expect(text).toBe("Your income, LBP rate may differ from your other device — this device's copy was kept automatically. Check those screens if something looks off.");
+    expect(text).toBe("Your income, LBP rate may differ from your other device — this device's copy was kept automatically. Check Setup, Budget and Currency if something looks off.");
   });
 
-  it("a replaced close is told plainly, and says the note is kept (drafted wording)", () => {
+  // Goals, debts, recurring items, other assets and cards are NOT on those
+  // three screens, so they keep their own sentence and its live ending.
+  it("lists and settings that both differ get a sentence each, lists first", () => {
+    const { text } = buildMergeNoticeText(0, [], ["goals", "cards", "payday"]);
+    expect(text).toBe(
+      "Your goals, cards may differ from your other device — this device's copy was kept automatically. Check Profile if something looks off. "
+      + "Your payday may differ from your other device — this device's copy was kept automatically. Check Setup, Budget and Currency if something looks off.",
+    );
+  });
+
+  // Owner, 2026-10-06: "Don't claim something the user can't find." The
+  // undone close's note shows on no screen afterwards: Balance Check shows a
+  // note only while it explains the account's current gap, and skips a
+  // superseded close. It stays in the cycle's record, the close itself.
+  it("a replaced close is told plainly, and says where the note is kept (owner's wording)", () => {
     const { text } = buildMergeNoticeText(0, [], [], [{ cycleLabel: "27 Aug – 26 Sep 2026", standingClosedAt: "2026-09-27T08:00:00.000Z" }]);
     expect(text).toBe(
-      `Two devices closed 27 Aug – 26 Sep 2026. The earlier close, made on another device on ${closeMomentLabel("2026-09-27T08:00:00.000Z")}, stands; this device's close was undone, and any note you wrote on it is kept.`,
+      `Two devices closed 27 Aug – 26 Sep 2026. The earlier close, made on another device on 27 Sep 2026, ${localHM("2026-09-27T08:00:00.000Z")}, stands; this device's close was undone, and any note you wrote on it is kept in the cycle's record.`,
     );
+  });
+
+  // The cycle label spells months from period.ts's own list ("Sep"); the
+  // runtime's en-GB says "Sept" on current ICU, so one sentence would carry
+  // both spellings. The moment uses the cycle label's months, in local time.
+  it("the close's moment uses the cycle label's month names, in local time", () => {
+    expect(closeMomentLabel("2026-09-27T08:00:00.000Z")).toBe(`27 Sep 2026, ${localHM("2026-09-27T08:00:00.000Z")}`);
+    expect(closeMomentLabel("2026-06-05T21:07:00.000Z")).toMatch(/^[56] Jun 2026, \d\d:07$/);
   });
 });
 
