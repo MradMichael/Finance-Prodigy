@@ -86,6 +86,15 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
+        <Section title="Security reports">
+          <p>
+            If ESSA&apos;s security policy blocks, or would block, something on a page, your browser may send a short
+            report to our own server. The report itself carries nothing that identifies you and never your financial
+            data: we log only which ESSA page it was and what was blocked, reduced to the site it came from or a word
+            such as &apos;inline&apos;.
+          </p>
+        </Section>
+
         <Section title="Deleting your data">
           <p>
             Profile → Danger zone → Delete account removes your account and financial data from your browser

@@ -16,6 +16,7 @@ import { ZodError } from "zod";
 import sync from "./routes/sync";
 import auth from "./routes/auth";
 import events from "./routes/events";
+import cspReport from "./routes/cspReport";
 import { logger } from "./lib/logger";
 
 export function createApp(): express.Express {
@@ -34,6 +35,21 @@ export function createApp(): express.Express {
   // domain once deployed), so that's the one default this API needs to opt out of.
   app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
   app.use(cors({ origin: process.env.CLIENT_ORIGIN ?? "http://localhost:3000" }));
+
+  // Content-policy violation reports (FB-1c, SEC-03). The route parses its
+  // own two content types (application/csp-report, application/reports+json),
+  // capped at 8 KB; the app-wide parser below reads only application/json.
+  // Its own limiter: a page can batch several reports, but a client sending
+  // more than this in 15 minutes is flooding, not reporting.
+  const cspReportLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many requests. Please wait a few minutes and try again." },
+  });
+  app.use("/api/csp-report", cspReportLimiter, cspReport);
+
   // express.json()'s own default limit (100kb) is well under sync.ts's
   // documented 2MB payload cap — without raising it here, any push over
   // ~100KB never reaches that check at all; body-parser rejects it first

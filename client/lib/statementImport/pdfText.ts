@@ -34,7 +34,11 @@ export async function extractPositionedText(file: File, isCancelled: () => boole
   pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 
   const buf = await file.arrayBuffer();
-  const loadingTask = pdfjsLib.getDocument({ data: buf });
+  // isEvalSupported: false (FB-1c). pdf.js otherwise probes eval with
+  // `new Function("")`. The content policy forbids eval, so the probe is a
+  // violation (reported in phase 1, refused once enforced). Reading text, the
+  // only thing asked of pdf.js here, never needs eval.
+  const loadingTask = pdfjsLib.getDocument({ data: buf, isEvalSupported: false });
   const pdf = await Promise.race([
     loadingTask.promise,
     new Promise<never>((_, reject) => setTimeout(() => reject(new LoadTimeoutError("Timed out opening this PDF.")), LOAD_TIMEOUT_MS)),
