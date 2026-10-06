@@ -20,7 +20,7 @@ vi.mock("./syncService", () => ({
   pullFromServer: vi.fn(), relinkSync: vi.fn(), confirmOverwriteIfNeeded: vi.fn(), deleteFromServer: vi.fn(),
   // FB-1b2: regenerating asks the server first. "No copy" keeps it on the
   // local path this file is about; the server paths have their own file.
-  probeServerCopy: vi.fn(async () => ({ kind: "none" })),
+  probeServerCopy: vi.fn(async () => ({ kind: "none" })), getLastSyncTime: () => null,
 }));
 
 const USERS_KEY = "essa_users_v1";

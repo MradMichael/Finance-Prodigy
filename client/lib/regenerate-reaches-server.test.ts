@@ -235,8 +235,11 @@ describe("no server copy: the code is kept and shown, and says it works on this 
 });
 
 describe("whether to ask the server follows the recorded backup state", () => {
+  // "deleted" and "none" are recorded with this browser's last-sync time at
+  // that moment (null here: this test account has never synced).
   const offWith = (serverCopy?: "kept" | "deleted" | "none"): Choice =>
-    ({ enabled: false, decidedAt: AT, ...(serverCopy ? { serverCopy } : {}) }) as Choice;
+    ({ enabled: false, decidedAt: AT, ...(serverCopy ? { serverCopy } : {}),
+      ...(serverCopy === "deleted" || serverCopy === "none" ? { lastSyncAtChoice: null } : {}) }) as Choice;
 
   it.each([
     ["backup on", ON],
@@ -259,6 +262,26 @@ describe("whether to ask the server follows the recorded backup state", () => {
     // COPY-11: not the address, not anything.
     expect(fetchFake).not.toHaveBeenCalled();
     expect(r.note).toBe(NO_SERVER_COPY);
+  }, 20_000);
+
+  // "Nothing exists" holds only as long as nothing has synced since it was
+  // recorded. Profile's manual Push isn't gated by the backup choice, a pull
+  // proves a copy exists, and restoring an export brings back whatever
+  // choice the file recorded. Any of those changes the last-sync time.
+  it.each([
+    ["off, copy deleted", "deleted"],
+    ["off, confirmed there was never a copy", "none"],
+  ] as const)("asks again once anything has synced since the choice: %s", async (_label, serverCopy) => {
+    await withChoice(offWith(serverCopy));
+    localStorage.setItem(LAST_SYNC_KEY, "2026-10-04T12:00:00.000Z");
+    await regenerateRecoveryCode(userId);
+    expect(calls.filter((c) => c.url === "/api/sync/pull")).toHaveLength(1);
+  }, 20_000);
+
+  it("a 'deleted' with no last-sync time recorded beside it asks (fail closed)", async () => {
+    await withChoice({ enabled: false, decidedAt: AT, serverCopy: "deleted" } as Choice);
+    await regenerateRecoveryCode(userId);
+    expect(calls.filter((c) => c.url === "/api/sync/pull")).toHaveLength(1);
   }, 20_000);
 });
 
@@ -287,7 +310,7 @@ describe("when this device can't store the new code", () => {
   }, 20_000);
 
   it("with no server copy: refused, no code, nothing changed", async () => {
-    await withChoice({ enabled: false, decidedAt: AT, serverCopy: "deleted" } as Choice);
+    await withChoice({ enabled: false, decidedAt: AT, serverCopy: "deleted", lastSyncAtChoice: null } as Choice);
     failNextUsersWrite();
     await expectRefused(notStored("This browser has run out of storage space for ESSA."));
   }, 20_000);

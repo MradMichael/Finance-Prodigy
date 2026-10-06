@@ -885,8 +885,19 @@ export interface LocalFinancials {
    * confirmed there never was one). Absent means not known: an off choice
    * recorded before this field existed, or a "nothing to keep" answer the
    * check couldn't confirm. See serverCheckNeeded.
+   *
+   * `lastSyncAtChoice` sits beside "deleted" and "none": this browser's
+   * last-sync time (essa_last_sync) when that was recorded, null if it had
+   * never synced. "Nothing exists" holds only while it's unchanged. Any push
+   * or pull since, such as Profile's ungated manual Push, means a copy may
+   * exist again.
    */
-  syncChoice?: { enabled: boolean; decidedAt: string; serverCopy?: "kept" | "deleted" | "none" };
+  syncChoice?: {
+    enabled: boolean;
+    decidedAt: string;
+    serverCopy?: "kept" | "deleted" | "none";
+    lastSyncAtChoice?: string | null;
+  };
   /**
    * Phase 1 of the period close. One PeriodClose per cycle the owner has
    * closed, newest-last (cycleClosesFor sorts rather than relying on it).
@@ -1235,17 +1246,20 @@ export function syncAllowed(d: Pick<LocalFinancials, "syncChoice">): boolean {
 /**
  * Must regenerating a recovery code ask the server first (FB-1b2)? Only a
  * server copy can hold an old code that keeps working, so the answer is no
- * only when this device KNOWS there's none: backup off, and the copy deleted
- * or confirmed never to have existed. Then nothing is sent at all, not even
- * the address (COPY-11). Every other state asks, including an older off
- * choice with nothing recorded and an account that has never answered.
- * Something might exist there, and showing a code the server doesn't know is
- * SEC-09 again (owner, 2026-10-05: fail closed).
+ * only when this device KNOWS there's none: backup off, the copy deleted or
+ * confirmed never to have existed, and nothing synced on this browser since
+ * (`lastSyncNow` still equals the time recorded with that choice). Then
+ * nothing is sent at all, not even the address (COPY-11). Every other state
+ * asks, including an older off choice with nothing recorded and an account
+ * that has never answered. Something might exist there, and showing a code
+ * the server doesn't know is SEC-09 again (owner, 2026-10-05: fail closed).
  */
-export function serverCheckNeeded(d: Pick<LocalFinancials, "syncChoice">): boolean {
+export function serverCheckNeeded(d: Pick<LocalFinancials, "syncChoice">, lastSyncNow: string | null): boolean {
   const c = d.syncChoice;
   if (!c || c.enabled) return true;
-  return c.serverCopy !== "deleted" && c.serverCopy !== "none";
+  if (c.serverCopy !== "deleted" && c.serverCopy !== "none") return true;
+  // A record without the time (undefined) never equals lastSyncNow, so it asks.
+  return c.lastSyncAtChoice !== lastSyncNow;
 }
 
 /** True when an account has literally nothing entered yet (fresh sign-up defaults) — used to gate the one-time auto-pull-on-first-load in app/page.tsx so it only ever fires for a genuinely blank local account, never silently overwriting real local data. */

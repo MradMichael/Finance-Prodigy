@@ -148,6 +148,8 @@ export type BackupChoice = "on" | "off-delete" | "off-keep" | "off-none";
  * about a server copy, which decides whether regenerating a recovery code
  * asks the server (serverCheckNeeded). "deleted" only when the server said
  * so: a failed delete records "kept", because the copy may still be there.
+ * "deleted" and "none" carry this browser's last-sync time at that moment
+ * (`lastSyncAtChoice`); a push or pull after it voids them.
  * off-none records "none" only when `noCopyConfirmed` -- the server check
  * answered "no copy" and this device has never synced. Without that it
  * records nothing, which counts as "may exist" (owner, 2026-10-05: fail
@@ -167,12 +169,15 @@ export async function applyBackupChoice(
     const next: LocalFinancials = { ...data, syncChoice: decided };
     return { data: next, result: await pushToServer(email, next) };
   }
+  // "Nothing exists" is recorded with this browser's last-sync time, so any
+  // push or pull after it voids the record (serverCheckNeeded).
+  const nothingSince = { lastSyncAtChoice: getLastSyncTime() };
   if (choice === "off-delete") {
     const result = await deleteFromServer(email, getSyncToken() ?? "");
-    return { data: { ...data, syncChoice: { ...decided, serverCopy: result.ok ? "deleted" : "kept" } }, result };
+    return { data: { ...data, syncChoice: result.ok ? { ...decided, serverCopy: "deleted", ...nothingSince } : { ...decided, serverCopy: "kept" } }, result };
   }
   if (choice === "off-keep") return { data: { ...data, syncChoice: { ...decided, serverCopy: "kept" } }, result: null };
-  return { data: { ...data, syncChoice: opts.noCopyConfirmed ? { ...decided, serverCopy: "none" } : decided }, result: null };
+  return { data: { ...data, syncChoice: opts.noCopyConfirmed ? { ...decided, serverCopy: "none", ...nothingSince } : decided }, result: null };
 }
 
 export type ServerCopyProbe =

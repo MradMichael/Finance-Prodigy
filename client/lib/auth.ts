@@ -404,11 +404,11 @@ export async function regenerateRecoveryCode(
     return { ok: true, recoveryCode, note };
   };
 
-  if (!serverCheckNeeded(data)) return keepHereOnly(REGENERATE.noServerCopy);
+  const { probeServerCopy, relinkSync, getLastSyncTime } = await import("./syncService");
+  if (!serverCheckNeeded(data, getLastSyncTime())) return keepHereOnly(REGENERATE.noServerCopy);
 
   const syncToken = getSyncToken();
   if (!syncToken) return { ok: false, error: locked };
-  const { probeServerCopy, relinkSync } = await import("./syncService");
   const probe = await probeServerCopy(user.email);
   if (probe.kind === "unreachable") return { ok: false, error: REGENERATE.unreachable };
   if (probe.kind === "wrong-password") return { ok: false, error: REGENERATE.newerPassword };

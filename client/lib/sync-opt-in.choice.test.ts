@@ -15,7 +15,9 @@ const NOW = new Date("2026-09-28T11:42:05.000Z");
 const data = { ...DEFAULT_DATA, income: 3000 } as LocalFinancials;
 
 const fetchMock = vi.fn(async () => new Response(JSON.stringify({ syncedAt: NOW.toISOString() }), { status: 200 }));
-beforeEach(() => { vi.stubGlobal("fetch", fetchMock); fetchMock.mockClear(); sessionStorage.setItem("essa_st_v1", "tok"); });
+// localStorage too: "on" pushes, and the push records a last-sync time
+// that the off choices below now read.
+beforeEach(() => { vi.stubGlobal("fetch", fetchMock); fetchMock.mockClear(); localStorage.clear(); sessionStorage.setItem("essa_st_v1", "tok"); });
 afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear(); });
 
 const call = (i = 0) => fetchMock.mock.calls[i] as unknown as [string, RequestInit];
@@ -49,7 +51,17 @@ describe("turning backup OFF", () => {
     expect(call()[0]).toBe("/api/sync");
     expect(call()[1].method).toBe("DELETE");
     expect(result?.ok).toBe(true);
-    expect(next.syncChoice).toEqual({ enabled: false, decidedAt: "2026-09-28T11:42:05.000Z", serverCopy: "deleted" });
+    // With this browser's last-sync time at that moment: any push or pull
+    // after it means a copy may exist again (serverCheckNeeded).
+    expect(next.syncChoice).toEqual({ enabled: false, decidedAt: "2026-09-28T11:42:05.000Z", serverCopy: "deleted", lastSyncAtChoice: null });
+  });
+
+  it("off, delete, on a browser that has synced: records that last-sync time beside 'deleted'", async () => {
+    localStorage.setItem("essa_last_sync", "2026-09-27T08:00:00.000Z");
+    try {
+      const { data: next } = await applyBackupChoice("u1@example.com", data, "off-delete", NOW);
+      expect(next.syncChoice?.lastSyncAtChoice).toBe("2026-09-27T08:00:00.000Z");
+    } finally { localStorage.removeItem("essa_last_sync"); }
   });
 
   it("a failed delete is reported, and the choice still stands as off", async () => {
@@ -65,7 +77,7 @@ describe("turning backup OFF", () => {
 
   it("off with nothing to keep, confirmed by the server check: records none, and no network", async () => {
     const { data: next, result } = await applyBackupChoice("u1@example.com", data, "off-none", NOW, { noCopyConfirmed: true });
-    expect(next.syncChoice).toEqual({ enabled: false, decidedAt: "2026-09-28T11:42:05.000Z", serverCopy: "none" });
+    expect(next.syncChoice).toEqual({ enabled: false, decidedAt: "2026-09-28T11:42:05.000Z", serverCopy: "none", lastSyncAtChoice: null });
     expect(fetchMock).not.toHaveBeenCalled();
     expect(result).toBeNull();
   });
