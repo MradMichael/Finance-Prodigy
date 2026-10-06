@@ -5,6 +5,18 @@ import type { computeDashboard } from "./computeDashboard";
 
 type DashboardPayload = ReturnType<typeof computeDashboard>;
 
+/**
+ * The report's own content policy (FB-1c, SEC-03), placed in its <head> before
+ * anything carrying data. The report opens as an about:blank tab the app
+ * writes into, so it inherits the app's policy, and that one allows inline
+ * scripts. SEC-02's vector ran in exactly this tab. The report needs no
+ * script, image or web font, so this allows none: no script runs here,
+ * injected or not. A <meta> policy is always enforced, never report-only.
+ * Printing still works, because the opener's onload handler isn't an inline
+ * script.
+ */
+export const REPORT_CSP = "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'";
+
 export interface ReportOptions {
   /** Adds a full transaction ledger (optionally date-scoped) below the summary. The summary cards above always reflect the current live state, not the date range — computeDashboard is inherently "as of now," not re-run for an arbitrary past range. */
   detailed: boolean;
@@ -126,6 +138,7 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
 <html>
 <head>
 <meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="${REPORT_CSP}" />
 <title>ESSA Financial Report — ${escapeHtml(userName)}</title>
 <style>
   @page { margin: 24mm 18mm; }
