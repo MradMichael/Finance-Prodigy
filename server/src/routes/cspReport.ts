@@ -12,9 +12,9 @@ import { logger } from "../lib/logger";
  * files, script samples, the referrer or the user agent. No request metadata
  * either. The privacy page ("Security reports") says exactly this.
  *
- * Mounted BEFORE the app-wide JSON parser (app.ts), so its own 8 KB cap
- * applies rather than the sync routes' 3 MB. A refused body is answered
- * quietly: a report endpoint must not turn bad input into error-log lines.
+ * It parses only the two report content types, capped at 8 KB. Anything
+ * else is ignored. A refused body is answered quietly: a report endpoint
+ * must not turn bad input into error-log lines.
  */
 const router = Router();
 

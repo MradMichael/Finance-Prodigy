@@ -36,10 +36,11 @@ export function createApp(): express.Express {
   app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
   app.use(cors({ origin: process.env.CLIENT_ORIGIN ?? "http://localhost:3000" }));
 
-  // Content-policy violation reports (FB-1c, SEC-03). Mounted before the
-  // app-wide JSON parser below, so the route's own 8 KB cap applies instead
-  // of 3 MB. Its own limiter: a page can batch several reports, but a client
-  // sending more than this in 15 minutes is flooding, not reporting.
+  // Content-policy violation reports (FB-1c, SEC-03). The route parses its
+  // own two content types (application/csp-report, application/reports+json),
+  // capped at 8 KB; the app-wide parser below reads only application/json.
+  // Its own limiter: a page can batch several reports, but a client sending
+  // more than this in 15 minutes is flooding, not reporting.
   const cspReportLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     limit: 60,
