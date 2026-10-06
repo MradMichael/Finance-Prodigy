@@ -44,6 +44,9 @@ describe("both variants", () => {
     const text = document.body.textContent ?? "";
     expect(text).toMatch(/can.t sign in on another device/i);
     expect(text).toMatch(/recovery code only works on this device/i);
+    // ...but only without a server copy: a kept copy can still be signed in to
+    // from another device (owner, 2026-10-06).
+    expect(text.replace(/\s+/g, " ")).toContain("With backup off and no copy left on the server, your data stays in this browser only");
   });
 
   it("is a blocking dialog: no close or cancel", () => {
