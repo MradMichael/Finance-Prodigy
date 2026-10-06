@@ -6,7 +6,7 @@ import {
   uid, todayISO, fmtDate, withRate, reanchorTrackedBalance, moneyMaxFor, DEFAULT_LBP_RATE,
   buildPeriodClose, cycleStartDayOf, unclosedCycles, isCycleClosedBySpan,
   closeMovesBaselineBackwards, canReopen, reopenCycle, planReopen, activeCloseForCycle, rateForMonth,
-  derivedEfBalance, derivedDebtBalance, planEfClose, planDebtClose,
+  derivedEfBalance, derivedDebtBalance, planEfClose, planDebtClose, recordDeletion,
 } from "../../lib/localData";
 import { balanceCheckReconciliation, trackedBalanceExpectedAsOf, type computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
@@ -298,7 +298,8 @@ export default function BalanceCheckScreen({
 
   function deleteTrackedBalance(id: string) {
     if (!confirm("Remove this tracked balance?")) return;
-    update({ trackedBalances: tracked.filter((tb) => tb.id !== id) });
+    // SYNC-1 step 2: recorded, so the removal reaches the other devices instead of the balance coming back from them.
+    update({ trackedBalances: tracked.filter((tb) => tb.id !== id), deletedKeys: recordDeletion(financials, "trackedBalances", id) });
   }
 
   return (

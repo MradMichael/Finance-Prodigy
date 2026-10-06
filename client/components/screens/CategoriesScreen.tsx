@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, CategoryRule } from "../../lib/localData";
-import { CATEGORIES, allCategories, categoryLabel, categoryIcon, matchCategoryRule, historizedRecurringContribution, toUSD as toUSDShared, uid, moneyEquals, activeTransactions, DEFAULT_LBP_RATE, cycleStartDayOf } from "../../lib/localData";
+import { CATEGORIES, allCategories, categoryLabel, categoryIcon, matchCategoryRule, historizedRecurringContribution, toUSD as toUSDShared, uid, moneyEquals, activeTransactions, DEFAULT_LBP_RATE, cycleStartDayOf, recordDeletion } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money } from "./shared";
 import { Label, FocusInput, PrimaryBtn } from "../form/Primitives";
@@ -45,14 +45,16 @@ export default function CategoriesScreen({
     const base = slugify(name);
     let value = base, n = 2;
     while (taken.has(value)) { value = `${base}-${n}`; n++; }
-    onChange({ ...financials, customCategories: [...customCategories, { value, label: name, icon: newIcon.trim() || "🏷️" }] });
+    // SYNC-1 step 2: every edit is stamped, so a merge keeps the later one.
+    onChange({ ...financials, customCategories: [...customCategories, { value, label: name, icon: newIcon.trim() || "🏷️", updatedAt: new Date().toISOString() }] });
     setNewName("");
     setNewIcon("🏷️");
   }
 
   function deleteCategory(value: string) {
     if (!confirm("Delete this category? Transactions and recurring items already using it will keep showing its name, but you won't be able to pick it for new ones.")) return;
-    onChange({ ...financials, customCategories: customCategories.filter((c) => c.value !== value) });
+    // SYNC-1 step 2: recorded, so the deletion reaches the other devices.
+    onChange({ ...financials, customCategories: customCategories.filter((c) => c.value !== value), deletedKeys: recordDeletion(financials, "customCategories", value) });
   }
 
   function startEdit(c: { value: string; label: string; icon: string }) {
@@ -70,7 +72,7 @@ export default function CategoriesScreen({
     onChange({
       ...financials,
       customCategories: customCategories.map((c) =>
-        c.value !== editingValue ? c : { ...c, label: name, icon: editIcon.trim() || "🏷️" }
+        c.value !== editingValue ? c : { ...c, label: name, icon: editIcon.trim() || "🏷️", updatedAt: new Date().toISOString() }
       ),
     });
     setEditingValue(null);
@@ -79,13 +81,13 @@ export default function CategoriesScreen({
   function addRule() {
     const keyword = ruleKeyword.trim();
     if (!keyword || !ruleCategory) return;
-    onChange({ ...financials, categoryRules: [...categoryRules, { id: uid(), keyword, category: ruleCategory }] });
+    onChange({ ...financials, categoryRules: [...categoryRules, { id: uid(), keyword, category: ruleCategory, updatedAt: new Date().toISOString() }] });
     setRuleKeyword("");
     setRuleCategory("");
   }
 
   function deleteRule(id: string) {
-    onChange({ ...financials, categoryRules: categoryRules.filter((r) => r.id !== id) });
+    onChange({ ...financials, categoryRules: categoryRules.filter((r) => r.id !== id), deletedKeys: recordDeletion(financials, "categoryRules", id) });
   }
 
   // Retroactively applies one rule to already-logged transactions/recurring

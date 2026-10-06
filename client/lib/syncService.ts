@@ -1,7 +1,8 @@
 "use client";
 
 import type { LocalFinancials, StoredTransaction } from "./localData";
-import { mergeTransactions } from "./localData";
+import { mergeFinancials, stableStringify } from "./syncMerge";
+import { cycleLabelLong } from "./period";
 import { getSyncToken } from "./crypto";
 import { getRecoveryTokenForSync } from "./auth";
 
@@ -275,27 +276,30 @@ export async function pullFromServer(email: string): Promise<{ ok: true; data: L
 // a real risk of noisy false positives (e.g. a rate the user is actively
 // updating on two devices), left for whenever non-transaction data gets a
 // real merge design, not this half-day detection pass.
+//
+// SYNC-1 step 2 (2026-10-06): tracked balances left this list, because they
+// merge now (lib/syncMerge.ts), as do the wishlist, custom categories,
+// category rules and period closes. The SETTINGS below joined it, by the
+// owner's decision: they stay "this device wins", and the notice names them.
 const NON_TRANSACTION_ENTITY_FIELDS = [
   ["goals", "goals"],
   ["debts", "debts"],
   ["recurring", "recurring items"],
   ["assets", "other assets"],
   ["cards", "cards"],
-  ["trackedBalances", "tracked balances"],
 ] as const satisfies readonly (readonly [keyof LocalFinancials, string])[];
 
-// Order-independent structural equality -- a record rebuilt via `{...x,
-// field: y}` can land with its keys in a different insertion order than
-// the original even when every value is identical, which a plain
-// JSON.stringify comparison would wrongly read as a real difference.
-// Sorting object keys before stringifying makes the comparison depend only
-// on content, not on how either side happened to construct the object.
-function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
-  const keys = Object.keys(value as Record<string, unknown>).sort();
-  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify((value as Record<string, unknown>)[k])}`).join(",")}}`;
-}
+/** Settings, as the screens resolve them: an unset budget rule is 50/30/20, and an unset payday is the 1st. */
+const SETTINGS: readonly (readonly [string, (d: LocalFinancials) => unknown])[] = [
+  ["income", (d) => d.income],
+  ["LBP rate", (d) => d.lbpRate],
+  ["budget split", (d) => {
+    const rule = d.budgetRule ?? "50-30-20";
+    return rule === "custom" ? { rule, needs: d.budgetCustomNeeds, wants: d.budgetCustomWants } : { rule };
+  }],
+  ["payday", (d) => d.cycleStartDay ?? 1],
+  ["emergency fund target", (d) => d.emergencyFundTargetMonths],
+];
 
 /**
  * 2.4.52, detection-only -- mergeAndPush merges transactions (Phase 2.7);
@@ -315,6 +319,9 @@ export function detectNonTransactionDivergence(local: LocalFinancials, server: L
     const serverVal = server[field] ?? [];
     if (stableStringify(localVal) !== stableStringify(serverVal)) diverged.push(label);
   }
+  for (const [label, read] of SETTINGS) {
+    if (stableStringify(read(local)) !== stableStringify(read(server))) diverged.push(label);
+  }
   return diverged;
 }
 
@@ -325,8 +332,11 @@ export interface MergeConflictDetail {
   loser: StoredTransaction;
 }
 
+/** A close made on THIS device that lost to another device's earlier close of the same cycle (SYNC-1 step 2). */
+export interface ReplacedCloseNotice { cycleLabel: string; standingClosedAt: string }
+
 export type MergeAndPushResult =
-  | { ok: true; syncedAt: string; addedFromServer: number; conflictsResolved: number; conflicts: StoredTransaction[]; conflictDetails: MergeConflictDetail[]; nonTransactionDivergence: string[]; mergedData: LocalFinancials }
+  | { ok: true; syncedAt: string; addedFromServer: number; conflictsResolved: number; conflicts: StoredTransaction[]; conflictDetails: MergeConflictDetail[]; nonTransactionDivergence: string[]; replacedCloses: ReplacedCloseNotice[]; mergedData: LocalFinancials }
   | { ok: false; error: string; conflict?: boolean };
 
 /**
@@ -362,12 +372,20 @@ export async function mergeAndPush(email: string, local: LocalFinancials): Promi
   const pulled = await pullFromServer(email);
   if (!pulled.ok) return { ok: false, error: pulled.error };
 
-  const merged = mergeTransactions(local.transactions, pulled.data.transactions);
-  const mergedData: LocalFinancials = { ...local, transactions: merged.transactions };
+  // SYNC-1 step 2: the whole merge, not transactions alone. The wishlist,
+  // categories, rules, tracked balances and period closes merge too
+  // (lib/syncMerge.ts); everything else keeps this device's copy, as before.
+  const result = mergeFinancials(local, pulled.data, new Date());
+  const merged = result.transactions;
+  const mergedData: LocalFinancials = result.data;
   // Detected against local's PRE-merge copy vs. the server's copy -- what
-  // actually diverged between the two devices, not the merged result
-  // (which always equals local's own copy for these fields regardless).
+  // actually diverged between the two devices, for the fields that still
+  // keep this device's copy.
   const nonTransactionDivergence = detectNonTransactionDivergence(local, pulled.data);
+  const replacedCloses: ReplacedCloseNotice[] = result.supersededFromLocal.map((r) => ({
+    cycleLabel: cycleLabelLong(r.standing.cycleKey, r.standing.startDayAtClose),
+    standingClosedAt: r.standing.closedAt,
+  }));
 
   const pushed = await pushToServer(email, mergedData);
   if (!pushed.ok) return { ok: false, error: pushed.error ?? "Merge succeeded locally, but push failed.", conflict: pushed.conflict };
@@ -377,9 +395,11 @@ export async function mergeAndPush(email: string, local: LocalFinancials): Promi
   // whichever one it ISN'T is the loser, the value that got silently
   // overridden. Needed so the eventual notice can say "was $X", not just
   // "something changed" (owner's instruction, 2026-09-01).
+  // Each side as the merge saw it: after any close undo, which can soft-delete
+  // a correction row on one side.
   const conflictDetails: MergeConflictDetail[] = merged.conflicts.map((winner) => {
-    const localOriginal = local.transactions.find((t) => t.id === winner.id)!;
-    const serverOriginal = pulled.data.transactions.find((t) => t.id === winner.id)!;
+    const localOriginal = (result.localTransactions ?? []).find((t) => t.id === winner.id)!;
+    const serverOriginal = (result.serverTransactions ?? []).find((t) => t.id === winner.id)!;
     const loser = JSON.stringify(winner) === JSON.stringify(localOriginal) ? serverOriginal : localOriginal;
     return { winner, loser };
   });
@@ -392,6 +412,7 @@ export async function mergeAndPush(email: string, local: LocalFinancials): Promi
     conflicts: merged.conflicts,
     conflictDetails,
     nonTransactionDivergence,
+    replacedCloses,
     mergedData,
   };
 }
@@ -423,6 +444,10 @@ export function buildMergeNoticeText(
   // 0 and conflictDetails is empty -- a debt-only edit conflict with zero
   // transaction activity is exactly the silent case this closes.
   nonTransactionDivergence: string[] = [],
+  // SYNC-1 step 2: a close made on this device that another device's
+  // earlier close of the same cycle replaced. Told plainly, because the owner
+  // made it and it was undone.
+  replacedCloses: ReplacedCloseNotice[] = [],
 ): { text: string; showReviewLink: boolean } {
   const parts: string[] = [];
   if (addedFromServer > 0) {
@@ -442,11 +467,24 @@ export function buildMergeNoticeText(
   }
   const mainText = parts.length > 0 ? `Merged with your other device — ${parts.join(", ")}.` : "";
 
-  if (nonTransactionDivergence.length === 0) {
-    return mainText ? { text: mainText, showReviewLink } : { text: "", showReviewLink: false };
-  }
-  const divergedSentence = `Your ${nonTransactionDivergence.join(", ")} may differ from your other device — this device's copy was kept automatically. Check Profile if something looks off.`;
-  return { text: mainText ? `${mainText} ${divergedSentence}` : divergedSentence, showReviewLink };
+  // DRAFTED WORDING (SYNC-1 step 2), shown to the owner before merge. The
+  // divergence sentence used to end "Check Profile", but most of what it
+  // names now (income, the LBP rate, the budget split, the payday) lives on
+  // Setup, and goals and debts on their own screens.
+  const sentences = [
+    mainText,
+    nonTransactionDivergence.length
+      ? `Your ${nonTransactionDivergence.join(", ")} may differ from your other device — this device's copy was kept automatically. Check those screens if something looks off.`
+      : "",
+    ...replacedCloses.map((r) =>
+      `Two devices closed ${r.cycleLabel}. The earlier close, made on another device on ${closeMomentLabel(r.standingClosedAt)}, stands; this device's close was undone, and any note you wrote on it is kept.`),
+  ].filter(Boolean);
+  return sentences.length ? { text: sentences.join(" "), showReviewLink } : { text: "", showReviewLink: false };
+}
+
+/** When a close was made, as the notice says it: day, month, year and local time. */
+export function closeMomentLabel(iso: string): string {
+  return new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 export function getLastSyncTime(): string | null {
