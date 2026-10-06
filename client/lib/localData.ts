@@ -1232,6 +1232,13 @@ export function isEmptyFinancials(data: LocalFinancials): boolean {
   // txAddToEF/txFromEF), so unlike a plain field it genuinely can accumulate
   // float drift over many edits and land on something like 1e-13 instead of
   // a clean 0. moneyEquals, not ===.
+  //
+  // SYNC-1 step 1 (DI-09): "empty" also means no wishlist item, custom
+  // category, category rule or period close. They're all entered by hand, and
+  // each caller treats "empty" as "nothing to lose": Restore and recovery
+  // replace without asking (2.4.37), and the first-load pull runs. A device
+  // holding only wishlist items used to count as empty, and Restore replaced
+  // them without a word. The `?? []` is for records from before these existed.
   return data.income === 0
     && moneyEquals(data.emergencyFundBalance, 0)
     && data.transactions.length === 0
@@ -1240,7 +1247,11 @@ export function isEmptyFinancials(data: LocalFinancials): boolean {
     && data.recurring.length === 0
     && data.cards.length === 0
     && data.assets.length === 0
-    && data.trackedBalances.length === 0;
+    && data.trackedBalances.length === 0
+    && (data.wishlist ?? []).length === 0
+    && (data.customCategories ?? []).length === 0
+    && (data.categoryRules ?? []).length === 0
+    && (data.periodCloses ?? []).length === 0;
 }
 
 /**
