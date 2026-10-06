@@ -33,7 +33,7 @@ export default function SignUpPage() {
   useEffect(() => {
     if (!email.includes("@")) { setEmailSyncedElsewhere(false); return; }
     const t = setTimeout(async () => {
-      setEmailSyncedElsewhere((await checkEmailExists(email)) === true);
+      setEmailSyncedElsewhere(await checkEmailExists(email));
     }, 600);
     return () => clearTimeout(t);
   }, [email]);

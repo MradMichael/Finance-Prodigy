@@ -34,9 +34,7 @@ describe("an account with NO server copy", () => {
     expect(screen.queryByRole("button", { name: /delete/i })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /turn backup on/i }));
     fireEvent.click(screen.getByRole("button", { name: /keep it off/i }));
-    // FB-1b2: not "off-keep" -- there's no copy to keep, and reading it as a
-    // kept copy would make regenerating a recovery code ask the server.
-    expect(onChoose.mock.calls.map((c) => c[0])).toEqual(["on", "off-none"]);
+    expect(onChoose.mock.calls.map((c) => c[0])).toEqual(["on", "off-keep"]);
   });
 });
 

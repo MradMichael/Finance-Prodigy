@@ -35,7 +35,7 @@ import { activateSessionKey } from "../../lib/crypto";
 
 const CODE = "K7QM-4XPZ-9RTL-2WJC";
 const DIALOG = "Generate a new recovery code? Once the new code is accepted, your old one stops working.";
-const REFUSAL = "Your recovery code wasn't changed, because the server couldn't be reached. Nothing changed: the code that worked before still works. Try again when you're online.";
+const REFUSAL = "Your recovery code wasn't changed, because the server couldn't be reached. Nothing on your backup or this device has changed. Try again when you're online.";
 const NOTE = "This code works on this device. If you turn backup on, it becomes your backup's code too.";
 
 beforeEach(() => {

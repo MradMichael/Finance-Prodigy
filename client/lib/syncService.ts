@@ -128,7 +128,7 @@ export async function pushToServer(email: string, data: LocalFinancials): Promis
   }
 }
 
-export type BackupChoice = "on" | "off-delete" | "off-keep" | "off-none";
+export type BackupChoice = "on" | "off-delete" | "off-keep";
 
 /**
  * Records the owner's backup choice and performs its ONE network
@@ -141,19 +141,6 @@ export type BackupChoice = "on" | "off-delete" | "off-keep" | "off-none";
  *   off-keep    -> no network at all; the existing copy is deliberately
  *                  left standing and will go stale
  *   off-delete  -> deletes the server copy. Never pushes first.
- *   off-none    -> no network; the prompt's "Keep it off" for an account
- *                  with no copy to keep (FB-1b2)
- *
- * Each off choice also records `serverCopy`, what this device now knows
- * about a server copy, which decides whether regenerating a recovery code
- * asks the server (serverCheckNeeded). "deleted" only when the server said
- * so: a failed delete records "kept", because the copy may still be there.
- * "deleted" and "none" carry this browser's last-sync time at that moment
- * (`lastSyncAtChoice`); a push or pull after it voids them.
- * off-none records "none" only when `noCopyConfirmed` -- the server check
- * answered "no copy" and this device has never synced. Without that it
- * records nothing, which counts as "may exist" (owner, 2026-10-05: fail
- * closed).
  *
  * The returned data carries the choice whatever the network did: a server
  * that could not be reached does not turn backup back on, and a failed
@@ -162,22 +149,11 @@ export type BackupChoice = "on" | "off-delete" | "off-keep" | "off-none";
  */
 export async function applyBackupChoice(
   email: string, data: LocalFinancials, choice: BackupChoice, now: Date = new Date(),
-  opts: { noCopyConfirmed?: boolean } = {},
 ): Promise<{ data: LocalFinancials; result: SyncResult | null }> {
-  const decided = { enabled: choice === "on", decidedAt: now.toISOString() };
-  if (choice === "on") {
-    const next: LocalFinancials = { ...data, syncChoice: decided };
-    return { data: next, result: await pushToServer(email, next) };
-  }
-  // "Nothing exists" is recorded with this browser's last-sync time, so any
-  // push or pull after it voids the record (serverCheckNeeded).
-  const nothingSince = { lastSyncAtChoice: getLastSyncTime() };
-  if (choice === "off-delete") {
-    const result = await deleteFromServer(email, getSyncToken() ?? "");
-    return { data: { ...data, syncChoice: result.ok ? { ...decided, serverCopy: "deleted", ...nothingSince } : { ...decided, serverCopy: "kept" } }, result };
-  }
-  if (choice === "off-keep") return { data: { ...data, syncChoice: { ...decided, serverCopy: "kept" } }, result: null };
-  return { data: { ...data, syncChoice: opts.noCopyConfirmed ? { ...decided, serverCopy: "none", ...nothingSince } : decided }, result: null };
+  const next: LocalFinancials = { ...data, syncChoice: { enabled: choice === "on", decidedAt: now.toISOString() } };
+  if (choice === "on") return { data: next, result: await pushToServer(email, next) };
+  if (choice === "off-delete") return { data: next, result: await deleteFromServer(email, getSyncToken() ?? "") };
+  return { data: next, result: null };
 }
 
 export type ServerCopyProbe =
@@ -518,15 +494,11 @@ export async function deleteFromServer(email: string, token: string): Promise<Sy
  * Checks whether this email already has synced data from some other
  * device — the only cross-device signal the server can give, since sign-up
  * itself never touches it (see routes/auth.ts). Best-effort UX warning,
- * not a hard block. The address goes in the body, never the URL, so it
- * stays out of the hosts' request logs (2.4.165).
- *
- * null means it couldn't tell (offline, server down, an unexpected answer).
- * FB-1b2: that used to read as false, and a false is now recorded as
- * "confirmed no copy", which stops a later recovery-code change from asking
- * the server. Sign-up acts only on true, so it still never blocks.
+ * not a hard block: returns false on any network failure so an offline or
+ * server-down moment never prevents signing up. The address goes in the
+ * body, never the URL, so it stays out of the hosts' request logs (2.4.165).
  */
-export async function checkEmailExists(email: string): Promise<boolean | null> {
+export async function checkEmailExists(email: string): Promise<boolean> {
   try {
     const res = await fetch("/api/auth/check-email", {
       method: "POST",
@@ -534,10 +506,10 @@ export async function checkEmailExists(email: string): Promise<boolean | null> {
       body: JSON.stringify({ email }),
       signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
     });
-    if (!res.ok) return null;
+    if (!res.ok) return false;
     const json = await res.json();
-    return typeof json?.exists === "boolean" ? json.exists : null;
+    return json.exists === true;
   } catch {
-    return null;
+    return false;
   }
 }

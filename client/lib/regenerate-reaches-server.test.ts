@@ -13,12 +13,10 @@
 // kept -- and shown -- only once /relink's existing old-token branch has
 // accepted it, or when there's no server copy for it to matter to.
 //
-// Whether to ask the server at all follows the recorded backup state. It is
-// skipped only when backup is off AND the copy was deleted, or was confirmed
-// never to have existed (COPY-11: the address isn't sent when nothing can
-// exist). Every other state asks, including an older off choice with nothing
-// recorded and an account that has never answered (owner, 2026-10-05: fail
-// closed).
+// It ALWAYS asks the server, whatever the recorded backup state (owner,
+// 2026-10-06). This device can never know that nothing exists: another
+// device can create a copy at any time. It's a rare, explicit action, unlike
+// COPY-11's background request.
 //
 // Real crypto and real account records throughout; only the network is
 // replaced, by a fake server answering the two routes this touches.
@@ -34,8 +32,8 @@ const LAST_SYNC_KEY = "essa_last_sync";
 // ── the owner-approved and drafted wording, asserted verbatim ──
 const NOT_ON_THIS_DEVICE = "Your recovery code wasn't changed. This device doesn't have the recovery code your backup currently uses, so it can't replace it. Generate the new code on the device where you got your current one. Nothing changed: the code that worked before still works.";
 const NOT_THE_BACKUPS = "Your recovery code wasn't changed. This device doesn't have the recovery code your backup currently uses, so it can't replace it. If the last code you got on this device came from \"Generate new recovery code\", your backup may never have received it, and may still use the code you had before. Otherwise, generate the new code on the device where you got your current one. Nothing on your backup or this device has changed.";
-const NEWER_PASSWORD = "Your recovery code wasn't changed. Your backup has a newer password than this device. Sign out and back in with your current password, then try again. Nothing changed: the code that worked before still works.";
-const UNREACHABLE = "Your recovery code wasn't changed, because the server couldn't be reached. Nothing changed: the code that worked before still works. Try again when you're online.";
+const NEWER_PASSWORD = "Your recovery code wasn't changed. Your backup has a newer password than this device. Sign out and back in with your current password, then try again. Nothing on your backup or this device has changed.";
+const UNREACHABLE = "Your recovery code wasn't changed, because the server couldn't be reached. Nothing on your backup or this device has changed. Try again when you're online.";
 const NO_CODE_REGISTERED = "Your recovery code wasn't changed. Your backup has no recovery code registered, and this device can't register one. Nothing on your backup or this device has changed.";
 const NO_SERVER_COPY = "This code works on this device. If you turn backup on, it becomes your backup's code too.";
 const NO_COPY_YET = "This code works on this device. Your backup has no copy yet; when it next uploads, this becomes its code too.";
@@ -215,8 +213,11 @@ describe("every way the server can't accept it is a refusal that changes nothing
 });
 
 describe("no server copy: the code is kept and shown, and says it works on this device", () => {
-  it("backup undecided, the server has nothing: shown with the 'turn backup on' note", async () => {
-    await withChoice(undefined);
+  it.each([
+    ["backup undecided", undefined],
+    ["backup off", { enabled: false, decidedAt: AT } as Choice],
+  ])("%s, the server has nothing: shown with the 'turn backup on' note", async (_label, choice) => {
+    await withChoice(choice);
     pull = NONE;
     const r = await regenerateRecoveryCode(userId);
     if (!r.ok) throw new Error("refused: " + r.error);
@@ -234,53 +235,19 @@ describe("no server copy: the code is kept and shown, and says it works on this 
   }, 20_000);
 });
 
-describe("whether to ask the server follows the recorded backup state", () => {
-  // "deleted" and "none" are recorded with this browser's last-sync time at
-  // that moment (null here: this test account has never synced).
-  const offWith = (serverCopy?: "kept" | "deleted" | "none"): Choice =>
-    ({ enabled: false, decidedAt: AT, ...(serverCopy ? { serverCopy } : {}),
-      ...(serverCopy === "deleted" || serverCopy === "none" ? { lastSyncAtChoice: null } : {}) }) as Choice;
-
+describe("it always asks the server, whatever the recorded backup state", () => {
+  // A copy may exist in every one of these states: another device can create
+  // one at any time, Profile's manual Push isn't gated by the backup choice,
+  // and a deleted copy can be pushed again (owner, 2026-10-06).
   it.each([
     ["backup on", ON],
-    ["off, copy kept", offWith("kept")],
-    ["off, chosen before this was recorded (fail closed)", offWith()],
-    ["never answered (fail closed)", undefined],
-  ])("asks: %s", async (_label, choice) => {
+    ["backup off", { enabled: false, decidedAt: AT } as Choice],
+    ["never answered", undefined],
+  ])("%s: exactly one question to the server, before anything is kept", async (_label, choice) => {
     await withChoice(choice);
-    await regenerateRecoveryCode(userId);
-    expect(calls.filter((c) => c.url === "/api/sync/pull")).toHaveLength(1);
-  }, 20_000);
-
-  it.each([
-    ["off, copy deleted", offWith("deleted")],
-    ["off, confirmed there was never a copy", offWith("none")],
-  ])("doesn't ask, and sends nothing at all: %s", async (_label, choice) => {
-    await withChoice(choice);
-    const r = await regenerateRecoveryCode(userId);
-    if (!r.ok) throw new Error("refused: " + r.error);
-    // COPY-11: not the address, not anything.
-    expect(fetchFake).not.toHaveBeenCalled();
-    expect(r.note).toBe(NO_SERVER_COPY);
-  }, 20_000);
-
-  // "Nothing exists" holds only as long as nothing has synced since it was
-  // recorded. Profile's manual Push isn't gated by the backup choice, a pull
-  // proves a copy exists, and restoring an export brings back whatever
-  // choice the file recorded. Any of those changes the last-sync time.
-  it.each([
-    ["off, copy deleted", "deleted"],
-    ["off, confirmed there was never a copy", "none"],
-  ] as const)("asks again once anything has synced since the choice: %s", async (_label, serverCopy) => {
-    await withChoice(offWith(serverCopy));
-    localStorage.setItem(LAST_SYNC_KEY, "2026-10-04T12:00:00.000Z");
-    await regenerateRecoveryCode(userId);
-    expect(calls.filter((c) => c.url === "/api/sync/pull")).toHaveLength(1);
-  }, 20_000);
-
-  it("a 'deleted' with no last-sync time recorded beside it asks (fail closed)", async () => {
-    await withChoice({ enabled: false, decidedAt: AT, serverCopy: "deleted" } as Choice);
-    await regenerateRecoveryCode(userId);
+    pull = "offline";
+    // Refused while the server can't answer, and nothing kept meanwhile.
+    await expectRefused(UNREACHABLE);
     expect(calls.filter((c) => c.url === "/api/sync/pull")).toHaveLength(1);
   }, 20_000);
 });
@@ -310,7 +277,8 @@ describe("when this device can't store the new code", () => {
   }, 20_000);
 
   it("with no server copy: refused, no code, nothing changed", async () => {
-    await withChoice({ enabled: false, decidedAt: AT, serverCopy: "deleted", lastSyncAtChoice: null } as Choice);
+    await withChoice({ enabled: false, decidedAt: AT } as Choice);
+    pull = NONE;
     failNextUsersWrite();
     await expectRefused(notStored("This browser has run out of storage space for ESSA."));
   }, 20_000);

@@ -376,8 +376,12 @@ export async function signIn(
  *   - there's no server copy for the code to matter to.
  * Every other outcome refuses, writes nothing anywhere, and says why. Relink
  * is never called without a server row, so its fresh-registration branch
- * (2.4.160) is never reached from here. Whether to ask the server at all is
- * serverCheckNeeded's call. The wording is in recoveryMessages.ts.
+ * (2.4.160) is never reached from here.
+ *
+ * It ALWAYS asks the server, whatever the recorded backup state (owner,
+ * 2026-10-06). This device can never know that nothing exists: another
+ * device can create a copy at any time. It's a rare, explicit action, unlike
+ * COPY-11's background request. The wording is in recoveryMessages.ts.
  */
 export async function regenerateRecoveryCode(
   userId: string,
@@ -389,7 +393,7 @@ export async function regenerateRecoveryCode(
   if (!dek) return { ok: false, error: locked };
   const user = getUsers().find((u) => u.id === userId);
   if (!user) return { ok: false, error: "Account not found." };
-  const { loadData, serverCheckNeeded, syncAllowed, saveFailureKind, SAVE_FAILURE_REASON } = await import("./localData");
+  const { loadData, syncAllowed, saveFailureKind, SAVE_FAILURE_REASON } = await import("./localData");
   const data = await loadData(userId);
 
   // In memory only, until the server has taken it or there's nothing there to take it.
@@ -404,11 +408,9 @@ export async function regenerateRecoveryCode(
     return { ok: true, recoveryCode, note };
   };
 
-  const { probeServerCopy, relinkSync, getLastSyncTime } = await import("./syncService");
-  if (!serverCheckNeeded(data, getLastSyncTime())) return keepHereOnly(REGENERATE.noServerCopy);
-
   const syncToken = getSyncToken();
   if (!syncToken) return { ok: false, error: locked };
+  const { probeServerCopy, relinkSync } = await import("./syncService");
   const probe = await probeServerCopy(user.email);
   if (probe.kind === "unreachable") return { ok: false, error: REGENERATE.unreachable };
   if (probe.kind === "wrong-password") return { ok: false, error: REGENERATE.newerPassword };

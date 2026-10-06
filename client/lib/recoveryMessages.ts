@@ -9,7 +9,11 @@
  *
  * Approved by the owner on 2026-10-05: `confirm`, `newerPassword`,
  * `unreachable`, `noServerCopy`, and the first two sentences of
- * `notOnThisDevice` (their replacement for the original message 2).
+ * `notOnThisDevice` (their replacement for the original message 2). On
+ * 2026-10-06 `newerPassword` and `unreachable` end with "Nothing on your
+ * backup or this device has changed." instead of "the code that worked
+ * before still works", which an owner in SEC-09's state reads as their
+ * newest code. Neither can tell such an owner apart: both stop before relink.
  * Drafted while building and sent for review before merge: the next step in
  * `notOnThisDevice`, and `notTheBackupsCode`, `noCodeRegistered`,
  * `noCopyYet`, `acceptedNotStored`, `notStored`.
@@ -40,10 +44,10 @@ export const REGENERATE = {
 
   newerPassword:
     "Your recovery code wasn't changed. Your backup has a newer password than this device. Sign out and back in with your current password, then try again. " +
-    "Nothing changed: the code that worked before still works.",
+    "Nothing on your backup or this device has changed.",
 
   unreachable:
-    "Your recovery code wasn't changed, because the server couldn't be reached. Nothing changed: the code that worked before still works. " +
+    "Your recovery code wasn't changed, because the server couldn't be reached. Nothing on your backup or this device has changed. " +
     "Try again when you're online.",
 
   /** The server holds a copy with no recovery code registered: /relink refuses such a row whatever it's sent. */
@@ -51,7 +55,7 @@ export const REGENERATE = {
     "Your recovery code wasn't changed. Your backup has no recovery code registered, and this device can't register one. " +
     "Nothing on your backup or this device has changed.",
 
-  /** Shown with the code: there's no server copy, and backup isn't on. */
+  /** Shown with the code: the server says there's no copy, and backup isn't on. */
   noServerCopy: "This code works on this device. If you turn backup on, it becomes your backup's code too.",
 
   /** Shown with the code: backup is on, but nothing has reached the server yet. The first upload registers this code. */
@@ -66,7 +70,7 @@ export const REGENERATE = {
   acceptedNotStored:
     "Your backup accepted this code, but this device couldn't store it. The code still works: resetting your password with it goes through your backup.",
 
-  /** No server copy, and this device couldn't store the new code, so nothing changed anywhere. */
+  /** The server says there's no copy, and this device couldn't store the new code, so nothing changed anywhere. */
   notStored: (reason: string) =>
     `Your recovery code wasn't changed, because this device couldn't store the new one. ${reason} Nothing changed: the code that worked before still works.`,
 } as const;
