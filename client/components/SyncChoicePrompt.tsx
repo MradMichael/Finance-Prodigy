@@ -75,8 +75,8 @@ export default function SyncChoicePrompt({ hasServerCopy, busy, onChoose }: {
         )}
 
         <p className="text-xs leading-relaxed" style={{ color: T.mute }}>
-          With backup off, your data stays in this browser only: you can&apos;t sign in on another device, and your
-          recovery code only works on this device. You can change this later in Profile.
+          With backup off and no copy left on the server, your data stays in this browser only: you can&apos;t sign in
+          on another device, and your recovery code only works on this device. You can change this later in Profile.
         </p>
 
         <div className="space-y-2">
