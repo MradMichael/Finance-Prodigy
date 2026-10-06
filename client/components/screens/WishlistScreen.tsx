@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, WishlistItem, Currency, StoredGoal } from "../../lib/localData";
-import { uid, toUSD as toUSDShared, withRate, moneyMaxFor, DEFAULT_LBP_RATE } from "../../lib/localData";
+import { uid, toUSD as toUSDShared, withRate, moneyMaxFor, DEFAULT_LBP_RATE, recordDeletion } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, CurrencyToggle } from "../form/Primitives";
@@ -44,10 +44,12 @@ export default function WishlistScreen({
     const trimmed = name.trim();
     const parsedPrice = parseFloat(price.replace(/,/g, ""));
     if (!trimmed || isNaN(parsedPrice) || parsedPrice <= 0) return;
+    const now = new Date().toISOString();
     const item: WishlistItem = {
       id: uid(), name: trimmed, emoji: emoji || "✨", price: parsedPrice, currency, priority,
       ...withRate(currency, lbpRate),
-      createdAt: new Date().toISOString(),
+      // SYNC-1 step 2: every edit is stamped, so a merge keeps the later one.
+      createdAt: now, updatedAt: now,
     };
     onChange({ ...financials, wishlist: [...wishlist, item] });
     setName(""); setPrice(""); setEmoji("✨"); setPriority("medium");
@@ -56,13 +58,18 @@ export default function WishlistScreen({
   function toggleBought(id: string) {
     onChange({
       ...financials,
-      wishlist: wishlist.map((w) => w.id !== id ? w : { ...w, boughtAt: w.boughtAt ? undefined : new Date().toISOString() }),
+      wishlist: wishlist.map((w) => {
+        if (w.id !== id) return w;
+        const now = new Date().toISOString();
+        return { ...w, boughtAt: w.boughtAt ? undefined : now, updatedAt: now };
+      }),
     });
   }
 
   function deleteItem(id: string) {
     if (!confirm("Delete this wishlist item?")) return;
-    onChange({ ...financials, wishlist: wishlist.filter((w) => w.id !== id) });
+    // SYNC-1 step 2: recorded, so the deletion reaches the other devices instead of the item coming back from them.
+    onChange({ ...financials, wishlist: wishlist.filter((w) => w.id !== id), deletedKeys: recordDeletion(financials, "wishlist", id) });
   }
 
   // Bridges to the existing Goals feature instead of reinventing savings-

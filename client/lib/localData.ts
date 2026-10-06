@@ -119,6 +119,15 @@ export interface PeriodClose {
    * unclosed again and reappears in Phase 3's list.
    */
   reopenedAt?: string;
+  /**
+   * SYNC-1 step 2 (owner, 2026-10-06): set when another device closed the
+   * same cycle EARLIER, and a sync merge kept that close instead of this one.
+   * A superseded close is undone exactly as a reopen undoes it, and also
+   * carries `reopenedAt` (the same instant). So every "in force" check, and
+   * older app versions that know only `reopenedAt`, treat it as not in force.
+   * Kept, never removed: its acknowledgement notes are text the owner wrote.
+   */
+  supersededAt?: string;
 }
 
 /** One tracked balance's figures at the moment of a close. */
@@ -535,6 +544,8 @@ export interface WishlistItem {
   notes?: string;
   createdAt: string;  // ISO — when added
   boughtAt?: string;  // ISO — when checked off as bought
+  /** ISO, stamped on every edit (SYNC-1 step 2): the later edit wins a merge. Absent on items from before v6 until migrated. */
+  updatedAt?: string;
 }
 
 /**
@@ -721,7 +732,8 @@ export const CATEGORY_ICON: Record<CategoryKey, string> = Object.fromEntries(
   CATEGORIES.map((c) => [c.value, c.icon]),
 ) as Record<CategoryKey, string>;
 
-export interface CustomCategory { value: string; label: string; icon: string }
+/** `updatedAt` (ISO) is stamped on every edit (SYNC-1 step 2): the later edit wins a merge. */
+export interface CustomCategory { value: string; label: string; icon: string; updatedAt?: string }
 
 /** Built-in categories plus this account's user-created ones, in one combined
  * list -- feeds every category picker so a custom category shows up right
@@ -746,7 +758,8 @@ export function categoryIcon(key: string | undefined, customCategories?: CustomC
   return (CATEGORY_ICON as Record<string, string>)[key] ?? customCategories?.find((c) => c.value === key)?.icon ?? "•";
 }
 
-export interface CategoryRule { id: string; keyword: string; category: string }
+/** `updatedAt` (ISO) is stamped on every edit (SYNC-1 step 2): the later edit wins a merge. */
+export interface CategoryRule { id: string; keyword: string; category: string; updatedAt?: string }
 
 /**
  * Finds the first rule whose keyword appears in the description
@@ -890,14 +903,52 @@ export interface LocalFinancials {
    * "no cycle has been closed", which is true of every account today.
    */
   periodCloses?: PeriodClose[];
+  /**
+   * SYNC-1 step 2 (DI-08, 2026-10-06): what this account deleted, by key, so
+   * a sync merge can tell a deletion from an item the other device simply
+   * has. Without it, the merge's union would bring a deleted item back,
+   * which is why Phase 2.7 didn't merge these lists at all. Deleted items are
+   * still REMOVED from their lists; screens never read this. Keys only (no
+   * content), kept for good: a device that was offline for months must not
+   * resurrect anything when it comes back.
+   */
+  deletedKeys?: DeletedKeys;
+}
+
+/** A deleted item's key and when it was deleted (SYNC-1 step 2). */
+export interface Tombstone { key: string; deletedAt: string }
+export interface DeletedKeys {
+  wishlist?: Tombstone[];
+  customCategories?: Tombstone[];
+  categoryRules?: Tombstone[];
+  trackedBalances?: Tombstone[];
+}
+
+/**
+ * Records a deletion (SYNC-1 step 2). Every screen that deletes a wishlist
+ * item, custom category, category rule or tracked balance calls this beside
+ * removing it, so the deletion travels to the other devices.
+ */
+export function recordDeletion(
+  d: Pick<LocalFinancials, "deletedKeys">,
+  collection: keyof DeletedKeys,
+  key: string,
+  now: Date = new Date(),
+): DeletedKeys {
+  const existing = d.deletedKeys ?? {};
+  const list = existing[collection] ?? [];
+  if (list.some((t) => t.key === key)) return existing;
+  return { ...existing, [collection]: [...list, { key, deletedAt: now.toISOString() }] };
 }
 
 // Bumped whenever a stored-shape migration step is added to MIGRATIONS
 // below. v2 (docs/ROADMAP.md Phase 1.2) adds currency to Goal/Debt and a
 // captured lbpRateAtEntry to every LBP-currency record. v3 (Phase 2.5.1)
 // adds confirmCutoverDate to recurring items. v4 (Phase 2.6.1) adds
-// emergencyFundOpeningBalance and StoredDebt.openingBalance.
-export const CURRENT_SCHEMA_VERSION = 5;
+// emergencyFundOpeningBalance and StoredDebt.openingBalance. v5 (period
+// close Phase 1) adds periodCloses. v6 (SYNC-1 step 2) adds edit times and
+// the deletion registry a sync merge needs.
+export const CURRENT_SCHEMA_VERSION = 6;
 
 // The reference rate a new account starts with, and the fallback used
 // anywhere financials.lbpRate is momentarily absent. Single source of
@@ -1129,12 +1180,29 @@ function addLedgerDerivedFields(d: LocalFinancials): LocalFinancials {
 function addPeriodCloseRecord(d: LocalFinancials): LocalFinancials {
   return { ...d, schemaVersion: 5, periodCloses: d.periodCloses ?? [] };
 }
+/**
+ * v5 -> v6 (SYNC-1 step 2, 2026-10-06). Gives every wishlist item an edit
+ * time from what it already knows (when it was marked bought, else when it
+ * was added), so a merge can order two devices' copies. Non-clobbering: an
+ * item that has one keeps it. Categories and rules carry no instant to
+ * derive from; theirs stays absent, which a merge reads as "older than any
+ * edit". Everything else v6 adds (deletedKeys, supersededAt) is absent until
+ * first used.
+ */
+function addMergeStamps(d: LocalFinancials): LocalFinancials {
+  return {
+    ...d,
+    schemaVersion: 6,
+    wishlist: (d.wishlist ?? []).map((w) => (w.updatedAt ? w : { ...w, updatedAt: w.boughtAt ?? w.createdAt })),
+  };
+}
 const MIGRATIONS: { fromVersion: number; migrate: (d: LocalFinancials) => LocalFinancials }[] = [
   { fromVersion: 0, migrate: (d) => ({ ...d, schemaVersion: 1 }) },
   { fromVersion: 1, migrate: addCurrencyAndRate },
   { fromVersion: 2, migrate: addRecurringConfirmModel },
   { fromVersion: 3, migrate: addLedgerDerivedFields },
   { fromVersion: 4, migrate: addPeriodCloseRecord },
+  { fromVersion: 5, migrate: addMergeStamps },
 ];
 
 /** Reads the schema version off a raw, not-yet-migrated value -- treats a
@@ -1424,6 +1492,9 @@ export function acknowledgementFor(
   // one for the same anchor.
   const ordered = periodCloses.slice().sort((a, b) => b.closedAt.localeCompare(a.closedAt));
   for (const close of ordered) {
+    // A superseded close's note explained a different close (SYNC-1 step 2).
+    // It stays in the record as history, but never explains this anchor.
+    if (close.supersededAt) continue;
     for (const acc of close.accounts) {
       if (acc.trackedBalanceId !== tb.id) continue;
       const ack = acc.acknowledgement;
@@ -1603,7 +1674,11 @@ export function canReopen(
   // one. A close whose stored span no longer matches today's payday is
   // "not-closed": the same verdict the unclosed list gives, arrived at the
   // same way rather than by a second comparison that could drift from it.
-  const matches = closesForSpan(data.periodCloses ?? [], cycleKey, startDay);
+  // A close superseded by another device's earlier close of the same cycle
+  // (SYNC-1 step 2) is not a candidate: the standing one is what can be
+  // reopened, and "already reopened" must not describe a close the owner
+  // never reopened.
+  const matches = closesForSpan(data.periodCloses ?? [], cycleKey, startDay).filter((c) => !c.supersededAt);
   if (!matches.length) return { ok: false, reason: "not-closed" };
   const close = matches[matches.length - 1];
   if (close.reopenedAt) return { ok: false, reason: "already-reopened" };
@@ -1656,7 +1731,24 @@ export function planReopen(
 } | null {
   const verdict = canReopen(data, cycleKey, now);
   if (!verdict.ok) return null;
-  const { close } = verdict;
+  return { close: verdict.close, ...planCloseUndo(data, verdict.close) };
+}
+
+/**
+ * The rule planReopen applies, for ANY close, with none of canReopen's
+ * conditions (current cycle, record complete). SYNC-1 step 2 needs it to undo
+ * a close that a merge marked reopened or superseded on the device that still
+ * holds it live. That's the same undo with the same rule, stated once.
+ */
+function planCloseUndo(
+  data: LocalFinancials,
+  close: PeriodClose,
+): {
+  restoredTrackedIds: string[];
+  keptTrackedIds: string[];
+  removedTransactionIds: string[];
+  keptTransactionIds: string[];
+} {
   // Legacy records carry no anchoredAt. The close wrote the end instant of its
   // own span, at the payday stored ON the record -- not today's.
   const derived = cycleCloseInstant(close.cycleKey, close.startDayAtClose);
@@ -1682,7 +1774,31 @@ export function planReopen(
       t.id !== id && isCorrectionFor(t, account) && (t.createdAt ?? "") > (row.createdAt ?? ""));
     (laterCorrection ? keptTransactionIds : removedTransactionIds).push(id);
   }
-  return { close, restoredTrackedIds, keptTrackedIds, removedTransactionIds, keptTransactionIds };
+  return { restoredTrackedIds, keptTrackedIds, removedTransactionIds, keptTransactionIds };
+}
+
+/**
+ * Applies a close's undo to `data` (SYNC-1 step 2), the way reopenCycle does:
+ * anchors the close still holds are restored, and correction rows still the
+ * latest for their account are soft-deleted at `at`. The close record itself
+ * isn't touched; the merge supplies the merged record. Stamping everything at
+ * the merged tombstone's own instant means two devices undoing the same close
+ * produce identical rows, so the transaction merge sees no conflict.
+ */
+export function undoCloseEffects(data: LocalFinancials, close: PeriodClose, at: string): LocalFinancials {
+  const plan = planCloseUndo(data, close);
+  const restore = new Set(plan.restoredTrackedIds);
+  const remove = new Set(plan.removedTransactionIds);
+  if (!restore.size && !remove.size) return data;
+  const byId = new Map(close.accounts.map((a) => [a.trackedBalanceId, a]));
+  return {
+    ...data,
+    transactions: remove.size
+      ? (data.transactions ?? []).map((t) => (remove.has(t.id) ? { ...t, deletedAt: at, updatedAt: at } : t))
+      : data.transactions,
+    trackedBalances: (data.trackedBalances ?? []).map((tb) =>
+      restore.has(tb.id) ? restoreTrackedBalance(tb, byId.get(tb.id)!.priorState) : tb),
+  };
 }
 
 /**

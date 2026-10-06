@@ -166,7 +166,7 @@ export default function Home() {
       if (!merged.ok) { setSyncStatus("conflict"); return; }
       const userId = sessionRef.current?.userId;
       if (userId && await persist(merged.mergedData, userId)) setFinancials(merged.mergedData);
-      const notice = buildMergeNoticeText(merged.addedFromServer, merged.conflictDetails, merged.nonTransactionDivergence);
+      const notice = buildMergeNoticeText(merged.addedFromServer, merged.conflictDetails, merged.nonTransactionDivergence, merged.replacedCloses);
       if (notice.text) setMergeNotice(notice);
       setSyncStatus("synced");
       setTimeout(() => setSyncStatus((s) => s !== "syncing" ? "idle" : s), 4000);
