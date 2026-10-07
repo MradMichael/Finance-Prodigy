@@ -3236,6 +3236,15 @@ export function isoLocalDay(d: Date): string {
 }
 
 /**
+ * A Date's LOCAL calendar day as fmtDate shows it (dd/mm/yyyy). Not fmtDate
+ * on an instant's ISO string: that slices the UTC day, which names the day
+ * before or after the local one for hours either side of midnight.
+ */
+export function fmtLocalDay(d: Date): string {
+  return fmtDate(isoLocalDay(d));
+}
+
+/**
  * The LOCAL calendar day of an ISO value. Identity on a bare date.
  *
  * Not `.toISOString().slice(0, 10)`: that is the UTC day, and transaction

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { LocalFinancials, TrackedBalance, PaymentMethod, StoredCard, Currency, StoredDebt } from "../../lib/localData";
 import {
-  uid, todayISO, fmtDate, withRate, reanchorTrackedBalance, moneyMaxFor, DEFAULT_LBP_RATE,
+  uid, todayISO, fmtDate, fmtLocalDay, withRate, reanchorTrackedBalance, moneyMaxFor, DEFAULT_LBP_RATE,
   buildPeriodClose, cycleStartDayOf, unclosedCycles, isCycleClosedBySpan,
   closeMovesBaselineBackwards, canReopen, reopenCycle, planReopen, activeCloseForCycle, rateForMonth,
   derivedEfBalance, derivedDebtBalance, planEfClose, planDebtClose, recordDeletion, closeHistoryFor,
@@ -54,13 +54,9 @@ export default function BalanceCheckScreen({
   const currentKey = currentCycleKey(new Date(), startDay);
   const closingKey = closing ?? currentKey;
   const unclosed = unclosedCycles(financials, new Date());
-  // The cycle's last LOCAL day, formatted. Not fmtDate on the close
-  // instant's ISO string: that is the UTC day, which for a 23:59:59.999
-  // local instant can name the day either side of the real one.
-  const closingRangeEnd = (() => {
-    const d = new Date(cycleBounds(closingKey, startDay).end.getTime() - 1);
-    return fmtDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
-  })();
+  // The cycle's last LOCAL day, formatted (fmtLocalDay: the UTC day of a
+  // 23:59:59.999 local instant can name the day either side of the real one).
+  const closingRangeEnd = fmtLocalDay(new Date(cycleBounds(closingKey, startDay).end.getTime() - 1));
 
   /**
    * ONE write for every account. Not a loop of per-account updates: the
@@ -158,13 +154,9 @@ export default function BalanceCheckScreen({
   // question and stay closed.
   const activeClose = activeCloseForCycle(financials, currentKey, startDay);
   const reopenVerdict = canReopen(financials, currentKey, new Date());
-  // closedAt is an INSTANT, so its local day -- not fmtDate on a UTC slice,
-  // which names the wrong day either side of midnight. Same trap as
-  // closingRangeEnd above.
-  const instantDay = (iso: string) => {
-    const d = new Date(iso);
-    return fmtDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
-  };
+  // closedAt (and every other instant shown here) by its local day, through
+  // the same formatter as closingRangeEnd above.
+  const instantDay = (iso: string) => fmtLocalDay(new Date(iso));
   const closedOnLabel = activeClose ? instantDay(activeClose.closedAt) : "";
 
   function commitReopen() {

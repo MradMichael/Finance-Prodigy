@@ -148,6 +148,10 @@ describe("2. closing a named past cycle", () => {
     openRow(/Close the cycle 27 Aug/);
     expect(screen.getByText(/after it ended/)).toBeTruthy();
     expect(screen.getByText(/not today/)).toBeTruthy();
+    // The date named is the cycle's last LOCAL day (2026-08 runs 27 Aug to
+    // 26 Sep). Its last moment is 23:59:59.999 local, which is already 27
+    // Sep in UTC west of UTC -- so a UTC slice would name the wrong day there.
+    expect(screen.getByText("26/09/2026").closest("p")?.textContent).toMatch(/on 26\/09\/2026, not today\./);
   });
 
   it("uses expected AS OF the cycle end, not the live figure", () => {
