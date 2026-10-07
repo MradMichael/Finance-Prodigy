@@ -924,6 +924,31 @@ export interface DeletedKeys {
   customCategories?: Tombstone[];
   categoryRules?: Tombstone[];
   trackedBalances?: Tombstone[];
+  /**
+   * DI-13 (2026-10-07): "Reset all data" records a deletion for every item it
+   * clears, so another device's merge can't bring it back. Transactions are
+   * keyed by id, closes by `periodCloseKey`, the five lists that still keep
+   * this device's copy (goals, debts, recurring items, assets, cards) by id.
+   * Today only the reset writes these; item 1 adds the per-item delete sites.
+   */
+  transactions?: Tombstone[];
+  periodCloses?: Tombstone[];
+  goals?: Tombstone[];
+  debts?: Tombstone[];
+  recurring?: Tombstone[];
+  assets?: Tombstone[];
+  cards?: Tombstone[];
+}
+
+/** Every collection the deletion registry covers, for code that walks them all. */
+export const DELETED_COLLECTIONS = [
+  "wishlist", "customCategories", "categoryRules", "trackedBalances",
+  "transactions", "periodCloses", "goals", "debts", "recurring", "assets", "cards",
+] as const satisfies readonly (keyof DeletedKeys)[];
+
+/** A period close's identity: its cycle and the instant it was made. */
+export function periodCloseKey(c: Pick<PeriodClose, "cycleKey" | "closedAt">): string {
+  return `${c.cycleKey}|${c.closedAt}`;
 }
 
 /**
@@ -1280,8 +1305,29 @@ export function migrateFinancials(raw: unknown, migrations: typeof MIGRATIONS = 
  * decision -- turning backup off (or back to undecided) as a side effect
  * would be a second change nobody asked for.
  */
-export function resetFinancials(d: Pick<LocalFinancials, "syncChoice">): LocalFinancials {
-  return { ...DEFAULT_DATA, ...(d.syncChoice ? { syncChoice: d.syncChoice } : {}) };
+export function resetFinancials(d: LocalFinancials, now: Date = new Date()): LocalFinancials {
+  // DI-13: a deletion recorded for every item cleared, so another device's
+  // merge can't bring it back. Earlier records are kept. Settings aren't
+  // items: each device keeps its own (the merge already does).
+  const keysOf: Record<(typeof DELETED_COLLECTIONS)[number], string[]> = {
+    transactions: (d.transactions ?? []).map((t) => t.id),
+    wishlist: (d.wishlist ?? []).map((w) => w.id),
+    customCategories: (d.customCategories ?? []).map((c) => c.value),
+    categoryRules: (d.categoryRules ?? []).map((r) => r.id),
+    trackedBalances: (d.trackedBalances ?? []).map((t) => t.id),
+    periodCloses: (d.periodCloses ?? []).map(periodCloseKey),
+    goals: (d.goals ?? []).map((g) => g.id),
+    debts: (d.debts ?? []).map((x) => x.id),
+    recurring: (d.recurring ?? []).map((r) => r.id),
+    assets: (d.assets ?? []).map((a) => a.id),
+    cards: (d.cards ?? []).map((c) => c.id),
+  };
+  let deletedKeys: DeletedKeys = d.deletedKeys ?? {};
+  for (const collection of DELETED_COLLECTIONS) {
+    for (const key of keysOf[collection]) deletedKeys = recordDeletion({ deletedKeys }, collection, key, now);
+  }
+  const anything = DELETED_COLLECTIONS.some((c) => (deletedKeys[c] ?? []).length > 0);
+  return { ...DEFAULT_DATA, ...(d.syncChoice ? { syncChoice: d.syncChoice } : {}), ...(anything ? { deletedKeys } : {}) };
 }
 
 /**

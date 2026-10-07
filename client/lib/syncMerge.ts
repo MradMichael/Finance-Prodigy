@@ -28,7 +28,7 @@
  * two records' canonical text, the same way from both sides.
  */
 import {
-  mergeTransactions, undoCloseEffects,
+  mergeTransactions, undoCloseEffects, periodCloseKey, DELETED_COLLECTIONS,
   type LocalFinancials, type PeriodClose, type TrackedBalance, type DeletedKeys, type Tombstone, type MergeTransactionsResult,
 } from "./localData";
 
@@ -78,7 +78,7 @@ function mergeTombstones(a: Tombstone[] = [], b: Tombstone[] = []): Tombstone[] 
 function mergeDeletedKeys(a: DeletedKeys | undefined, b: DeletedKeys | undefined): DeletedKeys | undefined {
   if (!a && !b) return undefined;
   const out: DeletedKeys = {};
-  for (const k of ["wishlist", "customCategories", "categoryRules", "trackedBalances"] as const) {
+  for (const k of DELETED_COLLECTIONS) {
     const merged = mergeTombstones(a?.[k], b?.[k]);
     if (merged.length) out[k] = merged;
   }
@@ -112,7 +112,7 @@ function mergeTrackedBalances(local: TrackedBalance[], server: TrackedBalance[],
   return out;
 }
 
-const closeKey = (c: PeriodClose) => `${c.cycleKey}|${c.closedAt}`;
+const closeKey = periodCloseKey;
 const spanKey = (c: PeriodClose) => `${c.cycleKey}|${c.rangeStart}|${c.rangeEnd}`;
 const earlier = (a: string | undefined, b: string | undefined) => (a && b ? (a < b ? a : b) : a ?? b);
 
@@ -191,12 +191,37 @@ export interface MergeFinancialsResult {
   supersededFromLocal: ReplacedClose[];
 }
 
-export function mergeFinancials(local: LocalFinancials, server: LocalFinancials, now: Date = new Date()): MergeFinancialsResult {
+/**
+ * DI-13: drop from one side every transaction, close and item of the five
+ * this-device lists whose key either device recorded as deleted. The
+ * wishlist, categories, rules and tracked balances already drop theirs in
+ * mergeByKey / mergeTrackedBalances.
+ */
+function withoutDeleted(d: LocalFinancials, deleted: DeletedKeys | undefined): LocalFinancials {
+  if (!deleted) return d;
+  const gone = (c: keyof DeletedKeys) => new Set((deleted[c] ?? []).map((t) => t.key));
+  const tx = gone("transactions"), cl = gone("periodCloses");
+  const keep = <T extends { id: string }>(list: T[] | undefined, set: Set<string>) => (list ?? []).filter((x) => !set.has(x.id));
+  return {
+    ...d,
+    transactions: (d.transactions ?? []).filter((t) => !tx.has(t.id)),
+    periodCloses: (d.periodCloses ?? []).filter((c) => !cl.has(closeKey(c))),
+    goals: keep(d.goals, gone("goals")),
+    debts: keep(d.debts, gone("debts")),
+    recurring: keep(d.recurring, gone("recurring")),
+    assets: keep(d.assets, gone("assets")),
+    cards: keep(d.cards, gone("cards")),
+  };
+}
+
+export function mergeFinancials(localIn: LocalFinancials, serverIn: LocalFinancials, now: Date = new Date()): MergeFinancialsResult {
   const at = now.toISOString();
+  const deletedKeys = mergeDeletedKeys(localIn.deletedKeys, serverIn.deletedKeys);
+  const local = withoutDeleted(localIn, deletedKeys);
+  const server = withoutDeleted(serverIn, deletedKeys);
   const { closes, replaced } = mergeCloses(local.periodCloses ?? [], server.periodCloses ?? [], at);
   const localU = applyMergedUndos(local, closes);
   const serverU = applyMergedUndos(server, closes);
-  const deletedKeys = mergeDeletedKeys(local.deletedKeys, server.deletedKeys);
   const transactions = mergeTransactions(localU.transactions ?? [], serverU.transactions ?? []);
   const liveLocally = new Set((local.periodCloses ?? []).filter((c) => !c.reopenedAt).map(closeKey));
   return {
