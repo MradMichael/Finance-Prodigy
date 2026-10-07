@@ -35,6 +35,15 @@ function Bar({ pct, color, T }: { pct: number; color: string; T: ReturnType<type
   );
 }
 
+/**
+ * COPY-01: a stage's "months away", counted from TODAY like the date beside
+ * it -- the stages ahead of it plus its own length. A stage already done (0)
+ * or unreachable (null) is passed through.
+ */
+function monthsFromToday(s: StageResult): number | null {
+  return s.months === null || s.months === 0 ? s.months : s.startMonths + s.months;
+}
+
 /** "3 mo, by 14-09-2028" / "not at this rate" — the shared readout used by the current-pace-vs-plan cards below. */
 function PaceRow({ label, months, dateDisplay, color, T }: { label: string; months: number | null; dateDisplay: string | null; color: string; T: ReturnType<typeof useTheme> }) {
   return (
@@ -563,7 +572,7 @@ export default function ProjectionsScreen({
           ) : (
             <div className="grid grid-cols-2 gap-4 mt-4">
               <PaceRow label="At recommended pace" months={efRecommendedPace.months} dateDisplay={efRecommendedPace.dateDisplay} color={T.text} T={T} />
-              <PaceRow label="In your plan" months={stages.ef.months} dateDisplay={stages.ef.dateDisplay} color={T.jade} T={T} />
+              <PaceRow label="In your plan" months={monthsFromToday(stages.ef)} dateDisplay={stages.ef.dateDisplay} color={T.jade} T={T} />
             </div>
           )}
         </div>
@@ -584,7 +593,7 @@ export default function ProjectionsScreen({
                 dateDisplay={debt.plan?.feasible ? debt.plan.debtFreeDateDisplay : null}
                 color={T.text} T={T}
               />
-              <PaceRow label="In your plan" months={stages.debt.months} dateDisplay={stages.debt.dateDisplay} color={T.jade} T={T} />
+              <PaceRow label="In your plan" months={monthsFromToday(stages.debt)} dateDisplay={stages.debt.dateDisplay} color={T.jade} T={T} />
             </div>
           )}
           {stages.debt.warning && (
@@ -658,7 +667,7 @@ export default function ProjectionsScreen({
                               avoid, but an unnecessary "Plan ·" on the
                               default view would be noise. */}
                           {showFastest && <span style={{ color: T.mute }}>Plan · </span>}
-                          {result.projectedMonths === null ? "Not reachable" : result.projectedMonths === 0 ? "Already there" : `${result.projectedDateDisplay} (${result.projectedMonths} mo)`}
+                          {result.projectedMonths === null ? "Not reachable" : result.projectedMonths === 0 ? "Already there" : `${result.projectedDateDisplay} (${stages.goals.startMonths + result.projectedMonths} mo)`}
                         </span>
                       </div>
                       {fastest && (
@@ -666,7 +675,7 @@ export default function ProjectionsScreen({
                           <span className="text-[11px]" style={{ color: T.mute }}>If everything went here first</span>
                           <span className="text-xs tabular-nums" style={{ color: T.brass }}>
                             <span style={{ color: T.mute }}>Fastest · </span>
-                            {fastest.monthsToComplete === null ? "Not reachable" : fastest.monthsToComplete === 0 ? "Already there" : `${fastest.dateDisplay} (${fastest.monthsToComplete} mo)`}
+                            {fastest.monthsToComplete === null ? "Not reachable" : fastest.monthsToComplete === 0 ? "Already there" : `${fastest.dateDisplay} (${stages.goals.startMonths + fastest.monthsToComplete} mo)`}
                           </span>
                         </div>
                       )}

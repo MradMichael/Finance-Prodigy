@@ -2080,6 +2080,20 @@ export function exportFileName(now: Date = new Date()): string {
   return `essa-data-${isoLocalDay(now)}.json`;
 }
 
+/**
+ * Whole LOCAL calendar days from an instant's day to `now`'s (COPY-08).
+ * "20 days ago" means 20 calendar days to a reader, not 20 elapsed 24-hour
+ * periods: an edit made at 09:00 twenty days back, read at 08:00, is 19 days
+ * 23 hours old, and flooring that said 19. Rounding absorbs the 23- and
+ * 25-hour days around a clock change.
+ */
+export function calendarDaysSince(iso: string, now: Date = new Date()): number {
+  const then = new Date(iso);
+  const a = new Date(then.getFullYear(), then.getMonth(), then.getDate()).getTime();
+  const b = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  return Math.round((b - a) / 86_400_000);
+}
+
 export function todayISO(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;

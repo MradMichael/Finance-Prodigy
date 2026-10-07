@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
-import { historizedRecurringContribution, toUSD as toUSDShared, moneyEquals, activeTransactions, LBP_RATE_STALE_DAYS, DEFAULT_LBP_RATE, cycleStartDayOf } from "../../lib/localData";
+import { historizedRecurringContribution, toUSD as toUSDShared, moneyEquals, activeTransactions, LBP_RATE_STALE_DAYS, DEFAULT_LBP_RATE, cycleStartDayOf, calendarDaysSince } from "../../lib/localData";
 import { computeHoldingsByCurrency } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
@@ -34,7 +34,7 @@ const LBP_RATE_MAX = 10_000_000;
 function RateStaleness({ updatedAt }: { updatedAt?: string }) {
   const T = useTheme();
   if (!updatedAt) return null;
-  const days = Math.floor((Date.now() - new Date(updatedAt).getTime()) / 86_400_000);
+  const days = calendarDaysSince(updatedAt); // COPY-08: calendar days, like the Overview alert
   if (days < 3) return null; // recently updated — no need to nag
   const stale = days >= LBP_RATE_STALE_DAYS;
   const color = stale ? T.coral : T.brass;

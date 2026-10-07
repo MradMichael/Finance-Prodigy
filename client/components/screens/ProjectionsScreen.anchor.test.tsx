@@ -13,6 +13,12 @@
 // one of these moves, the refactor is wrong — the finding is the moved
 // date, not a stale expectation to adjust.
 //
+// EXCEPT where the old behaviour was itself a known defect (TEST-04). The
+// baseline captured COPY-01: the debt stage's "months away" counted from
+// when the stage starts, not from today, so it read "4 months away" beside a
+// date 12 months off. COPY-01's fix (2026-10-07) moves that one count, on
+// purpose; every DATE here is unchanged.
+//
 // The pair-agreement locks (2.4.81) and cross-screen identity are written
 // against the exposed anchor, so they only exist post-refactor.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -81,7 +87,8 @@ describe("shared projection anchor — zero-diff regression", () => {
   it("the debt pair renders the same two dates and month counts as before", () => {
     renderProjections();
     expect(readPaceRow("Your current plan")).toEqual(["Your current plan", "13-12-2026", "3 months away"]);
-    expect(readInYourPlan(1)).toEqual(["In your plan", "13-09-2027", "4 months away"]);
+    // COPY-01 (2026-10-07): counted from today, like its date (8 + 4).
+    expect(readInYourPlan(1)).toEqual(["In your plan", "13-09-2027", "12 months away"]);
   });
 
   it("EVERY date rendered anywhere on the screen is unchanged, in order", () => {
