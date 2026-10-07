@@ -3,15 +3,10 @@
 /**
  * ESSA — Financial Dashboard
  * --------------------------
- * Drop into a Next.js App Router project, e.g.:
- *   app/page.tsx →  import FinancialDashboard from "@/components/FinancialDashboard";
- *
- * In the actual app (app/page.tsx), always receives its data via the
- * `data` prop -- computeDashboard.ts runs entirely client-side, there is
- * no GET /api/dashboard endpoint. The fetch-and-demo-data fallback below
- * (useDashboard) only kicks in when no `data` prop is passed at all, for
- * dropping this component into a project standalone before real data
- * exists.
+ * The Overview screen. It always receives its figures through the `data`
+ * prop (computeDashboard runs entirely client-side). CODE-02: the old fetch
+ * of a dashboard route the server never had, and its mock "demo data"
+ * fallback, were removed.
  *
  * Design language: "ledger ink & brass" — deep green-ink surfaces,
  * brass for milestones, jade for progress, coral reserved for the few
@@ -57,101 +52,6 @@ const ymStrLabel = (ym: CalendarKey) => {
   const [y, m] = ym.split("-").map(Number);
   return `${["", "Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][m]} ’${String(y).slice(2)}`;
 };
-
-// ------------------------- mock (dev only) ------------------------ //
-const MOCK: DashboardPayload = {
-  user: { name: "Demo User", currency: "USD", payoffStrategy: "AVALANCHE" },
-  period: { year: 2026, month: 6 },
-  periodLabel: "Jun 2026",
-  // Fixed, matching this mock's own period -- a live `new Date()` here would
-  // make the dev-only mock drift against its own hardcoded dates.
-  anchor: new Date(2026, 6, 14),
-  hasLoggedTransactions: true,
-  health: {
-    score: 68, grade: "Building momentum",
-    components: [
-      { key: "savings", label: "Savings rate", score: 72, weight: 25, detail: "14% of income saved (target 20%)" },
-      { key: "needs", label: "Needs discipline", score: 88, weight: 20, detail: "Essentials take 47% of income (target ≤50%)" },
-      { key: "ef", label: "Safety net", score: 52, weight: 25, detail: "Safety net 52% funded" },
-      { key: "debt", label: "Debt pressure", score: 61, weight: 20, detail: "Debt payments are 19% of income" },
-      { key: "goals", label: "Goal momentum", score: 81, weight: 10, detail: "Paced against your total Savings, shared across active goals" },
-    ],
-  },
-  encouragements: [
-    "Your safety net is 52% built. Past halfway, the rest is downhill.",
-    "Stay the course and you're debt-free by 14-09-2028. The date is already on the calendar.",
-    "30 Before 30 Travel Fund is on pace: 31% there.",
-  ],
-  streaks: [{ key: "savings-streak", label: "Savings streak", count: 3, message: "🔥 3 months in a row hitting your savings target." }],
-  month: { income: 3500, needsSpend: 1640, wantsSpend: 710, savingsContrib: 480, totalSpend: 2830, netCashFlow: 670, savingsRatePct: 13.7 },
-  emergencyFund: { targetMonths: 6, targetAmount: 9840, balance: 5120, coverageMonths: 3.1, pctFunded: 52, remaining: 4720 },
-  debt: {
-    totalBalance: 13260, count: 3,
-    plan: { feasible: true, months: 27, debtFreeDateDisplay: "14-09-2028", totalInterest: 1684, monthlyCommitment: 675 },
-    comparison: {
-      snowball: { feasible: true, months: 29, totalInterest: 1820, debtFreeDateDisplay: "14-11-2028" },
-      avalanche: { feasible: true, months: 27, totalInterest: 1684, debtFreeDateDisplay: "14-09-2028" },
-      avalancheSavesVsSnowball: 136,
-    },
-  },
-  goals: [
-    { id: 1, name: "30 Before 30 Travel Fund", emoji: "✈️", type: "TRAVEL", targetAmount: 12000, currentAmount: 3720, currency: "USD", paused: false,
-      projection: { pctComplete: 31, monthsRemaining: 28, requiredMonthly: 296, paceRatio: 1.05, onTrack: true, targetDateDisplay: "01-10-2028" } },
-    { id: 2, name: "Bambu Lab Upgrade", emoji: "🛠️", type: "PURCHASE", targetAmount: 1500, currentAmount: 900, currency: "USD", paused: false,
-      projection: { pctComplete: 60, monthsRemaining: 4, requiredMonthly: 150, paceRatio: 1.2, onTrack: true, targetDateDisplay: "15-10-2026" } },
-  ],
-  sixMonthTrend: [
-    { ymKey: 202601, income: 3400, spend: 3050, savingsContrib: 400 }, { ymKey: 202602, income: 3400, spend: 2890, savingsContrib: 460 },
-    { ymKey: 202603, income: 3500, spend: 2960, savingsContrib: 480 }, { ymKey: 202604, income: 3500, spend: 2740, savingsContrib: 560 },
-    { ymKey: 202605, income: 3500, spend: 2810, savingsContrib: 540 }, { ymKey: 202606, income: 3500, spend: 2830, savingsContrib: 520 },
-  ],
-  budgetRule: "50-30-20",
-  budgetTargetPct: { needs: 50, wants: 30, savings: 20 },
-  budgetTargets: { needs: 1750, wants: 1050, savings: 700 },
-  budgetRollover: { needs: 40, wants: -60, savings: 120 },
-  effectiveBudgetTargets: { needs: 1790, wants: 990, savings: 820 },
-  budgetPace: [
-    { bucket: "NEEDS", label: "Needs", pctOfMonthElapsed: 50, pctOfBudgetUsed: 60, projectedPct: 96, status: "ok", message: "Needs spending is on pace (60% used, 50% of the month elapsed)." },
-    { bucket: "WANTS", label: "Wants", pctOfMonthElapsed: 50, pctOfBudgetUsed: 78, projectedPct: 122, status: "watch", message: "78% of Wants budget spent and it's only the 15th. At this rate, you'll exceed it by ~$94." },
-    { bucket: "SAVINGS", label: "Savings", pctOfMonthElapsed: 50, pctOfBudgetUsed: 69, projectedPct: 96, status: "watch", message: "On pace for 96% of this month's savings target." },
-  ],
-  netWorthTrend: [
-    { ym: asCalendarKey("2026-01"), value: -8100 }, { ym: asCalendarKey("2026-02"), value: -7820 }, { ym: asCalendarKey("2026-03"), value: -7400 },
-    { ym: asCalendarKey("2026-04"), value: -7050 }, { ym: asCalendarKey("2026-05"), value: -6820 }, { ym: asCalendarKey("2026-06"), value: -6640 },
-  ],
-  upcomingRenewals: [
-    { id: "1", name: "Netflix", emoji: "🎬", amount: 15.49, currency: "USD", dueDate: "2026-06-20", dueInDays: 3, overdueCount: 0 },
-  ],
-  balanceChecks: [
-    { id: "1", name: "Cash", currency: "USD", expected: 240, actual: 190, actualDate: "2026-06-18", discrepancy: -50, changeSinceCheck: 0, acknowledged: null },
-  ],
-  netWorth: {
-    assets: 6620, liabilities: 13260, total: -6640,
-    tier: "Rebuilding", tierColor: "coral",
-    suggestions: [
-      "You're climbing: the negative number is shrinking each month.",
-      "Consider a small side income for 3–6 months; even $200/month accelerates this significantly.",
-      "Once you clear the debt, redirect that minimum payment into savings automatically.",
-    ],
-  },
-  alerts: [
-    { id: "budget-WANTS", severity: "warning", message: "Wants is on pace to go over budget", screen: "budget" },
-  ],
-};
-
-// --------------------------- data hook --------------------------- //
-function useDashboard(enabled: boolean) {
-  const [data, setData] = useState<DashboardPayload | null>(null);
-  const [demo, setDemo] = useState(false);
-  useEffect(() => {
-    if (!enabled) return;
-    fetch("/api/dashboard")
-      .then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
-      .then(setData)
-      .catch(() => { setData(MOCK); setDemo(true); });
-  }, [enabled]);
-  return { data, demo };
-}
 
 // --------------------------- sub-views --------------------------- //
 
@@ -233,14 +133,13 @@ function Panel({ title, children, className = "" }: { title?: string; children: 
 // ---------------------------- screen ----------------------------- //
 
 export default function FinancialDashboard({
-  data: propData, financials, onNavigate, onConfirmRecurring, loggingRecurringIds, justConfirmedIds,
+  data, financials, onNavigate, onConfirmRecurring, loggingRecurringIds, justConfirmedIds,
 }: {
-  data?: DashboardPayload;
+  data: DashboardPayload;
   /** 2.4.55 sub-phase 3 -- the raw ledger, needed only for the past-month
       review card below (periodTotals takes LocalFinancials, not the
-      already-computed DashboardPayload). Optional, like `data`, for the
-      same standalone/demo-mode reason -- the past-month card simply
-      doesn't render without it. */
+      already-computed DashboardPayload). Optional: the past-month card
+      simply doesn't render without it. */
   financials?: LocalFinancials;
   onNavigate?: (screen: Screen) => void;
   /** Confirms a recurring item's oldest outstanding cycle -- see the "Confirm" button on Renewing soon. Quick-confirm only here (defaults to the due date); date-override lives in My Finances' Recurring section. */
@@ -252,9 +151,6 @@ export default function FinancialDashboard({
 }) {
   const T = useTheme();
   const router = useRouter();
-  const { data: fetchedData, demo: fetchedDemo } = useDashboard(propData === undefined);
-  const data = propData ?? fetchedData;
-  const demo = propData === undefined && fetchedDemo;
 
   // Recovery (the recovery-code flow on a lost/wiped device) only has
   // anything to recover if this account has pushed at least once -- with
@@ -281,14 +177,6 @@ export default function FinancialDashboard({
   // itself when the cycle advances, so persisting a flag would add a field
   // whose only job is to be cleaned up later.
   const [paydayBannerDismissed, setPaydayBannerDismissed] = useState(false);
-
-  if (!data) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: T.ink, color: T.mute }}>
-        Counting your wins…
-      </div>
-    );
-  }
 
   const { health, month, periodLabel, emergencyFund: ef, debt, goals, sixMonthTrend, encouragements, user, netWorth, streaks, budgetPace, netWorthTrend, upcomingRenewals, balanceChecks, budgetTargetPct, alerts } = data;
   const targets     = data.budgetTargets;
@@ -341,11 +229,6 @@ export default function FinancialDashboard({
                 : <>Spending exceeded income by <span style={{ color: T.coral }}>{money(-month.netCashFlow)}</span> this {noun}, {user.name.split(" ")[0]}. The plan below shows the path.</>}
             </h1>
           </div>
-          {demo && (
-            <span className="text-xs px-3 py-1 rounded-full" style={{ border: `1px solid ${T.line}`, color: T.mute }}>
-              demo data, API offline
-            </span>
-          )}
         </header>
 
         {/* Keeps showing until BOTH steps are actually done (not just "income

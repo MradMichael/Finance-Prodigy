@@ -67,9 +67,11 @@ export interface PeriodCloseDebt {
  * cycle the owner has closed: what each tracked balance actually held, and
  * what was overwritten to make that the new baseline.
  *
- * INERT AS OF PHASE 1. Nothing writes it and nothing in the UI reads it.
- * The shape is settled here, before any row exists, precisely so Phase 2
- * does not need a second migration against rows Phase 1 already wrote.
+ * Written by Balance Check's close (Phase 2 on); read by the dashboard's
+ * acknowledgement check, reopen (Phase 4) and the sync merge (SYNC-1 step 2).
+ * The shape was settled in Phase 1, before any row existed, so Phase 2
+ * needed no second migration against rows Phase 1 had written. (CODE-04:
+ * this said "INERT" long after it wasn't.)
  */
 export interface PeriodClose {
   /** Which cycle was closed. */
@@ -407,8 +409,8 @@ export interface StoredTransaction {
   createdAt?: string;
   // Added in schema v4 (Phase 2.6.1) -- soft-delete tombstone. "Delete
   // transaction" stamps this instead of removing the row; every normal
-  // read (spend totals, lists, derived balances) is meant to filter
-  // `deletedAt == null` once 2.6.3 wires that in. Absent means active.
+  // read (spend totals, lists, derived balances) filters it out through
+  // activeTransactions, since 2.6.3(b). Absent means active.
   // Closes the "delete-and-redo is the only correction path, and it's
   // destructive" gap 2.4.27 found.
   deletedAt?: string;
@@ -898,10 +900,9 @@ export interface LocalFinancials {
    * Phase 1 of the period close. One PeriodClose per cycle the owner has
    * closed, newest-last (cycleClosesFor sorts rather than relying on it).
    *
-   * INERT: nothing writes this and nothing in the UI reads it. Declared now
-   * so the record's shape -- including the per-account acknowledgement --
-   * is settled before any row exists. Optional and additive; absent means
-   * "no cycle has been closed", which is true of every account today.
+   * Written by Balance Check's close; read by the dashboard, reopen and the
+   * sync merge. Optional and additive; absent means "no cycle has been
+   * closed". (CODE-04: this said "INERT" long after it wasn't.)
    */
   periodCloses?: PeriodClose[];
   /**
@@ -1154,8 +1155,8 @@ function addRecurringConfirmModel(d: LocalFinancials): LocalFinancials {
  * past transaction represented a debt payment or an EF movement), so they
  * simply stay absent on every pre-existing transaction, exactly like
  * cycleDate stayed absent on transactions confirmed before IT existed.
- * They only ever get set going forward, once 2.6.3 wires the new
- * transaction-creation paths that populate them.
+ * They're set going forward by the transaction-creation paths 2.6.3 added
+ * (the emergency-fund fields, debt payments, Setup's fund correction).
  */
 function addLedgerDerivedFields(d: LocalFinancials): LocalFinancials {
   return {
@@ -3314,21 +3315,17 @@ export function buildQuickRecurring(name: string, amount: string, currency: Curr
   };
 }
 
-// ── Phase 2.6.2 -- ledger-derived EF/debt balances (pure logic, shipped
-// completely unwired; see docs/ROADMAP.md Phase 2.6). No caller anywhere
-// in the app uses these yet -- `emergencyFundBalance`/`debt.balance`
-// remain the live, mutated fields until 2.6.3 flips every reader/writer
-// over together, same discipline as 2.5.2's own pure functions shipping
-// unwired before 2.5.3's flip. Proven correct in isolation now, against
-// the owner's real 2.4.27 scenario, rather than debugged live while the
-// flip is also in flight. ──────────────────────────────────────────────
+// ── Phase 2.6.2 -- ledger-derived EF/debt balances (pure logic; see
+// docs/ROADMAP.md Phase 2.6). Shipped unwired and proven in isolation
+// against the owner's real 2.4.27 scenario; 2.6.3 (merged 2026-08-26) then
+// flipped every reader to them, so they now drive every emergency-fund and
+// debt figure in the app. (CODE-04: this said "no caller" long after.) ──────────────────────────────────────────────
 
 /**
  * The emergency fund balance, derived instead of stored-and-mutated
  * (2.4.27/2.4.31's own root fix, applied to EF/debt): opening balance plus
- * every non-deleted transaction's `efAmount` since. Replaces
- * `emergencyFundBalance` once 2.6.3 wires this in -- until then, this
- * function has no callers.
+ * every non-deleted transaction's `efAmount` since. It replaced the stored
+ * `emergencyFundBalance` in 2.6.3; every emergency-fund figure reads it.
  *
  * `efAmount` is always USD-terms, matching `emergencyFundBalance`/
  * `emergencyFundOpeningBalance`'s own currency-less, implicitly-USD
@@ -3354,8 +3351,8 @@ export function derivedEfBalance(data: LocalFinancials): number {
 /**
  * A single debt's balance, derived instead of stored-and-mutated: opening
  * balance minus every non-deleted transaction whose `debtId` matches this
- * debt, summed by its own `amount`. Replaces `debt.balance` once 2.6.3
- * wires this in -- until then, this function has no callers.
+ * debt, summed by its own `amount`. It replaced the stored `debt.balance`
+ * in 2.6.3(a); every debt figure reads it.
  *
  * v1 keeps it simple, matching `docs/ROADMAP.md`'s own scope note: a
  * linked transaction's `amount` is assumed to already be in the debt's
@@ -3527,7 +3524,9 @@ function resolveTransactionConflict(a: StoredTransaction, b: StoredTransaction):
 }
 
 /**
- * Phase 2.7, sub-phase 1 -- the sync merge engine, pure and unwired.
+ * Phase 2.7, sub-phase 1 -- the sync merge engine, pure. Wired since
+ * sub-phase 2: mergeFinancials calls it, for the conflict merge
+ * (mergeAndPush) and the fetch on open (fetchAndMerge).
  * Design approved 2026-08-26 (docs/ROADMAP.md): union by id, present on
  * one side only is kept, tombstones outrank active copies, a genuine
  * same-id conflict resolves by updatedAt and is reported, not silent.

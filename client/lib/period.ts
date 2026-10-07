@@ -2,10 +2,10 @@
  * The budget period — one place that answers "which period does this date
  * belong to", "what is the current period", and "how far into it are we".
  *
- * PHASE 1 IS DELIBERATELY INERT. `CYCLE_START_DAY` is hardcoded to 1, so
- * every function here returns exactly what the calendar-month arithmetic it
- * replaces returned. Nothing about the app's behaviour changes. What changes
- * is that the boundary is now expressed once instead of in 12 membership
+ * Phase 1 shipped this module inert, with the start day fixed at 1. The
+ * payday is now user-set (Setup; cycleStartDayOf), and `CYCLE_START_DAY` is
+ * only the default. (CODE-04: this still said "hardcoded to 1".) What
+ * Phase 1 changed is that the boundary is now expressed once instead of in 12 membership
  * filters, 28 key derivations and 3 month-walking loops — and that mixing a
  * cycle key with a calendar key stops compiling.
  *
