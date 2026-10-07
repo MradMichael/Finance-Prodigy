@@ -243,7 +243,10 @@ export default function FinancialDashboard({
             LocalFinancials and has no way to know sync state) -- this reads
             localStorage directly instead. Sync is deliberately opt-in
             (see Privacy Policy), so this only ever warns, never auto-pushes. */}
-        {neverSynced && (month.income > 0 || data.hasLoggedTransactions) && (
+        {/* COPY-05 (owner, 2026-09-30): with backup off, nothing prompts an
+            upload -- the choice was made, and Profile already says what it
+            means. On, or still undecided, the banner shows as before. */}
+        {neverSynced && financials?.syncChoice?.enabled !== false && (month.income > 0 || data.hasLoggedTransactions) && (
           <button
             onClick={() => router.push("/profile")}
             className="w-full text-left transition-opacity hover:opacity-80"
