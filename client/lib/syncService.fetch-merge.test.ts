@@ -140,6 +140,22 @@ describe("fetchAndMerge", () => {
     expect(localStorage.getItem(LAST_SYNC)).toBe("2026-10-05T08:00:00.000Z");
   });
 
+  // The page labels both of these "Couldn't reach backup" (unless the device
+  // is offline): neither may come back looking like "no copy".
+  it("a server error: a failure, not 'no copy'", async () => {
+    respond = () => new Response("<html>Bad gateway</html>", { status: 502 });
+    const r = await fetchAndMerge("u1@example.com", () => laptop());
+    expect(r.ok).toBe(false);
+    expect(r).not.toHaveProperty("notFound");
+  });
+
+  it("the 45 s wait running out: a failure, not 'no copy'", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new DOMException("The operation was aborted due to timeout", "TimeoutError"); }));
+    const r = await fetchAndMerge("u1@example.com", () => laptop());
+    expect(r.ok).toBe(false);
+    expect(r).not.toHaveProperty("notFound");
+  });
+
   it("nothing local any more when the pull lands (signed out meanwhile): skipped", async () => {
     const r = await fetchAndMerge("u1@example.com", () => null);
     expect(r).toEqual({ ok: true, skipped: true });

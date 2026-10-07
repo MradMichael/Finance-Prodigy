@@ -4,7 +4,12 @@ import type { Currency } from "../../lib/localData";
 // "conflict" (2.4.38): the server's data has moved on since this device
 // last synced -- a real conflict, not a transient failure, so it's kept
 // distinct from "offline" (which a plain retry can resolve on its own).
-export type SyncStatus = "idle" | "syncing" | "synced" | "offline" | "conflict";
+//
+// "offline" vs "unreachable" (owner, 2026-10-07): "Offline" only when the
+// device is actually offline (navigator.onLine false). Any other failure -- a
+// server error, a wait that ran out, a network error while the browser
+// believes it's online -- is "unreachable", "Couldn't reach backup".
+export type SyncStatus = "idle" | "syncing" | "synced" | "offline" | "unreachable" | "conflict";
 
 export type Screen = "overview" | "budget" | "setup" | "finances" | "transactions" | "categories" | "goals" | "debts" | "recurring" | "projections" | "journey" | "currency" | "balancecheck" | "wishlist" | "statistics";
 

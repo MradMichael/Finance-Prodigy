@@ -45,6 +45,17 @@ const SYNC_DEBOUNCE_MS = 2500; // wait 2.5 s after last change before pushing
 // SYNC-1 step 3: opening ESSA, or coming back to it, fetches at most this often.
 const FETCH_MIN_INTERVAL_MS = 60_000;
 
+/**
+ * A failed upload or fetch (owner, 2026-10-07): "Offline" only when the device
+ * is actually offline, which the browser reports as navigator.onLine false.
+ * True can't prove the server was reachable, so a server error, a wait that
+ * ran out, or a network error while the browser believes it's online all
+ * read "Couldn't reach backup".
+ */
+function failedSyncStatus(): SyncStatus {
+  return typeof navigator !== "undefined" && navigator.onLine === false ? "offline" : "unreachable";
+}
+
 export default function Home() {
   const router  = useRouter();
   const T       = useTheme();
@@ -186,7 +197,7 @@ export default function Home() {
       setTimeout(() => setSyncStatus((s) => s !== "syncing" ? "idle" : s), 4000);
       return;
     }
-    setSyncStatus(result.ok ? "synced" : "offline");
+    setSyncStatus(result.ok ? "synced" : failedSyncStatus());
     // fade back to idle after 4 s so the indicator doesn't stay forever
     setTimeout(() => setSyncStatus((s) => s !== "syncing" ? "idle" : s), 4000);
   }, [persist]);
@@ -339,7 +350,8 @@ export default function Home() {
    * next edit.
    *
    * Quiet: no "syncing" while it waits (Render can take 30 s to wake), and a
-   * failure only flashes "Offline" the way an upload's does. No copy on the
+   * failure only flashes "Offline" or "Couldn't reach backup" the way an
+   * upload's does (failedSyncStatus). No copy on the
    * server is not a failure. It pushes only when the merged copy holds
    * something the server lacks (fetchAndMerge's `serverBehind`), and an
    * upload already pending is sent now with the merged copy instead of the
@@ -359,8 +371,9 @@ export default function Home() {
       if (!sameAccount()) return;
       if (!r.ok) {
         if (!r.notFound) {
-          setSyncStatus((st) => (st === "idle" ? "offline" : st));
-          setTimeout(() => setSyncStatus((st) => (st === "offline" ? "idle" : st)), 4000);
+          const failed = failedSyncStatus();
+          setSyncStatus((st) => (st === "idle" ? failed : st));
+          setTimeout(() => setSyncStatus((st) => (st === failed ? "idle" : st)), 4000);
         }
         return;
       }

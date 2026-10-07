@@ -133,12 +133,32 @@ describe("backup on: opening ESSA fetches and merges", () => {
     expect(notice.mock.calls[0]).toEqual([1, [], [], []]);
   });
 
-  it("a failure keeps this device's data and says Offline quietly", async () => {
+  // Owner, 2026-10-07: "Offline" only when the device is actually offline.
+  // A server error, or the 45 s wait running out, is "Couldn't reach backup".
+  // The browser's navigator.onLine is the only signal that tells them apart:
+  // false means offline; true can't prove the server was reachable, so every
+  // failure with it true reads "Couldn't reach backup".
+  it("the server can't be reached while the device is online: 'Couldn't reach backup', data kept", async () => {
     seed = settled({ syncChoice: ON });
-    fetchImpl = async () => ({ ok: false, error: "Could not reach server. Is it running?" });
+    fetchImpl = async () => ({ ok: false, error: "Pull failed (HTTP 503)." });
     await open();
-    expect(await screen.findByText("Offline")).toBeTruthy();
+    expect(await screen.findByText("Couldn't reach backup")).toBeTruthy();
+    expect(screen.queryByText("Offline")).toBeNull();
     expect(saved).toEqual([]);
+  });
+
+  it("the device is offline: 'Offline', data kept", async () => {
+    seed = settled({ syncChoice: ON });
+    const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    fetchImpl = async () => ({ ok: false, error: "Could not reach server. Is it running?" });
+    try {
+      await open();
+      expect(await screen.findByText("Offline")).toBeTruthy();
+      expect(screen.queryByText("Couldn't reach backup")).toBeNull();
+      expect(saved).toEqual([]);
+    } finally {
+      online.mockRestore();
+    }
   });
 
   it("no server copy: no indicator, nothing stored", async () => {
@@ -148,6 +168,7 @@ describe("backup on: opening ESSA fetches and merges", () => {
     await waitFor(() => expect(fetchAndMerge).toHaveBeenCalledTimes(1));
     await settle(500);
     expect(screen.queryByText("Offline")).toBeNull();
+    expect(screen.queryByText("Couldn't reach backup")).toBeNull();
     expect(saved).toEqual([]);
   });
 
@@ -260,6 +281,40 @@ describe("returning to ESSA", () => {
     await settle();
     vis.mockRestore();
     expect(fetchAndMerge).toHaveBeenCalledTimes(1);
+  });
+});
+
+// The same rule for an upload's failure: the label is shared, so "Offline"
+// means offline wherever it shows.
+describe("an upload that fails", () => {
+  async function editAndFail() {
+    seed = settled({ syncChoice: ON });
+    fetchImpl = async (_e, local) => merged(local()!, { localChanged: false, addedFromServer: 0 });
+    push.mockResolvedValueOnce({ ok: false, error: "Sync failed (HTTP 500)." } as never);
+    await open();
+    await waitFor(() => expect(fetchAndMerge).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("button", { name: "Wishlist" }));
+    fireEvent.change(document.getElementById("wish-name")!, { target: { value: "Amber stool" } });
+    fireEvent.change(document.getElementById("wish-price")!, { target: { value: "22.15" } });
+    fireEvent.click(screen.getByRole("button", { name: "+ Add to wishlist" }));
+    await waitFor(() => expect(push).toHaveBeenCalledTimes(1), { timeout: 5000 });
+  }
+
+  it("while online: 'Couldn't reach backup'", async () => {
+    await editAndFail();
+    expect(await screen.findByText("Couldn't reach backup")).toBeTruthy();
+    expect(screen.queryByText("Offline")).toBeNull();
+  });
+
+  it("while offline: 'Offline'", async () => {
+    const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    try {
+      await editAndFail();
+      expect(await screen.findByText("Offline")).toBeTruthy();
+      expect(screen.queryByText("Couldn't reach backup")).toBeNull();
+    } finally {
+      online.mockRestore();
+    }
   });
 });
 

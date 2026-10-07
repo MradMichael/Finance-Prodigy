@@ -19,7 +19,7 @@ export function syncStatusColor(status: Exclude<SyncStatus, "idle">, T: Theme): 
 
 /** Short form, for space-constrained inline display (Sidebar's under-name label). */
 export function syncStatusShortLabel(status: Exclude<SyncStatus, "idle">): string {
-  return status === "syncing" ? "Syncing…" : status === "synced" ? "Synced" : status === "conflict" ? "Sync conflict" : "Offline";
+  return status === "syncing" ? "Syncing…" : status === "synced" ? "Synced" : status === "conflict" ? "Sync conflict" : status === "unreachable" ? "Couldn't reach backup" : "Offline";
 }
 
 /** Long form, for a dedicated status line (TopBar's account-menu paragraph). */
@@ -27,5 +27,6 @@ export function syncStatusLongLabel(status: Exclude<SyncStatus, "idle">): string
   return status === "syncing" ? "Syncing…"
     : status === "synced" ? "Synced"
     : status === "conflict" ? "Sync conflict — server has newer data. Resolve in Settings."
+    : status === "unreachable" ? "Couldn't reach backup"
     : "Sync offline — changes saved on this device only";
 }
