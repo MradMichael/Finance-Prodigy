@@ -105,7 +105,7 @@ describe("the divergence notice", () => {
   it("a replaced close is told plainly, and says where the note is kept (owner's wording)", () => {
     const { text } = buildMergeNoticeText(0, [], [], [{ cycleLabel: "27 Aug – 26 Sep 2026", standingClosedAt: "2026-09-27T08:00:00.000Z" }]);
     expect(text).toBe(
-      `Two devices closed 27 Aug – 26 Sep 2026. The earlier close, made on another device on 27 Sep 2026, ${localHM("2026-09-27T08:00:00.000Z")}, stands; this device's close was undone, and any note you wrote on it is kept in the cycle's record.`,
+      `Two devices closed 27 Aug – 26 Sep 2026. The earlier close, made on another device on 27 Sep 2026, ${localHM("2026-09-27T08:00:00.000Z")}, stands; this device's close was undone, and any note you wrote on it stays visible under Close history on Balance Check.`,
     );
   });
 

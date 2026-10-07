@@ -198,7 +198,7 @@ export default function BalanceCheckScreen({
       "Reopen this cycle? Accounts go back to the balance and baseline they had before the close." +
       keptLine + keptRows +
       " Transactions you have logged since are untouched, and any note you wrote to account for a gap " +
-      "stops applying -- it stays on the record as history."
+      "stops applying -- it stays visible in the account's Close history."
     )) return;
     // transactions too: until 2.4.144 this write dropped them, so Phase 5a's
     // undo of EF/debt corrections was computed and never saved.

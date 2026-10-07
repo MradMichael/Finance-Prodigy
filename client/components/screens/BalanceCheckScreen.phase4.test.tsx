@@ -130,6 +130,8 @@ describe("2. reopening", () => {
     const msg = confirmSpy.mock.calls[0][0] as string;
     expect(msg).toContain("Transactions you have logged since are untouched");
     expect(msg).toContain("stops applying");
+    // DI-11 (owner's wording, 2026-10-07): the note is findable on screen now.
+    expect(msg).toContain("stops applying -- it stays visible in the account's Close history.");
   });
 
   it("restores the pre-close balance and marks the record, in ONE write", () => {
