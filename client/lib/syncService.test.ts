@@ -175,7 +175,9 @@ describe("pullFromServer", () => {
   it("gives a specific 'push first' message on 404, distinct from other failures", async () => {
     mockFetchOnce(404, { error: "ignored" });
     const result = await pullFromServer("a@test.com");
-    expect(result).toEqual({ ok: false, error: "No data on server yet. Push first." });
+    // SYNC-1 step 3: marked notFound, so the background fetch can tell "no
+    // copy" from a failure and stay quiet about it.
+    expect(result).toEqual({ ok: false, error: "No data on server yet. Push first.", notFound: true });
   });
 
   // 2.4.22 -- a bare HTTP 404 status used to be trusted on its own as "no

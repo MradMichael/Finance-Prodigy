@@ -1,7 +1,7 @@
 "use client";
 
 import type { LocalFinancials, StoredTransaction } from "./localData";
-import { mergeFinancials, stableStringify } from "./syncMerge";
+import { mergeFinancials, stableStringify, MERGED_FIELDS, type MergeFinancialsResult } from "./syncMerge";
 import { cycleLabelLong, dayLabel } from "./period";
 import { getSyncToken } from "./crypto";
 import { getRecoveryTokenForSync } from "./auth";
@@ -232,7 +232,16 @@ export async function relinkSync(
   }
 }
 
-export async function pullFromServer(email: string): Promise<{ ok: true; data: LocalFinancials; syncedAt: string; hasRecoveryCode: boolean } | { ok: false; error: string }> {
+/**
+ * `record: false` leaves the last-sync time alone (SYNC-1 step 3's fetch: see
+ * fetchAndMerge). `timeoutMs` lets a background fetch wait out Render's
+ * wake-up. `notFound` marks the API's own "no copy" answer, apart from a
+ * failure.
+ */
+export async function pullFromServer(
+  email: string,
+  { record = true, timeoutMs = SYNC_TIMEOUT_MS }: { record?: boolean; timeoutMs?: number } = {},
+): Promise<{ ok: true; data: LocalFinancials; syncedAt: string; hasRecoveryCode: boolean } | { ok: false; error: string; notFound?: true }> {
   const token = getSyncToken();
   if (!token) return { ok: false, error: "Not signed in. Sign in again to sync." };
   try {
@@ -246,7 +255,7 @@ export async function pullFromServer(email: string): Promise<{ ok: true; data: L
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ email }),
-      signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     const json = await parseJsonSafe(res);
     // 2.4.22: a bare 404 status alone isn't enough to conclude "no account
@@ -255,13 +264,13 @@ export async function pullFromServer(email: string): Promise<{ ok: true; data: L
     // here. Only trust it when the body actually carries the API's own
     // error-shaped response, matching what /pull's real 404 branch returns.
     if (res.status === 404 && json && typeof json.error === "string") {
-      return { ok: false, error: "No data on server yet. Push first." };
+      return { ok: false, error: "No data on server yet. Push first.", notFound: true };
     }
     if (!res.ok) return { ok: false, error: json?.error ?? `Pull failed (HTTP ${res.status}).` };
     if (json === null || typeof json.syncedAt !== "string" || !("data" in json)) {
       return { ok: false, error: "Server responded, but the response was malformed. Try again." };
     }
-    localStorage.setItem(LAST_SYNC_KEY, json.syncedAt);
+    if (record) localStorage.setItem(LAST_SYNC_KEY, json.syncedAt);
     return { ok: true, data: json.data as LocalFinancials, syncedAt: json.syncedAt, hasRecoveryCode: json.hasRecoveryCode === true };
   } catch {
     return { ok: false, error: "Could not reach server. Is it running?" };
@@ -386,27 +395,10 @@ export async function mergeAndPush(email: string, local: LocalFinancials): Promi
   // actually diverged between the two devices, for the fields that still
   // keep this device's copy.
   const nonTransactionDivergence = detectNonTransactionDivergence(local, pulled.data);
-  const replacedCloses: ReplacedCloseNotice[] = result.supersededFromLocal.map((r) => ({
-    cycleLabel: cycleLabelLong(r.standing.cycleKey, r.standing.startDayAtClose),
-    standingClosedAt: r.standing.closedAt,
-  }));
+  const { conflictDetails, replacedCloses } = describeMerge(result);
 
   const pushed = await pushToServer(email, mergedData);
   if (!pushed.ok) return { ok: false, error: pushed.error ?? "Merge succeeded locally, but push failed.", conflict: pushed.conflict };
-
-  // Each conflict's winner is verbatim either local's or server's pre-merge
-  // copy (resolveTransactionConflict never synthesizes a third value) --
-  // whichever one it ISN'T is the loser, the value that got silently
-  // overridden. Needed so the eventual notice can say "was $X", not just
-  // "something changed" (owner's instruction, 2026-09-01).
-  // Each side as the merge saw it: after any close undo, which can soft-delete
-  // a correction row on one side.
-  const conflictDetails: MergeConflictDetail[] = merged.conflicts.map((winner) => {
-    const localOriginal = (result.localTransactions ?? []).find((t) => t.id === winner.id)!;
-    const serverOriginal = (result.serverTransactions ?? []).find((t) => t.id === winner.id)!;
-    const loser = JSON.stringify(winner) === JSON.stringify(localOriginal) ? serverOriginal : localOriginal;
-    return { winner, loser };
-  });
 
   return {
     ok: true,
@@ -418,6 +410,91 @@ export async function mergeAndPush(email: string, local: LocalFinancials): Promi
     nonTransactionDivergence,
     replacedCloses,
     mergedData,
+  };
+}
+
+/** What a merge resolved, as the notice names it. Shared by the conflict merge and the fetch. */
+function describeMerge(result: MergeFinancialsResult): { conflictDetails: MergeConflictDetail[]; replacedCloses: ReplacedCloseNotice[] } {
+  // Each conflict's winner is verbatim either local's or server's pre-merge
+  // copy (resolveTransactionConflict never synthesizes a third value) --
+  // whichever one it ISN'T is the loser, the value that got silently
+  // overridden. Needed so the eventual notice can say "was $X", not just
+  // "something changed" (owner's instruction, 2026-09-01).
+  // Each side as the merge saw it: after any close undo, which can soft-delete
+  // a correction row on one side.
+  const conflictDetails = result.transactions.conflicts.map((winner) => {
+    const localOriginal = (result.localTransactions ?? []).find((t) => t.id === winner.id)!;
+    const serverOriginal = (result.serverTransactions ?? []).find((t) => t.id === winner.id)!;
+    const loser = JSON.stringify(winner) === JSON.stringify(localOriginal) ? serverOriginal : localOriginal;
+    return { winner, loser };
+  });
+  const replacedCloses = result.supersededFromLocal.map((r) => ({
+    cycleLabel: cycleLabelLong(r.standing.cycleKey, r.standing.startDayAtClose),
+    standingClosedAt: r.standing.closedAt,
+  }));
+  return { conflictDetails, replacedCloses };
+}
+
+/** A background fetch waits out Render's free-tier wake-up (30 s or more), unlike an upload's 15 s. */
+const FETCH_TIMEOUT_MS = 45_000;
+
+export type FetchAndMergeResult =
+  | { ok: true; skipped: true }
+  | {
+      ok: true;
+      skipped?: undefined;
+      mergedData: LocalFinancials;
+      /** The merge brought something this device didn't have. */
+      localChanged: boolean;
+      /** The merged copy holds something the server lacks, in the fields that merge. */
+      serverBehind: boolean;
+      addedFromServer: number;
+      conflictDetails: MergeConflictDetail[];
+      replacedCloses: ReplacedCloseNotice[];
+    }
+  | { ok: false; error: string; notFound?: true };
+
+/** The same records, whatever order the two copies hold them in. */
+function sameRecords(a: LocalFinancials, b: LocalFinancials): boolean {
+  const canon = (d: LocalFinancials, k: (typeof MERGED_FIELDS)[number]) => {
+    const v = d[k];
+    return Array.isArray(v) ? v.map((x) => stableStringify(x)).sort() : stableStringify(v ?? {});
+  };
+  return MERGED_FIELDS.every((k) => stableStringify(canon(a, k)) === stableStringify(canon(b, k)));
+}
+
+/**
+ * SYNC-1 step 3 (DI-10): fetch the server's copy and merge it into this
+ * device's, for the dashboard to run when ESSA opens or comes back into view
+ * with backup on. The caller applies the result; this reaches the network
+ * once, for the pull, and never pushes.
+ *
+ * - **The sync time is NOT recorded.** The merge keeps this device's copy of
+ *   goals, debts, recurring items, assets, cards and settings, so the
+ *   server's data was not taken in full. Recorded, this device's next push
+ *   would land without a conflict and silently overwrite the other device's
+ *   edits to those fields, with no notice naming them. Unrecorded, that push
+ *   meets mergeAndPush exactly as it does without this fetch.
+ * - **The merge runs against `currentLocal()` read when the pull lands**, so
+ *   an edit made while the server woke up is part of it. Null (signed out
+ *   meanwhile) skips.
+ * - **`serverBehind` counts only the fields that merge.** A difference in the
+ *   others is not a reason to push: this device merely being opened would
+ *   overwrite the other device's newer edits to them.
+ */
+export async function fetchAndMerge(email: string, currentLocal: () => LocalFinancials | null): Promise<FetchAndMergeResult> {
+  const pulled = await pullFromServer(email, { record: false, timeoutMs: FETCH_TIMEOUT_MS });
+  if (!pulled.ok) return { ok: false, error: pulled.error, ...(pulled.notFound ? { notFound: true as const } : {}) };
+  const local = currentLocal();
+  if (!local) return { ok: true, skipped: true };
+  const result = mergeFinancials(local, pulled.data, new Date());
+  return {
+    ok: true,
+    mergedData: result.data,
+    localChanged: !sameRecords(result.data, local),
+    serverBehind: !sameRecords(result.data, pulled.data),
+    addedFromServer: result.transactions.addedFromServer,
+    ...describeMerge(result),
   };
 }
 

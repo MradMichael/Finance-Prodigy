@@ -47,6 +47,9 @@ const applyChoice = vi.fn(async (_e: string, d: LocalFinancials, c: string) => {
 });
 vi.mock("../lib/syncService", () => ({
   pullFromServer: vi.fn(async () => ({ ok: false, error: "none" })),
+  // SYNC-1 step 3: backup on fetches on open. Inert here ("no copy" does
+  // nothing); app/page.fetch-on-open.test.tsx covers it.
+  fetchAndMerge: vi.fn(async () => ({ ok: false, error: "none", notFound: true })),
   pushToServer: (...a: unknown[]) => push(...(a as [])),
   mergeAndPush: (...a: unknown[]) => merge(...(a as [])),
   buildMergeNoticeText: () => ({ text: "" }),
