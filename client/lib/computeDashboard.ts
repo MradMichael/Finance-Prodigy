@@ -1,5 +1,5 @@
 import type { LocalFinancials, BudgetRuleKey, StoredDebt, StoredTransaction, StoredRecurring, TrackedBalance, Currency, PeriodCloseAcknowledgement } from "./localData";
-import { acknowledgementFor, historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, LBP_RATE_STALE_DAYS, cycleStartDayOf, valueForMonth, makeToUSDForMonth, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, DEFAULT_LBP_RATE, derivedEfBalance, derivedDebtBalance, activeTransactions, parseLocalDate, isRecurringActive, isAfterBalanceBaseline } from "./localData";
+import { acknowledgementFor, historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, LBP_RATE_STALE_DAYS, cycleStartDayOf, valueForMonth, makeToUSDForMonth, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, DEFAULT_LBP_RATE, derivedEfBalance, derivedDebtBalance, activeTransactions, parseLocalDate, isRecurringActive, isAfterBalanceBaseline, calendarDaysSince } from "./localData";
 import { cycleKeyForISO, currentCycleKey, calendarKeyForDate, isInCycle, cycleProgress, cycleBounds, cycleKeyMinus, periodNoun, cycleLabel, type CycleKey, type CalendarKey, type CalendarHistory } from "./period";
 import { simulateDebtPayoff, type DebtInput } from "./debtEngine";
 
@@ -1162,7 +1162,8 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   // would only be visible on the screen a user opens when they are already
   // thinking about the rate, which is when it is least likely to be stale.
   if (data.lbpRateUpdatedAt) {
-    const daysSinceRateEdit = Math.floor((now.getTime() - new Date(data.lbpRateUpdatedAt).getTime()) / 86_400_000);
+    // COPY-08: calendar days, as "N days" reads -- not floored 24-hour periods.
+    const daysSinceRateEdit = calendarDaysSince(data.lbpRateUpdatedAt, now);
     if (daysSinceRateEdit >= LBP_RATE_STALE_DAYS) {
       alerts.push({ id: "rate-stale", severity: "warning", message: `LBP rate hasn't been updated in ${daysSinceRateEdit} days`, screen: "currency" });
     }
