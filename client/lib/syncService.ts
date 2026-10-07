@@ -540,8 +540,13 @@ export function buildMergeNoticeText(
   // other conflict keeps the wording below.
   const isTie = (d: MergeConflictDetail) =>
     !!d.winner.updatedAt && !!d.loser.updatedAt && new Date(d.winner.updatedAt).getTime() === new Date(d.loser.updatedAt).getTime();
-  const ties = conflictDetails.filter(isTie);
-  const edits = conflictDetails.filter((d) => !isTie(d));
+  // DI-12 (owner, 2026-10-07): the notice never describes a deleted or
+  // purged record. The merge no longer reports one as a conflict; this holds
+  // the line for any caller.
+  const gone = (t: StoredTransaction) => t.deletedAt != null || t.purgedAt != null;
+  const described = conflictDetails.filter((d) => !gone(d.winner) && !gone(d.loser));
+  const ties = described.filter(isTie);
+  const edits = described.filter((d) => !isTie(d));
   const n = edits.length;
   let showReviewLink = false;
   const describe = (d: MergeConflictDetail) =>

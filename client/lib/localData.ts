@@ -3517,8 +3517,13 @@ function resolveTransactionConflict(a: StoredTransaction, b: StoredTransaction):
   if (stableStringify(a) === stableStringify(b)) return { winner: a, isConflict: false };
   const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : -Infinity;
   const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : -Infinity;
-  if (timeA !== timeB) return { winner: timeA > timeB ? a : b, isConflict: true };
-  return { winner: tieBreak(a, b), isConflict: true };
+  const winner = timeA !== timeB ? (timeA > timeB ? a : b) : tieBreak(a, b);
+  // DI-12 (owner, 2026-10-07): two deletions, or two purges, of one
+  // transaction are the same fact whatever their times -- never a conflict.
+  // Each device purges on its own load with its own `now`, so two purged
+  // copies differ in purgedAt alone, and counting that drew a notice about an
+  // empty record. The pick above still makes both sides keep the same copy.
+  return { winner, isConflict: rankA === 0 };
 }
 
 /**
