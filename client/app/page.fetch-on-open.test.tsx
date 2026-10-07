@@ -142,7 +142,8 @@ describe("backup on: opening ESSA fetches and merges", () => {
     seed = settled({ syncChoice: ON });
     fetchImpl = async () => ({ ok: false, error: "Pull failed (HTTP 503)." });
     await open();
-    expect(await screen.findByText("Couldn't reach backup")).toBeTruthy();
+    // A11Y-03 mirrors the status into a hidden live region in the same words; this means the visible indicator.
+    expect((await screen.findAllByText("Couldn't reach backup")).filter((e) => !e.closest(".sr-only"))).toHaveLength(1);
     expect(screen.queryByText("Offline")).toBeNull();
     expect(saved).toEqual([]);
   });
@@ -302,7 +303,8 @@ describe("an upload that fails", () => {
 
   it("while online: 'Couldn't reach backup'", async () => {
     await editAndFail();
-    expect(await screen.findByText("Couldn't reach backup")).toBeTruthy();
+    // A11Y-03 mirrors the status into a hidden live region in the same words; this means the visible indicator.
+    expect((await screen.findAllByText("Couldn't reach backup")).filter((e) => !e.closest(".sr-only"))).toHaveLength(1);
     expect(screen.queryByText("Offline")).toBeNull();
   });
 

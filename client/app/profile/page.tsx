@@ -479,9 +479,9 @@ export default function ProfilePage() {
             >
               Save changes
             </button>
-            {saveMsg && (
+            <span role="status">{saveMsg && (
               <span className="text-xs ml-3" style={{ color: T.jade }}>{saveMsg}</span>
-            )}
+            )}</span>
           </form>
         </div>
 
@@ -505,7 +505,7 @@ export default function ProfilePage() {
           >
             {regenerating ? "Generating…" : "Generate new recovery code"}
           </button>
-          {recoveryMsg && <p className="text-xs" style={{ color: T.coral }}>{recoveryMsg}</p>}
+          <div role="status">{recoveryMsg && <p className="text-xs" style={{ color: T.coral }}>{recoveryMsg}</p>}</div>
         </div>
 
         {/* Sign out */}
@@ -591,11 +591,11 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          {syncMsg && (
+          <div role="status">{syncMsg && (
             <p className="text-xs" style={{ color: syncMsg.startsWith("✓") ? T.jade : T.coral }}>
               {syncMsg}
             </p>
-          )}
+          )}</div>
         </div>
 
         {/* About & Help */}
@@ -669,16 +669,16 @@ export default function ProfilePage() {
               />
             </label>
           </div>
-          {downloadMsg && (
+          <div role="status">{downloadMsg && (
             <p className="text-xs" style={{ color: downloadMsg.startsWith("✓") ? T.jade : T.coral }}>
               {downloadMsg}
             </p>
-          )}
-          {importMsg && (
+          )}</div>
+          <div role="status">{importMsg && (
             <p className="text-xs" style={{ color: importMsg.startsWith("✓") ? T.jade : T.coral }}>
               {importMsg}
             </p>
-          )}
+          )}</div>
           <p className="text-[10px]" style={{ color: T.mute }}>
             Restores from a previously downloaded export — replaces this device&apos;s current data, same as Restore from database above, just from a file instead of the server.
           </p>
@@ -772,7 +772,7 @@ export default function ProfilePage() {
           {resetCounts && backupOn !== null && (
             <ResetDataPanel counts={resetCounts} backupOn={backupOn} onConfirm={handleResetData} />
           )}
-          {resetMsg && <p className="text-xs" style={{ color: T.mute }}>{resetMsg}</p>}
+          <div role="status">{resetMsg && <p className="text-xs" style={{ color: T.mute }}>{resetMsg}</p>}</div>
           {!showDelete ? (
             <button
               onClick={() => setShowDelete(true)}
