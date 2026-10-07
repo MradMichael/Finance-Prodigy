@@ -324,8 +324,13 @@ export default function Home() {
     setChoosingBackup(false);
   }
 
-  /** Resolves false when the change couldn't be stored (and so was undone on screen). */
-  async function handleChange(updated: LocalFinancials): Promise<boolean> {
+  /**
+   * Resolves false when the change couldn't be stored (and so was undone on screen).
+   * `automatic` marks a save ESSA makes on its own (the monthly snapshot, the
+   * 30-day purge): it leaves the indicator alone, so a fetch failure reported
+   * on open isn't cleared before it is seen.
+   */
+  async function handleChange(updated: LocalFinancials, { automatic = false } = {}): Promise<boolean> {
     if (!session) return false;
     financialsRef.current = updated;
     setFinancials(updated);
@@ -334,7 +339,7 @@ export default function Home() {
 
     // Debounced auto-sync: reset the timer on every change
     if (syncTimer.current) clearTimeout(syncTimer.current);
-    setSyncStatus("idle"); // clear stale status while user is still typing
+    if (!automatic) setSyncStatus("idle"); // clear stale status while user is still typing
     syncTimer.current = setTimeout(() => {
       // Cleared when it fires, so "an upload is pending" can be read off it (runFetch).
       syncTimer.current = null;
@@ -564,7 +569,7 @@ export default function Home() {
       incomeHistory: updatedIncome,
       lbpRateHistory: updatedLbpRate,
       budgetRuleHistory: updatedBudgetPct,
-    });
+    }, { automatic: true });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [financials, dashboardData]);
 
@@ -577,7 +582,7 @@ export default function Home() {
     if (!financials || autoWritesPausedRef.current) return; // same guard as the snapshot effect
     const purged = autoPurgeExpired(financials.transactions);
     if (purged === financials.transactions) return;
-    handleChange({ ...financials, transactions: purged });
+    handleChange({ ...financials, transactions: purged }, { automatic: true });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [financials]);
 
