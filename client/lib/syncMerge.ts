@@ -17,9 +17,11 @@
  *   * period closes (by cycle and closedAt): union. A reopen beats a live
  *     copy. Two live closes of one cycle: the earlier stands, and the later
  *     is superseded, undone the way a reopen undoes it, keeping its notes.
- * Transactions keep Phase 2.7's engine, unchanged. Everything else (settings,
- * goals, debts, recurring items, assets, cards, the histories) keeps this
- * device's copy, as before. The divergence notice names what differed.
+ * Transactions keep Phase 2.7's engine, which since 2026-10-07 compares content
+ * and breaks ties with the same helpers (lib/canonical.ts). Everything else
+ * (settings, goals, debts, recurring items, assets, cards, the histories)
+ * keeps this device's copy, as before. The divergence notice names what
+ * differed.
  *
  * Every rule is order-independent: which device is "local" never changes what
  * wins. Equal edit times with different content are broken by comparing the
@@ -30,21 +32,10 @@ import {
   type LocalFinancials, type PeriodClose, type TrackedBalance, type DeletedKeys, type Tombstone, type MergeTransactionsResult,
 } from "./localData";
 
+import { stableStringify, tieBreak } from "./canonical";
+
 export type { Tombstone } from "./localData";
-
-/** Key-sorted JSON, so equal content compares equal whatever its key order. */
-export function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
-  const keys = Object.keys(value as Record<string, unknown>).filter((k) => (value as Record<string, unknown>)[k] !== undefined).sort();
-  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify((value as Record<string, unknown>)[k])}`).join(",")}}`;
-}
-
-/** The deterministic tie-break: the same pick from either side. */
-function tieBreak<T>(a: T, b: T): T {
-  const sa = stableStringify(a), sb = stableStringify(b);
-  return sa >= sb ? a : b;
-}
+export { stableStringify } from "./canonical";
 
 const instant = (s: string | undefined) => (s ? new Date(s).getTime() : -Infinity);
 

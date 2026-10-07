@@ -534,14 +534,22 @@ export function buildMergeNoticeText(
   if (addedFromServer > 0) {
     parts.push(`${addedFromServer} new transaction${addedFromServer === 1 ? "" : "s"} added`);
   }
-  const n = conflictDetails.length;
+  // A tie: both copies carry the same recorded edit time, so neither is
+  // "newer" and the merge's content tie-break decided. Owner's wording for
+  // ties only (2026-10-07), each its own sentence after what arrived; every
+  // other conflict keeps the wording below.
+  const isTie = (d: MergeConflictDetail) =>
+    !!d.winner.updatedAt && !!d.loser.updatedAt && new Date(d.winner.updatedAt).getTime() === new Date(d.loser.updatedAt).getTime();
+  const ties = conflictDetails.filter(isTie);
+  const edits = conflictDetails.filter((d) => !isTie(d));
+  const n = edits.length;
   let showReviewLink = false;
   const describe = (d: MergeConflictDetail) =>
     `kept the newer edit to "${d.winner.description}" (${fmtMoney(d.winner.amount)}, was ${fmtMoney(d.loser.amount)})`;
   if (n === 1) {
-    parts.push(describe(conflictDetails[0]));
+    parts.push(describe(edits[0]));
   } else if (n === 2) {
-    parts.push(conflictDetails.map(describe).join(" and "));
+    parts.push(edits.map(describe).join(" and "));
   } else if (n >= 3) {
     parts.push(`${n} edit conflicts resolved (kept the most recent edit each time)`);
     showReviewLink = true;
@@ -564,6 +572,8 @@ export function buildMergeNoticeText(
   const listScreens = [...new Set(lists.map(([, , screen]) => screen))];
   const sentences = [
     mainText,
+    ...ties.map((d) =>
+      `Both devices changed "${d.winner.description}" at the same moment — kept ${fmtMoney(d.winner.amount)} (the other copy said ${fmtMoney(d.loser.amount)}).`),
     lists.length
       ? `Your ${joinNames(lists.map(([, label]) => label), "or")} may differ from your other device — this device's copy was kept. Check ${joinNames(listScreens, "and")} if something looks off.`
       : "",

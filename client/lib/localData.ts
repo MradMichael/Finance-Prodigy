@@ -2,6 +2,7 @@
 
 import type { CycleKey, CycleHistory, CalendarHistory } from "./period";
 import {CYCLE_START_DAY, cycleKeyForISO, cycleLabel, cycleBounds, cycleKeyMinus, currentCycleKey, cycleCloseInstant } from "./period";
+import { stableStringify, tieBreak } from "./canonical";
 export type { CycleKey, CalendarKey, CycleHistory, CalendarHistory } from "./period";
 
 export type Currency = "USD" | "LBP";
@@ -3499,15 +3500,25 @@ function tombstoneRank(t: StoredTransaction): number {
  * A missing `updatedAt` sorts as older than any real timestamp -- it's
  * stamped on every write since 2.6.3(c), so a copy that's never been
  * touched again is exactly the one that should lose to one that has.
+ *
+ * Content and ties use SYNC-1 step 2's helpers (lib/canonical.ts, owner
+ * 2026-10-07). "Same content" is compared in key order: plain JSON.stringify
+ * counted one record holding its keys in a different order (a migration
+ * appends a field, a spread rebuilds a record) as a conflict, and drew a
+ * merge notice. Equal edit times (or none) with different content go to
+ * the larger canonical text. Until 2026-10-07 they went to whichever copy was
+ * passed first, so two devices merging the same pair kept different
+ * versions.
  */
 function resolveTransactionConflict(a: StoredTransaction, b: StoredTransaction): { winner: StoredTransaction; isConflict: boolean } {
   const rankA = tombstoneRank(a);
   const rankB = tombstoneRank(b);
   if (rankA !== rankB) return { winner: rankA > rankB ? a : b, isConflict: false };
-  if (JSON.stringify(a) === JSON.stringify(b)) return { winner: a, isConflict: false };
+  if (stableStringify(a) === stableStringify(b)) return { winner: a, isConflict: false };
   const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : -Infinity;
   const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : -Infinity;
-  return { winner: timeA >= timeB ? a : b, isConflict: true };
+  if (timeA !== timeB) return { winner: timeA > timeB ? a : b, isConflict: true };
+  return { winner: tieBreak(a, b), isConflict: true };
 }
 
 /**
@@ -3515,9 +3526,14 @@ function resolveTransactionConflict(a: StoredTransaction, b: StoredTransaction):
  * Design approved 2026-08-26 (docs/ROADMAP.md): union by id, present on
  * one side only is kept, tombstones outrank active copies, a genuine
  * same-id conflict resolves by updatedAt and is reported, not silent.
- * Deliberately order-independent in its actual per-id outcome (see the
- * symmetry test) -- which side is "local" only changes which count
- * (addedFromServer) the caller sees, never which content wins.
+ *
+ * Order-independent in its per-id outcome: which side is "local" only
+ * changes which count (addedFromServer) the caller sees, never which content
+ * wins. That has held for equal edit times only since 2026-10-07. Before
+ * then, resolveTransactionConflict gave an equal-time tie to the first
+ * argument, and the symmetry test never paired two equal times, so this
+ * comment claimed more than the code did. lib/transaction-tie-break.test.ts
+ * pins the tie.
  */
 export function mergeTransactions(local: StoredTransaction[], server: StoredTransaction[]): MergeTransactionsResult {
   const serverById = new Map(server.map((t) => [t.id, t]));
