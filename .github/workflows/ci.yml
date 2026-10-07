@@ -8,18 +8,21 @@ on:
 
 jobs:
   client:
-    # Two timezone legs (audit 2.4.157, 2.4.159). The runner is UTC; every
-    # real user is in Asia/Beirut; and several defects this project has had
-    # were timezone-specific. The zero-diff gate keeps one baseline per zone,
-    # and the local-day test only discriminates east of UTC -- so each leg
-    # checks something the other cannot. Not pinned to Beirut alone: that
-    # would hide every UTC-only failure instead.
+    # Three timezone legs (audit 2.4.157, 2.4.159; TIME-05). The runner is
+    # UTC; every real user is in Asia/Beirut; and several defects this
+    # project has had were timezone-specific. The zero-diff gate keeps one
+    # baseline per zone, and the local-day test only discriminates east of
+    # UTC -- so each leg checks something the others cannot. Not pinned to
+    # Beirut alone: that would hide every UTC-only failure instead.
+    # America/Los_Angeles is the leg west of UTC (session 2 item G): a device
+    # there reads a UTC-midnight date as the day before, which neither of the
+    # other legs can show (TIME-06, TIME-07).
     name: client (${{ matrix.tz }})
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false        # both legs report, so a zone-specific failure is visible as one
+      fail-fast: false        # every leg reports, so a zone-specific failure is visible as one
       matrix:
-        tz: [UTC, Asia/Beirut]
+        tz: [UTC, Asia/Beirut, America/Los_Angeles]
     env:
       TZ: ${{ matrix.tz }}
     defaults:

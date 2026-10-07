@@ -205,7 +205,9 @@ describe("nextOccurrence", () => {
   it("a day-31 monthly recurring returns to day 31 in a month that has one, after being clamped", () => {
     const r = makeRecurring({ frequency: "monthly", startDate: "2026-01-31" });
     // Feb 28 (clamped) -> next occurrence should be March 31 (March has 31 days again), not stuck at 28.
-    const next = nextOccurrence(r, new Date("2026-03-01"));
+    // asOf is a LOCAL day, as callers pass it (session 2 item G): "2026-03-01"
+    // alone parses as UTC midnight, which west of UTC is still 28 Feb locally.
+    const next = nextOccurrence(r, new Date(2026, 2, 1));
     expect(next?.toISOString().slice(0, 10)).toBe("2026-03-31");
   });
 
@@ -221,13 +223,13 @@ describe("nextOccurrence", () => {
     // has no more real occurrences at all past Jul 1; this must be null,
     // not a phantom Aug 1 the item will never actually reach.
     const r = makeRecurring({ frequency: "monthly", startDate: "2026-01-01", endDate: "2026-07-15" });
-    const next = nextOccurrence(r, new Date("2026-07-02"));
+    const next = nextOccurrence(r, new Date(2026, 6, 2)); // a local day, as above
     expect(next).toBeNull();
   });
 
   it("contrast: querying from before endDate correctly still returns a real upcoming cycle when one exists before the end", () => {
     const r = makeRecurring({ frequency: "monthly", startDate: "2026-01-01", endDate: "2026-07-15" });
-    const next = nextOccurrence(r, new Date("2026-06-02"));
+    const next = nextOccurrence(r, new Date(2026, 5, 2));
     expect(next?.toISOString().slice(0, 10)).toBe("2026-07-01"); // still within bounds
   });
 
@@ -238,13 +240,13 @@ describe("nextOccurrence", () => {
     // over the 1500 cap. There is no real 4th occurrence; this must be
     // null, not a phantom Apr 1.
     const r = makeRecurring({ frequency: "monthly", amount: 500, startDate: "2026-01-01", totalAmount: 1500 });
-    const next = nextOccurrence(r, new Date("2026-03-02"));
+    const next = nextOccurrence(r, new Date(2026, 2, 2));
     expect(next).toBeNull();
   });
 
   it("contrast: querying before the cap correctly still returns a real upcoming cycle when the cap isn't reached yet", () => {
     const r = makeRecurring({ frequency: "monthly", amount: 500, startDate: "2026-01-01", totalAmount: 1500 });
-    const next = nextOccurrence(r, new Date("2026-02-02"));
+    const next = nextOccurrence(r, new Date(2026, 1, 2));
     expect(next?.toISOString().slice(0, 10)).toBe("2026-03-01"); // the 3rd and final payment, still within the cap
   });
 });
