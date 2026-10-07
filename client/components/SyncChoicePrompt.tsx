@@ -25,6 +25,12 @@ import type { BackupChoice } from "../lib/syncService";
  * Blocking by design: no close button, no click-outside. The choice is the
  * point of the prompt.
  */
+
+// DRAFT (session 2 item F, held for the owner): what "on" also does since
+// SYNC-1 step 3, in the privacy page's approved sentence, verbatim.
+const FETCH_ON_OPEN =
+  "With backup on, each of your devices also fetches the copy when you open or return to ESSA, and combines it with what it already has.";
+
 export default function SyncChoicePrompt({ hasServerCopy, busy, onChoose }: {
   hasServerCopy: boolean;
   busy: boolean;
@@ -64,13 +70,13 @@ export default function SyncChoicePrompt({ hasServerCopy, busy, onChoose }: {
             Until now, ESSA copied your data to its server automatically whenever you were signed in, without
             asking. That was never a choice you made, so it is paused until you make one. The server copy lets you
             sign in and restore on another device; it is protected by your password but is not end-to-end
-            encrypted, so the server can read it.
+            encrypted, so the server can read it. {FETCH_ON_OPEN}
           </p>
         ) : (
           <p className="text-sm leading-relaxed" style={{ color: T.mute }}>
             ESSA can keep a copy of your data on its server so you can sign in and restore it on another device.
             It is off unless you turn it on. The copy is protected by your password but is not end-to-end
-            encrypted, so the server can read it.
+            encrypted, so the server can read it. {FETCH_ON_OPEN}
           </p>
         )}
 
