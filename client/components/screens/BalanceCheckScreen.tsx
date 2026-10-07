@@ -437,7 +437,7 @@ export default function BalanceCheckScreen({
                     )}
                     {ack && (
                       <p className="text-[10px] mt-2" style={{ color: T.brass }}>
-                        Accounted for on {fmtDate(ack.acknowledgedAt)} &mdash; &ldquo;{ack.note}&rdquo;
+                        Accounted for on {instantDay(ack.acknowledgedAt)} &mdash; &ldquo;{ack.note}&rdquo;
                       </p>
                     )}
                     {b.actualDate && (
