@@ -51,18 +51,50 @@ describe("the divergence notice", () => {
   // Owner's wording, 2026-10-06. The settings live on Setup (income, payday,
   // emergency fund target, the custom split's figures), Budget (the split)
   // and Currency (the LBP rate), so the sentence names those three screens.
-  it("the sentence for settings names the screens they live on (owner's wording)", () => {
-    const { text } = buildMergeNoticeText(0, [], ["income", "LBP rate"]);
-    expect(text).toBe("Your income, LBP rate may differ from your other device — this device's copy was kept automatically. Check Setup, Budget and Currency if something looks off.");
+  // Owner, 2026-10-07: items joined properly, "income and LBP rate"; and both
+  // sentences end "this device's copy was kept.", without "automatically".
+  it("the sentence for settings names the screens they live on, items joined properly (owner's wording)", () => {
+    expect(buildMergeNoticeText(0, [], ["income", "LBP rate"]).text).toBe(
+      "Your income and LBP rate may differ from your other device — this device's copy was kept. Check Setup, Budget and Currency if something looks off.",
+    );
+    expect(buildMergeNoticeText(0, [], ["income", "LBP rate", "payday"]).text).toBe(
+      "Your income, LBP rate and payday may differ from your other device — this device's copy was kept. Check Setup, Budget and Currency if something looks off.",
+    );
   });
 
-  // Goals, debts, recurring items, other assets and cards are NOT on those
-  // three screens, so they keep their own sentence and its live ending.
+  // Owner's wording, 2026-10-07, for the five lists, which live on none of
+  // the settings' screens: goals on Goals, debts on Debts, recurring items on
+  // Recurring, assets and cards on My Finances. With all five differing it
+  // reads exactly as the owner wrote it.
+  it("the sentence for the lists, all five differing, is the owner's sentence", () => {
+    const { text } = buildMergeNoticeText(0, [], ["goals", "debts", "recurring items", "assets", "cards"]);
+    expect(text).toBe(
+      "Your goals, debts, recurring items, assets or cards may differ from your other device — this device's copy was kept. Check Goals, Debts, Recurring and My Finances if something looks off.",
+    );
+  });
+
+  // Fewer lists: the same sentence, naming only those lists and the screens
+  // that show them (assets and cards share My Finances, named once).
+  it("the lists sentence names only the lists that differ, and their screens", () => {
+    expect(buildMergeNoticeText(0, [], ["cards"]).text).toBe(
+      "Your cards may differ from your other device — this device's copy was kept. Check My Finances if something looks off.",
+    );
+    expect(buildMergeNoticeText(0, [], ["assets", "cards"]).text).toBe(
+      "Your assets or cards may differ from your other device — this device's copy was kept. Check My Finances if something looks off.",
+    );
+  });
+
+  it("detection calls the assets list 'assets'", () => {
+    const local = { ...DEFAULT_DATA, assets: [] } as LocalFinancials;
+    const server = { ...local, assets: [{ id: "a1", name: "Gold coin", value: 640.25, currency: "USD" }] } as unknown as LocalFinancials;
+    expect(detectNonTransactionDivergence(local, server)).toEqual(["assets"]);
+  });
+
   it("lists and settings that both differ get a sentence each, lists first", () => {
     const { text } = buildMergeNoticeText(0, [], ["goals", "cards", "payday"]);
     expect(text).toBe(
-      "Your goals, cards may differ from your other device — this device's copy was kept automatically. Check Profile if something looks off. "
-      + "Your payday may differ from your other device — this device's copy was kept automatically. Check Setup, Budget and Currency if something looks off.",
+      "Your goals or cards may differ from your other device — this device's copy was kept. Check Goals and My Finances if something looks off. "
+      + "Your payday may differ from your other device — this device's copy was kept. Check Setup, Budget and Currency if something looks off.",
     );
   });
 

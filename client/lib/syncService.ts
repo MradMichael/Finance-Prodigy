@@ -281,13 +281,17 @@ export async function pullFromServer(email: string): Promise<{ ok: true; data: L
 // merge now (lib/syncMerge.ts), as do the wishlist, custom categories,
 // category rules and period closes. The SETTINGS below joined it, by the
 // owner's decision: they stay "this device wins", and the notice names them.
+//
+// Third column (owner, 2026-10-07): the screen the notice sends you to.
+// Assets and cards are both on My Finances (Other Assets; the card picker
+// under Log an entry).
 const NON_TRANSACTION_ENTITY_FIELDS = [
-  ["goals", "goals"],
-  ["debts", "debts"],
-  ["recurring", "recurring items"],
-  ["assets", "other assets"],
-  ["cards", "cards"],
-] as const satisfies readonly (readonly [keyof LocalFinancials, string])[];
+  ["goals", "goals", "Goals"],
+  ["debts", "debts", "Debts"],
+  ["recurring", "recurring items", "Recurring"],
+  ["assets", "assets", "My Finances"],
+  ["cards", "cards", "My Finances"],
+] as const satisfies readonly (readonly [keyof LocalFinancials, string, string])[];
 
 /** Settings, as the screens resolve them: an unset budget rule is 50/30/20, and an unset payday is the 1st. */
 const SETTINGS: readonly (readonly [string, (d: LocalFinancials) => unknown])[] = [
@@ -467,20 +471,28 @@ export function buildMergeNoticeText(
   }
   const mainText = parts.length > 0 ? `Merged with your other device — ${parts.join(", ")}.` : "";
 
-  // Owner's wording (SYNC-1 step 2, 2026-10-06). The settings get their own
-  // sentence naming the screens they live on: income, payday and the
-  // emergency fund target on Setup, the budget split on Budget (its custom
-  // figures on Setup too), the LBP rate on Currency. The five lists are on
-  // none of those, so they keep their sentence and its live ending.
-  const settingLabels = new Set(SETTINGS.map(([label]) => label));
-  const lists = nonTransactionDivergence.filter((l) => !settingLabels.has(l));
-  const settings = nonTransactionDivergence.filter((l) => settingLabels.has(l));
-  const kept = (names: string[], ending: string) =>
-    names.length ? `Your ${names.join(", ")} may differ from your other device — this device's copy was kept automatically. ${ending}` : "";
+  // Owner's wording (2026-10-06, -07). A sentence for the lists and one for
+  // the settings, each naming only what differs, in their own order:
+  //   lists:    "Your goals, debts, recurring items, assets or cards may
+  //             differ from your other device — this device's copy was kept.
+  //             Check Goals, Debts, Recurring and My Finances if something
+  //             looks off." -- the screens of the lists that differ, each once;
+  //   settings: "Your income and LBP rate may differ ... was kept.
+  //             Check Setup, Budget and Currency if something looks off." --
+  //             income, payday and the emergency fund target are on Setup,
+  //             the budget split on Budget, the LBP rate on Currency.
+  const differs = (label: string) => nonTransactionDivergence.includes(label);
+  const lists = NON_TRANSACTION_ENTITY_FIELDS.filter(([, label]) => differs(label));
+  const settings = SETTINGS.map(([label]) => label).filter(differs);
+  const listScreens = [...new Set(lists.map(([, , screen]) => screen))];
   const sentences = [
     mainText,
-    kept(lists, "Check Profile if something looks off."),
-    kept(settings, "Check Setup, Budget and Currency if something looks off."),
+    lists.length
+      ? `Your ${joinNames(lists.map(([, label]) => label), "or")} may differ from your other device — this device's copy was kept. Check ${joinNames(listScreens, "and")} if something looks off.`
+      : "",
+    settings.length
+      ? `Your ${joinNames(settings, "and")} may differ from your other device — this device's copy was kept. Check Setup, Budget and Currency if something looks off.`
+      : "",
     // "In the cycle's record", not just "kept": the undone close's note shows
     // on no screen afterwards (Balance Check shows a note only while it
     // explains the account's current gap, and skips a superseded close).
@@ -488,6 +500,11 @@ export function buildMergeNoticeText(
       `Two devices closed ${r.cycleLabel}. The earlier close, made on another device on ${closeMomentLabel(r.standingClosedAt)}, stands; this device's close was undone, and any note you wrote on it is kept in the cycle's record.`),
   ].filter(Boolean);
   return sentences.length ? { text: sentences.join(" "), showReviewLink } : { text: "", showReviewLink: false };
+}
+
+/** "a", "a and b", "a, b and c": the owner's style, no comma before the last word. */
+function joinNames(names: readonly string[], word: "and" | "or"): string {
+  return names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} ${word} ${names[names.length - 1]}`;
 }
 
 /**
