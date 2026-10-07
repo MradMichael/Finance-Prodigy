@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import type { LocalFinancials, WishlistItem, Currency, StoredGoal } from "../../lib/localData";
-import { uid, toUSD as toUSDShared, withRate, moneyMaxFor, DEFAULT_LBP_RATE, recordDeletion } from "../../lib/localData";
+import { uid, toUSD as toUSDShared, withRate, moneyMaxFor, DEFAULT_LBP_RATE, recordDeletion, isoLocalDay } from "../../lib/localData";
+import { addMonths } from "../../lib/debtEngine";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, CurrencyToggle } from "../form/Primitives";
@@ -82,15 +83,16 @@ export default function WishlistScreen({
   // as buildRecurringPaymentLog: "the rate at which this was entered"
   // means the rate at the moment of *this* action.
   function saveTowardGoal(item: WishlistItem) {
-    const targetDate = new Date();
-    targetDate.setMonth(targetDate.getMonth() + 6);
+    // TIME-03: clamped to the target month's last day (31 Aug + 6 months is
+    // 28 Feb, not 3 Mar). TIME-02: dated by the LOCAL day below.
+    const targetDate = addMonths(new Date(), 6);
     const goal: StoredGoal = {
       id: uid(), name: item.name, emoji: item.emoji,
       targetAmount: item.price,
       currentAmount: 0,
       currency: item.currency,
       ...withRate(item.currency, lbpRate),
-      targetDate: targetDate.toISOString().slice(0, 10),
+      targetDate: isoLocalDay(targetDate),
       createdAt: new Date().toISOString(),
     };
     onChange({ ...financials, goals: [...financials.goals, goal] });

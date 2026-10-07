@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, StoredRecurring } from "../../lib/localData";
-import { fmtDate, historizedRecurringContribution, toUSD as toUSDShared, categoryLabel as categoryLabelShared, categoryIcon as categoryIconShared, activeTransactions, cycleMonthDivergence, purgeTransaction, DEFAULT_LBP_RATE, cycleStartDayOf } from "../../lib/localData";
+import { fmtDate, historizedRecurringContribution, toUSD as toUSDShared, categoryLabel as categoryLabelShared, categoryIcon as categoryIconShared, activeTransactions, cycleMonthDivergence, purgeTransaction, DEFAULT_LBP_RATE, cycleStartDayOf, todayISO } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money, fmtCur } from "./shared";
 import Donut from "../charts/Donut";
@@ -283,7 +283,8 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
     // Always include the current period even with zero logged transactions
     // so far, otherwise a period with only recurring bills and nothing
     // manually logged yet would silently vanish from the trend entirely.
-    const currentKey = periodKey(new Date().toISOString().slice(0, 10), trendPeriod, startDay);
+    // TIME-02: the LOCAL day, or the new period is missing for the first hours after midnight east of UTC.
+    const currentKey = periodKey(todayISO(), trendPeriod, startDay);
     const periodKeys = Array.from(new Set([...Object.keys(byPeriod), currentKey])).sort().reverse().slice(0, trendCap).reverse();
     // allTx is sorted newest-first, so the last entry is the earliest
     // logged transaction. Recurring still accrues for every month it's
