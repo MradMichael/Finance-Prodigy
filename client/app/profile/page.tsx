@@ -100,7 +100,7 @@ export default function ProfilePage() {
     }
     setResetCounts(countsOf(next));
     if (syncAllowed(next)) {
-      const r = await pushToServer(session.email, next);
+      const r = await pushToServer(session.email, next, { allowEmptyOverwrite: true });
       setResetMsg(r.ok ? "✓ All data erased, here and in your server backup." : "All data erased on this device, but updating the server backup failed: " + r.error);
     } else {
       setResetMsg("✓ All data erased on this device.");
@@ -127,6 +127,7 @@ export default function ProfilePage() {
     setSyncing(false);
     if (choice === "on") {
       if (result?.ok) { setLastSync(result.syncedAt ?? null); setSyncMsg("✓ Backup is on. Your data has been copied to the server."); }
+      else if (result?.declined) setSyncMsg(result.error ?? "");
       else setSyncMsg("Backup is on, but the first upload failed: " + (result?.error ?? "unknown error") + " It will retry after your next change.");
     } else if (choice === "off-delete") {
       setSyncMsg(result?.ok
