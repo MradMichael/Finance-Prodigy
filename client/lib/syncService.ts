@@ -585,11 +585,10 @@ export function buildMergeNoticeText(
     settings.length
       ? `Your ${joinNames(settings, "and")} may differ from your other device — this device's copy was kept. Check Setup, Budget and Currency if something looks off.`
       : "",
-    // "In the cycle's record", not just "kept": the undone close's note shows
-    // on no screen afterwards (Balance Check shows a note only while it
-    // explains the account's current gap, and skips a superseded close).
+    // DI-11 (owner's wording, 2026-10-07): the undone close's note is shown in
+    // the account's Close history on Balance Check, so the notice says where.
     ...replacedCloses.map((r) =>
-      `Two devices closed ${r.cycleLabel}. The earlier close, made on another device on ${closeMomentLabel(r.standingClosedAt)}, stands; this device's close was undone, and any note you wrote on it is kept in the cycle's record.`),
+      `Two devices closed ${r.cycleLabel}. The earlier close, made on another device on ${closeMomentLabel(r.standingClosedAt)}, stands; this device's close was undone, and any note you wrote on it stays visible under Close history on Balance Check.`),
   ].filter(Boolean);
   return sentences.length ? { text: sentences.join(" "), showReviewLink } : { text: "", showReviewLink: false };
 }

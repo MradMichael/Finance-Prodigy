@@ -39,6 +39,10 @@ import { asCycleKey, cycleCloseInstant, currentCycleKey } from "../../lib/period
 
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); });
 
+// DI-11: each account's close history repeats "Closed on". These tests mean the
+// closure line at the top, so they look outside the history lists.
+const outsideHistory = (els: HTMLElement[]) => els.filter((e) => !e.closest('ol[aria-label^="Close history"]'));
+
 const START_DAY = 27;
 // 10 Sep 2026 -> current cycle 2026-08 (27 Aug - 26 Sep). Reopen is only
 // offered for the current cycle, so the clock has to sit inside it.
@@ -93,14 +97,16 @@ describe("1. the closure line replaces the close button", () => {
     // Premise: the two are mutually exclusive, not merely both present.
     expect(screen.queryByRole("button", { name: "Close this cycle" })).toBeNull();
     expect(screen.getByRole("button", { name: "Reopen" })).toBeTruthy();
-    expect(screen.getByText(/Closed on/).textContent).toContain("10/09/2026");
+    const line = outsideHistory(screen.getAllByText(/Closed on/));
+    expect(line).toHaveLength(1);
+    expect(line[0].textContent).toContain("10/09/2026");
   });
 
   it("a record written before Phase 4 says why instead of offering the button", () => {
     const d = closedNow();
     delete (d.periodCloses[0].accounts[0] as { priorStateComplete?: true }).priorStateComplete;
     renderScreen(d);
-    expect(screen.getByText(/Closed on/)).toBeTruthy();
+    expect(outsideHistory(screen.getAllByText(/Closed on/))).toHaveLength(1);
     expect(screen.queryByRole("button", { name: "Reopen" })).toBeNull();
     expect(screen.getByText(/closed before reopening was supported/)).toBeTruthy();
   });
@@ -124,6 +130,8 @@ describe("2. reopening", () => {
     const msg = confirmSpy.mock.calls[0][0] as string;
     expect(msg).toContain("Transactions you have logged since are untouched");
     expect(msg).toContain("stops applying");
+    // DI-11 (owner's wording, 2026-10-07): the note is findable on screen now.
+    expect(msg).toContain("stops applying -- it stays visible in the account's Close history.");
   });
 
   it("restores the pre-close balance and marks the record, in ONE write", () => {

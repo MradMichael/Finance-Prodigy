@@ -2028,6 +2028,34 @@ export function unclosedCycles(
   }
   return { rows: all.slice(0, cap), hiddenEarlier: Math.max(0, all.length - cap) };
 }
+/** What became of a close: still in force, reopened, or undone by a sync merge (SYNC-1 step 2's supersede). */
+export type CloseHistoryStatus = "in-force" | "reopened" | "undone";
+export interface CloseHistoryEntry {
+  close: PeriodClose;
+  /** This account's figures in that close. */
+  account: PeriodCloseAccount;
+  status: CloseHistoryStatus;
+  /** When it was reopened or undone; absent while in force. */
+  statusAt?: string;
+}
+
+/**
+ * DI-11 (owner, 2026-10-07): one tracked balance's closes, newest first,
+ * whatever became of them. Reopened and merge-undone closes are included on
+ * purpose: their acknowledgement notes are text the close required the
+ * owner to write, and acknowledgementFor (rightly) stops applying them, so
+ * this is where they stay findable. Reads only.
+ */
+export function closeHistoryFor(trackedBalanceId: string, periodCloses: PeriodClose[] | undefined): CloseHistoryEntry[] {
+  return (periodCloses ?? [])
+    .flatMap((close) => close.accounts.filter((a) => a.trackedBalanceId === trackedBalanceId).map((account) => ({ close, account })))
+    .sort((a, b) => b.close.closedAt.localeCompare(a.close.closedAt))
+    .map(({ close, account }): CloseHistoryEntry =>
+      close.supersededAt ? { close, account, status: "undone", statusAt: close.supersededAt }
+        : close.reopenedAt ? { close, account, status: "reopened", statusAt: close.reopenedAt }
+          : { close, account, status: "in-force" });
+}
+
 export function cycleClosesFor(data: Pick<LocalFinancials, "periodCloses">, cycleKey: CycleKey): PeriodClose[] {
   return (data.periodCloses ?? [])
     .filter((c) => c.cycleKey === cycleKey)
