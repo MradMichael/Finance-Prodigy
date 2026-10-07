@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { syncStatusLongLabel } from "../components/shell/SyncDot";
 import { useRouter } from "next/navigation";
 import FinancialDashboard from "../components/FinancialDashboard";
 import InputPanel from "../components/InputPanel";
@@ -656,6 +657,9 @@ export default function Home() {
 
       {/* Mobile header */}
       <TopBar session={session} onProfile={handleProfile} onSignOut={handleSignOut} syncStatus={syncStatus} />
+      {/* A11Y-03: the sync status, in the indicator's own long labels, for a
+          screen reader; the dot alone says nothing to one. */}
+      <span role="status" className="sr-only">{syncStatus !== "idle" ? syncStatusLongLabel(syncStatus) : ""}</span>
 
       {/* Body row */}
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
@@ -695,6 +699,8 @@ export default function Home() {
           A silent-by-default notification about money changing is what this
           exists to avoid (owner's instruction, 2026-09-01); it stays until
           the user dismisses it themselves. */}
+      {/* A11Y-03: on the page before a notice arrives, so it's announced. */}
+      <div role="status">
       {mergeNotice && (
         <div
           className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50 flex items-start gap-3"
@@ -725,6 +731,7 @@ export default function Home() {
           </button>
         </div>
       )}
+      </div>
 
       {/* ERR-01: a save that failed, said plainly. At the top so it can't sit
           under the merge notice; not auto-dismissed, for the same reason. */}
