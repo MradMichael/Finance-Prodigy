@@ -6,12 +6,12 @@ import {
   uid, todayISO, fmtDate, withRate, reanchorTrackedBalance, moneyMaxFor, DEFAULT_LBP_RATE,
   buildPeriodClose, cycleStartDayOf, unclosedCycles, isCycleClosedBySpan,
   closeMovesBaselineBackwards, canReopen, reopenCycle, planReopen, activeCloseForCycle, rateForMonth,
-  derivedEfBalance, derivedDebtBalance, planEfClose, planDebtClose, recordDeletion,
+  derivedEfBalance, derivedDebtBalance, planEfClose, planDebtClose, recordDeletion, closeHistoryFor,
 } from "../../lib/localData";
 import { balanceCheckReconciliation, trackedBalanceExpectedAsOf, type computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import CloseCycleModal, { type CloseRow, type AdjustmentRow } from "../CloseCycleModal";
-import { currentCycleKey, cycleCloseInstant, cycleBounds, cycleLabel as fmtCycle, type CycleKey } from "../../lib/period";
+import { currentCycleKey, cycleCloseInstant, cycleBounds, cycleLabel as fmtCycle, cycleLabelLong, type CycleKey } from "../../lib/period";
 import { SERIF, NUMS, money, fmtCur } from "./shared";
 import {
   Label, FocusInput, MoneyInput, PrimaryBtn, CurrencyToggle, DateFieldDMY, CardPicker,
@@ -161,12 +161,11 @@ export default function BalanceCheckScreen({
   // closedAt is an INSTANT, so its local day -- not fmtDate on a UTC slice,
   // which names the wrong day either side of midnight. Same trap as
   // closingRangeEnd above.
-  const closedOnLabel = activeClose
-    ? (() => {
-        const d = new Date(activeClose.closedAt);
-        return fmtDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
-      })()
-    : "";
+  const instantDay = (iso: string) => {
+    const d = new Date(iso);
+    return fmtDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
+  };
+  const closedOnLabel = activeClose ? instantDay(activeClose.closedAt) : "";
 
   function commitReopen() {
     // ONE decision point. reopenCycle re-asks canReopen internally against
@@ -470,6 +469,7 @@ export default function BalanceCheckScreen({
               {tracked.map((tb) => {
                 const card = tb.cardId ? cards.find((c) => c.id === tb.cardId) : null;
                 const check = dashData.balanceChecks.find((b) => b.id === tb.id);
+                const history = closeHistoryFor(tb.id, financials.periodCloses);
                 return (
                   <div key={tb.id} className="rounded-xl p-3 space-y-2" style={{ background: T.panelSoft, border: `1px solid ${T.line}` }}>
                     <div className="flex items-center justify-between gap-2">
@@ -518,6 +518,57 @@ export default function BalanceCheckScreen({
                         </button>
                       </div>
                     </div>
+                    {/* DI-11 (owner, 2026-10-07): this account's closes, newest
+                        first, whatever became of them. Reopened and
+                        merge-undone closes keep their notes here, the one
+                        place they stay findable once acknowledgementFor stops
+                        applying them. Read-only by design: no control below
+                        edits or removes a close. Each cycle is labelled by
+                        the payday it was closed under (startDayAtClose), not
+                        today's, so a later payday change can't re-date it. */}
+                    <details className="pt-2" style={{ borderTop: `1px solid ${T.line}` }}>
+                      <summary className="text-[10px] cursor-pointer" style={{ color: T.mute }}>
+                        Close history ({history.length})
+                      </summary>
+                      {history.length === 0 ? (
+                        <p className="text-[10px] mt-2" style={{ color: T.mute }}>Not closed yet.</p>
+                      ) : (
+                        <ol aria-label={`Close history for ${tb.name}`} className="mt-2 space-y-2">
+                          {history.map(({ close, account, status, statusAt }) => (
+                            <li key={`${close.cycleKey}|${close.closedAt}`} className="rounded-lg px-3 py-2 space-y-1" style={{ border: `1px solid ${T.line}` }}>
+                              <p className="text-xs font-medium" style={{ color: T.text }} data-cycle>
+                                {cycleLabelLong(close.cycleKey, close.startDayAtClose)}
+                              </p>
+                              <p className="text-[10px]" style={{ color: T.mute }}>
+                                Closed on {instantDay(close.closedAt)} &middot;{" "}
+                                <span style={{ color: status === "in-force" ? T.jade : T.mute }}>
+                                  {status === "in-force" ? "In force"
+                                    : status === "reopened" ? `Reopened on ${instantDay(statusAt!)}`
+                                    : `Undone on ${instantDay(statusAt!)}: another device closed this cycle earlier`}
+                                </span>
+                              </p>
+                              <div className="flex items-baseline justify-between text-[10px]" style={{ color: T.mute }}>
+                                <span>Expected at close</span>
+                                <span style={{ ...NUMS, color: T.text }}>{money(account.expectedAtClose, 2)}</span>
+                              </div>
+                              <div className="flex items-baseline justify-between text-[10px]" style={{ color: T.mute }}>
+                                <span>You said you had</span>
+                                <span style={{ ...NUMS, color: T.text }}>{fmtCur(account.actual, account.currency)}</span>
+                              </div>
+                              <div className="flex items-baseline justify-between text-[10px]" style={{ color: T.mute }}>
+                                <span>Difference</span>
+                                <span style={{ ...NUMS, color: T.text }}>{money(account.discrepancy, 2)}</span>
+                              </div>
+                              {account.acknowledgement && (
+                                <p className="text-[10px]" style={{ color: T.brass }}>
+                                  Accounted for on {instantDay(account.acknowledgement.acknowledgedAt)} &mdash; &ldquo;{account.acknowledgement.note}&rdquo;
+                                </p>
+                              )}
+                            </li>
+                          ))}
+                        </ol>
+                      )}
+                    </details>
                   </div>
                 );
               })}

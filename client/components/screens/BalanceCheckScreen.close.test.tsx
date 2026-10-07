@@ -252,7 +252,8 @@ describe("3. the badge is three-valued and 'Accounted for' is not 'Matches'", ()
   it("still shows the gap — an acknowledged gap is a gap that was explained", () => {
     // 2.4.64's objection survives: this must not read as "no gap".
     renderScreen({ trackedBalances: [TB("a", "Cash", -31)], periodCloses: acked(-31) });
-    expect(screen.getByText(/Explained\./)).toBeTruthy();
+    // DI-11: the close history repeats the note; this means the reconciliation card's.
+    expect(screen.getAllByText(/Explained\./).filter((e) => !e.closest('ol[aria-label^="Close history"]'))).toHaveLength(1);
     expect(screen.getAllByText(/\$31/).length).toBeGreaterThan(0);
   });
 
