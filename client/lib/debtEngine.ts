@@ -202,7 +202,7 @@ function fingerprint(debts: DebtInput[], extraMonthly: number, strategy: string,
   const debtsKey = debts.map((d) => `${d.id}:${roundMoney(d.balance)}:${d.aprPct}:${d.minimumPayment}`).join("|");
   // AUD-08 (external audit, 2026-08-28): "same calendar day" above means
   // the user's own LOCAL day -- toISOString() gives the UTC one, which for
-  // this app's own UTC+ audience (e.g. Beirut, UTC+3) can silently serve a
+  // this app's own UTC+ audience (e.g. Beirut: UTC+2 in winter, UTC+3 in summer) can silently serve a
   // stale cached plan across a real local-midnight boundary (two calls
   // straddling local midnight can still land on the same UTC calendar day).
   const dayKey = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-${String(start.getDate()).padStart(2, "0")}`;

@@ -2047,6 +2047,11 @@ export function uid(): string {
 // just-logged transaction filed under the wrong month's "this month" list.
 // computeDashboard.ts's own monthKey already uses local date parts; this
 // matches it so every screen agrees on what "today" and "this month" mean.
+/** The file name "Download my data" saves under, dated by the LOCAL day (TIME-02). */
+export function exportFileName(now: Date = new Date()): string {
+  return `essa-data-${isoLocalDay(now)}.json`;
+}
+
 export function todayISO(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -2204,7 +2209,7 @@ export function fmtDate(iso: string | undefined | null): string {
 // Date-only strings ("YYYY-MM-DD") parse as UTC midnight per spec, but every
 // caller of monthlyEquivalent/recurringPaidSoFar constructs `asOf` as LOCAL
 // midnight (`new Date(y, m, 1)` or `new Date(\`${ym}-01T00:00:00\`)`). East of
-// UTC (e.g. Beirut, UTC+3) that mismatch makes a recurring item's own start
+// UTC (e.g. Beirut: UTC+2 in winter, UTC+3 in summer) that mismatch makes a recurring item's own start
 // date compare as *later* than local midnight of that same calendar day, so
 // its first month is silently skipped. Appending a local time-of-day makes
 // the parse match how callers build `asOf`, everywhere both are meant to be
@@ -2988,7 +2993,8 @@ export function applyGoalContribution(
     return {
       ...g,
       currentAmount: newAmount,
-      achievedAt: newAmount >= g.targetAmount ? (g.achievedAt ?? new Date().toISOString().slice(0, 10)) : g.achievedAt,
+      // TIME-02: the LOCAL day; toISOString() is the UTC one, a day early after local midnight east of UTC.
+      achievedAt: newAmount >= g.targetAmount ? (g.achievedAt ?? todayISO()) : g.achievedAt,
     };
   });
   const transaction = buildGoalContributionTx(goal, amount, lbpRate, opts);
@@ -3182,7 +3188,7 @@ export function isAfterBalanceBaseline(
 }
 
 /** A Date's LOCAL calendar day as YYYY-MM-DD. */
-function isoLocalDay(d: Date): string {
+export function isoLocalDay(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
