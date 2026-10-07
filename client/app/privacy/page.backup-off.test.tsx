@@ -47,8 +47,9 @@ describe("the backup-off sentence", () => {
     expect(kept).not.toMatch(/recovery code/i);
   });
 
-  it("is dated the day it changed", () => {
-    expect(text()).toContain("Last updated: 6 October 2026");
+  // Moved again by SYNC-1 step 3's sentence below (7 October 2026).
+  it("is dated the day it last changed", () => {
+    expect(text()).toContain("Last updated: 7 October 2026");
   });
 });
 
@@ -65,6 +66,20 @@ describe("the recovery-code check, disclosed with the change that makes it", () 
       "Generating a new recovery code always checks with our server first, even with backup off: " +
       "that check sends your email address and your password-derived sync token, and uploads no data. " +
       "Replacing a server copy's recovery code also sends tokens derived from your current and new recovery codes, never the codes themselves.",
+    );
+  });
+});
+
+// SYNC-1 step 3 (owner's wording, 2026-10-06): with backup on, each device
+// now also DOWNLOADS the copy on open and on return, and merges it in. The
+// page said only that the copy lets you restore on another device. Shipped
+// in the same merge as the fetch itself.
+describe("the automatic fetch, disclosed with the change that makes it", () => {
+  it("is the owner's sentence, word for word, right after what backup uploads", () => {
+    expect(text()).toContain(
+      "so you can sign in and restore it on another device. " +
+      "With backup on, each of your devices also fetches the copy when you open or return to ESSA, and combines it with what it already has. " +
+      "With backup off, nothing is uploaded automatically.",
     );
   });
 });

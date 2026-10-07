@@ -185,6 +185,11 @@ function applyMergedUndos(side: LocalFinancials, merged: PeriodClose[]): LocalFi
   return d;
 }
 
+/** The fields mergeFinancials combines; every other field is this device's copy. */
+export const MERGED_FIELDS = [
+  "transactions", "trackedBalances", "wishlist", "customCategories", "categoryRules", "periodCloses", "deletedKeys",
+] as const satisfies readonly (keyof LocalFinancials)[];
+
 export interface MergeFinancialsResult {
   data: LocalFinancials;
   transactions: MergeTransactionsResult;

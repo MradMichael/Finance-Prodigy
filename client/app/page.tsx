@@ -27,7 +27,7 @@ import { computeDashboard } from "../lib/computeDashboard";
 import {currentCycleKey, calendarKeyForDate, type CycleKey, type CycleHistory } from "../lib/period";
 import { getSession, hasValidSession, signOut } from "../lib/auth";
 import type { Session } from "../lib/auth";
-import { pushToServer, pullFromServer, hasAutoPulled, markAutoPulled, mergeAndPush, buildMergeNoticeText, checkEmailExists, applyBackupChoice, getLastSyncTime, type BackupChoice } from "../lib/syncService";
+import { pushToServer, pullFromServer, hasAutoPulled, markAutoPulled, mergeAndPush, fetchAndMerge, buildMergeNoticeText, checkEmailExists, applyBackupChoice, getLastSyncTime, type BackupChoice } from "../lib/syncService";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "../components/EssaBrand";
 import RecurringModelNoticeModal from "../components/RecurringModelNoticeModal";
@@ -42,6 +42,8 @@ import EditTransactionSheet from "../components/EditTransactionSheet";
 // HOME
 // ─────────────────────────────────────────────────────────────────────────────
 const SYNC_DEBOUNCE_MS = 2500; // wait 2.5 s after last change before pushing
+// SYNC-1 step 3: opening ESSA, or coming back to it, fetches at most this often.
+const FETCH_MIN_INTERVAL_MS = 60_000;
 
 export default function Home() {
   const router  = useRouter();
@@ -102,6 +104,18 @@ export default function Home() {
 
   // keep a stable ref so the debounce closure always sees the latest session
   useEffect(() => { sessionRef.current = session; }, [session]);
+
+  // SYNC-1 step 3: the copy the background fetch merges into, read when the
+  // pull LANDS, so an edit made while the server was waking is part of the
+  // merge. A user's edit reaches it through this effect before anything else
+  // runs (React flushes a discrete event's effects at once). handleChange
+  // also sets it directly, for the writes that come from effects (monthly
+  // snapshot, purge), whose re-render can land after the pull; those
+  // effects would simply write again, so no test can see the difference.
+  const financialsRef = useRef<LocalFinancials | null>(null);
+  useEffect(() => { financialsRef.current = financials; }, [financials]);
+  const lastFetchAtRef = useRef(0);
+  const fetchingRef = useRef(false);
 
   // ERR-01 (2026-10-01): a failed save used to be silent. The screen
   // updates before the save, so a refused write left an edit that looked kept
@@ -222,6 +236,8 @@ export default function Home() {
       if (superseded()) return;
       if (isEmptyFinancials(data) && !hasAutoPulled(s.userId)) {
         markAutoPulled(s.userId);
+        // This pull is the open's fetch (SYNC-1 step 3); don't pull twice.
+        lastFetchAtRef.current = Date.now();
         const result = await pullFromServer(s.email);
         // The one that matters: `data` was captured before this await, and a
         // newer run has since unlocked the UI. Anything the user typed in the
@@ -299,6 +315,7 @@ export default function Home() {
   /** Resolves false when the change couldn't be stored (and so was undone on screen). */
   async function handleChange(updated: LocalFinancials): Promise<boolean> {
     if (!session) return false;
+    financialsRef.current = updated;
     setFinancials(updated);
     // ERR-01: nothing was stored, so there's nothing to back up either.
     if (!(await persist(updated, session.userId))) return false;
@@ -307,11 +324,65 @@ export default function Home() {
     if (syncTimer.current) clearTimeout(syncTimer.current);
     setSyncStatus("idle"); // clear stale status while user is still typing
     syncTimer.current = setTimeout(() => {
+      // Cleared when it fires, so "an upload is pending" can be read off it (runFetch).
+      syncTimer.current = null;
       const s = sessionRef.current;
       if (s) autoSync(updated, s.email);
     }, SYNC_DEBOUNCE_MS);
     return true;
   }
+
+  /**
+   * SYNC-1 step 3 (DI-10): with backup on, fetch the server's copy and merge
+   * it in, when ESSA opens and when it comes back into view, at most once a
+   * minute. Before this, a second device picked up nothing until its own
+   * next edit.
+   *
+   * Quiet: no "syncing" while it waits (Render can take 30 s to wake), and a
+   * failure only flashes "Offline" the way an upload's does. No copy on the
+   * server is not a failure. It pushes only when the merged copy holds
+   * something the server lacks (fetchAndMerge's `serverBehind`), and an
+   * upload already pending is sent now with the merged copy instead of the
+   * older one it was holding.
+   */
+  const runFetch = useCallback(async () => {
+    const s = sessionRef.current;
+    const local = financialsRef.current;
+    // 2.4.153's gate: no request at all unless backup is on.
+    if (!s || !local || !syncAllowed(local)) return;
+    if (fetchingRef.current || Date.now() - lastFetchAtRef.current < FETCH_MIN_INTERVAL_MS) return;
+    fetchingRef.current = true;
+    lastFetchAtRef.current = Date.now();
+    try {
+      const sameAccount = () => sessionRef.current?.userId === s.userId;
+      const r = await fetchAndMerge(s.email, () => (sameAccount() ? financialsRef.current : null));
+      if (!sameAccount()) return;
+      if (!r.ok) {
+        if (!r.notFound) {
+          setSyncStatus((st) => (st === "idle" ? "offline" : st));
+          setTimeout(() => setSyncStatus((st) => (st === "offline" ? "idle" : st)), 4000);
+        }
+        return;
+      }
+      if (r.skipped) return;
+      if (r.localChanged) {
+        financialsRef.current = r.mergedData;
+        setFinancials(r.mergedData);
+        if (!(await persist(r.mergedData, s.userId))) return;
+      }
+      if (r.serverBehind || syncTimer.current) {
+        if (syncTimer.current) { clearTimeout(syncTimer.current); syncTimer.current = null; }
+        void autoSync(r.mergedData, s.email);
+      }
+      // What arrived, conflicts and replaced closes. The "may differ" sentence
+      // is left to the next push, which meets the conflict merge because the
+      // fetch doesn't record the sync time (see fetchAndMerge).
+      const notice = buildMergeNoticeText(r.addedFromServer, r.conflictDetails, [], r.replacedCloses);
+      if (notice.text) setMergeNotice(notice);
+    } finally {
+      fetchingRef.current = false;
+    }
+  }, [persist, autoSync]);
 
   // Confirms a recurring item's oldest outstanding cycle (Phase 2.5.3) --
   // the FIFO target nextConfirmTarget resolves, whether that's an overdue
@@ -508,6 +579,23 @@ export default function Home() {
     const t = setTimeout(() => setLoadingTooLong(true), 8000);
     return () => clearTimeout(t);
   }, [loaded]);
+
+  // SYNC-1 step 3: fetch once the account has loaded with backup on (and when
+  // backup is turned on), and whenever ESSA comes back into view. runFetch
+  // holds the gate and the once-a-minute limit.
+  const backupOn = !!financials && syncAllowed(financials);
+  useEffect(() => {
+    if (loaded && backupOn) void runFetch();
+  }, [loaded, backupOn, runFetch]);
+  useEffect(() => {
+    const onReturn = () => { if (document.visibilityState === "visible") void runFetch(); };
+    window.addEventListener("focus", onReturn);
+    document.addEventListener("visibilitychange", onReturn);
+    return () => {
+      window.removeEventListener("focus", onReturn);
+      document.removeEventListener("visibilitychange", onReturn);
+    };
+  }, [runFetch]);
 
   if (!loaded) {
     return (
