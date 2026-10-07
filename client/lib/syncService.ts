@@ -534,19 +534,26 @@ export function buildMergeNoticeText(
   if (addedFromServer > 0) {
     parts.push(`${addedFromServer} new transaction${addedFromServer === 1 ? "" : "s"} added`);
   }
-  // A tie: both copies carry the same recorded edit time, so neither is
-  // "newer" and the merge's content tie-break decided. Owner's wording for
-  // ties only (2026-10-07), each its own sentence after what arrived; every
-  // other conflict keeps the wording below.
-  const isTie = (d: MergeConflictDetail) =>
-    !!d.winner.updatedAt && !!d.loser.updatedAt && new Date(d.winner.updatedAt).getTime() === new Date(d.loser.updatedAt).getTime();
+  // "Kept the newer edit" only when one copy is newer (owner, 2026-10-07):
+  // both carry an edit time and the kept one's is later, or only the kept one
+  // carries one -- every write has stamped a time since 2.6.3(c), so the
+  // unstamped copy's last edit came first (the merge sorts it as older too).
+  // Anything else gets its own sentence after what arrived: a tie (the same
+  // recorded time; the content tie-break decided) in the owner's tie wording,
+  // and two copies with no time at all in the DRAFT below.
+  const at = (t: StoredTransaction) => (t.updatedAt ? new Date(t.updatedAt).getTime() : null);
+  const isNewer = (d: MergeConflictDetail) => {
+    const w = at(d.winner), l = at(d.loser);
+    return w !== null && (l === null || w > l);
+  };
+  const isTie = (d: MergeConflictDetail) => at(d.winner) !== null && at(d.winner) === at(d.loser);
   // DI-12 (owner, 2026-10-07): the notice never describes a deleted or
   // purged record. The merge no longer reports one as a conflict; this holds
   // the line for any caller.
   const gone = (t: StoredTransaction) => t.deletedAt != null || t.purgedAt != null;
   const described = conflictDetails.filter((d) => !gone(d.winner) && !gone(d.loser));
-  const ties = described.filter(isTie);
-  const edits = described.filter((d) => !isTie(d));
+  const edits = described.filter(isNewer);
+  const undated = described.filter((d) => !isNewer(d));
   const n = edits.length;
   let showReviewLink = false;
   const describe = (d: MergeConflictDetail) =>
@@ -577,8 +584,10 @@ export function buildMergeNoticeText(
   const listScreens = [...new Set(lists.map(([, , screen]) => screen))];
   const sentences = [
     mainText,
-    ...ties.map((d) =>
-      `Both devices changed "${d.winner.description}" at the same moment — kept ${fmtMoney(d.winner.amount)} (the other copy said ${fmtMoney(d.loser.amount)}).`),
+    ...undated.map((d) => isTie(d)
+      ? `Both devices changed "${d.winner.description}" at the same moment — kept ${fmtMoney(d.winner.amount)} (the other copy said ${fmtMoney(d.loser.amount)}).`
+      // DRAFT (held for the owner): the tie sentence without "at the same moment", which no edit time can support.
+      : `Both devices changed "${d.winner.description}" — kept ${fmtMoney(d.winner.amount)} (the other copy said ${fmtMoney(d.loser.amount)}).`),
     lists.length
       ? `Your ${joinNames(lists.map(([, label]) => label), "or")} may differ from your other device — this device's copy was kept. Check ${joinNames(listScreens, "and")} if something looks off.`
       : "",

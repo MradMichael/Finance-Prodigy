@@ -322,9 +322,11 @@ describe("mergeAndPush (Phase 2.7 sub-phase 2 -- wires mergeTransactions into th
 describe("buildMergeNoticeText (Phase 2.7 sub-phase 3 -- the exact wording rules the owner approved, 2026-09-01)", () => {
   function detail(overrides: Partial<{ winnerAmount: number; loserAmount: number; description: string }> = {}): MergeConflictDetail {
     const { winnerAmount = 75, loserAmount = 50, description = "Groceries" } = overrides;
+    // The kept copy carries the later edit time: since 2026-10-07 "kept the
+    // newer edit" is said only when one copy is newer (lib/notice-newer-only.test.ts).
     return {
-      winner: { id: "w", amount: winnerAmount, currency: "USD", bucket: "NEEDS", description, date: "2026-08-01" },
-      loser:  { id: "w", amount: loserAmount,  currency: "USD", bucket: "NEEDS", description, date: "2026-08-01" },
+      winner: { id: "w", amount: winnerAmount, currency: "USD", bucket: "NEEDS", description, date: "2026-08-01", updatedAt: "2026-08-02T10:00:00.000Z" },
+      loser:  { id: "w", amount: loserAmount,  currency: "USD", bucket: "NEEDS", description, date: "2026-08-01", updatedAt: "2026-08-02T09:00:00.000Z" },
     };
   }
 
