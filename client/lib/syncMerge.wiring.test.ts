@@ -51,13 +51,14 @@ describe("the divergence notice", () => {
   // Owner's wording, 2026-10-06. The settings live on Setup (income, payday,
   // emergency fund target, the custom split's figures), Budget (the split)
   // and Currency (the LBP rate), so the sentence names those three screens.
-  // Owner, 2026-10-07: items joined properly, "income and LBP rate".
+  // Owner, 2026-10-07: items joined properly, "income and LBP rate"; and both
+  // sentences end "this device's copy was kept.", without "automatically".
   it("the sentence for settings names the screens they live on, items joined properly (owner's wording)", () => {
     expect(buildMergeNoticeText(0, [], ["income", "LBP rate"]).text).toBe(
-      "Your income and LBP rate may differ from your other device — this device's copy was kept automatically. Check Setup, Budget and Currency if something looks off.",
+      "Your income and LBP rate may differ from your other device — this device's copy was kept. Check Setup, Budget and Currency if something looks off.",
     );
     expect(buildMergeNoticeText(0, [], ["income", "LBP rate", "payday"]).text).toBe(
-      "Your income, LBP rate and payday may differ from your other device — this device's copy was kept automatically. Check Setup, Budget and Currency if something looks off.",
+      "Your income, LBP rate and payday may differ from your other device — this device's copy was kept. Check Setup, Budget and Currency if something looks off.",
     );
   });
 
@@ -93,7 +94,7 @@ describe("the divergence notice", () => {
     const { text } = buildMergeNoticeText(0, [], ["goals", "cards", "payday"]);
     expect(text).toBe(
       "Your goals or cards may differ from your other device — this device's copy was kept. Check Goals and My Finances if something looks off. "
-      + "Your payday may differ from your other device — this device's copy was kept automatically. Check Setup, Budget and Currency if something looks off.",
+      + "Your payday may differ from your other device — this device's copy was kept. Check Setup, Budget and Currency if something looks off.",
     );
   });
 

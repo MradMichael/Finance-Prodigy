@@ -477,7 +477,7 @@ export function buildMergeNoticeText(
   //             differ from your other device — this device's copy was kept.
   //             Check Goals, Debts, Recurring and My Finances if something
   //             looks off." -- the screens of the lists that differ, each once;
-  //   settings: "Your income and LBP rate may differ ... kept automatically.
+  //   settings: "Your income and LBP rate may differ ... was kept.
   //             Check Setup, Budget and Currency if something looks off." --
   //             income, payday and the emergency fund target are on Setup,
   //             the budget split on Budget, the LBP rate on Currency.
@@ -491,7 +491,7 @@ export function buildMergeNoticeText(
       ? `Your ${joinNames(lists.map(([, label]) => label), "or")} may differ from your other device — this device's copy was kept. Check ${joinNames(listScreens, "and")} if something looks off.`
       : "",
     settings.length
-      ? `Your ${joinNames(settings, "and")} may differ from your other device — this device's copy was kept automatically. Check Setup, Budget and Currency if something looks off.`
+      ? `Your ${joinNames(settings, "and")} may differ from your other device — this device's copy was kept. Check Setup, Budget and Currency if something looks off.`
       : "",
     // "In the cycle's record", not just "kept": the undone close's note shows
     // on no screen afterwards (Balance Check shows a note only while it
