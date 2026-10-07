@@ -1365,7 +1365,9 @@ export default function InputPanel({ financials, dashData, onChange, session, on
             // that's simply already been paid this cycle. Actual spend/budget
             // totals elsewhere keep using monthlyEquivalent, which correctly
             // suppresses a paid cycle to avoid double-counting real spend.
-            const totalMonthly = recs.reduce((s, r) => s + nominalMonthlyEquivalent(r, financials.transactions, now), 0);
+            // CUR-01: each item's figure is in its OWN currency, so convert
+            // before adding -- the same toUSD RecurringScreen applies.
+            const totalMonthly = recs.reduce((s, r) => s + toUSD(nominalMonthlyEquivalent(r, financials.transactions, now), r.currency), 0);
             return (
               <>
                 {recs.length > 0 && (
