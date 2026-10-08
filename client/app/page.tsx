@@ -206,7 +206,7 @@ export default function Home() {
       if (!merged.ok) { setSyncStatus("conflict"); return; }
       const userId = sessionRef.current?.userId;
       if (userId && await persist(merged.mergedData, userId)) setFinancials(merged.mergedData);
-      const notice = buildMergeNoticeText(merged.addedFromServer, merged.conflictDetails, merged.nonTransactionDivergence, merged.replacedCloses);
+      const notice = buildMergeNoticeText(merged.addedFromServer, merged.conflictDetails, merged.clashes, merged.replacedCloses);
       if (notice.text) setMergeNotice(notice);
       setBackupFailed(false);
       retryTimersRef.current.forEach(clearTimeout); retryTimersRef.current = [];
@@ -455,10 +455,9 @@ export default function Home() {
         if (syncTimer.current) { clearTimeout(syncTimer.current); syncTimer.current = null; }
         void autoSync(r.mergedData, s.email);
       }
-      // What arrived, conflicts and replaced closes. The "may differ" sentence
-      // is left to the next push, which meets the conflict merge because the
-      // fetch doesn't record the sync time (see fetchAndMerge).
-      const notice = buildMergeNoticeText(r.addedFromServer, r.conflictDetails, [], r.replacedCloses);
+      // What arrived, conflicts, changes both devices made (plan H 5d), and
+      // replaced closes.
+      const notice = buildMergeNoticeText(r.addedFromServer, r.conflictDetails, r.clashes, r.replacedCloses);
       if (notice.text) setMergeNotice(notice);
     } finally {
       fetchingRef.current = false;

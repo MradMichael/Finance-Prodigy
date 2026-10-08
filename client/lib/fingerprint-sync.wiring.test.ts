@@ -120,6 +120,24 @@ describe("the fetch on open, under the rule", () => {
   });
 });
 
+describe("what both devices changed reaches the notice (plan H 5d)", () => {
+  const both = () => ({ local: data({ goals: [goal({ name: "Laptop Pro", updatedAt: "2026-10-05T00:00:00.000Z" })] }), server: data({ goals: [goal({ name: "MacBook", updatedAt: "2026-10-06T00:00:00.000Z" })] }) });
+  it("from the conflict merge", async () => {
+    await saveSeen("u1", data());
+    const { local, server } = both(); serverData = server;
+    const r = await mergeAndPush("u1@example.com", local);
+    if (!r.ok) throw new Error(r.error);
+    expect(r.clashes).toEqual([{ kind: "goal", name: "MacBook", later: true }]);
+  });
+  it("from the fetch on open", async () => {
+    await saveSeen("u1", data());
+    const { local, server } = both(); serverData = server;
+    const r = await fetchAndMerge("u1@example.com", () => local);
+    if (!r.ok || r.skipped) throw new Error("expected a merge");
+    expect(r.clashes).toEqual([{ kind: "goal", name: "MacBook", later: true }]);
+  });
+});
+
 describe("the first merge after the update", () => {
   it("with no record, the conflict merge pushes exactly today's merge", async () => {
     const local = data({ goals: [goal({ name: "Laptop Pro" })], income: 3200 });

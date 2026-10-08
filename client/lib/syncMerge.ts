@@ -289,7 +289,7 @@ function withoutDeleted(d: LocalFinancials, deleted: DeletedKeys | undefined, re
 
 /** A two-sided change the fingerprint rule settled by edit time (plan H 5b), for the notice to name. */
 export type MergeClash =
-  | { kind: "goal" | "debt" | "recurring" | "asset" | "wishlist" | "category" | "rule"; name: string }
+  | { kind: "goal" | "debt" | "recurring" | "asset" | "wishlist" | "category" | "rule"; name: string; later: boolean }
   | { kind: "setting"; setting: SettingKey; kept: unknown; other: unknown };
 
 /**
@@ -389,11 +389,11 @@ function remapBalanceRefs(d: LocalFinancials, collapsed: Map<string, TrackedBala
  */
 function mergeBySeen<T>(
   local: T[], server: T[], keyOf: (t: T) => string, seen: Record<string, string> | undefined, stampOf: (t: T) => string | undefined,
-): { items: T[]; clashed: { winner: T; local: T; server: T }[] } {
+): { items: T[]; clashed: { winner: T; local: T; server: T; later: boolean }[] } {
   const serverBy = new Map(server.map((s) => [keyOf(s), s]));
   const localKeys = new Set(local.map(keyOf));
   const items: T[] = [];
-  const clashed: { winner: T; local: T; server: T }[] = [];
+  const clashed: { winner: T; local: T; server: T; later: boolean }[] = [];
   for (const l of local) {
     const k = keyOf(l);
     const s = serverBy.get(k);
@@ -406,7 +406,7 @@ function mergeBySeen<T>(
     const tl = instant(stampOf(l)), ts = instant(stampOf(s));
     const winner = tl !== ts ? (tl > ts ? l : s) : tieBreak(l, s);
     items.push(winner);
-    clashed.push({ winner, local: l, server: s });
+    clashed.push({ winner, local: l, server: s, later: tl !== ts }); // the kept one's time is later, or only it has one
   }
   for (const s of server) if (!localKeys.has(keyOf(s))) items.push(s);
   return { items, clashed };
@@ -476,8 +476,8 @@ function mergeUnderRule(local: LocalFinancials, server: LocalFinancials, deleted
   const clashes: MergeClash[] = [];
   const s = (k: SeenKind) => seen.kinds[k];
   const stamp = (t: { updatedAt?: string }) => t.updatedAt;
-  const named = <T extends { name: string }>(kind: "goal" | "debt" | "recurring" | "asset" | "wishlist", r: { clashed: { winner: T }[] }) =>
-    r.clashed.forEach((c) => clashes.push({ kind, name: c.winner.name }));
+  const named = <T extends { name: string }>(kind: "goal" | "debt" | "recurring" | "asset" | "wishlist", r: { clashed: { winner: T; later: boolean }[] }) =>
+    r.clashed.forEach((c) => clashes.push({ kind, name: c.winner.name, later: c.later }));
   const live = <T>(xs: T[] | undefined, keyOf: (t: T) => string, c: keyof DeletedKeys) => {
     const gone = deletedKeySet(deletedKeys?.[c], revivedKeys?.[c]);
     return (xs ?? []).filter((x) => !gone.has(keyOf(x)));
@@ -496,9 +496,9 @@ function mergeUnderRule(local: LocalFinancials, server: LocalFinancials, deleted
   const assets = mergeBySeen(local.assets ?? [], server.assets ?? [], (a) => a.id, s("assets"), stamp); named("asset", assets);
   const wishlist = mergeBySeen(live(local.wishlist, (w) => w.id, "wishlist"), live(server.wishlist, (w) => w.id, "wishlist"), (w) => w.id, s("wishlist"), stamp); named("wishlist", wishlist);
   const categories = mergeBySeen(live(local.customCategories, (c) => c.value, "customCategories"), live(server.customCategories, (c) => c.value, "customCategories"), (c) => c.value, s("customCategories"), stamp);
-  categories.clashed.forEach((c) => clashes.push({ kind: "category", name: c.winner.label }));
+  categories.clashed.forEach((c) => clashes.push({ kind: "category", name: c.winner.label, later: c.later }));
   const rules = mergeBySeen(live(local.categoryRules, (r) => r.id, "categoryRules"), live(server.categoryRules, (r) => r.id, "categoryRules"), (r) => r.id, s("categoryRules"), stamp);
-  rules.clashed.forEach((c) => clashes.push({ kind: "rule", name: c.winner.keyword }));
+  rules.clashed.forEach((c) => clashes.push({ kind: "rule", name: c.winner.keyword, later: c.later }));
 
   const settings = mergeSettingsBySeen(local, server, s("settings"));
   clashes.push(...settings.clashes);

@@ -81,7 +81,7 @@ function settled(extra: Partial<LocalFinancials>): LocalFinancials {
 }
 
 const merged = (d: LocalFinancials, over: Partial<Extract<Fetched, { mergedData: LocalFinancials }>> = {}): Fetched => ({
-  ok: true, mergedData: d, serverCopy: d, localChanged: true, serverBehind: false, addedFromServer: 1, conflictDetails: [], replacedCloses: [], ...over,
+  ok: true, mergedData: d, serverCopy: d, localChanged: true, serverBehind: false, addedFromServer: 1, conflictDetails: [], clashes: [], replacedCloses: [], ...over,
 });
 
 beforeEach(() => {
@@ -129,13 +129,23 @@ describe("backup on: opening ESSA fetches and merges", () => {
     expect(push).not.toHaveBeenCalled();
   });
 
-  it("the notice says what arrived; the 'may differ' sentence is left to the next push's merge", async () => {
+  it("the notice says what arrived", async () => {
     seed = settled({ syncChoice: ON });
     const real = await vi.importActual<typeof import("../lib/syncService")>("../lib/syncService");
     notice.mockImplementation(((...args: Parameters<typeof real.buildMergeNoticeText>) => real.buildMergeNoticeText(...args)) as never);
     await open();
     expect(await screen.findByText("Merged with your other device — 1 new transaction added.")).toBeTruthy();
     expect(notice.mock.calls[0]).toEqual([1, [], [], []]);
+  });
+
+  // Plan H 5d: what both devices changed reaches the notice from the fetch too.
+  it("a change both devices made is named", async () => {
+    seed = settled({ syncChoice: ON });
+    const real = await vi.importActual<typeof import("../lib/syncService")>("../lib/syncService");
+    notice.mockImplementation(((...args: Parameters<typeof real.buildMergeNoticeText>) => real.buildMergeNoticeText(...args)) as never);
+    fetchImpl = async (_e, local) => merged(local()!, { addedFromServer: 0, clashes: [{ kind: "goal", name: "Laptop", later: true }] });
+    await open();
+    expect(await screen.findByText('Both devices changed the goal "Laptop" — kept the later change.')).toBeTruthy();
   });
 
   // Owner, 2026-10-07: "Offline" only when the device is actually offline.

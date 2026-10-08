@@ -201,7 +201,7 @@ export default function ProfilePage() {
       return;
     }
     setLastSync(result.syncedAt);
-    const notice = buildMergeNoticeText(result.addedFromServer, result.conflictDetails, result.nonTransactionDivergence, result.replacedCloses);
+    const notice = buildMergeNoticeText(result.addedFromServer, result.conflictDetails, result.clashes, result.replacedCloses);
     setSyncMsg("✓ Merged. " + (notice.text || "Nothing new from your other device."));
     // Same reload requirement as handlePull -- the dashboard only reads
     // localStorage once, on its own mount.
