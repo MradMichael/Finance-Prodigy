@@ -96,9 +96,9 @@ describe("1. v4 -> v5: the record arrives empty", () => {
     const v4 = { ...DEFAULT_DATA, schemaVersion: 4, periodCloses: undefined } as unknown as LocalFinancials;
     const out = migrateFinancials(v4);
     expect(out.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
-    // v6 (SYNC-1 step 2) now runs after v5, so a v4 record ends at 6. The v5
-    // step this test is about still ran: periodCloses below.
-    expect(out.schemaVersion).toBe(6);
+    // v6 (SYNC-1 step 2) and v7 (plan H 5a) now run after v5, so a v4 record
+    // ends at 7. The v5 step this test is about still ran: periodCloses below.
+    expect(out.schemaVersion).toBe(7);
     expect(out.periodCloses).toEqual([]);
   });
 
@@ -124,8 +124,8 @@ describe("1. v4 -> v5: the record arrives empty", () => {
     // step, not stop partway and still get stamped current.
     const v1 = { ...DEFAULT_DATA, schemaVersion: 1, periodCloses: undefined } as unknown as LocalFinancials;
     const out = migrateFinancials(v1);
-    // 6 since SYNC-1 step 2 added the v5 -> v6 step: still every step walked.
-    expect(out.schemaVersion).toBe(6);
+    // 7 since plan H 5a added the v6 -> v7 step (6 since SYNC-1 step 2): still every step walked.
+    expect(out.schemaVersion).toBe(7);
     expect(out.periodCloses).toEqual([]);
   });
 });

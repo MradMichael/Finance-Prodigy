@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
-import { BUDGET_RULES, moneyEquals, capacityFreedFrom, isRecurringActive, toUSD as toUSDShared, DEFAULT_LBP_RATE, cycleStartDayOf } from "../../lib/localData";
+import { BUDGET_RULES, goalProgress, moneyEquals, capacityFreedFrom, isRecurringActive, toUSD as toUSDShared, DEFAULT_LBP_RATE, cycleStartDayOf } from "../../lib/localData";
 import { dateFmt, toDebtInputs, type computeDashboard } from "../../lib/computeDashboard";
 import { simulateDebtPayoff, addMonths, type DebtInput } from "../../lib/debtEngine";
 import { projectCompletion } from "../../lib/projections";
@@ -165,7 +165,7 @@ export default function ProjectionsScreen({
     id: stored.id,
     name: stored.name,
     targetAmountUSD: toUSDShared(stored.targetAmount, stored.currency, lbpRate),
-    currentAmountUSD: toUSDShared(stored.currentAmount, stored.currency, lbpRate),
+    currentAmountUSD: toUSDShared(goalProgress(stored, financials), stored.currency, lbpRate),
     targetDate: stored.targetDate,
   }));
 

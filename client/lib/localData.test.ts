@@ -1764,10 +1764,12 @@ describe("migrateFinancials", () => {
     const migrated = migrateFinancials(legacy);
     expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
 
-    // Goals/debts: currency backfilled to USD, nothing else touched.
+    // Goals/debts: currency backfilled to USD, nothing else touched -- except
+    // v7's opening amount (plan H 5a): the stored total, with no linked
+    // contributions here, so progress is unchanged.
     expect(migrated.goals).toEqual([
-      { id: "g1", name: "Trip", emoji: "🎯", targetAmount: 3000, currentAmount: 500, targetDate: "2027-01-01", createdAt: "2026-01-01T00:00:00.000Z", currency: "USD" },
-      { id: "g2", name: "Paused Goal", emoji: "🎯", targetAmount: 1000, currentAmount: 0, targetDate: "2027-06-01", createdAt: "2026-02-01T00:00:00.000Z", pausedAt: "2026-07-01T00:00:00.000Z", currency: "USD" },
+      { id: "g1", name: "Trip", emoji: "🎯", targetAmount: 3000, currentAmount: 500, targetDate: "2027-01-01", createdAt: "2026-01-01T00:00:00.000Z", currency: "USD", openingAmount: 500 },
+      { id: "g2", name: "Paused Goal", emoji: "🎯", targetAmount: 1000, currentAmount: 0, targetDate: "2027-06-01", createdAt: "2026-02-01T00:00:00.000Z", pausedAt: "2026-07-01T00:00:00.000Z", currency: "USD", openingAmount: 0 },
     ]);
     expect(migrated.debts).toEqual([
       { id: "d1", name: "Loan", balance: 1500, apr: 0, minPayment: 0, createdAt: "2026-01-01T00:00:00.000Z", openedDate: "2026-01-01", currency: "USD", openingBalance: 1500 },

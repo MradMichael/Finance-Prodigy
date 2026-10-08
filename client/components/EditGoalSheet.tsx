@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, StoredGoal } from "../lib/localData";
-import { moneyMaxFor, DEFAULT_LBP_RATE } from "../lib/localData";
+import { moneyMaxFor, DEFAULT_LBP_RATE, goalProgress, buildGoalCorrectionTx, roundMoney } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY } from "./form/Primitives";
 
@@ -26,7 +26,7 @@ export default function EditGoalSheet({
   const [name,    setName]    = useState(goal.name);
   const [emoji,   setEmoji]   = useState(goal.emoji);
   const [target,  setTarget]  = useState(String(goal.targetAmount));
-  const [current, setCurrent] = useState(String(goal.currentAmount));
+  const [current, setCurrent] = useState(String(goalProgress(goal, financials)));
   const [date,    setDate]    = useState(goal.targetDate);
 
   function save() {
@@ -36,12 +36,18 @@ export default function EditGoalSheet({
     // this goal -- a $0 target isn't a real goal, same guard the add-goal
     // form already applies.
     if (!name.trim() || isNaN(targetNum) || targetNum <= 0 || !date) return;
+    // Plan H 5a: "saved so far" is computed. A different figure becomes a $0
+    // correction row carrying the difference, not an edited total. (A goal
+    // not yet migrated still edits its stored total, as before.)
+    const migrated = goal.openingAmount != null;
+    const delta = roundMoney(currentNum - goalProgress(goal, financials));
     update({
       goals: financials.goals.map((g) => g.id !== goal.id ? g : {
         ...g, name: name.trim(), emoji: emoji || "🎯",
-        targetAmount: targetNum, currentAmount: currentNum, targetDate: date,
+        targetAmount: targetNum, targetDate: date, ...(migrated ? {} : { currentAmount: currentNum }),
         achievedAt: currentNum >= targetNum ? (g.achievedAt ?? new Date().toISOString()) : undefined,
       }),
+      ...(migrated && delta !== 0 ? { transactions: [buildGoalCorrectionTx(goal, delta), ...financials.transactions] } : {}),
     });
     onClose();
   }
