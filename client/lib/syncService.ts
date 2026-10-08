@@ -582,21 +582,21 @@ export function buildMergeNoticeText(
   // the line for any caller.
   const gone = (t: StoredTransaction) => t.deletedAt != null || t.purgedAt != null;
   const described = conflictDetails.filter((d) => !gone(d.winner) && !gone(d.loser));
-  const edits = described.filter(isNewer);
-  const undated = described.filter((d) => !isNewer(d));
-  const n = edits.length;
-  let showReviewLink = false;
+  // Three or more conflicts in all (owner, session 4): one line for them
+  // all, with the review link, in place of every sentence below; one or two
+  // keep their own. It retires 2026-09-01's "N edit conflicts resolved (kept
+  // the most recent edit each time)".
+  const collapsed = described.length >= 3;
+  const edits = collapsed ? [] : described.filter(isNewer);
+  const undated = collapsed ? [] : described.filter((d) => !isNewer(d));
+  const showReviewLink = collapsed;
   const describe = (d: MergeConflictDetail) =>
     `kept the newer edit to "${d.winner.description}" (${fmtMoney(d.winner.amount)}, was ${fmtMoney(d.loser.amount)})`;
-  if (n === 1) {
-    parts.push(describe(edits[0]));
-  } else if (n === 2) {
-    parts.push(edits.map(describe).join(" and "));
-  } else if (n >= 3) {
-    parts.push(`${n} edit conflicts resolved (kept the most recent edit each time)`);
-    showReviewLink = true;
-  }
+  if (edits.length) parts.push(edits.map(describe).join(" and "));
   const mainText = parts.length > 0 ? `Merged with your other device — ${parts.join(", ")}.` : "";
+  const collapseLine = collapsed
+    ? collapsedConflictLine(described.map((d) => ({ kind: "transaction", name: d.winner.description })))
+    : "";
 
   // Owner's wording (2026-10-06, -07). A sentence for the lists and one for
   // the settings, each naming only what differs, in their own order:
@@ -614,6 +614,7 @@ export function buildMergeNoticeText(
   const listScreens = [...new Set(lists.map(([, , screen]) => screen))];
   const sentences = [
     mainText,
+    collapseLine,
     ...undated.map((d) => isTie(d)
       ? `Both devices changed "${d.winner.description}" at the same moment — kept ${fmtMoney(d.winner.amount)} (the other copy said ${fmtMoney(d.loser.amount)}).`
       : `Your devices had different versions of "${d.winner.description}" — kept ${fmtMoney(d.winner.amount)} (the other copy said ${fmtMoney(d.loser.amount)}).`),
@@ -634,6 +635,18 @@ export function buildMergeNoticeText(
 /** "a", "a and b", "a, b and c": the owner's style, no comma before the last word. */
 function joinNames(names: readonly string[], word: "and" | "or"): string {
   return names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} ${word} ${names[names.length - 1]}`;
+}
+
+/**
+ * The merge notice's one line at three or more conflicts (owner's wording,
+ * session 4): the count, "transactions" when every conflict is one and
+ * "items" when they span kinds, and the first two different names. Today
+ * only transactions reach the notice; SYNC-1 step 4 adds other kinds.
+ */
+export function collapsedConflictLine(conflicts: readonly { kind: string; name: string }[]): string {
+  const noun = conflicts.every((c) => c.kind === "transaction") ? "transactions" : "items";
+  const names = [...new Set(conflicts.map((c) => c.name))].slice(0, 2).map((n) => `"${n}"`);
+  return `Your devices had different versions of ${conflicts.length} ${noun}, including ${joinNames(names, "and")} — ESSA kept one of each.`;
 }
 
 /**

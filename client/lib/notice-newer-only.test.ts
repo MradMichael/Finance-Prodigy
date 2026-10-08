@@ -36,15 +36,16 @@ describe("no edit time on either copy", () => {
     expect(buildMergeNoticeText(2, [NO_TIME]).text).toBe(`Merged with your other device — 2 new transactions added. ${NO_TIME_SENTENCE}`);
   });
 
-  it("doesn't count toward the most-recent-edit tally", () => {
+  // Session 4: at three or more conflicts in all (newer, tie and no-edit-time
+  // together) one line replaces their sentences; lib/notice-collapse.test.ts.
+  it("joins the three-or-more collapse, counted with the newer edits", () => {
     const three = [newer("Bistro Margaux", 46.8, 40), newer("Kahwet Leila", 12, 9), newer("Spinneys", 88, 80)];
     expect(buildMergeNoticeText(0, [...three, NO_TIME])).toEqual({
-      text: `Merged with your other device — 3 edit conflicts resolved (kept the most recent edit each time). ${NO_TIME_SENTENCE}`,
+      text: 'Your devices had different versions of 4 transactions, including "Bistro Margaux" and "Kahwet Leila" — ESSA kept one of each.',
       showReviewLink: true,
     });
-    // Two newer edits and one without times: named inline, not collapsed to a count of three.
     expect(buildMergeNoticeText(0, [three[0], three[1], NO_TIME]).text).toBe(
-      'Merged with your other device — kept the newer edit to "Bistro Margaux" ($47, was $40) and kept the newer edit to "Kahwet Leila" ($12, was $9). ' + NO_TIME_SENTENCE,
+      'Your devices had different versions of 3 transactions, including "Bistro Margaux" and "Kahwet Leila" — ESSA kept one of each.',
     );
   });
 
