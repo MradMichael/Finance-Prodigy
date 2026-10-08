@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, StoredRecurring } from "../../lib/localData";
-import { fmtDate, historizedRecurringContribution, toUSD as toUSDShared, categoryLabel as categoryLabelShared, categoryIcon as categoryIconShared, activeTransactions, cycleMonthDivergence, purgeTransaction, DEFAULT_LBP_RATE, cycleStartDayOf, todayISO } from "../../lib/localData";
+import { fmtDate, historizedRecurringContribution, toUSD as toUSDShared, categoryLabel as categoryLabelShared, categoryIcon as categoryIconShared, activeTransactions, cycleMonthDivergence, purgeTransaction, undeleteTransaction, DEFAULT_LBP_RATE, cycleStartDayOf, todayISO } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money, fmtCur } from "./shared";
 import Donut from "../charts/Donut";
@@ -112,11 +112,10 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
   // might want to check" with entries that aren't things anymore.
   const restorableCount = deletedTx.filter((t) => t.purgedAt == null).length;
 
+  // DI-14: a revival at a new generation, so the restore survives a merge
+  // with a device that still holds the deleted copy (undeleteTransaction).
   function restoreTransaction(txId: string) {
-    onChange({
-      ...financials,
-      transactions: financials.transactions.map((t) => t.id !== txId ? t : { ...t, deletedAt: undefined, updatedAt: new Date().toISOString() }),
-    });
+    onChange(undeleteTransaction(financials, txId, new Date().toISOString()));
   }
 
   // Scrubs the payload, keeps the row -- see purgeTransaction's own doc
