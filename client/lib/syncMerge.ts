@@ -31,6 +31,7 @@ import {
   mergeTransactions, undoCloseEffects, periodCloseKey, DELETED_COLLECTIONS,
   deletedKeySet, itemKeysByCollection, restoreGeneration, SETTING_KEYS, type SettingKey,
   type LocalFinancials, type PeriodClose, type TrackedBalance, type DeletedKeys, type Tombstone, type RevivedKeys, type MergeTransactionsResult,
+  type StoredCard,
 } from "./localData";
 
 import { stableStringify, tieBreak } from "./canonical";
@@ -243,7 +244,7 @@ export const MERGED_FIELDS = [
  * has a record of its last sync. Without one they stay this device's copy.
  */
 export const RULE_FIELDS = [
-  "goals", "debts", "recurring", "assets", "settingsUpdatedAt",
+  "goals", "debts", "recurring", "assets", "cards", "settingsUpdatedAt",
   "income", "lbpRate", "lbpRateUpdatedAt", "budgetRule", "budgetCustomNeeds", "budgetCustomWants", "budgetSplitHealedAt", "budgetSplitHealedFrom",
   "cycleStartDay", "cycleStartDayChangedAt", "emergencyFundTargetMonths",
   "incomeHistory", "lbpRateHistory", "budgetRuleHistory", "netWorthHistory",
@@ -288,6 +289,47 @@ function withoutDeleted(d: LocalFinancials, deleted: DeletedKeys | undefined, re
 export type MergeClash =
   | { kind: "goal" | "debt" | "recurring" | "asset" | "wishlist" | "category" | "rule"; name: string }
   | { kind: "setting"; setting: SettingKey; kept: unknown; other: unknown };
+
+/**
+ * Plan H 5c: cards with the same type and last four digits are one card. The
+ * earliest-created is kept: a card from before `createdAt` existed counts as
+ * earliest, and between equals the lower id, so both devices keep the same
+ * one. A card both sides hold appears once. `remap` maps each dropped id to
+ * the kept card.
+ */
+export function collapseCards(all: StoredCard[]): { cards: StoredCard[]; remap: Map<string, StoredCard> } {
+  const created = (c: StoredCard) => (c.createdAt ? Date.parse(c.createdAt) : -Infinity);
+  const earlier = (a: StoredCard, b: StoredCard) => (created(a) !== created(b) ? created(a) < created(b) : a.id < b.id);
+  const identity = (c: StoredCard) => `${c.type}|${c.last4}`;
+  const kept = new Map<string, StoredCard>();
+  for (const c of all) {
+    const k = kept.get(identity(c));
+    if (!k || earlier(c, k)) kept.set(identity(c), c);
+  }
+  const remap = new Map<string, StoredCard>();
+  const cards: StoredCard[] = [];
+  for (const c of all) {
+    const keep = kept.get(identity(c))!;
+    if (keep.id !== c.id) remap.set(c.id, keep);
+    else if (!cards.some((x) => x.id === c.id)) cards.push(c);
+  }
+  return { cards, remap };
+}
+
+/**
+ * Every reference to a dropped card, pointed at the kept one: transactions
+ * (with the kept card's label) and tracked balances. Automatic, so no edit
+ * time is stamped.
+ */
+function remapCardRefs(d: LocalFinancials, remap: Map<string, StoredCard>): LocalFinancials {
+  if (remap.size === 0) return d;
+  const to = (id: string | undefined) => (id ? remap.get(id) : undefined);
+  return {
+    ...d,
+    transactions: (d.transactions ?? []).map((t) => { const k = to(t.cardId); return k ? { ...t, cardId: k.id, cardLabel: k.label } : t; }),
+    trackedBalances: (d.trackedBalances ?? []).map((b) => { const k = to(b.cardId); return k ? { ...b, cardId: k.id } : b; }),
+  };
+}
 
 /**
  * The fingerprint rule for one keyed list (plan H 5b). Per key: the same on
@@ -445,8 +487,15 @@ export function mergeFinancials(localIn: LocalFinancials, serverIn: LocalFinanci
   const at = now.toISOString();
   const deletedKeys = mergeDeletedKeys(localIn.deletedKeys, serverIn.deletedKeys);
   const revivedKeys = mergeRevivedKeys(localIn.revivedKeys, serverIn.revivedKeys);
-  const local = withoutDeleted(localIn, deletedKeys, revivedKeys);
-  const server = withoutDeleted(serverIn, deletedKeys, revivedKeys);
+  const local0 = withoutDeleted(localIn, deletedKeys, revivedKeys);
+  const server0 = withoutDeleted(serverIn, deletedKeys, revivedKeys);
+  // Plan H 5c: with a record of the last sync, cards merge. Duplicates (same
+  // type and last four) collapse first, and BOTH sides' references are
+  // remapped before anything else merges, so a remap is never taken for an
+  // edit. Without a record, cards stay this device's, as before.
+  const cards = seen ? collapseCards([...(local0.cards ?? []), ...(server0.cards ?? [])]) : null;
+  const local = cards ? remapCardRefs(local0, cards.remap) : local0;
+  const server = cards ? remapCardRefs(server0, cards.remap) : server0;
   const { closes, replaced } = mergeCloses(local.periodCloses ?? [], server.periodCloses ?? [], at);
   const localU = applyMergedUndos(local, closes);
   const serverU = applyMergedUndos(server, closes);
@@ -465,6 +514,7 @@ export function mergeFinancials(localIn: LocalFinancials, serverIn: LocalFinanci
       ...(deletedKeys ? { deletedKeys } : {}),
       ...(revivedKeys ? { revivedKeys } : {}),
       ...(ruled ? ruled.data : {}),
+      ...(cards ? { cards: cards.cards } : {}),
     },
     clashes: ruled?.clashes ?? [],
     transactions,

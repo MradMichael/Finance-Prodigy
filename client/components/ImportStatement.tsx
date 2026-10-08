@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import type { LocalFinancials, StoredCard, StoredTransaction, TrackedBalance } from "../lib/localData";
-import { uid, todayISO, allCategories, matchCategoryRule, activeTransactions, reanchorTrackedBalance, DEFAULT_LBP_RATE, MONEY_MAX_USD } from "../lib/localData";
+import { uid, todayISO, allCategories, matchCategoryRule, activeTransactions, reanchorTrackedBalance, DEFAULT_LBP_RATE, MONEY_MAX_USD, saveCard as storeCard } from "../lib/localData";
 import { trackedBalanceExpected } from "../lib/computeDashboard";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, DateFieldDMY } from "./form/Primitives";
@@ -152,9 +152,12 @@ export default function ImportStatement({
 
   function commit() {
     let card: StoredCard;
+    let cards = financials.cards;
     if (cardChoice === "new") {
-      if (newCardLast4.length !== 4 || !/^\d{4}$/.test(newCardLast4)) return;
-      card = { id: uid(), type: "Other", last4: newCardLast4, label: newCardLabel.trim() || `Other •••• ${newCardLast4}` };
+      // Plan H 5c: the shared saveCard. A card already held with these four digits is reused, its own label kept.
+      const saved = storeCard(financials.cards, "Other", newCardLast4, new Date(), newCardLabel);
+      if (!saved) return;
+      ({ card, cards } = saved);
     } else {
       const existing = financials.cards.find((c) => c.id === cardChoice);
       if (!existing) return;
@@ -184,7 +187,7 @@ export default function ImportStatement({
 
     const patch: Partial<LocalFinancials> = {
       transactions: [...newTransactions, ...financials.transactions],
-      cards: cardChoice === "new" ? [...financials.cards, card] : financials.cards,
+      cards,
     };
 
     if (addBalanceCheck && closingBalance !== null) {

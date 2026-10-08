@@ -6,7 +6,7 @@ import {
   uid, todayISO, fmtDate, fmtLocalDay, withRate, reanchorTrackedBalance, moneyMaxFor, DEFAULT_LBP_RATE,
   buildPeriodClose, cycleStartDayOf, unclosedCycles, isCycleClosedBySpan,
   closeMovesBaselineBackwards, canReopen, reopenCycle, planReopen, activeCloseForCycle, rateForMonth,
-  derivedEfBalance, derivedDebtBalance, planEfClose, planDebtClose, recordDeletion, closeHistoryFor,
+  derivedEfBalance, derivedDebtBalance, planEfClose, planDebtClose, recordDeletion, closeHistoryFor, saveCard as storeCard,
 } from "../../lib/localData";
 import { balanceCheckReconciliation, trackedBalanceExpectedAsOf, type computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
@@ -244,10 +244,11 @@ export default function BalanceCheckScreen({
   // Same six lines InputPanel uses; a tracked balance on a card needs the
   // inline "+ New card" affordance rather than a trip to another screen.
   function saveCard(type: StoredCard["type"], last4: string): StoredCard | null {
-    if (last4.length !== 4 || !/^\d{4}$/.test(last4)) return null;
-    const card: StoredCard = { id: uid(), type, last4, label: `${type} •••• ${last4}` };
-    update({ cards: [...cards, card] });
-    return card;
+    // Plan H 5c: the shared saveCard; the same card typed twice is reused.
+    const saved = storeCard(cards, type, last4);
+    if (!saved) return null;
+    if (saved.cards !== cards) update({ cards: saved.cards });
+    return saved.card;
   }
 
   function addTrackedBalance() {

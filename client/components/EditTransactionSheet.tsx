@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { LocalFinancials, StoredTransaction, StoredCard, Currency, PaymentMethod } from "../lib/localData";
 import {
   fmtDate, allCategories, looksRecurring, buildQuickRecurring, cycleMonthDivergence,
-  roundMoney, uid, DEFAULT_LBP_RATE, retagBucketAmount, moneyMaxFor, cycleStartDayOf, edited } from "../lib/localData";
+  roundMoney, DEFAULT_LBP_RATE, retagBucketAmount, moneyMaxFor, cycleStartDayOf, edited, saveCard as storeCard } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY, CurrencyToggle, PM_OPTIONS, CardPicker } from "./form/Primitives";
 import { cycleKeyForISO, currentCycleKey } from "../lib/period";
@@ -42,10 +42,11 @@ export default function EditTransactionSheet({
   const update = (patch: Partial<LocalFinancials>) => onChange({ ...financials, ...patch });
   const cards = financials.cards ?? [];
   function saveCard(type: StoredCard["type"], last4: string): StoredCard | null {
-    if (last4.length !== 4 || !/^\d{4}$/.test(last4)) return null;
-    const card: StoredCard = { id: uid(), type, last4, label: `${type} •••• ${last4}` };
-    update({ cards: [...cards, card] });
-    return card;
+    // Plan H 5c: the shared saveCard; the same card typed twice is reused.
+    const saved = storeCard(cards, type, last4);
+    if (!saved) return null;
+    if (saved.cards !== cards) update({ cards: saved.cards });
+    return saved.card;
   }
 
   const TX_BUCKETS: { value: TxBucket; label: string; icon: string; color: string }[] = [

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, PaymentMethod, StoredCard } from "../../lib/localData";
-import { uid, todayISO, applyGoalContribution, toUSD as toUSDShared, activeTransactions, DEFAULT_LBP_RATE, cycleStartDayOf, edited } from "../../lib/localData";
+import { todayISO, applyGoalContribution, toUSD as toUSDShared, activeTransactions, DEFAULT_LBP_RATE, cycleStartDayOf, edited, saveCard as storeCard } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
@@ -72,10 +72,11 @@ export default function GoalsScreen({
   // PaymentMethodPicker without that component needing to know which
   // screen it's rendering in.
   function saveCard(type: StoredCard["type"], last4: string): StoredCard | null {
-    if (last4.length !== 4 || !/^\d{4}$/.test(last4)) return null;
-    const card: StoredCard = { id: uid(), type, last4, label: `${type} •••• ${last4}` };
-    onChange({ ...financials, cards: [...financials.cards, card] });
-    return card;
+    // Plan H 5c: the shared saveCard; the same card typed twice is reused.
+    const saved = storeCard(financials.cards, type, last4);
+    if (!saved) return null;
+    if (saved.cards !== financials.cards) onChange({ ...financials, cards: saved.cards });
+    return saved.card;
   }
 
   function pay(dashGoalId: number) {

@@ -252,6 +252,7 @@ export interface StoredCard {
   type: "Visa" | "Mastercard" | "Amex" | "Other";
   last4: string;
   label: string; // e.g. "Visa •••• 1234"
+  createdAt?: string; // ISO, when it was saved (plan H 5c). Absent on cards saved before: they count as the earliest.
 }
 
 export interface StoredTransaction {
@@ -1010,6 +1011,27 @@ export function edited<T extends object>(record: T, at: string = new Date().toIS
 /** Plan H 5b: a person's change to settings, as the patch that stamps them. Only setting editors call this. */
 export function settingsEdited(d: Pick<LocalFinancials, "settingsUpdatedAt">, keys: readonly SettingKey[], at: string = new Date().toISOString()): Pick<LocalFinancials, "settingsUpdatedAt"> {
   return { settingsUpdatedAt: { ...(d.settingsUpdatedAt ?? {}), ...Object.fromEntries(keys.map((k) => [k, at])) } };
+}
+
+/** "Visa •••• 4242": how a card is shown unless it was given its own label. */
+export function defaultCardLabel(type: StoredCard["type"], last4: string): string {
+  return `${type} •••• ${last4}`;
+}
+
+/**
+ * Plan H 5c: the one way a card is saved, for every screen that saves one.
+ * A card with the same type and last four digits as one already held IS that
+ * card: it comes back, and nothing is added. Anything but four digits is
+ * refused (null). `label` is for a statement import's own name for the card.
+ */
+export function saveCard(
+  cards: StoredCard[], type: StoredCard["type"], last4: string, now: Date = new Date(), label?: string,
+): { cards: StoredCard[]; card: StoredCard } | null {
+  if (!/^\d{4}$/.test(last4)) return null;
+  const held = cards.find((c) => c.type === type && c.last4 === last4);
+  if (held) return { cards, card: held };
+  const card: StoredCard = { id: uid(), type, last4, label: label?.trim() || defaultCardLabel(type, last4), createdAt: now.toISOString() };
+  return { cards: [...cards, card], card };
 }
 
 /** Every collection the deletion registry covers, for code that walks them all. */
