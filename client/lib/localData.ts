@@ -3584,6 +3584,28 @@ export function softDelete(d: Pick<LocalFinancials, "deletedKeys" | "revivedKeys
 }
 
 /**
+ * Un-deletes a soft-deleted transaction ("Recently deleted → Restore") as a
+ * REVIVAL at the next restore generation (DI-14, session 5; DI-13's
+ * mechanism). Clearing deletedAt alone lost to any other device still holding
+ * the deleted copy, because the merge ranks a deleted copy above a live one.
+ * The revival beats every deletion made at an earlier generation -- every one
+ * another device can hold -- and deleting it again (softDelete, at this new
+ * generation) beats the revival in turn.
+ */
+export function undeleteTransaction(d: LocalFinancials, id: string, at: string): LocalFinancials {
+  const gen = restoreGeneration(d) + 1;
+  return {
+    ...d,
+    transactions: d.transactions.map((t) => {
+      if (t.id !== id) return t;
+      const { deletedAt: _deletedAt, deletedGen: _deletedGen, ...rest } = t;
+      return { ...rest, updatedAt: at };
+    }),
+    revivedKeys: { ...(d.revivedKeys ?? {}), transactions: { ...(d.revivedKeys?.transactions ?? {}), [id]: gen } },
+  };
+}
+
+/**
  * Scrubs a soft-deleted transaction's sensitive payload and stamps
  * purgedAt -- does NOT remove the row (see purgedAt's own doc comment for
  * why). Keeps only what's needed for merge-safety and the tombstone chain
