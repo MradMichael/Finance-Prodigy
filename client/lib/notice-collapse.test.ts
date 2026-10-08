@@ -49,6 +49,18 @@ describe("three or more conflicts", () => {
     expect(buildMergeNoticeText(0, same).text).toBe('Your devices had different versions of 3 transactions, including "Rent" and "Gas" — ESSA kept one of each.');
   });
 
+  // Owner-approved, session 5: when every conflict has the same name, the
+  // line names it once.
+  it("names a single name once when every conflict shares it", () => {
+    const rent = (id: string): MergeConflictDetail => ({
+      winner: tx({ id, description: "Rent", amount: 47, updatedAt: "2026-10-06T19:00:00.000Z" }),
+      loser: tx({ id, description: "Rent", amount: 40, updatedAt: "2026-10-06T18:00:00.000Z" }),
+    });
+    expect(buildMergeNoticeText(0, [rent("r1"), rent("r2"), rent("r3")]).text).toBe(
+      'Your devices had different versions of 3 transactions, including "Rent" — ESSA kept one of each.',
+    );
+  });
+
   it("the retired sentence never appears", () => {
     for (const n of [3, 4, 7]) {
       const text = buildMergeNoticeText(0, Array.from({ length: n }, (_, i) => newer(`T${i}`))).text;
