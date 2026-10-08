@@ -29,6 +29,7 @@ import {currentCycleKey, calendarKeyForDate, type CycleKey, type CycleHistory } 
 import { getSession, hasValidSession, signOut } from "../lib/auth";
 import type { Session } from "../lib/auth";
 import { pushToServer, pullFromServer, hasAutoPulled, markAutoPulled, mergeAndPush, fetchAndMerge, buildMergeNoticeText, checkEmailExists, applyBackupChoice, getLastSyncTime, type BackupChoice } from "../lib/syncService";
+import { saveSeen } from "../lib/syncSeen";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "../components/EssaBrand";
 import RecurringModelNoticeModal from "../components/RecurringModelNoticeModal";
@@ -319,6 +320,7 @@ export default function Home() {
           const stored = await persist(pulled, s.userId);
           if (superseded()) return;
           if (stored) {
+            await saveSeen(s.userId, result.data); // plan H 5b: stored, so recorded
             setFinancials(pulled);
             return;
           }
@@ -446,6 +448,9 @@ export default function Home() {
         setFinancials(r.mergedData);
         if (!(await persist(r.mergedData, s.userId))) return;
       }
+      // Plan H 5b: this device now holds the fetched copy (merged in, and
+      // stored), so it is the last sync the next merge compares against.
+      await saveSeen(s.userId, r.serverCopy);
       if (r.serverBehind || syncTimer.current) {
         if (syncTimer.current) { clearTimeout(syncTimer.current); syncTimer.current = null; }
         void autoSync(r.mergedData, s.email);
@@ -559,10 +564,14 @@ export default function Home() {
     const cycleYm = currentCycleKey(now, cycleStartDayOf(financials));
     const calendarYm = calendarKeyForDate(now);
 
-    function snapshot<K extends string>(history: { ym: K; value: number }[] | undefined, ym: K, value: number) {
+    // Plan H 5b: the snapshot is each entry's only writer, so it stamps the
+    // entry with when (`at`): two devices' different entries for one cycle
+    // order by it. It never stamps a setting or a record.
+    const at = new Date().toISOString();
+    function snapshot<K extends string>(history: { ym: K; value: number; at?: string }[] | undefined, ym: K, value: number) {
       const h = history ?? [];
       if (h.find((e) => e.ym === ym)?.value === value) return h;
-      return [...h.filter((e) => e.ym !== ym), { ym, value }]
+      return [...h.filter((e) => e.ym !== ym), { ym, value, at }]
         .sort((a, b) => a.ym.localeCompare(b.ym))
         .slice(-24);
     }
@@ -575,7 +584,7 @@ export default function Home() {
       const h = history ?? [];
       const existing = h.find((e) => e.ym === ym);
       if (existing && existing.needs === pct.needs && existing.wants === pct.wants && existing.savings === pct.savings) return h;
-      return [...h.filter((e) => e.ym !== ym), { ym, ...pct }]
+      return [...h.filter((e) => e.ym !== ym), { ym, ...pct, at }]
         .sort((a, b) => a.ym.localeCompare(b.ym))
         .slice(-24);
     }

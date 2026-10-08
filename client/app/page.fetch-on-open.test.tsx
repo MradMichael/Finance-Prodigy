@@ -24,10 +24,14 @@ vi.mock("../lib/auth", () => ({ getSession: () => SESSION, hasValidSession: () =
 
 let seed: LocalFinancials;
 const saved: LocalFinancials[] = [];
+let failSave = false;
 vi.mock("../lib/localData", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/localData")>();
-  return { ...actual, loadData: vi.fn(async () => seed), saveData: vi.fn(async (d: LocalFinancials) => { saved.push(d); }) };
+  return { ...actual, loadData: vi.fn(async () => seed), saveData: vi.fn(async (d: LocalFinancials) => { if (failSave) throw new Error("QuotaExceededError"); saved.push(d); }) };
 });
+// Plan H 5b: the record of this device's last sync, written by the dashboard once the fetched copy is stored.
+const seenSaved = vi.fn(async (_u: string, _d: LocalFinancials) => {});
+vi.mock("../lib/syncSeen", () => ({ saveSeen: (u: string, d: LocalFinancials) => seenSaved(u, d) }));
 
 type Fetched = Awaited<ReturnType<typeof import("../lib/syncService").fetchAndMerge>>;
 let fetchImpl: (email: string, local: () => LocalFinancials | null) => Promise<Fetched>;
@@ -77,13 +81,14 @@ function settled(extra: Partial<LocalFinancials>): LocalFinancials {
 }
 
 const merged = (d: LocalFinancials, over: Partial<Extract<Fetched, { mergedData: LocalFinancials }>> = {}): Fetched => ({
-  ok: true, mergedData: d, localChanged: true, serverBehind: false, addedFromServer: 1, conflictDetails: [], replacedCloses: [], ...over,
+  ok: true, mergedData: d, serverCopy: d, localChanged: true, serverBehind: false, addedFromServer: 1, conflictDetails: [], replacedCloses: [], ...over,
 });
 
 beforeEach(() => {
   localStorage.clear();
   localStorage.setItem("essa_sidebar_pinned", "1"); // the status label shows only when the sidebar is open
   saved.length = 0; push.mockClear(); fetchAndMerge.mockClear(); notice.mockClear(); pull.mockClear();
+  seenSaved.mockClear(); failSave = false;
   autoPulled = true;
   fetchImpl = async (_e, local) => merged({ ...local()!, transactions: [...local()!.transactions, BISTRO] });
 });
@@ -351,5 +356,44 @@ describe("backup not on: no request at all", () => {
     await settle(500);
     expect(fetchAndMerge).not.toHaveBeenCalled();
     expect(push).not.toHaveBeenCalled();
+  });
+});
+
+describe("plan H 5b: the fetched copy becomes this device's last sync only once it is stored", () => {
+  const SERVER = { ...DEFAULT_DATA, income: 3150.75, transactions: [KETTLE, BISTRO] } as LocalFinancials;
+
+  it("stored, then recorded: the server's copy, for this account", async () => {
+    seed = settled({ syncChoice: ON });
+    fetchImpl = async (_e, local) => merged({ ...local()!, transactions: [...local()!.transactions, BISTRO] }, { serverCopy: SERVER });
+    await open();
+    await waitFor(() => expect(seenSaved).toHaveBeenCalledTimes(1));
+    expect(seenSaved.mock.calls[0]).toEqual(["u1", SERVER]);
+    const { saveData } = await import("../lib/localData");
+    expect(vi.mocked(saveData).mock.invocationCallOrder.at(-1)!).toBeLessThan(seenSaved.mock.invocationCallOrder[0]);
+  });
+
+  it("nothing new arrived: this device already holds the server's copy, so it is recorded", async () => {
+    seed = settled({ syncChoice: ON });
+    fetchImpl = async (_e, local) => merged(local()!, { localChanged: false, addedFromServer: 0, serverCopy: SERVER });
+    await open();
+    await waitFor(() => expect(seenSaved).toHaveBeenCalledWith("u1", SERVER));
+  });
+
+  it("a store that fails records nothing: the next merge must still see the other device's changes as new", async () => {
+    seed = settled({ syncChoice: ON });
+    failSave = true;
+    await open();
+    await waitFor(() => expect(fetchAndMerge).toHaveBeenCalledTimes(1));
+    await settle(500);
+    expect(seenSaved).not.toHaveBeenCalled();
+  });
+
+  it("a fetch that fails records nothing", async () => {
+    seed = settled({ syncChoice: ON });
+    fetchImpl = async () => ({ ok: false, error: "Pull failed (HTTP 503)." });
+    await open();
+    await waitFor(() => expect(fetchAndMerge).toHaveBeenCalledTimes(1));
+    await settle(500);
+    expect(seenSaved).not.toHaveBeenCalled();
   });
 });

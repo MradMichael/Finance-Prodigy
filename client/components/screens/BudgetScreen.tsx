@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import type { LocalFinancials, BudgetRuleKey } from "../../lib/localData";
-import { BUDGET_RULES, MIN_SPLIT_PCT, floorCustomSplit, moneyEquals, cycleStartDayOf, fmtDate } from "../../lib/localData";
+import { BUDGET_RULES, MIN_SPLIT_PCT, floorCustomSplit, moneyEquals, cycleStartDayOf, fmtDate, settingsEdited } from "../../lib/localData";
 import { periodNoun } from "../../lib/period";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { bucketDisplayState } from "../../lib/computeDashboard";
@@ -110,7 +110,7 @@ export default function BudgetScreen({
     && actualNeedsPct > BUDGET_RULES[ruleKey].needs;
 
   function applyRule(k: BudgetRuleKey) {
-    onChange({ ...financials, budgetRule: k });
+    onChange({ ...financials, budgetRule: k, ...settingsEdited(financials, ["budget"]) });
   }
 
   const buckets = [
@@ -269,7 +269,7 @@ export default function BudgetScreen({
                         // Clears the heal stamp too: once the user moves a
                         // slider the split is theirs, and a notice about
                         // what it used to be is no longer news.
-                        clearHealNotice({ budgetCustomNeeds: floored.needs, budgetCustomWants: floored.wants });
+                        clearHealNotice({ budgetCustomNeeds: floored.needs, budgetCustomWants: floored.wants, ...settingsEdited(financials, ["budget"]) });
                       }}
                       className="w-full" style={{ accentColor: T.jade }}
                       aria-label={`Custom ${label} percentage`}

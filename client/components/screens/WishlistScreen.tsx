@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, WishlistItem, Currency, StoredGoal } from "../../lib/localData";
-import { uid, toUSD as toUSDShared, withRate, moneyMaxFor, DEFAULT_LBP_RATE, recordDeletion, isoLocalDay } from "../../lib/localData";
+import { uid, toUSD as toUSDShared, withRate, moneyMaxFor, DEFAULT_LBP_RATE, recordDeletion, isoLocalDay, edited } from "../../lib/localData";
 import { addMonths } from "../../lib/debtEngine";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
@@ -96,7 +96,7 @@ export default function WishlistScreen({
       targetDate: isoLocalDay(targetDate),
       createdAt: new Date().toISOString(),
     };
-    onChange({ ...financials, goals: [...financials.goals, goal] });
+    onChange({ ...financials, goals: [...financials.goals, edited(goal)] });
     setSavedGoalIds((s) => ({ ...s, [item.id]: true }));
   }
 

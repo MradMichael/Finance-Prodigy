@@ -18,7 +18,8 @@ vi.mock("./crypto", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./crypto")>();
   return { ...actual, getSyncToken: vi.fn() };
 });
-vi.mock("./auth", () => ({ getRecoveryTokenForSync: vi.fn() }));
+// getSession: no session, so no sync fingerprints are read or written here (plan H 5b) -- these tests are about today's merge.
+vi.mock("./auth", () => ({ getRecoveryTokenForSync: vi.fn(), getSession: () => null }));
 
 function mockFetchOnce(status: number, body: unknown) {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({

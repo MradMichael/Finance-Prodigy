@@ -157,3 +157,22 @@ describe("1-3. scope of the skip", () => {
     expect(last.incomeHistory?.find((e) => e.ym === CYCLE)?.value).toBe(3000);
   });
 });
+
+describe("plan H 5b: each snapshot entry carries when it was written", () => {
+  it("the entries the effect writes are stamped `at`, so two devices' entries for one cycle order by it", async () => {
+    seed = { ...DEFAULT_DATA, income: 3000 } as LocalFinancials;
+    const before = Date.now();
+    await settle();
+    const last = saved[saved.length - 1];
+    for (const e of [incomeEntry(), last.netWorthHistory?.at(-1), last.budgetRuleHistory?.at(-1), last.lbpRateHistory?.at(-1)]) {
+      expect(e).toBeTruthy();
+      expect(Date.parse((e as { at: string }).at)).toBeGreaterThanOrEqual(before);
+    }
+  });
+
+  it("an entry already current is left as it was, stamp included", async () => {
+    seed = { ...DEFAULT_DATA, income: 3000, incomeHistory: [{ ym: CYCLE, value: 3000, at: "2026-10-01T08:00:00.000Z" }] } as LocalFinancials;
+    await settle();
+    expect(incomeEntry()).toEqual({ ym: CYCLE, value: 3000, at: "2026-10-01T08:00:00.000Z" });
+  });
+});
