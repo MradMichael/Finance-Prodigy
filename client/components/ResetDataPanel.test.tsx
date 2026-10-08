@@ -48,7 +48,7 @@ describe("ResetDataPanel", () => {
     const t = document.body.textContent ?? "";
     expect(t).toMatch(/replaces your backup on our server/i);
     expect(t).toMatch(/other devices/i);
-    // DI-13, DRAFT for the owner: what other devices actually do now.
+    // DI-13, owner-approved (session 4): what other devices actually do now.
     expect(t).toContain("Backup is on, so this also replaces your backup on our server with the empty copy. Your other devices remove the same entries the next time they sync, but keep their own settings, such as income and payday.");
   });
 

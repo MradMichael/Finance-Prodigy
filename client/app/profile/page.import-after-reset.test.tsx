@@ -35,7 +35,7 @@ import { DEFAULT_DATA, resetFinancials } from "../../lib/localData";
 const tx = (id: string): StoredTransaction => ({ id, amount: 46.8, currency: "USD", bucket: "WANTS", description: id, date: "2026-10-01", updatedAt: "2026-10-01T12:00:00.000Z" } as StoredTransaction);
 const EXPORT = { ...DEFAULT_DATA, income: 3150.75, transactions: [tx("t-bistro")] } as LocalFinancials;
 
-it("an import after a reset revives the file's keys and keeps the reset's other records", async () => {
+it("an import after a reset revives every key the file holds and keeps the reset's records", async () => {
   current = resetFinancials({ ...EXPORT, transactions: [tx("t-bistro"), tx("t-later")] } as LocalFinancials, new Date("2026-10-07T18:00:00.000Z"));
   render(<ThemeProvider><ProfilePage /></ThemeProvider>);
   const input = await waitFor(() => {
@@ -46,7 +46,7 @@ it("an import after a reset revives the file's keys and keeps the reset's other 
   fireEvent.change(input, { target: { files: [new File([JSON.stringify(EXPORT)], "essa-data.json", { type: "application/json" })] } });
   await waitFor(() => expect(saved).toHaveLength(1));
   expect(saved[0].transactions.map((t) => t.id)).toEqual(["t-bistro"]);
-  const records = saved[0].deletedKeys?.transactions ?? [];
-  expect(records.find((t) => t.key === "t-bistro")).toMatchObject({ revived: true, gen: 1 });
-  expect(records.find((t) => t.key === "t-later")?.revived).toBeUndefined(); // still deleted
+  expect(saved[0].revivedKeys?.transactions).toEqual({ "t-bistro": 1 });
+  // The reset's record for what the file lacks is kept, and in force.
+  expect(saved[0].deletedKeys?.transactions?.map((t) => t.key)).toEqual(["t-bistro", "t-later"]);
 });

@@ -175,6 +175,17 @@ describe("3. a close's correction row is left standing if a later one was built 
     expect(derivedEfBalance(reopenCycle(closed, CUR, NOW)!)).toBe(2_575.5);
   });
 
+  // DI-13 follow-up (session 4): the row is soft-deleted through softDelete,
+  // so it carries the current restore generation, and a restore's revival of
+  // it at that generation can't beat this later deletion.
+  it("the removed row carries the current restore generation", () => {
+    const { closed, row } = closedWithEfRow();
+    const out = reopenCycle({ ...closed, revivedKeys: { transactions: { [row.id]: 2 } } }, CUR, NOW)!;
+    const removed = out.transactions!.find((t) => t.id === row.id)!;
+    expect(removed.deletedAt).toBeTruthy();
+    expect(removed.deletedGen).toBe(2);
+  });
+
   it("a later Setup correction keeps the close's row, so the owner's latest figure stands", () => {
     // 2.4.145's exact sequence: the fund is stated at the close, then
     // corrected from Setup twenty minutes later. That later delta was

@@ -47,9 +47,9 @@ describe("the backup-off sentence", () => {
     expect(kept).not.toMatch(/recovery code/i);
   });
 
-  // Moved again by SYNC-1 step 3's sentence below (7 October 2026).
+  // Moved again by the deletion-records sentence (8 October 2026, page.deletion-records.test.tsx).
   it("is dated the day it last changed", () => {
-    expect(text()).toContain("Last updated: 7 October 2026");
+    expect(text()).toContain("Last updated: 8 October 2026");
   });
 });
 
