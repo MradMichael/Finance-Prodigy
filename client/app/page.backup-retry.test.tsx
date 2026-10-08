@@ -6,9 +6,8 @@
 //     the browser comes back online; a retry that fails doesn't start a new
 //     series (the next edit does).
 // A failed FETCH isn't a failed backup: its brief flash is unchanged.
-// COPY-11's declined upload (held on its own branch) isn't a failure either;
-// when both branches merge, its early return must stay ahead of this path.
-// The notice's wording is a DRAFT for the owner (held branch).
+// COPY-11's declined upload isn't a failure either; see the last describe.
+// The notice's wording is the owner's (merged in session 3).
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import type { LocalFinancials } from "../lib/localData";
@@ -131,4 +130,33 @@ describe("ERR-02: a failed backup", () => {
     await waitFor(() => expect(screen.queryByText(NOTICE)).toBeNull());
   });
 
+});
+
+// COPY-11 + ERR-02 (owner, session 3): COPY-11's "declined" -- the user kept
+// the backup when asked whether an empty device may replace it -- runs before
+// ERR-02's failure handling, and also ends any retry round already running:
+// no notice saying ESSA will try again, and no retry that would ask again.
+describe("COPY-11's declined upload, beside ERR-02", () => {
+  const DECLINED = { ok: false, declined: true, error: "Not uploaded: your backup on the server has data and this device has none, so the backup was kept." };
+
+  it("is not a failure: no notice, and nothing retries", async () => {
+    push.mockResolvedValue(DECLINED);
+    await editAndUpload();
+    await minutes(20);
+    expect(screen.queryByText(NOTICE)).toBeNull();
+    expect(push).toHaveBeenCalledTimes(1);
+  });
+
+  it("ends a retry round already running: the notice goes, and nothing asks again", async () => {
+    push.mockResolvedValueOnce(FAIL).mockResolvedValue(DECLINED);
+    await editAndUpload();
+    await screen.findByText(NOTICE); // premise: a real failure started the round
+    await minutes(1);
+    await waitFor(() => expect(push).toHaveBeenCalledTimes(2)); // the 1-minute retry, declined
+    await waitFor(() => expect(screen.queryByText(NOTICE)).toBeNull());
+    await minutes(20); // the 5- and 15-minute retries would have asked again
+    act(() => { window.dispatchEvent(new Event("online")); }); // and so would coming back online
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(push).toHaveBeenCalledTimes(2);
+  });
 });

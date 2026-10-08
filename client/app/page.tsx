@@ -212,8 +212,16 @@ export default function Home() {
       setTimeout(() => setSyncStatus((s) => s !== "syncing" ? "idle" : s), 4000);
       return;
     }
-    // COPY-11: the user kept their backup when asked; not a failure.
-    if (result.declined) { setSyncStatus("idle"); return; }
+    // COPY-11: the user kept their backup when asked; not a failure. Checked
+    // before ERR-02's failure handling, and it ends any retry round already
+    // running (owner, session 3): no "will try again", and no retry that
+    // would ask again.
+    if (result.declined) {
+      setBackupFailed(false);
+      retryTimersRef.current.forEach(clearTimeout); retryTimersRef.current = [];
+      setSyncStatus("idle");
+      return;
+    }
     if (result.ok) {
       setBackupFailed(false);
       retryTimersRef.current.forEach(clearTimeout); retryTimersRef.current = [];
@@ -809,9 +817,9 @@ export default function Home() {
         </div>
       )}
 
-      {/* ERR-02: a failed backup, until the next success. DRAFT wording for the
-          owner. In a live region that's always on the page (A11Y-03), below the
-          save error when both show. */}
+      {/* ERR-02: a failed backup, until the next success. Owner-approved wording
+          (merged in session 3). In a live region that's always on the page
+          (A11Y-03), below the save error when both show. */}
       <div role="status">
         {backupFailed && (
           <div
