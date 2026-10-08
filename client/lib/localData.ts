@@ -414,6 +414,10 @@ export interface StoredTransaction {
   // Closes the "delete-and-redo is the only correction path, and it's
   // destructive" gap 2.4.27 found.
   deletedAt?: string;
+  // DI-13 follow-up (session 4): the restore generation this deletion was
+  // made in; absent = 0. A restore from a file at a LATER generation revives
+  // the transaction over it (mergeTransactions). Set only through softDelete.
+  deletedGen?: number;
   // Added in schema v4 (Phase 2.6.1) -- links this transaction to the
   // StoredDebt it paid down, for derivedDebtBalance (2.6.2). v1 keeps it
   // simple: the transaction's full `amount` applies to that one debt; a
@@ -915,32 +919,124 @@ export interface LocalFinancials {
    * resurrect anything when it comes back.
    */
   deletedKeys?: DeletedKeys;
+  /**
+   * DI-13 follow-up (sessions 3-4): every live key a restore from a file
+   * brought back, by collection, with that restore's generation. Per key, a
+   * revival with a later generation than the key's deletion (a record here,
+   * or a soft-deleted transaction) wins; at the same generation the deletion
+   * wins. Kept apart from deletedKeys on purpose: code that predates it reads
+   * every deletedKeys entry as a deletion, and ignores this field.
+   */
+  revivedKeys?: RevivedKeys;
 }
 
+/** Keys a restore brought back, per collection, each with its restore generation. */
+export type RevivedKeys = Partial<Record<(typeof DELETED_COLLECTIONS)[number], Record<string, number>>>;
+
 /** A deleted item's key and when it was deleted (SYNC-1 step 2). */
-export interface Tombstone { key: string; deletedAt: string }
+export interface Tombstone {
+  key: string;
+  deletedAt: string;
+  /**
+   * DI-13 follow-up (session 3): the restore generation this record was
+   * written in; absent = 0. A restore starts the next generation, and per key
+   * the later generation wins -- no clock is compared.
+   */
+  gen?: number;
+}
 export interface DeletedKeys {
   wishlist?: Tombstone[];
   customCategories?: Tombstone[];
   categoryRules?: Tombstone[];
   trackedBalances?: Tombstone[];
+  /**
+   * DI-13 (2026-10-07): "Reset all data" records a deletion for every item it
+   * clears, so another device's merge can't bring it back. Transactions are
+   * keyed by id, closes by `periodCloseKey`, the five lists that still keep
+   * this device's copy (goals, debts, recurring items, assets, cards) by id.
+   * Today only the reset writes these; item 1 adds the per-item delete sites.
+   */
+  transactions?: Tombstone[];
+  periodCloses?: Tombstone[];
+  goals?: Tombstone[];
+  debts?: Tombstone[];
+  recurring?: Tombstone[];
+  assets?: Tombstone[];
+  cards?: Tombstone[];
+}
+
+/** Every collection the deletion registry covers, for code that walks them all. */
+export const DELETED_COLLECTIONS = [
+  "wishlist", "customCategories", "categoryRules", "trackedBalances",
+  "transactions", "periodCloses", "goals", "debts", "recurring", "assets", "cards",
+] as const satisfies readonly (keyof DeletedKeys)[];
+
+/** A period close's identity: its cycle and the instant it was made. */
+export function periodCloseKey(c: Pick<PeriodClose, "cycleKey" | "closedAt">): string {
+  return `${c.cycleKey}|${c.closedAt}`;
+}
+
+/** Each collection's item keys, as the deletion registry names them. */
+export function itemKeysByCollection(d: LocalFinancials): Record<(typeof DELETED_COLLECTIONS)[number], string[]> {
+  return {
+    transactions: (d.transactions ?? []).map((t) => t.id),
+    wishlist: (d.wishlist ?? []).map((w) => w.id),
+    customCategories: (d.customCategories ?? []).map((c) => c.value),
+    categoryRules: (d.categoryRules ?? []).map((r) => r.id),
+    trackedBalances: (d.trackedBalances ?? []).map((t) => t.id),
+    periodCloses: (d.periodCloses ?? []).map(periodCloseKey),
+    goals: (d.goals ?? []).map((g) => g.id),
+    debts: (d.debts ?? []).map((x) => x.id),
+    recurring: (d.recurring ?? []).map((r) => r.id),
+    assets: (d.assets ?? []).map((a) => a.id),
+    cards: (d.cards ?? []).map((c) => c.id),
+  };
+}
+
+/**
+ * The account's restore generation: the highest generation among its
+ * deletion records and revivals (0 when none has one). Derived, not stored
+ * separately, so there is no counter for a merge to drop on its own.
+ */
+export function restoreGeneration(d: Pick<LocalFinancials, "deletedKeys" | "revivedKeys">): number {
+  let gen = 0;
+  for (const c of DELETED_COLLECTIONS) {
+    for (const t of d.deletedKeys?.[c] ?? []) gen = Math.max(gen, t.gen ?? 0);
+    for (const g of Object.values(d.revivedKeys?.[c] ?? {})) gen = Math.max(gen, g);
+  }
+  return gen;
+}
+
+/** Does a revival at `revivedGen` (if any) beat a deletion made at `deletedGen`? Only a strictly later generation does. */
+export function revivalWins(revivedGen: number | undefined, deletedGen: number | undefined): boolean {
+  return revivedGen !== undefined && revivedGen > (deletedGen ?? 0);
+}
+
+/** The keys a collection's records still delete: not those a later restore revived. */
+export function deletedKeySet(list: Tombstone[] | undefined, revived?: Record<string, number>): Set<string> {
+  return new Set((list ?? []).filter((t) => !revivalWins(revived?.[t.key], t.gen)).map((t) => t.key));
 }
 
 /**
  * Records a deletion (SYNC-1 step 2). Every screen that deletes a wishlist
  * item, custom category, category rule or tracked balance calls this beside
- * removing it, so the deletion travels to the other devices.
+ * removing it, so the deletion travels to the other devices. It is written in
+ * the current restore generation, so a deletion after a restore beats that
+ * restore's revival of the key (same generation: the deletion wins).
  */
 export function recordDeletion(
-  d: Pick<LocalFinancials, "deletedKeys">,
+  d: Pick<LocalFinancials, "deletedKeys" | "revivedKeys">,
   collection: keyof DeletedKeys,
   key: string,
   now: Date = new Date(),
 ): DeletedKeys {
   const existing = d.deletedKeys ?? {};
   const list = existing[collection] ?? [];
-  if (list.some((t) => t.key === key)) return existing;
-  return { ...existing, [collection]: [...list, { key, deletedAt: now.toISOString() }] };
+  const prior = list.find((t) => t.key === key);
+  if (prior && !revivalWins(d.revivedKeys?.[collection]?.[key], prior.gen)) return existing;
+  const gen = restoreGeneration(d);
+  const record: Tombstone = { key, deletedAt: now.toISOString(), ...(gen ? { gen } : {}) };
+  return { ...existing, [collection]: [...list.filter((t) => t.key !== key), record] };
 }
 
 // Bumped whenever a stored-shape migration step is added to MIGRATIONS
@@ -1280,8 +1376,24 @@ export function migrateFinancials(raw: unknown, migrations: typeof MIGRATIONS = 
  * decision -- turning backup off (or back to undecided) as a side effect
  * would be a second change nobody asked for.
  */
-export function resetFinancials(d: Pick<LocalFinancials, "syncChoice">): LocalFinancials {
-  return { ...DEFAULT_DATA, ...(d.syncChoice ? { syncChoice: d.syncChoice } : {}) };
+export function resetFinancials(d: LocalFinancials, now: Date = new Date()): LocalFinancials {
+  // DI-13: a deletion recorded for every item cleared, so another device's
+  // merge can't bring it back. Earlier records are kept. Settings aren't
+  // items: each device keeps its own (the merge already does). The records
+  // carry the current restore generation, so resetting after a restore
+  // undoes it (recordDeletion).
+  const keysOf = itemKeysByCollection(d);
+  let deletedKeys: DeletedKeys = d.deletedKeys ?? {};
+  for (const collection of DELETED_COLLECTIONS) {
+    for (const key of keysOf[collection]) deletedKeys = recordDeletion({ deletedKeys, revivedKeys: d.revivedKeys }, collection, key, now);
+  }
+  const anything = DELETED_COLLECTIONS.some((c) => (deletedKeys[c] ?? []).length > 0);
+  return {
+    ...DEFAULT_DATA, ...(d.syncChoice ? { syncChoice: d.syncChoice } : {}), ...(anything ? { deletedKeys } : {}),
+    // Kept: the reset's records are at the current generation and outrank them
+    // anyway, and dropping them could lower the derived generation.
+    ...(d.revivedKeys ? { revivedKeys: d.revivedKeys } : {}),
+  };
 }
 
 /**
@@ -1796,7 +1908,7 @@ export function undoCloseEffects(data: LocalFinancials, close: PeriodClose, at: 
   return {
     ...data,
     transactions: remove.size
-      ? (data.transactions ?? []).map((t) => (remove.has(t.id) ? { ...t, deletedAt: at, updatedAt: at } : t))
+      ? (data.transactions ?? []).map((t) => (remove.has(t.id) ? softDelete(data, t, at) : t))
       : data.transactions,
     trackedBalances: (data.trackedBalances ?? []).map((tb) =>
       restore.has(tb.id) ? restoreTrackedBalance(tb, byId.get(tb.id)!.priorState) : tb),
@@ -1829,7 +1941,7 @@ export function reopenCycle(
     // Soft-deleted, not spliced: both derivations ignore deletedAt, and a
     // close that removed nothing returns the array by reference.
     transactions: remove.size
-      ? (data.transactions ?? []).map((t) => (remove.has(t.id) ? { ...t, deletedAt: at, updatedAt: at } : t))
+      ? (data.transactions ?? []).map((t) => (remove.has(t.id) ? softDelete(data, t, at) : t))
       : data.transactions,
     trackedBalances: (data.trackedBalances ?? []).map((tb) =>
       restore.has(tb.id) ? restoreTrackedBalance(tb, byId.get(tb.id)!.priorState) : tb),
@@ -3464,10 +3576,21 @@ export function activeTransactions(transactions: StoredTransaction[]): StoredTra
 }
 
 /**
+ * Soft-deletes a transaction: stamps deletedAt (and updatedAt), and the
+ * restore generation it was deleted in (DI-13 follow-up, session 4) so a
+ * later restore from a file can tell this deletion from one made after it.
+ * Every soft-delete goes through here.
+ */
+export function softDelete(d: Pick<LocalFinancials, "deletedKeys" | "revivedKeys">, t: StoredTransaction, at: string): StoredTransaction {
+  const gen = restoreGeneration(d);
+  return { ...t, deletedAt: at, updatedAt: at, ...(gen ? { deletedGen: gen } : {}) };
+}
+
+/**
  * Scrubs a soft-deleted transaction's sensitive payload and stamps
  * purgedAt -- does NOT remove the row (see purgedAt's own doc comment for
  * why). Keeps only what's needed for merge-safety and the tombstone chain
- * (id, bucket, currency, date, deletedAt) -- everything else that could
+ * (id, bucket, currency, date, deletedAt, deletedGen) -- everything else that could
  * carry information about what was bought, from whom, or how (amount,
  * description, category, payment method/note/card, and every linking
  * field: recurringId, cycleDate, debtId, goalId, extraForRecurringId,
@@ -3488,6 +3611,7 @@ export function purgeTransaction(t: StoredTransaction, now: Date = new Date()): 
     description: "",
     date: t.date,
     deletedAt: t.deletedAt,
+    ...(t.deletedGen ? { deletedGen: t.deletedGen } : {}),
     purgedAt: now.toISOString(),
   };
 }
@@ -3575,9 +3699,17 @@ function tombstoneRank(t: StoredTransaction): number {
  * passed first, so two devices merging the same pair kept different
  * versions.
  */
-function resolveTransactionConflict(a: StoredTransaction, b: StoredTransaction): { winner: StoredTransaction; isConflict: boolean } {
+function resolveTransactionConflict(a: StoredTransaction, b: StoredTransaction, revivedGen?: number): { winner: StoredTransaction; isConflict: boolean } {
   const rankA = tombstoneRank(a);
   const rankB = tombstoneRank(b);
+  // DI-13 follow-up (session 4): a restore from a file revives the live copy
+  // over a deletion (or purge) made in an EARLIER restore generation -- one
+  // the restoring device never saw. A deletion at the restore's generation or
+  // later was made after seeing it, and still wins.
+  if (rankA !== rankB && (rankA === 0 || rankB === 0)) {
+    const [live, gone] = rankA === 0 ? [a, b] : [b, a];
+    if (revivalWins(revivedGen, gone.deletedGen)) return { winner: live, isConflict: false };
+  }
   if (rankA !== rankB) return { winner: rankA > rankB ? a : b, isConflict: false };
   if (stableStringify(a) === stableStringify(b)) return { winner: a, isConflict: false };
   const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : -Infinity;
@@ -3607,7 +3739,7 @@ function resolveTransactionConflict(a: StoredTransaction, b: StoredTransaction):
  * comment claimed more than the code did. lib/transaction-tie-break.test.ts
  * pins the tie.
  */
-export function mergeTransactions(local: StoredTransaction[], server: StoredTransaction[]): MergeTransactionsResult {
+export function mergeTransactions(local: StoredTransaction[], server: StoredTransaction[], revived?: Record<string, number>): MergeTransactionsResult {
   const serverById = new Map(server.map((t) => [t.id, t]));
   const localIds = new Set(local.map((t) => t.id));
   const transactions: StoredTransaction[] = [];
@@ -3617,7 +3749,7 @@ export function mergeTransactions(local: StoredTransaction[], server: StoredTran
   for (const l of local) {
     const s = serverById.get(l.id);
     if (!s) { transactions.push(l); continue; }
-    const { winner, isConflict } = resolveTransactionConflict(l, s);
+    const { winner, isConflict } = resolveTransactionConflict(l, s, revived?.[l.id]);
     if (isConflict) conflicts.push(winner);
     transactions.push(winner);
   }

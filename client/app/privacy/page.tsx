@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useTheme } from "../../contexts/ThemeContext";
 
 const SERIF: React.CSSProperties = { fontFamily: "Spectral, Georgia, serif" };
-const LAST_UPDATED = "7 October 2026";
+const LAST_UPDATED = "8 October 2026";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   const T = useTheme();
@@ -105,6 +105,12 @@ export default function PrivacyPage() {
             also removes that backup copy (and anything derived from it) from our server automatically, on a
             best-effort basis. If you&apos;re offline at the moment you delete, or the server is unreachable, that
             part won&apos;t complete. Email us and we&apos;ll remove it by hand.
+          </p>
+          <p>
+            When you delete an item, or reset all data, ESSA keeps a short record that it was deleted &mdash; its
+            internal key (for a custom category, its name in lowercase) and when &mdash; so your other devices remove
+            it too. These records are stored with the rest of your data, in the server copy too if backup is on, and
+            are kept until you delete your account, which removes them.
           </p>
         </Section>
 

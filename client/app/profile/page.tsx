@@ -12,6 +12,7 @@ import { loadData, saveData, activeTransactions, syncAllowed, resetFinancials, s
 import { computeDashboard } from "../../lib/computeDashboard";
 import { buildReportHtml } from "../../lib/printReport";
 import { pushToServer, pullFromServer, getLastSyncTime, confirmOverwriteIfNeeded, mergeAndPush, buildMergeNoticeText, applyBackupChoice, type BackupChoice } from "../../lib/syncService";
+import { restoreFromExport } from "../../lib/syncMerge";
 import { REGENERATE } from "../../lib/recoveryMessages";
 import type { LocalFinancials } from "../../lib/localData";
 import { isAnalyticsOptedIn, setAnalyticsOptIn } from "../../lib/analytics";
@@ -313,7 +314,13 @@ export default function ProfilePage() {
 
     setImporting(true);
     try {
-      await saveData(parsed as LocalFinancials, session.userId);
+      // DI-13 follow-up (session 3): through restoreFromExport, so a restore
+      // after a reset wins on every device -- the file's keys are revived,
+      // and the reset's records still hold for everything the file lacks.
+      // Nothing stored here, or unreadable: the file as is, as before.
+      const current = await loadData(session.userId).catch(() => null);
+      const restored = current ? restoreFromExport(current, parsed as LocalFinancials) : (parsed as LocalFinancials);
+      await saveData(restored, session.userId);
       setImportMsg("✓ Data restored from file. Reloading…");
       // Same reload requirement as handlePull — see its own comment.
       setTimeout(() => { window.location.href = "/"; }, 700);

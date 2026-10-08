@@ -28,8 +28,9 @@
  * two records' canonical text, the same way from both sides.
  */
 import {
-  mergeTransactions, undoCloseEffects,
-  type LocalFinancials, type PeriodClose, type TrackedBalance, type DeletedKeys, type Tombstone, type MergeTransactionsResult,
+  mergeTransactions, undoCloseEffects, periodCloseKey, DELETED_COLLECTIONS,
+  deletedKeySet, itemKeysByCollection, restoreGeneration,
+  type LocalFinancials, type PeriodClose, type TrackedBalance, type DeletedKeys, type Tombstone, type RevivedKeys, type MergeTransactionsResult,
 } from "./localData";
 
 import { stableStringify, tieBreak } from "./canonical";
@@ -41,12 +42,13 @@ const instant = (s: string | undefined) => (s ? new Date(s).getTime() : -Infinit
 
 /**
  * Union by key; the later `updatedAt` wins (absent sorts as older than any
- * edit); a key in `tombstones` is dropped whatever either copy says.
+ * edit); a key in `tombstones` is dropped whatever either copy says, unless
+ * its record is a revival (a restore brought it back).
  */
 export function mergeByKey<T extends { updatedAt?: string }>(
-  local: T[], server: T[], keyOf: (t: T) => string, tombstones: Tombstone[] = [],
+  local: T[], server: T[], keyOf: (t: T) => string, tombstones: Tombstone[] = [], revived?: Record<string, number>,
 ): T[] {
-  const deleted = new Set(tombstones.map((t) => t.key));
+  const deleted = deletedKeySet(tombstones, revived);
   const serverByKey = new Map(server.map((s) => [keyOf(s), s]));
   const localKeys = new Set(local.map(keyOf));
   const out: T[] = [];
@@ -65,12 +67,24 @@ export function mergeByKey<T extends { updatedAt?: string }>(
   return out;
 }
 
-/** Union by key; when both have one, the earlier deletion time is kept. */
+/**
+ * Which of two deletion records for one key stands: the later restore
+ * generation; then the earlier time, as before -- which only picks the
+ * record kept, never whether the key is deleted (revivals decide that, in
+ * deletedKeySet and mergeTransactions). No clock decides anything.
+ */
+function outranks(t: Tombstone, seen: Tombstone): boolean {
+  const gt = t.gen ?? 0, gs = seen.gen ?? 0;
+  if (gt !== gs) return gt > gs;
+  return t.deletedAt < seen.deletedAt;
+}
+
+/** Union by key; when both have one, the record that outranks stands. */
 function mergeTombstones(a: Tombstone[] = [], b: Tombstone[] = []): Tombstone[] {
   const byKey = new Map<string, Tombstone>();
   for (const t of [...a, ...b]) {
     const seen = byKey.get(t.key);
-    if (!seen || t.deletedAt < seen.deletedAt) byKey.set(t.key, t);
+    if (!seen || outranks(t, seen)) byKey.set(t.key, t);
   }
   return [...byKey.values()];
 }
@@ -78,11 +92,53 @@ function mergeTombstones(a: Tombstone[] = [], b: Tombstone[] = []): Tombstone[] 
 function mergeDeletedKeys(a: DeletedKeys | undefined, b: DeletedKeys | undefined): DeletedKeys | undefined {
   if (!a && !b) return undefined;
   const out: DeletedKeys = {};
-  for (const k of ["wishlist", "customCategories", "categoryRules", "trackedBalances"] as const) {
+  for (const k of DELETED_COLLECTIONS) {
     const merged = mergeTombstones(a?.[k], b?.[k]);
     if (merged.length) out[k] = merged;
   }
   return out;
+}
+
+/** Union of two revival maps; per key, the later generation. */
+function mergeRevivedKeys(a: RevivedKeys | undefined, b: RevivedKeys | undefined): RevivedKeys | undefined {
+  if (!a && !b) return undefined;
+  const out: RevivedKeys = {};
+  for (const k of DELETED_COLLECTIONS) {
+    const merged: Record<string, number> = { ...(a?.[k] ?? {}) };
+    for (const [key, gen] of Object.entries(b?.[k] ?? {})) merged[key] = Math.max(merged[key] ?? 0, gen);
+    if (Object.keys(merged).length) out[k] = merged;
+  }
+  return out;
+}
+
+/**
+ * Restoring an export file (Profile → import) after a reset (DI-13 follow-up,
+ * owner, sessions 3-4): the restore must win, without clocks.
+ *
+ * The file's data replaces this device's, as before. The deletion records are
+ * this device's and the file's together, untouched, so the reset's records
+ * still hold for everything the file doesn't contain. EVERY live key the file
+ * holds is revived at the next restore generation (revivedKeys), which beats
+ * every deletion of that key made in an earlier generation on any device --
+ * including one this device never synced. Soft-deleted transactions in an
+ * older file aren't live, so they aren't revived.
+ *
+ * Cost: one entry per live item in the file (key and generation), kept like
+ * the deletion records. Undo: resetting again records deletions at this
+ * generation, and at the same generation a deletion beats a revival.
+ */
+export function restoreFromExport(current: LocalFinancials, file: LocalFinancials): LocalFinancials {
+  const gen = Math.max(restoreGeneration(current), restoreGeneration(file)) + 1;
+  const revivedKeys: RevivedKeys = mergeRevivedKeys(current.revivedKeys, file.revivedKeys) ?? {};
+  const live = { ...file, transactions: (file.transactions ?? []).filter((t) => t.deletedAt == null && t.purgedAt == null) } as LocalFinancials;
+  const restored = itemKeysByCollection(live);
+  for (const c of DELETED_COLLECTIONS) {
+    if (!restored[c].length) continue;
+    revivedKeys[c] = { ...(revivedKeys[c] ?? {}) };
+    for (const key of restored[c]) revivedKeys[c]![key] = gen;
+  }
+  const deletedKeys = mergeDeletedKeys(current.deletedKeys, file.deletedKeys);
+  return { ...file, ...(deletedKeys ? { deletedKeys } : {}), revivedKeys };
 }
 
 /**
@@ -91,8 +147,8 @@ function mergeDeletedKeys(a: DeletedKeys | undefined, b: DeletedKeys | undefined
  * the newer observation. Equal baselines fall back to the later recorded
  * check (`actualBalanceDate`), then to the deterministic tie-break.
  */
-function mergeTrackedBalances(local: TrackedBalance[], server: TrackedBalance[], tombstones: Tombstone[]): TrackedBalance[] {
-  const deleted = new Set(tombstones.map((t) => t.key));
+function mergeTrackedBalances(local: TrackedBalance[], server: TrackedBalance[], tombstones: Tombstone[], revived?: Record<string, number>): TrackedBalance[] {
+  const deleted = deletedKeySet(tombstones, revived);
   const serverById = new Map(server.map((s) => [s.id, s]));
   const localIds = new Set(local.map((l) => l.id));
   const pick = (a: TrackedBalance, b: TrackedBalance): TrackedBalance => {
@@ -112,7 +168,7 @@ function mergeTrackedBalances(local: TrackedBalance[], server: TrackedBalance[],
   return out;
 }
 
-const closeKey = (c: PeriodClose) => `${c.cycleKey}|${c.closedAt}`;
+const closeKey = periodCloseKey;
 const spanKey = (c: PeriodClose) => `${c.cycleKey}|${c.rangeStart}|${c.rangeEnd}`;
 const earlier = (a: string | undefined, b: string | undefined) => (a && b ? (a < b ? a : b) : a ?? b);
 
@@ -178,7 +234,7 @@ function applyMergedUndos(side: LocalFinancials, merged: PeriodClose[]): LocalFi
 
 /** The fields mergeFinancials combines; every other field is this device's copy. */
 export const MERGED_FIELDS = [
-  "transactions", "trackedBalances", "wishlist", "customCategories", "categoryRules", "periodCloses", "deletedKeys",
+  "transactions", "trackedBalances", "wishlist", "customCategories", "categoryRules", "periodCloses", "deletedKeys", "revivedKeys",
 ] as const satisfies readonly (keyof LocalFinancials)[];
 
 export interface MergeFinancialsResult {
@@ -191,24 +247,51 @@ export interface MergeFinancialsResult {
   supersededFromLocal: ReplacedClose[];
 }
 
-export function mergeFinancials(local: LocalFinancials, server: LocalFinancials, now: Date = new Date()): MergeFinancialsResult {
+/**
+ * DI-13: drop from one side every transaction, close and item of the five
+ * this-device lists whose key either device recorded as deleted. The
+ * wishlist, categories, rules and tracked balances already drop theirs in
+ * mergeByKey / mergeTrackedBalances.
+ */
+function withoutDeleted(d: LocalFinancials, deleted: DeletedKeys | undefined, revived: RevivedKeys | undefined): LocalFinancials {
+  if (!deleted) return d;
+  const gone = (c: keyof DeletedKeys) => deletedKeySet(deleted[c], revived?.[c]);
+  const tx = gone("transactions"), cl = gone("periodCloses");
+  const keep = <T extends { id: string }>(list: T[] | undefined, set: Set<string>) => (list ?? []).filter((x) => !set.has(x.id));
+  return {
+    ...d,
+    transactions: (d.transactions ?? []).filter((t) => !tx.has(t.id)),
+    periodCloses: (d.periodCloses ?? []).filter((c) => !cl.has(closeKey(c))),
+    goals: keep(d.goals, gone("goals")),
+    debts: keep(d.debts, gone("debts")),
+    recurring: keep(d.recurring, gone("recurring")),
+    assets: keep(d.assets, gone("assets")),
+    cards: keep(d.cards, gone("cards")),
+  };
+}
+
+export function mergeFinancials(localIn: LocalFinancials, serverIn: LocalFinancials, now: Date = new Date()): MergeFinancialsResult {
   const at = now.toISOString();
+  const deletedKeys = mergeDeletedKeys(localIn.deletedKeys, serverIn.deletedKeys);
+  const revivedKeys = mergeRevivedKeys(localIn.revivedKeys, serverIn.revivedKeys);
+  const local = withoutDeleted(localIn, deletedKeys, revivedKeys);
+  const server = withoutDeleted(serverIn, deletedKeys, revivedKeys);
   const { closes, replaced } = mergeCloses(local.periodCloses ?? [], server.periodCloses ?? [], at);
   const localU = applyMergedUndos(local, closes);
   const serverU = applyMergedUndos(server, closes);
-  const deletedKeys = mergeDeletedKeys(local.deletedKeys, server.deletedKeys);
-  const transactions = mergeTransactions(localU.transactions ?? [], serverU.transactions ?? []);
+  const transactions = mergeTransactions(localU.transactions ?? [], serverU.transactions ?? [], revivedKeys?.transactions);
   const liveLocally = new Set((local.periodCloses ?? []).filter((c) => !c.reopenedAt).map(closeKey));
   return {
     data: {
       ...local,
       transactions: transactions.transactions,
-      trackedBalances: mergeTrackedBalances(localU.trackedBalances ?? [], serverU.trackedBalances ?? [], deletedKeys?.trackedBalances ?? []),
-      wishlist: mergeByKey(local.wishlist ?? [], server.wishlist ?? [], (w) => w.id, deletedKeys?.wishlist),
-      customCategories: mergeByKey(local.customCategories ?? [], server.customCategories ?? [], (c) => c.value, deletedKeys?.customCategories),
-      categoryRules: mergeByKey(local.categoryRules ?? [], server.categoryRules ?? [], (r) => r.id, deletedKeys?.categoryRules),
+      trackedBalances: mergeTrackedBalances(localU.trackedBalances ?? [], serverU.trackedBalances ?? [], deletedKeys?.trackedBalances ?? [], revivedKeys?.trackedBalances),
+      wishlist: mergeByKey(local.wishlist ?? [], server.wishlist ?? [], (w) => w.id, deletedKeys?.wishlist, revivedKeys?.wishlist),
+      customCategories: mergeByKey(local.customCategories ?? [], server.customCategories ?? [], (c) => c.value, deletedKeys?.customCategories, revivedKeys?.customCategories),
+      categoryRules: mergeByKey(local.categoryRules ?? [], server.categoryRules ?? [], (r) => r.id, deletedKeys?.categoryRules, revivedKeys?.categoryRules),
       periodCloses: closes,
       ...(deletedKeys ? { deletedKeys } : {}),
+      ...(revivedKeys ? { revivedKeys } : {}),
     },
     transactions,
     localTransactions: localU.transactions,

@@ -18,8 +18,11 @@ describe("resetFinancials", () => {
     // off (or back to undecided) would be a second change the owner did not ask for.
     const choice = { enabled: true, decidedAt: "2026-09-28T10:00:00.000Z" };
     const d = { ...DEFAULT_DATA, income: 3000, goals: [{ id: "g" }], syncChoice: choice } as unknown as LocalFinancials;
-    const out = resetFinancials(d);
-    expect(out).toEqual({ ...DEFAULT_DATA, syncChoice: choice });
+    const out = resetFinancials(d, new Date("2026-10-07T18:00:00.000Z"));
+    // DI-13: beside the cleared data, the deletion it records for each item.
+    const { deletedKeys, ...rest } = out;
+    expect(rest).toEqual({ ...DEFAULT_DATA, syncChoice: choice });
+    expect(deletedKeys).toEqual({ goals: [{ key: "g", deletedAt: "2026-10-07T18:00:00.000Z" }] });
   });
   it("an undecided account stays undecided", () => {
     expect(resetFinancials({ ...DEFAULT_DATA, income: 3000 } as LocalFinancials).syncChoice).toBeUndefined();
@@ -45,6 +48,8 @@ describe("ResetDataPanel", () => {
     const t = document.body.textContent ?? "";
     expect(t).toMatch(/replaces your backup on our server/i);
     expect(t).toMatch(/other devices/i);
+    // DI-13, owner-approved (session 4): what other devices actually do now.
+    expect(t).toContain("Backup is on, so this also replaces your backup on our server with the empty copy. Your other devices remove the same entries the next time they sync, but keep their own settings, such as income and payday.");
   });
 
   it("backup OFF: says it is this device only", () => {
