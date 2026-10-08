@@ -31,9 +31,9 @@ export interface SyncResult {
   declined?: boolean;
 }
 
-/** COPY-11, DRAFT wording for the owner: the ask before an empty account replaces a backup that has data. */
+/** COPY-11, owner-approved wording (session 3): the ask before an empty account replaces a backup that has data. */
 export const EMPTY_OVERWRITE_ASK = "Your backup on our server has data, but this device has none. Replace the backup with this empty copy? Cancel keeps the backup as it is.";
-/** COPY-11, DRAFT wording for the owner: what Profile says when that ask was declined. */
+/** COPY-11, owner-approved wording (session 3): what Profile says when that ask was declined. */
 export const EMPTY_PUSH_DECLINED = "Not uploaded: your backup on the server has data and this device has none, so the backup was kept.";
 
 /**
