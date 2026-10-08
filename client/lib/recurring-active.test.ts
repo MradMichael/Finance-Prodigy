@@ -10,6 +10,15 @@
 // here: figures move, deliberately, and the before/after values are reported
 // on the branch rather than hidden behind "no visible change".
 import { describe, it, expect } from "vitest";
+import { type CalendarDay, calendarDayOf, occurrenceDay } from "./calendarDay";
+
+// Session 4 (item 7): the recurring engine takes calendar days. These tests
+// were written with Dates; asDay names the day each meant -- a UTC-midnight
+// date (utcMidnight, a date-only string) by its UTC day, any other date by its
+// local day. That is what they meant in every zone, which is why they passed
+// in UTC, Asia/Beirut and America/Los_Angeles before the change.
+const asDay = (d: Date): CalendarDay =>
+  d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0 && d.getUTCMilliseconds() === 0 ? occurrenceDay(d) : calendarDayOf(d);
 import {
   isRecurringActive, nominalMonthlyEquivalent, monthlyEquivalent,
   remainingInstallments, recurringPaidSoFar, nextConfirmTarget,
@@ -40,7 +49,7 @@ describe("the 2027-05-02 case, on the owner's real item shape", () => {
     // Premise: the money genuinely has not been paid, so "active" is the
     // correct answer and not merely a changed one.
     expect(recurringPaidSoFar(UNI, [])).toBe(0);
-    expect(remainingInstallments(UNI, [], AFTER_FLIP)).not.toBeNull();
+    expect(remainingInstallments(UNI, [], asDay(AFTER_FLIP))).not.toBeNull();
     expect(isRecurringActive(UNI, AFTER_FLIP)).toBe(true);
   });
 
@@ -56,7 +65,7 @@ describe("the 2027-05-02 case, on the owner's real item shape", () => {
     // payment for an item every other screen had written off at $0, so the
     // assertion that matters is agreement between them.
     const six = confirmed(6);
-    const target = nextConfirmTarget(UNI, six, AFTER_FLIP);
+    const target = nextConfirmTarget(UNI, six, asDay(AFTER_FLIP));
     // Premise: the confirm flow really is still chasing this item.
     expect(target).not.toBeNull();
     expect(target!.overdueCount).toBeGreaterThan(0);
@@ -69,7 +78,7 @@ describe("the 2027-05-02 case, on the owner's real item shape", () => {
   it("it was ALSO declared ended before its own last cycle came due", () => {
     // A second consequence of the same clause, independent of confirmation:
     // the flip (2027-05-02) preceded the ninth outstanding installment.
-    const remaining = remainingInstallments(UNI, [], at("2026-09-15"));
+    const remaining = remainingInstallments(UNI, [], asDay(at("2026-09-15")));
     expect(remaining!.endsOn.toISOString().slice(0, 10)).toBe("2027-06-01");
     expect(isRecurringActive(UNI, at("2027-05-10"))).toBe(true);
   });
@@ -80,7 +89,7 @@ describe("exhaustion is still answered — by the function that actually knows",
     const all = confirmed(9);
     // Premise: the cap really is met.
     expect(recurringPaidSoFar(UNI, all)).toBe(6750);
-    expect(remainingInstallments(UNI, all, at("2027-05-10"))).toBeNull();
+    expect(remainingInstallments(UNI, all, asDay(at("2027-05-10")))).toBeNull();
     // isRecurringActive alone no longer knows this, and should not: it is a
     // calendar question now. InputPanel's "Ended" badge combines the two.
     expect(isRecurringActive(UNI, at("2027-05-10"))).toBe(true);
@@ -91,8 +100,8 @@ describe("exhaustion is still answered — by the function that actually knows",
     // The old clause would have kept this reading live until 2027-05-02.
     const all = confirmed(9);
     const early = at("2027-01-15");
-    expect(remainingInstallments(UNI, all, early)).toBeNull();
-    expect(nextConfirmTarget(UNI, all, early)).toBeNull();
+    expect(remainingInstallments(UNI, all, asDay(early))).toBeNull();
+    expect(nextConfirmTarget(UNI, all, asDay(early))).toBeNull();
   });
 });
 
@@ -111,7 +120,7 @@ describe("a fully paid item costs $0 — closed, and it was wrong in BOTH direct
     const all = confirmed(9);
     // Premise: genuinely finished.
     expect(recurringPaidSoFar(UNI, all)).toBe(6750);
-    expect(remainingInstallments(UNI, all, at("2027-05-10"))).toBeNull();
+    expect(remainingInstallments(UNI, all, asDay(at("2027-05-10")))).toBeNull();
     expect(nominalMonthlyEquivalent(UNI, all, at("2027-05-10"))).toBe(0);
   });
 
@@ -119,7 +128,7 @@ describe("a fully paid item costs $0 — closed, and it was wrong in BOTH direct
     const all = confirmed(9);
     // Measured $750 both before the clause was removed and after, i.e. the
     // elapsed-time clause never helped here at all.
-    expect(remainingInstallments(UNI, all, at("2027-01-15"))).toBeNull();
+    expect(remainingInstallments(UNI, all, asDay(at("2027-01-15")))).toBeNull();
     expect(nominalMonthlyEquivalent(UNI, all, at("2027-01-15"))).toBe(0);
   });
 

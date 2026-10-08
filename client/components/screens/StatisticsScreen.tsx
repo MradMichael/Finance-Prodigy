@@ -1,11 +1,12 @@
 "use client";
 
 import type { LocalFinancials } from "../../lib/localData";
-import { nextOccurrence, localDayAfter, isRecurringActive, toUSD as toUSDShared, DEFAULT_LBP_RATE, cycleStartDayOf } from "../../lib/localData";
+import { nextOccurrence, dayAfter, isRecurringActive, toUSD as toUSDShared, DEFAULT_LBP_RATE, cycleStartDayOf } from "../../lib/localData";
 import { periodTotals, type computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money } from "./shared";
 import {currentCycleKey, cycleKeyMinus, cycleBounds, cycleLabel, ymKeyToCycleKey, periodNoun } from "../../lib/period";
+import { calendarDayOf } from "../../lib/calendarDay";
 
 
 /**
@@ -82,12 +83,12 @@ export default function StatisticsScreen({
   const timeline: { key: string; name: string; emoji: string; amountUSD: number; date: Date }[] = [];
   for (const r of financials.recurring ?? []) {
     if (!isRecurringActive(r, now)) continue;
-    let cursor = now;
+    let cursor = calendarDayOf(now);
     for (let i = 0; i < 6; i++) {
       const next = nextOccurrence(r, cursor);
       if (!next || next > timelineEnd) break;
       timeline.push({ key: `${r.id}-${i}`, name: r.name, emoji: r.emoji, amountUSD: toUSD(r.amount, r.currency), date: next });
-      cursor = localDayAfter(next);
+      cursor = dayAfter(next);
     }
   }
   timeline.sort((a, b) => a.date.getTime() - b.date.getTime());

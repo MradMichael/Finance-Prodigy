@@ -38,6 +38,7 @@ import EditRecurringSheet from "../components/EditRecurringSheet";
 import EditGoalSheet from "../components/EditGoalSheet";
 import PayDebtSheet from "../components/PayDebtSheet";
 import EditTransactionSheet from "../components/EditTransactionSheet";
+import { todayCalendarDay } from "../lib/calendarDay";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HOME
@@ -474,9 +475,7 @@ export default function Home() {
     if (loggingRecurringRef.current.has(recurringId)) return; // already in flight
     const rec = financials.recurring.find((r) => r.id === recurringId);
     if (!rec) return;
-    const now = new Date();
-    const todayMidnight = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
-    const target = nextConfirmTarget(rec, financials.transactions, todayMidnight);
+    const target = nextConfirmTarget(rec, financials.transactions, todayCalendarDay());
     if (!target) return; // nothing left to confirm
     const result = buildRecurringConfirmLog(rec, financials.lbpRate ?? DEFAULT_LBP_RATE, target.dueDate, paidDate);
     loggingRecurringRef.current.add(recurringId);

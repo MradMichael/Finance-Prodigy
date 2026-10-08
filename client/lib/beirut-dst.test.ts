@@ -15,6 +15,15 @@
 import { describe, it, expect } from "vitest";
 import { currentCycleKey, cycleCloseInstant, cycleProgress, asCycleKey } from "./period";
 import { todayISO, isoLocalDay, nextOccurrence, type StoredRecurring } from "./localData";
+import { type CalendarDay, calendarDayOf, occurrenceDay } from "./calendarDay";
+
+// Session 4 (item 7): the recurring engine takes calendar days. These tests
+// were written with Dates; asDay names the day each meant -- a UTC-midnight
+// date (utcMidnight, a date-only string) by its UTC day, any other date by its
+// local day. That is what they meant in every zone, which is why they passed
+// in UTC, Asia/Beirut and America/Los_Angeles before the change.
+const asDay = (d: Date): CalendarDay =>
+  d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0 && d.getUTCMilliseconds() === 0 ? occurrenceDay(d) : calendarDayOf(d);
 
 const BEIRUT = Intl.DateTimeFormat().resolvedOptions().timeZone === "Asia/Beirut";
 
@@ -77,7 +86,7 @@ describe("Beirut's clock changes and winter offset", () => {
         id: "r-rent", name: "Rent", emoji: "🏠", amount: 450, currency: "USD", frequency: "monthly", bucket: "NEEDS",
         startDate: "2026-01-29", endDate: null, totalAmount: null, createdAt: "2026-01-20T09:00:00.000Z",
       };
-      const next = nextOccurrence(rent, new Date(2026, 2, 20, 12));
+      const next = nextOccurrence(rent, asDay(new Date(2026, 2, 20, 12)));
       expect(next?.toISOString().slice(0, 10)).toBe("2026-03-29");
     });
   });

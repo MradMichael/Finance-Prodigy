@@ -3,6 +3,7 @@
 import type { CycleKey, CycleHistory, CalendarHistory } from "./period";
 import {CYCLE_START_DAY, cycleKeyForISO, cycleLabel, cycleBounds, cycleKeyMinus, currentCycleKey, cycleCloseInstant } from "./period";
 import { stableStringify, tieBreak } from "./canonical";
+import { type CalendarDay, asCalendarDay, storedDay, calendarDayOf, todayCalendarDay, dayStart, occurrenceDay, addDays } from "./calendarDay";
 export type { CycleKey, CalendarKey, CycleHistory, CalendarHistory } from "./period";
 
 export type Currency = "USD" | "LBP";
@@ -2494,17 +2495,13 @@ function withinRecurringBounds(r: StoredRecurring, candidate: Date, cycleIndex: 
   return true;
 }
 
-/** Next date this recurring item is due on/after `asOf`, or null if it's already ended (by end date or total-amount cap). */
-export function nextOccurrence(r: StoredRecurring, asOf: Date = new Date()): Date | null {
-  // Normalized to UTC midnight of asOf's own (local) calendar date --
-  // "due on/after asOf" is a calendar-day question, not an exact-instant
-  // one (start/end dates are themselves UTC-midnight-parsed, and callers
-  // like Upcoming Renewals treat a match as "due today" for the whole
-  // day). Comparing against the raw current instant instead made an
-  // item's own due day read as already past — and skip ahead a full
-  // period — as soon as any time had elapsed since UTC midnight, i.e.
-  // almost immediately, on nearly every day it was actually due.
-  const asOfDay = new Date(Date.UTC(asOf.getFullYear(), asOf.getMonth(), asOf.getDate()));
+/** Next date this recurring item is due on/after the day `asOf`, or null if it's already ended (by end date or total-amount cap). */
+export function nextOccurrence(r: StoredRecurring, asOf: CalendarDay = todayCalendarDay()): Date | null {
+  // "Due on/after asOf" is a calendar-day question, so asOf IS a day (session
+  // 4): occurrences are built at UTC midnight, and so is the day they are
+  // compared with. Until then asOf was an instant read back by its LOCAL day,
+  // while callers passed the UTC midnight of theirs -- yesterday, west of UTC.
+  const asOfDay = dayStart(asOf);
   const start = new Date(r.startDate);
 
   // Bounds are checked against the date each branch actually COMPUTES,
@@ -2629,11 +2626,10 @@ export function recurringPaidSoFar(r: StoredRecurring, transactions: StoredTrans
  */
 export function pendingBackfillCycles(r: StoredRecurring, transactions: StoredTransaction[]): Date[] {
   if (!r.confirmCutoverDate || !r.totalAmount) return [];
-  const start = new Date(r.startDate);
-  const cutover = new Date(r.confirmCutoverDate);
+  const cutover = storedDay(r.confirmCutoverDate);
   const uncapped: StoredRecurring = { ...r, totalAmount: null };
-  return dueCycles(uncapped, start, cutover)
-    .filter((d) => d < cutover)
+  return dueCycles(uncapped, storedDay(r.startDate), cutover)
+    .filter((d) => d < dayStart(cutover))
     .filter((d) => !isCycleConfirmed(r, d, transactions));
 }
 
@@ -2671,7 +2667,7 @@ export function pendingBackfillCycles(r: StoredRecurring, transactions: StoredTr
  * StoredRecurring's own comment).
  */
 export function buildRecurringPaymentLog(r: StoredRecurring, lbpRate: number, now: Date = new Date()): { tx: StoredTransaction; cycleYm: string } | null {
-  const due = nextOccurrence(r, now);
+  const due = nextOccurrence(r, calendarDayOf(now));
   if (!due) return null;
   const dueISO = due.toISOString().slice(0, 10);
   const cycleYm = dueISO.slice(0, 7);
@@ -2694,8 +2690,8 @@ export function buildRecurringPaymentLog(r: StoredRecurring, lbpRate: number, no
  * day-length/month-length stepping logic a second time -- the two
  * functions are structurally incapable of disagreeing about what "the next
  * cycle after X" means, since only one of them actually computes it.
- * `to` is expected to be UTC-midnight-anchored, matching nextOccurrence's
- * own basis and every date this function returns.
+ * `from` and `to` are calendar days (session 4); the dates returned are
+ * the UTC midnights of the due days, as nextOccurrence builds them.
  *
  * No longer needs to re-validate endDate/totalAmount itself -- it used to
  * (found while writing this function's own tests, Standing Rule 4:
@@ -2706,8 +2702,9 @@ export function buildRecurringPaymentLog(r: StoredRecurring, lbpRate: number, no
  * moment a computed candidate is out of bounds, which the `!next` check
  * below already handles.
  */
-export function dueCycles(r: StoredRecurring, from: Date, to: Date, limit = Infinity): Date[] {
+export function dueCycles(r: StoredRecurring, from: CalendarDay, to: CalendarDay, limit = Infinity): Date[] {
   const cycles: Date[] = [];
+  const end = dayStart(to);
   let cursor = from;
   // `limit` is how many cycles the CALLER will actually read. It is not a
   // second correctness bound -- `to` is still the only thing deciding which
@@ -2725,22 +2722,22 @@ export function dueCycles(r: StoredRecurring, from: Date, to: Date, limit = Infi
   // guarantee silently reintroducing an infinite loop here.
   for (let i = 0; i < stopAt; i++) {
     const next = nextOccurrence(r, cursor);
-    if (!next || next > to) break;
+    if (!next || next > end) break;
     cycles.push(next);
-    cursor = localDayAfter(next);
+    cursor = dayAfter(next);
   }
   return cycles;
 }
 
 /**
- * Where a walk over occurrences resumes after `occurrence` (a UTC-midnight
- * due date): the LOCAL midnight of the next calendar day, because
- * nextOccurrence reads its `asOf` by the local day. It used to add 24 hours,
- * which west of UTC is still the same local day, so the walk returned the
- * same date until its cap (TIME-06, TIME-07; fixed in session 3).
+ * The calendar day after an occurrence -- where a walk over occurrences
+ * resumes. Plain day arithmetic, so it means the same in every zone. (It
+ * used to add 24 hours to the instant, which west of UTC was still the same
+ * local day: TIME-06, TIME-07. Session 3 stepped by the local midnight
+ * instead; with calendar days there is no zone left to step around.)
  */
-export function localDayAfter(occurrence: Date): Date {
-  return new Date(occurrence.getUTCFullYear(), occurrence.getUTCMonth(), occurrence.getUTCDate() + 1);
+export function dayAfter(occurrence: Date): CalendarDay {
+  return addDays(occurrenceDay(occurrence), 1);
 }
 
 /**
@@ -2768,13 +2765,14 @@ export function localDayAfter(occurrence: Date): Date {
  * stays in effect either way.
  */
 export function remainingInstallments(
-  r: StoredRecurring, transactions: StoredTransaction[], asOf: Date = new Date(),
+  r: StoredRecurring, transactions: StoredTransaction[], asOf: CalendarDay = todayCalendarDay(),
 ): { count: number; endsOn: Date } | null {
   if (!r.endDate && !r.totalAmount) return null;
+  // The walk starts at asOf: dueCycles' first step is nextOccurrence(r, asOf)
+  // itself (this used to look the next occurrence up first, to the same end).
 
   if (!r.totalAmount) {
-    const from = nextOccurrence(r, asOf) ?? asOf;
-    const cycles = dueCycles(r, from, new Date(r.endDate!));
+    const cycles = dueCycles(r, asOf, storedDay(r.endDate!));
     return cycles.length ? { count: cycles.length, endsOn: cycles[cycles.length - 1] } : null;
   }
 
@@ -2783,16 +2781,15 @@ export function remainingInstallments(
   const byAmount = Math.ceil(remainingAmount / r.amount);
 
   const uncapped: StoredRecurring = { ...r, totalAmount: null };
-  const from = nextOccurrence(uncapped, asOf) ?? asOf;
   // No real endDate to bound the walk -- 100 years out is far past anything
   // a real remaining balance could realistically reach; this is a
   // placeholder ceiling for the walk, not a claim about the item itself.
-  const to = r.endDate ? new Date(r.endDate) : new Date(Date.UTC(asOf.getUTCFullYear() + 100, 0, 1));
+  const to = r.endDate ? storedDay(r.endDate) : asCalendarDay(`${Number(asOf.slice(0, 4)) + 100}-01-01`);
   // Bounded by byAmount: the next line reads at most that many, so any
   // further cycle the walk produced would be built and discarded. When an
   // endDate truncates first the limit simply never binds, which is what
   // keeps this output-identical (see recurring-bounds.matrix.test.ts).
-  const cycles = dueCycles(uncapped, from, to, byAmount);
+  const cycles = dueCycles(uncapped, asOf, to, byAmount);
   if (cycles.length === 0) return null; // endDate already passed
   const count = Math.min(byAmount, cycles.length);
   return { count, endsOn: cycles[count - 1] };
@@ -2840,7 +2837,7 @@ export function remainingInstallments(
  * so a weekly item frees a week later rather than a month later.
  */
 export function capacityFreedFrom(
-  r: StoredRecurring, transactions: StoredTransaction[], asOf: Date = new Date(),
+  r: StoredRecurring, transactions: StoredTransaction[], asOf: CalendarDay = todayCalendarDay(),
 ): Date | null {
   // 2.4.110: THE EARLIER OF THE TWO BOUNDS, not whichever is checked first.
   //
@@ -2865,9 +2862,9 @@ export function capacityFreedFrom(
   // needs to reach the cycle PAST the cap, which the cap itself refuses to
   // generate.
   const uncapped: StoredRecurring = { ...r, totalAmount: null };
-  const horizon = new Date(remaining.endsOn.getTime());
-  horizon.setUTCFullYear(horizon.getUTCFullYear() + 1);
-  const capBound = dueCycles(uncapped, remaining.endsOn, horizon, 2)[1] ?? null;
+  const endsOn = occurrenceDay(remaining.endsOn);
+  const horizon = addDays(endsOn, 366); // bounds the search for the one cycle after endsOn; a yearly cycle is at most 366 days on
+  const capBound = dueCycles(uncapped, endsOn, horizon, 2)[1] ?? null;
 
   if (!capBound) return endBound;
   if (!endBound) return capBound;
@@ -2952,9 +2949,9 @@ export function cycleMonthDivergence(tx: StoredTransaction, recurring: StoredRec
  * Date()` instant would make a cycle read overdue the moment its due day
  * begins rather than once the full day has passed.
  */
-export function isCycleOverdue(r: StoredRecurring, dueDate: Date, asOf: Date, transactions: StoredTransaction[]): boolean {
+export function isCycleOverdue(r: StoredRecurring, dueDate: Date, asOf: CalendarDay, transactions: StoredTransaction[]): boolean {
   if (isCycleConfirmed(r, dueDate, transactions)) return false;
-  if (dueDate >= asOf) return false; // not due yet, or due today -- not overdue until the day is over
+  if (dueDate >= dayStart(asOf)) return false; // not due yet, or due today -- not overdue until the day is over
   if (r.confirmCutoverDate && dueDate < new Date(r.confirmCutoverDate)) return false; // grandfathered
   return true;
 }
@@ -3017,15 +3014,15 @@ export function buildRecurringConfirmLog(r: StoredRecurring, lbpRate: number, du
  * A loop, not a single check: confirming several cycles ahead in a row
  * must skip past all of them, not just the first.
  */
-export function nextConfirmTarget(r: StoredRecurring, transactions: StoredTransaction[], asOf: Date): { dueDate: Date; overdueCount: number } | null {
+export function nextConfirmTarget(r: StoredRecurring, transactions: StoredTransaction[], asOf: CalendarDay): { dueDate: Date; overdueCount: number } | null {
   if (r.totalAmount != null && r.totalAmount > 0 && recurringPaidSoFar(r, transactions) >= r.totalAmount) return null;
   const uncapped: StoredRecurring = r.totalAmount != null ? { ...r, totalAmount: null } : r;
-  const from = new Date(r.confirmCutoverDate ?? r.startDate);
+  const from = storedDay(r.confirmCutoverDate ?? r.startDate);
   const overdue = dueCycles(uncapped, from, asOf).filter((d) => isCycleOverdue(r, d, asOf, transactions));
   if (overdue.length > 0) return { dueDate: overdue[0], overdueCount: overdue.length }; // dueCycles is ascending -- FIFO falls out for free
   let next = nextOccurrence(uncapped, asOf);
   for (let i = 0; next && isCycleConfirmed(r, next, transactions) && i < 5000; i++) {
-    next = nextOccurrence(uncapped, localDayAfter(next));
+    next = nextOccurrence(uncapped, dayAfter(next));
   }
   return next ? { dueDate: next, overdueCount: 0 } : null;
 }
