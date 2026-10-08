@@ -29,6 +29,7 @@
  */
 import {
   mergeTransactions, undoCloseEffects, periodCloseKey, DELETED_COLLECTIONS,
+  deletedKeySet, itemKeysByCollection, restoreGeneration,
   type LocalFinancials, type PeriodClose, type TrackedBalance, type DeletedKeys, type Tombstone, type MergeTransactionsResult,
 } from "./localData";
 
@@ -41,12 +42,13 @@ const instant = (s: string | undefined) => (s ? new Date(s).getTime() : -Infinit
 
 /**
  * Union by key; the later `updatedAt` wins (absent sorts as older than any
- * edit); a key in `tombstones` is dropped whatever either copy says.
+ * edit); a key in `tombstones` is dropped whatever either copy says, unless
+ * its record is a revival (a restore brought it back).
  */
 export function mergeByKey<T extends { updatedAt?: string }>(
   local: T[], server: T[], keyOf: (t: T) => string, tombstones: Tombstone[] = [],
 ): T[] {
-  const deleted = new Set(tombstones.map((t) => t.key));
+  const deleted = deletedKeySet(tombstones);
   const serverByKey = new Map(server.map((s) => [keyOf(s), s]));
   const localKeys = new Set(local.map(keyOf));
   const out: T[] = [];
@@ -65,12 +67,27 @@ export function mergeByKey<T extends { updatedAt?: string }>(
   return out;
 }
 
-/** Union by key; when both have one, the earlier deletion time is kept. */
+/**
+ * Which of two records for one key stands (DI-13 follow-up, session 3): the
+ * later restore generation; at the same generation a deletion beats a
+ * revival (a device that deletes after seeing the restore deletes at its
+ * generation or later); between two of the same kind, the earlier time, as
+ * before -- which only picks the record kept, never whether the key is
+ * deleted. No clock decides anything.
+ */
+function outranks(t: Tombstone, seen: Tombstone): boolean {
+  const gt = t.gen ?? 0, gs = seen.gen ?? 0;
+  if (gt !== gs) return gt > gs;
+  if (!!t.revived !== !!seen.revived) return !t.revived;
+  return t.deletedAt < seen.deletedAt;
+}
+
+/** Union by key; when both have one, the record that outranks stands. */
 function mergeTombstones(a: Tombstone[] = [], b: Tombstone[] = []): Tombstone[] {
   const byKey = new Map<string, Tombstone>();
   for (const t of [...a, ...b]) {
     const seen = byKey.get(t.key);
-    if (!seen || t.deletedAt < seen.deletedAt) byKey.set(t.key, t);
+    if (!seen || outranks(t, seen)) byKey.set(t.key, t);
   }
   return [...byKey.values()];
 }
@@ -86,13 +103,42 @@ function mergeDeletedKeys(a: DeletedKeys | undefined, b: DeletedKeys | undefined
 }
 
 /**
+ * Restoring an export file (Profile → import) after a reset (DI-13 follow-up,
+ * owner, session 3): the restore must win, without clocks.
+ *
+ * The file's data replaces this device's, as before. The deletion records are
+ * this device's and the file's together, so the reset's records still hold
+ * for everything the file doesn't contain. Every key the file DOES contain
+ * that has a record is revived at the next restore generation, which outranks
+ * every earlier record of that key on any device (mergeTombstones). Keys
+ * without a record need nothing. A revival keeps the original deletion time.
+ *
+ * Undo: resetting again records deletions at this generation, and at the
+ * same generation a deletion beats a revival.
+ */
+export function restoreFromExport(current: LocalFinancials, file: LocalFinancials): LocalFinancials {
+  const records = mergeDeletedKeys(current.deletedKeys, file.deletedKeys);
+  if (!records) return file;
+  const gen = Math.max(restoreGeneration(current.deletedKeys), restoreGeneration(file.deletedKeys)) + 1;
+  const restored = itemKeysByCollection(file);
+  const out: DeletedKeys = {};
+  for (const c of DELETED_COLLECTIONS) {
+    const list = records[c];
+    if (!list) continue;
+    const back = new Set(restored[c]);
+    out[c] = list.map((t) => (back.has(t.key) ? { ...t, gen, revived: true as const } : t));
+  }
+  return { ...file, deletedKeys: out };
+}
+
+/**
  * Tracked balances: the later check-in wins. A check-in (and a close) moves
  * `startingAt`, the baseline instant, so the copy with the later one holds
  * the newer observation. Equal baselines fall back to the later recorded
  * check (`actualBalanceDate`), then to the deterministic tie-break.
  */
 function mergeTrackedBalances(local: TrackedBalance[], server: TrackedBalance[], tombstones: Tombstone[]): TrackedBalance[] {
-  const deleted = new Set(tombstones.map((t) => t.key));
+  const deleted = deletedKeySet(tombstones);
   const serverById = new Map(server.map((s) => [s.id, s]));
   const localIds = new Set(local.map((l) => l.id));
   const pick = (a: TrackedBalance, b: TrackedBalance): TrackedBalance => {
@@ -199,7 +245,7 @@ export interface MergeFinancialsResult {
  */
 function withoutDeleted(d: LocalFinancials, deleted: DeletedKeys | undefined): LocalFinancials {
   if (!deleted) return d;
-  const gone = (c: keyof DeletedKeys) => new Set((deleted[c] ?? []).map((t) => t.key));
+  const gone = (c: keyof DeletedKeys) => deletedKeySet(deleted[c]);
   const tx = gone("transactions"), cl = gone("periodCloses");
   const keep = <T extends { id: string }>(list: T[] | undefined, set: Set<string>) => (list ?? []).filter((x) => !set.has(x.id));
   return {

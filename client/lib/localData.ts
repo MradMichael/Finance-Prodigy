@@ -918,7 +918,18 @@ export interface LocalFinancials {
 }
 
 /** A deleted item's key and when it was deleted (SYNC-1 step 2). */
-export interface Tombstone { key: string; deletedAt: string }
+export interface Tombstone {
+  key: string;
+  deletedAt: string;
+  /**
+   * DI-13 follow-up (session 3): the restore generation this record was
+   * written in; absent = 0. A restore starts the next generation, and per key
+   * the later generation wins -- no clock is compared.
+   */
+  gen?: number;
+  /** A restore brought this key back: the record no longer deletes it. */
+  revived?: true;
+}
 export interface DeletedKeys {
   wishlist?: Tombstone[];
   customCategories?: Tombstone[];
@@ -951,10 +962,45 @@ export function periodCloseKey(c: Pick<PeriodClose, "cycleKey" | "closedAt">): s
   return `${c.cycleKey}|${c.closedAt}`;
 }
 
+/** Each collection's item keys, as the deletion registry names them. */
+export function itemKeysByCollection(d: LocalFinancials): Record<(typeof DELETED_COLLECTIONS)[number], string[]> {
+  return {
+    transactions: (d.transactions ?? []).map((t) => t.id),
+    wishlist: (d.wishlist ?? []).map((w) => w.id),
+    customCategories: (d.customCategories ?? []).map((c) => c.value),
+    categoryRules: (d.categoryRules ?? []).map((r) => r.id),
+    trackedBalances: (d.trackedBalances ?? []).map((t) => t.id),
+    periodCloses: (d.periodCloses ?? []).map(periodCloseKey),
+    goals: (d.goals ?? []).map((g) => g.id),
+    debts: (d.debts ?? []).map((x) => x.id),
+    recurring: (d.recurring ?? []).map((r) => r.id),
+    assets: (d.assets ?? []).map((a) => a.id),
+    cards: (d.cards ?? []).map((c) => c.id),
+  };
+}
+
+/**
+ * The account's restore generation: the highest `gen` among its deletion
+ * records (0 when none has one). Derived, not stored separately, so there is
+ * no counter for a merge to drop on its own.
+ */
+export function restoreGeneration(deleted: DeletedKeys | undefined): number {
+  let gen = 0;
+  for (const c of DELETED_COLLECTIONS) for (const t of deleted?.[c] ?? []) gen = Math.max(gen, t.gen ?? 0);
+  return gen;
+}
+
+/** The keys a collection's records still delete: a revived key is not deleted. */
+export function deletedKeySet(list: Tombstone[] | undefined): Set<string> {
+  return new Set((list ?? []).filter((t) => !t.revived).map((t) => t.key));
+}
+
 /**
  * Records a deletion (SYNC-1 step 2). Every screen that deletes a wishlist
  * item, custom category, category rule or tracked balance calls this beside
- * removing it, so the deletion travels to the other devices.
+ * removing it, so the deletion travels to the other devices. It is written in
+ * the current restore generation, and replaces a revival of the same key (a
+ * deletion after a restore beats it).
  */
 export function recordDeletion(
   d: Pick<LocalFinancials, "deletedKeys">,
@@ -964,8 +1010,11 @@ export function recordDeletion(
 ): DeletedKeys {
   const existing = d.deletedKeys ?? {};
   const list = existing[collection] ?? [];
-  if (list.some((t) => t.key === key)) return existing;
-  return { ...existing, [collection]: [...list, { key, deletedAt: now.toISOString() }] };
+  const prior = list.find((t) => t.key === key);
+  if (prior && !prior.revived) return existing;
+  const gen = restoreGeneration(existing);
+  const record: Tombstone = { key, deletedAt: now.toISOString(), ...(gen ? { gen } : {}) };
+  return { ...existing, [collection]: [...list.filter((t) => t.key !== key), record] };
 }
 
 // Bumped whenever a stored-shape migration step is added to MIGRATIONS
@@ -1308,20 +1357,10 @@ export function migrateFinancials(raw: unknown, migrations: typeof MIGRATIONS = 
 export function resetFinancials(d: LocalFinancials, now: Date = new Date()): LocalFinancials {
   // DI-13: a deletion recorded for every item cleared, so another device's
   // merge can't bring it back. Earlier records are kept. Settings aren't
-  // items: each device keeps its own (the merge already does).
-  const keysOf: Record<(typeof DELETED_COLLECTIONS)[number], string[]> = {
-    transactions: (d.transactions ?? []).map((t) => t.id),
-    wishlist: (d.wishlist ?? []).map((w) => w.id),
-    customCategories: (d.customCategories ?? []).map((c) => c.value),
-    categoryRules: (d.categoryRules ?? []).map((r) => r.id),
-    trackedBalances: (d.trackedBalances ?? []).map((t) => t.id),
-    periodCloses: (d.periodCloses ?? []).map(periodCloseKey),
-    goals: (d.goals ?? []).map((g) => g.id),
-    debts: (d.debts ?? []).map((x) => x.id),
-    recurring: (d.recurring ?? []).map((r) => r.id),
-    assets: (d.assets ?? []).map((a) => a.id),
-    cards: (d.cards ?? []).map((c) => c.id),
-  };
+  // items: each device keeps its own (the merge already does). The records
+  // carry the current restore generation, so resetting after a restore
+  // undoes it (recordDeletion).
+  const keysOf = itemKeysByCollection(d);
   let deletedKeys: DeletedKeys = d.deletedKeys ?? {};
   for (const collection of DELETED_COLLECTIONS) {
     for (const key of keysOf[collection]) deletedKeys = recordDeletion({ deletedKeys }, collection, key, now);
