@@ -174,23 +174,24 @@ describe("nextOccurrence", () => {
   });
 
   it("weekly frequency advances in exact 7-day increments", () => {
-    // Dates constructed as UTC ISO strings throughout (matching how the
-    // production code parses r.startDate) to avoid local-timezone drift
-    // between how "start" and "asOf" represent midnight.
+    // `asOf` is a LOCAL day, built with new Date(y, m, d), as callers pass a
+    // local instant: nextOccurrence reads asOf by its local calendar day and
+    // compares that with startDate's UTC day. A date-only string here would
+    // be UTC midnight -- the previous local day west of UTC (session 3).
     const r = makeRecurring({ frequency: "weekly", startDate: "2026-07-01" });
-    const next = nextOccurrence(r, new Date("2026-07-10")); // partway into week 2
+    const next = nextOccurrence(r, new Date(2026, 6, 10)); // partway into week 2
     expect(next?.toISOString().slice(0, 10)).toBe("2026-07-15");
   });
 
   it("monthly frequency on a normal day advances one calendar month", () => {
     const r = makeRecurring({ frequency: "monthly", startDate: "2026-01-15" });
-    const next = nextOccurrence(r, new Date("2026-03-01"));
+    const next = nextOccurrence(r, new Date(2026, 2, 1));
     expect(next?.toISOString().slice(0, 10)).toBe("2026-03-15");
   });
 
   it("a Jan-31 monthly recurring clamps to Feb 28 in a non-leap year instead of overflowing into March", () => {
     const r = makeRecurring({ frequency: "monthly", startDate: "2026-01-31" });
-    const next = nextOccurrence(r, new Date("2026-02-15"));
+    const next = nextOccurrence(r, new Date(2026, 1, 15));
     // 2026 is not a leap year -- Feb only has 28 days, so the occurrence
     // clamps to Feb 28 rather than a naive Date.setMonth overflowing to Mar 3.
     expect(next?.toISOString().slice(0, 10)).toBe("2026-02-28");
@@ -198,14 +199,16 @@ describe("nextOccurrence", () => {
 
   it("a Jan-31 monthly recurring clamps to Feb 29 in a leap year", () => {
     const r = makeRecurring({ frequency: "monthly", startDate: "2028-01-31" });
-    const next = nextOccurrence(r, new Date("2028-02-15"));
+    const next = nextOccurrence(r, new Date(2028, 1, 15));
     expect(next?.toISOString().slice(0, 10)).toBe("2028-02-29");
   });
 
   it("a day-31 monthly recurring returns to day 31 in a month that has one, after being clamped", () => {
     const r = makeRecurring({ frequency: "monthly", startDate: "2026-01-31" });
     // Feb 28 (clamped) -> next occurrence should be March 31 (March has 31 days again), not stuck at 28.
-    const next = nextOccurrence(r, new Date("2026-03-01"));
+    // asOf is a LOCAL day, as callers pass it (session 2 item G): "2026-03-01"
+    // alone parses as UTC midnight, which west of UTC is still 28 Feb locally.
+    const next = nextOccurrence(r, new Date(2026, 2, 1));
     expect(next?.toISOString().slice(0, 10)).toBe("2026-03-31");
   });
 
@@ -221,13 +224,13 @@ describe("nextOccurrence", () => {
     // has no more real occurrences at all past Jul 1; this must be null,
     // not a phantom Aug 1 the item will never actually reach.
     const r = makeRecurring({ frequency: "monthly", startDate: "2026-01-01", endDate: "2026-07-15" });
-    const next = nextOccurrence(r, new Date("2026-07-02"));
+    const next = nextOccurrence(r, new Date(2026, 6, 2)); // a local day, as above
     expect(next).toBeNull();
   });
 
   it("contrast: querying from before endDate correctly still returns a real upcoming cycle when one exists before the end", () => {
     const r = makeRecurring({ frequency: "monthly", startDate: "2026-01-01", endDate: "2026-07-15" });
-    const next = nextOccurrence(r, new Date("2026-06-02"));
+    const next = nextOccurrence(r, new Date(2026, 5, 2));
     expect(next?.toISOString().slice(0, 10)).toBe("2026-07-01"); // still within bounds
   });
 
@@ -238,13 +241,13 @@ describe("nextOccurrence", () => {
     // over the 1500 cap. There is no real 4th occurrence; this must be
     // null, not a phantom Apr 1.
     const r = makeRecurring({ frequency: "monthly", amount: 500, startDate: "2026-01-01", totalAmount: 1500 });
-    const next = nextOccurrence(r, new Date("2026-03-02"));
+    const next = nextOccurrence(r, new Date(2026, 2, 2));
     expect(next).toBeNull();
   });
 
   it("contrast: querying before the cap correctly still returns a real upcoming cycle when the cap isn't reached yet", () => {
     const r = makeRecurring({ frequency: "monthly", amount: 500, startDate: "2026-01-01", totalAmount: 1500 });
-    const next = nextOccurrence(r, new Date("2026-02-02"));
+    const next = nextOccurrence(r, new Date(2026, 1, 2));
     expect(next?.toISOString().slice(0, 10)).toBe("2026-03-01"); // the 3rd and final payment, still within the cap
   });
 });
@@ -883,6 +886,18 @@ describe("nextConfirmTarget", () => {
     const r = makeRecurring({ id: "r1", amount: 100, totalAmount: 200, startDate: "2026-01-01" });
     const paid = ["2026-01-01", "2026-02-01"].map((date): StoredTransaction => ({ id: `t-${date}`, amount: 100, currency: "USD", bucket: "NEEDS", description: "Rent", date, recurringId: "r1" }));
     expect(nextConfirmTarget(r, paid, utcMidnight(2026, 2, 15))).toBeNull(); // Mar 15 -- fully paid off, nothing left to confirm
+  });
+
+  // TIME-06 (session 2 item G; fixed in session 3): west of UTC the walk
+  // repeated the first cycle 5,000 times, so once it was confirmed every later
+  // overdue cycle vanished (measured in Los Angeles: 1 Jul next, 0 overdue).
+  // It discriminates in the Los Angeles leg.
+  it("with the first cycle confirmed, every later overdue cycle still counts", () => {
+    const r = makeRecurring({ id: "r1", amount: 100, startDate: "2026-01-01" });
+    const paidJan: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-01-01", recurringId: "r1" };
+    const target = nextConfirmTarget(r, [paidJan], utcMidnight(2026, 5, 15)); // 15 Jun
+    expect(target?.dueDate.toISOString().slice(0, 10)).toBe("2026-02-01");
+    expect(target?.overdueCount).toBe(5); // Feb to Jun
   });
 
   it("null once the item has genuinely ended -- endDate passed, and everything that was ever due is already confirmed", () => {

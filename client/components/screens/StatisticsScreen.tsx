@@ -1,7 +1,7 @@
 "use client";
 
 import type { LocalFinancials } from "../../lib/localData";
-import { nextOccurrence, isRecurringActive, toUSD as toUSDShared, DEFAULT_LBP_RATE, cycleStartDayOf } from "../../lib/localData";
+import { nextOccurrence, localDayAfter, isRecurringActive, toUSD as toUSDShared, DEFAULT_LBP_RATE, cycleStartDayOf } from "../../lib/localData";
 import { periodTotals, type computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money } from "./shared";
@@ -87,7 +87,7 @@ export default function StatisticsScreen({
       const next = nextOccurrence(r, cursor);
       if (!next || next > timelineEnd) break;
       timeline.push({ key: `${r.id}-${i}`, name: r.name, emoji: r.emoji, amountUSD: toUSD(r.amount, r.currency), date: next });
-      cursor = new Date(next.getTime() + 24 * 3600 * 1000);
+      cursor = localDayAfter(next);
     }
   }
   timeline.sort((a, b) => a.date.getTime() - b.date.getTime());

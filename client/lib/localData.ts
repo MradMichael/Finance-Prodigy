@@ -2615,9 +2615,20 @@ export function dueCycles(r: StoredRecurring, from: Date, to: Date, limit = Infi
     const next = nextOccurrence(r, cursor);
     if (!next || next > to) break;
     cycles.push(next);
-    cursor = new Date(next.getTime() + 24 * 60 * 60 * 1000);
+    cursor = localDayAfter(next);
   }
   return cycles;
+}
+
+/**
+ * Where a walk over occurrences resumes after `occurrence` (a UTC-midnight
+ * due date): the LOCAL midnight of the next calendar day, because
+ * nextOccurrence reads its `asOf` by the local day. It used to add 24 hours,
+ * which west of UTC is still the same local day, so the walk returned the
+ * same date until its cap (TIME-06, TIME-07; fixed in session 3).
+ */
+export function localDayAfter(occurrence: Date): Date {
+  return new Date(occurrence.getUTCFullYear(), occurrence.getUTCMonth(), occurrence.getUTCDate() + 1);
 }
 
 /**
@@ -2902,7 +2913,7 @@ export function nextConfirmTarget(r: StoredRecurring, transactions: StoredTransa
   if (overdue.length > 0) return { dueDate: overdue[0], overdueCount: overdue.length }; // dueCycles is ascending -- FIFO falls out for free
   let next = nextOccurrence(uncapped, asOf);
   for (let i = 0; next && isCycleConfirmed(r, next, transactions) && i < 5000; i++) {
-    next = nextOccurrence(uncapped, new Date(next.getTime() + 24 * 60 * 60 * 1000));
+    next = nextOccurrence(uncapped, localDayAfter(next));
   }
   return next ? { dueDate: next, overdueCount: 0 } : null;
 }

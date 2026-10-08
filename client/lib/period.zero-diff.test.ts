@@ -162,10 +162,18 @@ function makeData(): LocalFinancials {
 // CI runs this file under both zones. Each payload test is DECLARED in every
 // run but SKIPPED outside its own zone -- a skipped test keeps its snapshot,
 // so `vitest -u` in one zone cannot prune the other zone's baseline as
-// obsolete. A run in any third zone fails the guard below instead of
+// obsolete. A run in any other zone fails the guard below instead of
 // silently writing a new, unreviewed baseline for itself.
+//
+// America/Los_Angeles (session 2 item G, 2026-10-07) was NOT recorded from
+// the code: run there, the code before TIME-06's fix (and the code at
+// f1a3362) produced its stall -- "Rent is 5000 payments overdue",
+// overdueCount 5000 -- and recording that would have made the gate defend the
+// bug. Its baseline is the UTC one with the single offset-dependent line,
+// `anchor`, at Los Angeles' local midnight (07:00Z). With TIME-06 fixed
+// (session 3) the Los Angeles run matches it exactly.
 const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
-const BASELINE_ZONES = ["UTC", "Asia/Beirut"] as const;
+const BASELINE_ZONES = ["UTC", "Asia/Beirut", "America/Los_Angeles"] as const;
 
 function payloadSnapshot() {
   const dash = computeDashboard(makeData());
