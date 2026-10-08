@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // Plan H 5a (session 5): which goals would get a NEGATIVE opening amount at the
 // v7 migration -- a stored "saved so far" smaller than the goal's live
 // contributions. The migration keeps such a figure as it is (nothing visibly
