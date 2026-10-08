@@ -26,7 +26,7 @@ import type { BackupChoice } from "../lib/syncService";
  * point of the prompt.
  */
 
-// DRAFT (session 2 item F, held for the owner): what "on" also does since
+// Owner-approved (2026-10-07, session 3; drafted as session 2 item F): what "on" also does since
 // SYNC-1 step 3, in the privacy page's approved sentence, verbatim.
 const FETCH_ON_OPEN =
   "With backup on, each of your devices also fetches the copy when you open or return to ESSA, and combines it with what it already has.";

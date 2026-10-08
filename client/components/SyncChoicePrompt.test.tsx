@@ -49,7 +49,7 @@ describe("both variants", () => {
     expect(text.replace(/\s+/g, " ")).toContain("With backup off and no copy left on the server, your data stays in this browser only");
   });
 
-  // Session 2 item F (DRAFT, held for the owner): the prompt says what "on"
+  // Session 2 item F (owner-approved in session 3): the prompt says what "on"
   // also does since SYNC-1 step 3, in the privacy page's approved sentence,
   // right after what the copy is for.
   it.each([true, false])("say that backup on also fetches the copy on open (hasServerCopy=%s)", (has) => {
