@@ -10,6 +10,7 @@ import { allocateGoalCapacity, fastestGoalCompletion, capacityByMonth, type Goal
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money } from "./shared";
 import { periodNoun } from "../../lib/period";
+import { calendarDayOf } from "../../lib/calendarDay";
 
 type PriorityKey = "ef" | "debt" | "goals";
 const PRIORITY_META: Record<PriorityKey, { label: string; color: (T: ReturnType<typeof useTheme>) => string }> = {
@@ -120,7 +121,7 @@ export default function ProjectionsScreen({
     .filter((r) => isRecurringActive(r, capacityNow))
     .map((r) => ({
       r,
-      freed: capacityFreedFrom(r, financials.transactions, capacityNow),
+      freed: capacityFreedFrom(r, financials.transactions, calendarDayOf(capacityNow)),
       monthlyAmountUSD: toUSDShared(r.amount, r.currency, lbpRate),
     }))
     .filter((o): o is typeof o & { freed: Date } => o.freed !== null)

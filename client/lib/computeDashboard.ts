@@ -2,6 +2,7 @@ import type { LocalFinancials, BudgetRuleKey, StoredDebt, StoredTransaction, Sto
 import { acknowledgementFor, historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, LBP_RATE_STALE_DAYS, cycleStartDayOf, valueForMonth, makeToUSDForMonth, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, DEFAULT_LBP_RATE, derivedEfBalance, derivedDebtBalance, activeTransactions, parseLocalDate, isRecurringActive, isAfterBalanceBaseline, calendarDaysSince } from "./localData";
 import { cycleKeyForISO, currentCycleKey, calendarKeyForDate, isInCycle, cycleProgress, cycleBounds, cycleKeyMinus, periodNoun, cycleLabel, type CycleKey, type CalendarKey, type CalendarHistory } from "./period";
 import { simulateDebtPayoff, type DebtInput } from "./debtEngine";
+import { calendarDayOf, dayStart } from "./calendarDay";
 
 interface Projection {
   pctComplete: number; monthsRemaining: number; requiredMonthly: number;
@@ -1017,21 +1018,16 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
 
   // ── Upcoming renewals ────────────────────────────────────────────────
   const RENEWAL_WINDOW_DAYS = 7;
-  // Anchored at UTC midnight of today's LOCAL calendar date, matching
-  // nextOccurrence's own basis: recurring startDate/endDate are date-only
-  // strings ("YYYY-MM-DD"), which JS parses as UTC midnight, and
-  // nextOccurrence (localData.ts) builds every occurrence it returns from
-  // that same UTC-anchored arithmetic. Anchoring todayMidnight to LOCAL
-  // midnight instead (as this used to) skews dueInDays by the user's UTC
-  // offset — off by a day for anyone not at UTC+0, which is most of this
-  // app's actual (Lebanon/MENA) audience.
-  const todayMidnight = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
-  // nextConfirmTarget requires a UTC-midnight-anchored asOf (same contract
-  // as isCycleOverdue/dueCycles) -- todayMidnight, not raw `now`, which may
-  // carry a local time-of-day.
+  // Today as a calendar day (session 4): the recurring engine takes days,
+  // not instants. todayMidnight is that day's UTC midnight -- the basis
+  // occurrences are built on -- so dueInDays is a whole number of days in
+  // every zone. (Anchoring it to LOCAL midnight, as this once did, skewed
+  // dueInDays by the UTC offset.)
+  const today = calendarDayOf(now);
+  const todayMidnight = dayStart(today);
   const upcomingRenewals: DashboardPayload["upcomingRenewals"] = data.recurring
     .map((r) => {
-      const target = nextConfirmTarget(r, data.transactions, todayMidnight);
+      const target = nextConfirmTarget(r, data.transactions, today);
       if (!target) return null; // nothing left to confirm -- exhausted or not yet started
       const dueInDays = Math.round((target.dueDate.getTime() - todayMidnight.getTime()) / (24 * 3600 * 1000));
       // Overdue never ages out of visibility -- only a plain (not yet due)

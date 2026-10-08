@@ -4,12 +4,13 @@ import type { LocalFinancials } from "../../lib/localData";
 import { nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, remainingInstallments, FREQ_LABELS, toUSD as toUSDShared, categoryLabel, categoryIcon, DEFAULT_LBP_RATE, fmtDate } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
+import { calendarDayOf } from "../../lib/calendarDay";
 
 export default function RecurringScreen({ financials, onEdit }: { financials: LocalFinancials; onEdit: (id: string) => void }) {
   const T    = useTheme();
   const now  = new Date();
-  // nextConfirmTarget requires a UTC-midnight-anchored asOf, same contract as isCycleOverdue/dueCycles.
-  const todayMidnight = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+  // The recurring engine takes calendar days: today, on this device.
+  const today = calendarDayOf(now);
   const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
   const toUSD   = (n: number, cur?: string) => toUSDShared(n, cur as "USD" | "LBP" | undefined, lbpRate);
   const BC   = { NEEDS: T.sky, WANTS: T.brass, SAVINGS: T.jade } as const;
@@ -60,10 +61,10 @@ export default function RecurringScreen({ financials, onEdit }: { financials: Lo
                 <div className="rounded-2xl overflow-hidden" style={{ border: `1px solid ${T.line}` }}>
                   {items.map((r, i) => {
                     const monthly = toUSD(nominalMonthlyEquivalent(r, financials.transactions, now), r.currency);
-                    const target = nextConfirmTarget(r, financials.transactions, todayMidnight);
+                    const target = nextConfirmTarget(r, financials.transactions, today);
                     const overdue = (target?.overdueCount ?? 0) > 0;
                     const paidThisCycle = target ? isCycleConfirmed(r, target.dueDate, financials.transactions) : false;
-                    const remaining = remainingInstallments(r, financials.transactions, now);
+                    const remaining = remainingInstallments(r, financials.transactions, today);
                     return (
                       <div
                         key={r.id}

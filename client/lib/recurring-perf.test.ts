@@ -38,6 +38,15 @@
 // age dependence, and C at 1.07x is what "flat" looks like.
 import { describe, it, expect } from "vitest";
 import { capacityFreedFrom, nextOccurrence, nominalMonthlyEquivalent, recurringPaidSoFar, type StoredRecurring, type StoredTransaction } from "./localData";
+import { type CalendarDay, calendarDayOf, occurrenceDay } from "./calendarDay";
+
+// Session 4 (item 7): the recurring engine takes calendar days. These tests
+// were written with Dates; asDay names the day each meant -- a UTC-midnight
+// date (utcMidnight, a date-only string) by its UTC day, any other date by its
+// local day. That is what they meant in every zone, which is why they passed
+// in UTC, Asia/Beirut and America/Los_Angeles before the change.
+const asDay = (d: Date): CalendarDay =>
+  d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0 && d.getUTCMilliseconds() === 0 ? occurrenceDay(d) : calendarDayOf(d);
 
 const NOW = new Date(2026, 6, 15); // 15 Jul 2026, matching ProjectionsScreen.test.tsx
 
@@ -145,12 +154,12 @@ describe("A. the walk must not build cycles it discards (cause 1: the 100-year h
     const bounded   = item("monthly", 2026, { endDate: "2027-05-01" });
     // Premise, and the whole force of this test: the answers are the same,
     // so every extra cycle the unbounded walk builds is discarded.
-    const a = capacityFreedFrom(unbounded, [], NOW);
-    const b = capacityFreedFrom(bounded, [], NOW);
+    const a = capacityFreedFrom(unbounded, [], asDay(NOW));
+    const b = capacityFreedFrom(bounded, [], asDay(NOW));
     expect(a).toBeInstanceOf(Date);
     expect(a!.toISOString()).toBe(b!.toISOString());
 
-    const tUnbounded = median(() => capacityFreedFrom(unbounded, [], NOW), { batch: 50 });
+    const tUnbounded = median(() => capacityFreedFrom(unbounded, [], asDay(NOW)), { batch: 50 });
     expect(tUnbounded).toBeLessThan(2);
   });
 });
@@ -171,11 +180,11 @@ describe("B. monthly must not cost dramatically more than weekly (cause 2: the l
     const weekly  = item("weekly", 2006);
     // Premise: weekly is measurable at this batch size, so the ratio is not
     // dividing by a timer-resolution artifact.
-    expect(median(() => nextOccurrence(weekly, NOW), { batch: 500 })).toBeGreaterThan(0);
+    expect(median(() => nextOccurrence(weekly, asDay(NOW)), { batch: 500 })).toBeGreaterThan(0);
     // PAIRED since 2.4.151: independently timed medians let each side draw
     // its own interruptions, which put this past 5x in 1 of 50 full-suite
     // runs with no change to the code. See pairedRatio.
-    const ratio = pairedRatio(() => nextOccurrence(monthly, NOW), () => nextOccurrence(weekly, NOW), { batch: 500 });
+    const ratio = pairedRatio(() => nextOccurrence(monthly, asDay(NOW)), () => nextOccurrence(weekly, asDay(NOW)), { batch: 500 });
     // LIMIT 10x, RAISED FROM 5x (2.4.152), with the margin stated rather
     // than implied. Paired, B's TRUE ratio is ~3.8x -- the closed form's
     // month arithmetic over a subtraction -- and its worst observed across
@@ -215,10 +224,10 @@ describe("C. cost must not grow with an item's age (cause 2, from the other side
     const fresh = item("monthly", 2026);
     const aged  = item("monthly", 1950);
     // Premise: both did real, measurable work.
-    expect(median(() => capacityFreedFrom(fresh, [], NOW), { batch: 4, samples: 5 })).toBeGreaterThan(0);
+    expect(median(() => capacityFreedFrom(fresh, [], asDay(NOW)), { batch: 4, samples: 5 })).toBeGreaterThan(0);
     // PAIRED since 2.4.151 -- same shape as B (a ratio of two separately
     // timed calls), so the same fix. See pairedRatio.
-    const ratio = pairedRatio(() => capacityFreedFrom(aged, [], NOW), () => capacityFreedFrom(fresh, [], NOW), { batch: 4, samples: 5 });
+    const ratio = pairedRatio(() => capacityFreedFrom(aged, [], asDay(NOW)), () => capacityFreedFrom(fresh, [], asDay(NOW)), { batch: 4, samples: 5 });
     expect(ratio).toBeLessThan(2);
   });
 });
@@ -234,7 +243,7 @@ describe("D. absolute backstop", () => {
   // change that slows everything equally, and a tight backstop is a flaky
   // one.
   it("capacityFreedFrom on a 20-year-old monthly item completes in under 50ms (WAS ~516ms)", () => {
-    const aged = median(() => capacityFreedFrom(item("monthly", 2006), [], NOW), { samples: 5 });
+    const aged = median(() => capacityFreedFrom(item("monthly", 2006), [], asDay(NOW)), { samples: 5 });
     expect(aged).toBeLessThan(50);
   });
 });
@@ -250,10 +259,10 @@ describe("premise: the shape under test is the one the owner actually has", () =
     expect(capped.endDate).toBeNull();
     // capacityFreedFrom returns null immediately when there is no cap to
     // resolve -- the control for "the expensive path was not entered".
-    expect(capacityFreedFrom(item("monthly", 2006, { totalAmount: null }), [], NOW)).toBeNull();
+    expect(capacityFreedFrom(item("monthly", 2006, { totalAmount: null }), [], asDay(NOW))).toBeNull();
     // And the capped one really does resolve, i.e. the measured path is the
     // one that does the work.
-    expect(capacityFreedFrom(capped, [], NOW)).toBeInstanceOf(Date);
+    expect(capacityFreedFrom(capped, [], asDay(NOW))).toBeInstanceOf(Date);
   });
 });
 

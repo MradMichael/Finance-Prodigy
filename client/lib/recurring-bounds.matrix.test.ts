@@ -21,6 +21,15 @@
 //   6  both bounds on the same cycle           -- they agree; min() must not be off by one
 //   7  cap met AND endDate set                 -- null; the obligation is already over
 import { describe, it, expect } from "vitest";
+import { type CalendarDay, calendarDayOf, occurrenceDay } from "./calendarDay";
+
+// Session 4 (item 7): the recurring engine takes calendar days. These tests
+// were written with Dates; asDay names the day each meant -- a UTC-midnight
+// date (utcMidnight, a date-only string) by its UTC day, any other date by its
+// local day. That is what they meant in every zone, which is why they passed
+// in UTC, Asia/Beirut and America/Los_Angeles before the change.
+const asDay = (d: Date): CalendarDay =>
+  d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0 && d.getUTCMilliseconds() === 0 ? occurrenceDay(d) : calendarDayOf(d);
 import {
   remainingInstallments, capacityFreedFrom, recurringPaidSoFar,
   type StoredRecurring, type StoredTransaction,
@@ -50,25 +59,25 @@ describe("case 1 — totalAmount only, no endDate (the path being fixed)", () =>
     const r = rec();
     // Premise: nothing is confirmed, so all nine remain and byAmount is 9.
     expect(recurringPaidSoFar(r, [])).toBe(0);
-    const remaining = remainingInstallments(r, [], NOW);
+    const remaining = remainingInstallments(r, [], asDay(NOW));
     expect(remaining).toBeTruthy();
     expect(remaining!.count).toBe(9);
     expect(iso(remaining!.endsOn)).toBe("2027-04-01");
-    expect(iso(capacityFreedFrom(r, [], NOW))).toBe("2027-05-01");
+    expect(iso(capacityFreedFrom(r, [], asDay(NOW)))).toBe("2027-05-01");
   });
 });
 
 describe("case 2 — totalAmount + endDate, the endDate binds first", () => {
   it("count is truncated by the endDate, not by byAmount", () => {
     const r = rec({ endDate: "2026-12-01" });
-    const remaining = remainingInstallments(r, [], NOW);
+    const remaining = remainingInstallments(r, [], asDay(NOW));
     // Premise for this case's whole point: byAmount is 9, and the answer is
     // fewer than 9 -- so the endDate, not the cap, is what limits it. A
     // byAmount limit on the walk must therefore not bind here.
     expect(Math.ceil((r.totalAmount! - 0) / r.amount)).toBe(9);
     expect(remaining!.count).toBe(5); // Aug, Sep, Oct, Nov, Dec
     expect(iso(remaining!.endsOn)).toBe("2026-12-01");
-    expect(iso(capacityFreedFrom(r, [], NOW))).toBe("2026-12-01");
+    expect(iso(capacityFreedFrom(r, [], asDay(NOW)))).toBe("2026-12-01");
   });
 });
 
@@ -78,10 +87,10 @@ describe("case 3 — endDate only, no totalAmount (a different branch)", () => {
     // Premise: with no cap, recurringPaidSoFar is 0 by definition and the
     // byAmount branch is unreachable for this item.
     expect(recurringPaidSoFar(r, [])).toBe(0);
-    const remaining = remainingInstallments(r, [], NOW);
+    const remaining = remainingInstallments(r, [], asDay(NOW));
     expect(remaining!.count).toBe(5);
     expect(iso(remaining!.endsOn)).toBe("2026-12-01");
-    expect(iso(capacityFreedFrom(r, [], NOW))).toBe("2026-12-01");
+    expect(iso(capacityFreedFrom(r, [], asDay(NOW)))).toBe("2026-12-01");
   });
 });
 
@@ -91,15 +100,15 @@ describe("case 4 — the cap is already met", () => {
     // Premise: the fixture really does reach the cap, so null below means
     // "nothing remains" and not "the fixture was empty".
     expect(recurringPaidSoFar(r, PAID_IN_FULL)).toBe(6750);
-    expect(remainingInstallments(r, PAID_IN_FULL, NOW)).toBeNull();
-    expect(capacityFreedFrom(r, PAID_IN_FULL, NOW)).toBeNull();
+    expect(remainingInstallments(r, PAID_IN_FULL, asDay(NOW))).toBeNull();
+    expect(capacityFreedFrom(r, PAID_IN_FULL, asDay(NOW))).toBeNull();
   });
 });
 
 describe("case 5 — totalAmount + a distant endDate: the CAP binds, not the endDate", () => {
   it("capacity is freed when the money runs out, not when the outer boundary arrives", () => {
     const r = rec({ endDate: "2030-01-01" });
-    const remaining = remainingInstallments(r, [], NOW);
+    const remaining = remainingInstallments(r, [], asDay(NOW));
     expect(remaining!.count).toBe(9);
     expect(iso(remaining!.endsOn)).toBe("2027-04-01");
     // 2.4.110. This previously returned 2030-01-01 -- capacityFreedFrom
@@ -111,7 +120,7 @@ describe("case 5 — totalAmount + a distant endDate: the CAP binds, not the end
     //
     // This expectation was UPDATED in place rather than joined by a second
     // case, so the matrix asserts one answer for this input, not both.
-    expect(iso(capacityFreedFrom(r, [], NOW))).toBe("2027-05-01");
+    expect(iso(capacityFreedFrom(r, [], asDay(NOW)))).toBe("2027-05-01");
   });
 });
 
@@ -121,12 +130,12 @@ describe("case 6 — both bounds land on the same cycle", () => {
     // bounds coincide, so min() must not be off by a cycle in either
     // direction -- the failure mode a <= vs < would produce.
     const r = rec({ endDate: "2027-05-01" });
-    const remaining = remainingInstallments(r, [], NOW);
+    const remaining = remainingInstallments(r, [], asDay(NOW));
     // Premise: the cap still resolves to nine installments here, i.e. the
     // endDate has not truncated the walk, so both bounds really are live.
     expect(remaining!.count).toBe(9);
     expect(iso(remaining!.endsOn)).toBe("2027-04-01");
-    expect(iso(capacityFreedFrom(r, [], NOW))).toBe("2027-05-01");
+    expect(iso(capacityFreedFrom(r, [], asDay(NOW)))).toBe("2027-05-01");
   });
 });
 
@@ -136,14 +145,14 @@ describe("case 7 — the cap is met AND an endDate is set", () => {
     // Premise: the cap really is met, so null below means "nothing remains"
     // rather than "the fixture was empty".
     expect(recurringPaidSoFar(r, PAID_IN_FULL)).toBe(6750);
-    expect(remainingInstallments(r, PAID_IN_FULL, NOW)).toBeNull();
+    expect(remainingInstallments(r, PAID_IN_FULL, asDay(NOW))).toBeNull();
     // Also 2.4.110, and the same root cause: the old early return handed
     // back 2030-01-01 for an item that finished paying already, promising a
     // future capacity step for money the user has in hand. ProjectionsScreen
     // drops a null, which is the correct treatment (its own comment at :99
     // says an already-ended obligation "would read as a promise of money the
     // user already has").
-    expect(capacityFreedFrom(r, PAID_IN_FULL, NOW)).toBeNull();
+    expect(capacityFreedFrom(r, PAID_IN_FULL, asDay(NOW))).toBeNull();
   });
 });
 

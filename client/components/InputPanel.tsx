@@ -11,6 +11,7 @@ import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, Dat
 import { fmtCur } from "./screens/shared";
 import ImportStatement from "./ImportStatement";
 import {currentCycleKey, cycleKeyForISO, isInCycle, periodNoun, cycleLabel, type CycleKey } from "../lib/period";
+import { calendarDayOf } from "../lib/calendarDay";
 
 type Bucket = "NEEDS" | "WANTS" | "SAVINGS";
 // Transactions (not recurring items) can also be logged as one-off INCOME --
@@ -526,8 +527,8 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   const activeTx = activeTransactions(financials.transactions);
   const monthTx  = activeTx.filter((t) => isInCycle(t.date, prefix, startDay));
   const now      = new Date();
-  // nextConfirmTarget requires a UTC-midnight-anchored asOf, same contract as isCycleOverdue/dueCycles.
-  const todayMidnight = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+  // The recurring engine takes calendar days: today, on this device.
+  const today    = calendarDayOf(now);
   const lbpRate  = financials.lbpRate ?? DEFAULT_LBP_RATE;
   const toUSD    = (amt: number, cur?: Currency) => toUSDShared(amt, cur, lbpRate);
   const recs     = financials.recurring ?? [];
@@ -1377,7 +1378,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                       const b      = BUCKETS.find((b) => b.value === r.bucket)!;
                       const cur    = r.currency ?? "USD";
                       const sym    = cur === "LBP" ? "L£" : "$";
-                      const target = nextConfirmTarget(r, financials.transactions, todayMidnight);
+                      const target = nextConfirmTarget(r, financials.transactions, today);
                       // 2.4.112: "ended" is now asked of BOTH bounds, because
                       // isRecurringActive no longer guesses exhaustion from
                       // elapsed time. A capped item is over when the money is
@@ -1388,13 +1389,13 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                       // direction: an item paid off EARLY kept reading as live
                       // until the calendar caught up.
                       const ended  = !isRecurringActive(r, now)
-                        || (r.totalAmount != null && remainingInstallments(r, financials.transactions, now) === null);
+                        || (r.totalAmount != null && remainingInstallments(r, financials.transactions, today) === null);
                       const overdue = (target?.overdueCount ?? 0) > 0;
                       // Covers both "confirmed on time" and "confirmed early" (paid ahead of its due date) -- either way still shown as paid.
                       const paidThisCycle = target ? isCycleConfirmed(r, target.dueDate, financials.transactions) : false;
                       const paid   = r.totalAmount ? recurringPaidSoFar(r, financials.transactions) : null;
                       const pct    = paid != null && r.totalAmount ? Math.min(100, (paid / r.totalAmount) * 100) : null;
-                      const remaining = !ended ? remainingInstallments(r, financials.transactions, now) : null;
+                      const remaining = !ended ? remainingInstallments(r, financials.transactions, today) : null;
                       const isAddingExtra = extraRecId === r.id;
                       const isConfirming  = confirmingRecId === r.id;
                       const justConfirmed = justConfirmedIds?.has(r.id);

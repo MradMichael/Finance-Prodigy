@@ -2,6 +2,7 @@ import type { LocalFinancials } from "./localData";
 import { cycleStartDayOf, BUDGET_RULES, nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, toUSD as toUSDShared, categoryLabel, derivedDebtBalance, activeTransactions, DEFAULT_LBP_RATE, makeToUSDForMonth } from "./localData";
 import {cycleKeyForISO, currentCycleKey, cycleLabelLong, periodNoun } from "./period";
 import type { computeDashboard } from "./computeDashboard";
+import { todayCalendarDay } from "./calendarDay";
 
 type DashboardPayload = ReturnType<typeof computeDashboard>;
 
@@ -114,9 +115,8 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
   // to make it vanish from the report entirely the moment it got logged paid.
   const activeRecurring = (data.recurring ?? []).filter((r) => toUSD(nominalMonthlyEquivalent(r, data.transactions ?? []), r.currency) > 0);
   const recurringMonthlyTotal = activeRecurring.reduce((s, r) => s + toUSD(nominalMonthlyEquivalent(r, data.transactions ?? []), r.currency), 0);
-  // nextConfirmTarget requires a UTC-midnight-anchored asOf, same contract as isCycleOverdue/dueCycles.
-  const now = new Date();
-  const reportToday = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+  // The recurring engine takes calendar days: the report's day, on this device.
+  const reportToday = todayCalendarDay();
   const recurringRows = activeRecurring.map((r) => {
     const target = nextConfirmTarget(r, data.transactions, reportToday);
     const overdue = (target?.overdueCount ?? 0) > 0;
