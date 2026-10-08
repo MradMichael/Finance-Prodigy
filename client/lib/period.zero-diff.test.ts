@@ -165,14 +165,13 @@ function makeData(): LocalFinancials {
 // obsolete. A run in any other zone fails the guard below instead of
 // silently writing a new, unreviewed baseline for itself.
 //
-// America/Los_Angeles (session 2 item G, 2026-10-07) is NOT recorded from
-// the code: run there, today's code (and the code at f1a3362) produces
-// TIME-06's stall -- "Rent is 5000 payments overdue", overdueCount 5000 --
-// and recording that would make the gate defend the bug. Its baseline is the
-// UTC one with the single offset-dependent line, `anchor`, at Los Angeles'
-// local midnight (07:00Z). So this payload test fails in that leg until
-// TIME-06 is fixed, on exactly those lines. Checked: with TIME-06's two
-// cursor sites patched (not committed), the Los Angeles run matches it.
+// America/Los_Angeles (session 2 item G, 2026-10-07) was NOT recorded from
+// the code: run there, the code before TIME-06's fix (and the code at
+// f1a3362) produced its stall -- "Rent is 5000 payments overdue",
+// overdueCount 5000 -- and recording that would have made the gate defend the
+// bug. Its baseline is the UTC one with the single offset-dependent line,
+// `anchor`, at Los Angeles' local midnight (07:00Z). With TIME-06 fixed
+// (session 3) the Los Angeles run matches it exactly.
 const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
 const BASELINE_ZONES = ["UTC", "Asia/Beirut", "America/Los_Angeles"] as const;
 
