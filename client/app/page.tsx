@@ -45,6 +45,8 @@ import EditTransactionSheet from "../components/EditTransactionSheet";
 const SYNC_DEBOUNCE_MS = 2500; // wait 2.5 s after last change before pushing
 // SYNC-1 step 3: opening ESSA, or coming back to it, fetches at most this often.
 const FETCH_MIN_INTERVAL_MS = 60_000;
+// ERR-02: after a failed upload, retry this many minutes after the failure.
+const BACKUP_RETRY_MINUTES = [1, 5, 15] as const;
 
 /**
  * A failed upload or fetch (owner, 2026-10-07): "Offline" only when the device
@@ -171,7 +173,17 @@ export default function Home() {
     return true;
   }, []);
 
-  const autoSync = useCallback(async (data: LocalFinancials, email: string) => {
+  // ERR-02 (owner, 2026-10-07): a failed upload stays shown, with Try again,
+  // until the next successful one, and retries 1, 5 and 15 minutes after the
+  // failure and when the browser comes back online. A retry that fails
+  // doesn't start a new series; the next edit's failure does.
+  const [backupFailed, setBackupFailed] = useState(false);
+  const backupFailedRef = useRef(false);
+  useEffect(() => { backupFailedRef.current = backupFailed; }, [backupFailed]);
+  const retryTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const retryBackupRef = useRef<() => void>(() => {});
+
+  const autoSync = useCallback(async (data: LocalFinancials, email: string, { isRetry = false }: { isRetry?: boolean } = {}) => {
     // Audit 2.4.153: the gate. Every automatic upload in this file reaches
     // the network through here -- an edit, the monthly-snapshot write on
     // load, the auto-purge write on load, and the conflict merge below -- so
@@ -194,16 +206,58 @@ export default function Home() {
       if (userId && await persist(merged.mergedData, userId)) setFinancials(merged.mergedData);
       const notice = buildMergeNoticeText(merged.addedFromServer, merged.conflictDetails, merged.nonTransactionDivergence, merged.replacedCloses);
       if (notice.text) setMergeNotice(notice);
+      setBackupFailed(false);
+      retryTimersRef.current.forEach(clearTimeout); retryTimersRef.current = [];
       setSyncStatus("synced");
       setTimeout(() => setSyncStatus((s) => s !== "syncing" ? "idle" : s), 4000);
       return;
     }
-    // COPY-11: the user kept their backup when asked; not a failure.
-    if (result.declined) { setSyncStatus("idle"); return; }
-    setSyncStatus(result.ok ? "synced" : failedSyncStatus());
-    // fade back to idle after 4 s so the indicator doesn't stay forever
-    setTimeout(() => setSyncStatus((s) => s !== "syncing" ? "idle" : s), 4000);
+    // COPY-11: the user kept their backup when asked; not a failure. Checked
+    // before ERR-02's failure handling, and it ends any retry round already
+    // running (owner, session 3): no "will try again", and no retry that
+    // would ask again.
+    if (result.declined) {
+      setBackupFailed(false);
+      retryTimersRef.current.forEach(clearTimeout); retryTimersRef.current = [];
+      setSyncStatus("idle");
+      return;
+    }
+    if (result.ok) {
+      setBackupFailed(false);
+      retryTimersRef.current.forEach(clearTimeout); retryTimersRef.current = [];
+      setSyncStatus("synced");
+      // fade back to idle after 4 s so the indicator doesn't stay forever
+      setTimeout(() => setSyncStatus((s) => s !== "syncing" ? "idle" : s), 4000);
+      return;
+    }
+    // ERR-02: no fade. The failure stays shown until a success clears it.
+    setSyncStatus(failedSyncStatus());
+    setBackupFailed(true);
+    if (!isRetry && retryTimersRef.current.length === 0) {
+      retryTimersRef.current = BACKUP_RETRY_MINUTES.map((m) => {
+        const t: ReturnType<typeof setTimeout> = setTimeout(() => {
+          retryTimersRef.current = retryTimersRef.current.filter((x) => x !== t);
+          retryBackupRef.current();
+        }, m * 60_000);
+        return t;
+      });
+    }
   }, [persist]);
+
+  // Retry with the latest data on this device, not the copy that failed.
+  useEffect(() => {
+    retryBackupRef.current = () => {
+      const s = sessionRef.current;
+      const d = financialsRef.current;
+      if (s && d && syncAllowed(d)) void autoSync(d, s.email, { isRetry: true });
+    };
+  }, [autoSync]);
+  useEffect(() => {
+    const onOnline = () => { if (backupFailedRef.current) retryBackupRef.current(); };
+    window.addEventListener("online", onOnline);
+    const timers = retryTimersRef;
+    return () => { window.removeEventListener("online", onOnline); timers.current.forEach(clearTimeout); };
+  }, []);
 
   // 2.4.69 -- identifies which load run is the current one, so a superseded
   // run cannot apply the snapshot it captured before its await.
@@ -762,6 +816,29 @@ export default function Home() {
           </button>
         </div>
       )}
+
+      {/* ERR-02: a failed backup, until the next success. Owner-approved wording
+          (merged in session 3). In a live region that's always on the page
+          (A11Y-03), below the save error when both show. */}
+      <div role="status">
+        {backupFailed && (
+          <div
+            className="fixed left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50 flex items-start gap-3"
+            style={{ top: saveError ? "7.5rem" : "1rem", background: T.panel, border: `1px solid ${T.brass}` }}
+          >
+            <span className="text-sm flex-1" style={{ color: T.text }}>
+              Your latest changes aren&apos;t backed up yet. They&apos;re safe on this device, and ESSA will try again.
+            </span>
+            <button
+              onClick={() => retryBackupRef.current()}
+              className="flex-shrink-0 text-xs font-semibold px-2.5 py-1 rounded-lg hover:opacity-80 transition-opacity"
+              style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
+            >
+              Try again
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Audit 2.4.153: the backup choice for an undecided account -- blocking, asked once. */}
       {undecided && session && serverHasCopy !== null && (
