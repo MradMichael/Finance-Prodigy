@@ -540,7 +540,8 @@ export function buildMergeNoticeText(
   // unstamped copy's last edit came first (the merge sorts it as older too).
   // Anything else gets its own sentence after what arrived: a tie (the same
   // recorded time; the content tie-break decided) in the owner's tie wording,
-  // and two copies with no time at all in the DRAFT below.
+  // and two copies with no time at all in the owner's "different versions"
+  // wording (session 3), which claims neither a moment nor who changed it.
   const at = (t: StoredTransaction) => (t.updatedAt ? new Date(t.updatedAt).getTime() : null);
   const isNewer = (d: MergeConflictDetail) => {
     const w = at(d.winner), l = at(d.loser);
@@ -586,8 +587,7 @@ export function buildMergeNoticeText(
     mainText,
     ...undated.map((d) => isTie(d)
       ? `Both devices changed "${d.winner.description}" at the same moment — kept ${fmtMoney(d.winner.amount)} (the other copy said ${fmtMoney(d.loser.amount)}).`
-      // DRAFT (held for the owner): the tie sentence without "at the same moment", which no edit time can support.
-      : `Both devices changed "${d.winner.description}" — kept ${fmtMoney(d.winner.amount)} (the other copy said ${fmtMoney(d.loser.amount)}).`),
+      : `Your devices had different versions of "${d.winner.description}" — kept ${fmtMoney(d.winner.amount)} (the other copy said ${fmtMoney(d.loser.amount)}).`),
     lists.length
       ? `Your ${joinNames(lists.map(([, label]) => label), "or")} may differ from your other device — this device's copy was kept. Check ${joinNames(listScreens, "and")} if something looks off.`
       : "",

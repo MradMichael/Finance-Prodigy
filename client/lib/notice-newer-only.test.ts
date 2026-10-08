@@ -11,9 +11,9 @@
 // since 2.6.3(c), so the unstamped copy's last edit came first (the merge
 // already sorts a missing time as older than any).
 //
-// A conflict with no edit time on either copy gets its own sentence, built
-// from the approved tie sentence without "at the same moment" (DRAFT wording,
-// held for the owner's approval).
+// A conflict with no edit time on either copy gets its own sentence, in the
+// owner's wording (2026-10-07, session 3): it says the devices had different
+// versions, not that both changed it, and claims no moment.
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { DEFAULT_DATA, type LocalFinancials, type StoredTransaction } from "./localData";
 import { buildMergeNoticeText, fetchAndMerge } from "./syncService";
@@ -21,7 +21,7 @@ import { buildMergeNoticeText, fetchAndMerge } from "./syncService";
 const tx = (o: Partial<StoredTransaction>): StoredTransaction =>
   ({ id: "t-tawlet", amount: 50, currency: "USD", bucket: "WANTS", category: "dining", description: "Lunch at Tawlet", date: "2026-10-03", ...o }) as StoredTransaction;
 const NO_TIME = { winner: tx({ amount: 75 }), loser: tx({ amount: 50 }) };
-const NO_TIME_SENTENCE = 'Both devices changed "Lunch at Tawlet" — kept $75 (the other copy said $50).';
+const NO_TIME_SENTENCE = 'Your devices had different versions of "Lunch at Tawlet" — kept $75 (the other copy said $50).';
 const newer = (description: string, kept: number, was: number) => ({
   winner: tx({ id: `t-${description}`, description, amount: kept, updatedAt: "2026-10-06T19:00:00.000Z" }),
   loser: tx({ id: `t-${description}`, description, amount: was, updatedAt: "2026-10-06T18:00:00.000Z" }),
