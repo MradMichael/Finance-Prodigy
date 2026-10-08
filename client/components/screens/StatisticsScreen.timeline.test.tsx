@@ -33,3 +33,14 @@ it("lists each occurrence in the next 30 days once, and totals them once", () =>
   expect(rows.filter((t) => t.includes("Gym"))).toHaveLength(5);
   expect(card.textContent).toMatch(/\$1,000(\.00)? total/);
 });
+
+// TIME-08 (session 4): each row's date label is the payment's own calendar
+// day. Occurrences are UTC-midnight dates; formatted in local time they read
+// the day before west of UTC ("Rent 31 Aug" for 1 September).
+it("labels each payment with its own day, in every time zone", () => {
+  const data = { ...DEFAULT_DATA, income: 3000, recurring: [item({ id: "r-rent", name: "Rent", amount: 900, startDate: "2026-07-01" })] } as LocalFinancials;
+  render(<StatisticsScreen financials={data} dashData={computeDashboard(data)} />);
+  const card = screen.getByText("Planned payments, next 30 days").closest("div.rounded-2xl")!;
+  const row = Array.from(card.querySelectorAll("div.space-y-2 > div")).map((r) => r.textContent ?? "").find((t) => t.includes("Rent"))!;
+  expect(row).toContain("01 Sep");
+});
