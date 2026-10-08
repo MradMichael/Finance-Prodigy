@@ -193,7 +193,8 @@ export default function StatisticsScreen({
                   <span className="flex items-center gap-2" style={{ color: T.text }}>
                     {t.emoji} {t.name}
                     <span className="text-[10px]" style={{ color: T.mute }}>
-                      {t.date.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}
+                      {/* An occurrence is a UTC-midnight calendar day: format it in UTC (TIME-08), as Projections does. */}
+                      {t.date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: "UTC" })}
                     </span>
                   </span>
                   <span className="tabular-nums" style={{ color: T.mute }}>{money(t.amountUSD)}</span>
