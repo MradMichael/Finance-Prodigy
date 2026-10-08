@@ -357,10 +357,11 @@ describe("buildMergeNoticeText (Phase 2.7 sub-phase 3 -- the exact wording rules
     expect(showReviewLink).toBe(false);
   });
 
-  it("3 or more conflicts: collapses to a count, sets showReviewLink -- no list in the toast", () => {
-    const details = [detail(), detail(), detail()];
+  // Session 4 (owner, variant (b)) replaces the 2026-09-01 count sentence.
+  it("3 or more conflicts: one line naming the count and the first two, sets showReviewLink", () => {
+    const details = [detail({ description: "Groceries" }), detail({ description: "Gas" }), detail({ description: "Rent" })];
     const { text, showReviewLink } = buildMergeNoticeText(0, details);
-    expect(text).toBe("Merged with your other device — 3 edit conflicts resolved (kept the most recent edit each time).");
+    expect(text).toBe('Your devices had different versions of 3 transactions, including "Groceries" and "Gas" — ESSA kept one of each.');
     expect(showReviewLink).toBe(true);
   });
 
