@@ -198,6 +198,8 @@ export default function Home() {
       setTimeout(() => setSyncStatus((s) => s !== "syncing" ? "idle" : s), 4000);
       return;
     }
+    // COPY-11: the user kept their backup when asked; not a failure.
+    if (result.declined) { setSyncStatus("idle"); return; }
     setSyncStatus(result.ok ? "synced" : failedSyncStatus());
     // fade back to idle after 4 s so the indicator doesn't stay forever
     setTimeout(() => setSyncStatus((s) => s !== "syncing" ? "idle" : s), 4000);

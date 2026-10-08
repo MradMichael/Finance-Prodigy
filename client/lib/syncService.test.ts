@@ -45,6 +45,10 @@ beforeEach(() => {
   vi.mocked(getRecoveryTokenForSync).mockReset().mockResolvedValue(undefined); // async since FB-1b: it decrypts
 });
 
+// An account with data, so COPY-11's empty-push backstop (it reads the server
+// copy first; lib/empty-push-backstop.test.ts) stays out of these push tests.
+const WITH_DATA: LocalFinancials = { ...DEFAULT_DATA, income: 3000 };
+
 describe("pushToServer", () => {
   it("refuses to push without a sync token, without ever calling fetch", async () => {
     vi.mocked(getSyncToken).mockReturnValue(null);
@@ -59,7 +63,7 @@ describe("pushToServer", () => {
     vi.mocked(getRecoveryTokenForSync).mockResolvedValue("recovery-token-xyz");
     const fetchSpy = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ syncedAt: "2026-01-01T00:00:00.000Z" }) });
     vi.stubGlobal("fetch", fetchSpy);
-    await pushToServer("a@test.com", DEFAULT_DATA);
+    await pushToServer("a@test.com", WITH_DATA);
     const [url, opts] = fetchSpy.mock.calls[0];
     expect(url).toBe("/api/sync/push");
     const body = JSON.parse(opts.body);
@@ -106,11 +110,11 @@ describe("pushToServer", () => {
     // Prime getLastSyncTime() via a prior successful push, matching how a
     // real session would have one before this second push happens.
     mockFetchOnce(200, { syncedAt: "2026-01-01T00:00:00.000Z" });
-    await pushToServer("a@test.com", DEFAULT_DATA);
+    await pushToServer("a@test.com", WITH_DATA);
 
     const fetchSpy = vi.fn().mockResolvedValue({ ok: false, status: 409, json: async () => ({ code: "stale_push", error: "Server data has changed since your last sync." }) });
     vi.stubGlobal("fetch", fetchSpy);
-    const result = await pushToServer("a@test.com", DEFAULT_DATA);
+    const result = await pushToServer("a@test.com", WITH_DATA);
     expect(result.ok).toBe(false);
     expect(result.conflict).toBe(true);
 
@@ -302,7 +306,7 @@ describe("mergeAndPush (Phase 2.7 sub-phase 2 -- wires mergeTransactions into th
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ syncedAt: "2026-08-01T00:00:00.000Z", data: DEFAULT_DATA, hasRecoveryCode: false }) })
       .mockResolvedValueOnce({ ok: false, status: 409, json: async () => ({ code: "stale_push", error: "Server data has changed since your last sync." }) });
     vi.stubGlobal("fetch", fetchSpy);
-    const result = await mergeAndPush("a@test.com", { ...DEFAULT_DATA, transactions: [] });
+    const result = await mergeAndPush("a@test.com", { ...WITH_DATA, transactions: [] });
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected failure");
     expect(result.conflict).toBe(true);
@@ -313,7 +317,7 @@ describe("mergeAndPush (Phase 2.7 sub-phase 2 -- wires mergeTransactions into th
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ syncedAt: "2026-08-01T00:00:00.000Z", data: DEFAULT_DATA, hasRecoveryCode: false }) })
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ syncedAt: "2026-08-02T00:00:00.000Z" }) });
     vi.stubGlobal("fetch", fetchSpy);
-    await mergeAndPush("a@test.com", { ...DEFAULT_DATA, transactions: [] });
+    await mergeAndPush("a@test.com", { ...WITH_DATA, transactions: [] });
     expect(fetchSpy.mock.calls[0][0]).toContain("/api/sync/pull");
     expect(fetchSpy.mock.calls[1][0]).toBe("/api/sync/push");
   });

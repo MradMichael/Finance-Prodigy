@@ -1,6 +1,7 @@
 "use client";
 
 import type { LocalFinancials, StoredTransaction } from "./localData";
+import { isEmptyFinancials } from "./localData";
 import { mergeFinancials, stableStringify, MERGED_FIELDS, type MergeFinancialsResult } from "./syncMerge";
 import { cycleLabelLong, dayLabel } from "./period";
 import { getSyncToken } from "./crypto";
@@ -24,6 +25,27 @@ export interface SyncResult {
   // callers (autoSync) can show something other than "offline" for a
   // failure that retrying won't fix.
   conflict?: boolean;
+  // COPY-11's backstop: the user was asked before an empty account replaced a
+  // backup that has data, and kept the backup. Not a failure, so no
+  // "Offline" or "Couldn't reach backup".
+  declined?: boolean;
+}
+
+/** COPY-11, owner-approved wording (session 3): the ask before an empty account replaces a backup that has data. */
+export const EMPTY_OVERWRITE_ASK = "Your backup on our server has data, but this device has none. Replace the backup with this empty copy? Cancel keeps the backup as it is.";
+/** COPY-11, owner-approved wording (session 3): what Profile says when that ask was declined. */
+export const EMPTY_PUSH_DECLINED = "Not uploaded: your backup on the server has data and this device has none, so the backup was kept.";
+
+/**
+ * COPY-11's backstop (owner, 2026-10-07): may an EMPTY account replace the
+ * server copy? Reads the copy without recording a sync; asks only when it
+ * has data. No copy, an empty one, or a read that fails (the push would
+ * fail the same way) is no reason to ask.
+ */
+async function emptyOverwriteAllowed(email: string): Promise<boolean> {
+  const pulled = await pullFromServer(email, { record: false });
+  if (!pulled.ok || isEmptyFinancials(pulled.data)) return true;
+  return confirm(EMPTY_OVERWRITE_ASK);
 }
 
 /**
@@ -87,9 +109,16 @@ async function parseJsonSafe(res: Response): Promise<{ error?: string; [key: str
   try { return await res.json(); } catch { return null; }
 }
 
-export async function pushToServer(email: string, data: LocalFinancials): Promise<SyncResult> {
+export async function pushToServer(
+  email: string, data: LocalFinancials,
+  // "Reset all data" passes true: its own typed confirm already says the backup is replaced.
+  { allowEmptyOverwrite = false }: { allowEmptyOverwrite?: boolean } = {},
+): Promise<SyncResult> {
   const token = getSyncToken();
   if (!token) return { ok: false, error: "Not signed in. Sign in again to sync." };
+  if (!allowEmptyOverwrite && isEmptyFinancials(data) && !(await emptyOverwriteAllowed(email))) {
+    return { ok: false, declined: true, error: EMPTY_PUSH_DECLINED };
+  }
   // Registers this account's recovery-derived token server-side (if one
   // exists locally) so a future password reset can relink sync via
   // relinkSync below instead of hitting the old "server rejects every push

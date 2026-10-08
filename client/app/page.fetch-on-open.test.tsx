@@ -308,6 +308,24 @@ describe("an upload that fails", () => {
     expect(screen.queryByText("Offline")).toBeNull();
   });
 
+  // COPY-11's backstop: the user kept their backup when asked before an empty
+  // account would replace it. That's a choice, not a failure.
+  it("an upload the user declined shows neither 'Offline' nor 'Couldn't reach backup'", async () => {
+    seed = settled({ syncChoice: ON });
+    fetchImpl = async (_e, local) => merged(local()!, { localChanged: false, addedFromServer: 0 });
+    push.mockResolvedValueOnce({ ok: false, declined: true, error: "Not uploaded" } as never);
+    await open();
+    await waitFor(() => expect(fetchAndMerge).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("button", { name: "Wishlist" }));
+    fireEvent.change(document.getElementById("wish-name")!, { target: { value: "Amber stool" } });
+    fireEvent.change(document.getElementById("wish-price")!, { target: { value: "22.15" } });
+    fireEvent.click(screen.getByRole("button", { name: "+ Add to wishlist" }));
+    await waitFor(() => expect(push).toHaveBeenCalledTimes(1), { timeout: 5000 });
+    await settle(300);
+    expect(screen.queryByText("Offline")).toBeNull();
+    expect(screen.queryAllByText("Couldn't reach backup")).toEqual([]);
+  });
+
   it("while offline: 'Offline'", async () => {
     const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
     try {

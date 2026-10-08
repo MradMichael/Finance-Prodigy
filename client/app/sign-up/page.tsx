@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { signUp, signIn, getSession } from "../../lib/auth";
-import { checkEmailExists } from "../../lib/syncService";
+import { checkEmailExists, markAutoPulled } from "../../lib/syncService";
 import { useTheme } from "../../contexts/ThemeContext";
 import { Sovereign } from "../../components/EssaBrand";
 import RecoveryCodeModal from "../../components/RecoveryCodeModal";
@@ -52,7 +52,15 @@ export default function SignUpPage() {
 
   async function finishSignUp() {
     const login = await signIn(email, password);
-    if (login.ok) { router.push("/"); return; }
+    if (login.ok) {
+      // COPY-11 (owner, 2026-09-30 / 2026-10-07): a brand-new account skips the
+      // first-load restore -- unless the address already has a copy, in which
+      // case it's kept, so a repeat sign-up gets its data back instead of an
+      // empty account that could replace the backup.
+      if (!(await checkEmailExists(email))) markAutoPulled(login.session.userId);
+      router.push("/");
+      return;
+    }
     // Account was created successfully — only the immediate sign-in failed.
     // Dismiss the modal and fall back to the normal form (with its existing
     // error banner) instead of leaving the user stuck on it silently.
