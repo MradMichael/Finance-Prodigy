@@ -109,8 +109,9 @@ export default function PrivacyPage() {
           <p>
             When you delete an item, or reset all data, ESSA keeps a short record that it was deleted &mdash; its
             internal key (for a custom category, its name in lowercase) and when &mdash; so your other devices remove
-            it too. A deleted transaction is kept in full for 30 days, so you can restore it under Recently deleted;
-            after that, only its date, currency and budget bucket remain with that record. These records are stored
+            it too. A deleted transaction is kept in full for up to 30 days, so you can restore it under Recently
+            deleted, or remove it at once with Delete permanently; after that, the next time ESSA is opened, only its
+            date, currency and budget bucket remain with that record. These records are stored
             with the rest of your data, in the server copy too if backup is on, and are kept until you delete your
             account, which removes them.
           </p>
