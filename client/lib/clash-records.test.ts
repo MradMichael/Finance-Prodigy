@@ -102,3 +102,16 @@ describe("the overridden device is told, once (owner\x27s order: B uploads, A me
     expect(out.map((r) => r.id)).toEqual(["first", "second"]);
   });
 });
+
+describe("a device's first sync (owner, session 7)", () => {
+  const rec = (id: string): ClashRecord => ({ id, at: new Date(T0.getTime() - day).toISOString(), key: "income", kind: "setting", setting: "income", kept: 3600, other: 3500 });
+  it("with no record of a last sync, the copy's records are taken as shown: none returned, none later", async () => {
+    const copy = base({ clashRecords: [rec("r1")] });
+    expect(await takeUnseenClashes("uC", copy, T0, { firstSync: true })).toEqual([]);
+    expect(await takeUnseenClashes("uC", copy, T0)).toEqual([]);
+  });
+  it("a record that arrives after the first sync is shown as usual", async () => {
+    await takeUnseenClashes("uC", base({ clashRecords: [rec("r1")] }), T0, { firstSync: true });
+    expect((await takeUnseenClashes("uC", base({ clashRecords: [rec("r1"), rec("r2")] }), T0)).map((r) => r.id)).toEqual(["r2"]);
+  });
+});

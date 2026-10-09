@@ -8,7 +8,7 @@
 // The fixture's monthly snapshots are already current, so the load-time
 // snapshot write doesn't happen.
 import { it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import type { LocalFinancials } from "../lib/localData";
 import type { ClashRecord } from "../lib/syncMerge";
 
@@ -21,29 +21,30 @@ vi.mock("../lib/localData", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/localData")>();
   return { ...actual, loadData: vi.fn(async () => seed), saveData: vi.fn(async () => {}) };
 });
-vi.mock("../lib/syncSeen", () => ({ saveSeen: vi.fn(async () => {}) }));
+vi.mock("../lib/syncSeen", () => ({ saveSeen: vi.fn(async () => {}), loadSeen: vi.fn(async () => null) }));
 const shown = new Set<string>();
 vi.mock("../lib/clashNotice", () => ({
-  takeUnseenClashes: vi.fn(async (_u: string, d: LocalFinancials) => {
+  takeUnseenClashes: vi.fn(async (_u: string, d: LocalFinancials, _now?: Date, opts?: { firstSync?: boolean }) => {
     const fresh = (d.clashRecords ?? []).filter((r) => !shown.has(r.id));
     fresh.forEach((r) => shown.add(r.id));
-    return fresh;
+    return opts?.firstSync ? [] : fresh;
   }),
 }));
 let behind = false;
 let mergedRecords: ClashRecord[] = [];
+let mergedFirstSync = false;
 vi.mock("../lib/syncService", async (importOriginal) => {
   const real = await importOriginal<typeof import("../lib/syncService")>();
   return {
     fetchAndMerge: vi.fn(async () => ({
       ok: true, mergedData: seed, serverCopy: seed, localChanged: false, serverBehind: behind,
-      addedFromServer: 0, conflictDetails: [], clashes: [], nonTransactionDivergence: [], replacedCloses: [],
+      addedFromServer: 0, conflictDetails: [], clashes: [], nonTransactionDivergence: [], replacedCloses: [], firstSync: false,
     })),
     pullFromServer: vi.fn(async () => ({ ok: false, error: "none" })),
     pushToServer: vi.fn(async () => ({ ok: false, conflict: true, error: "Server data has changed since your last sync." })),
     mergeAndPush: vi.fn(async () => ({
       ok: true, syncedAt: "2026-10-08T09:01:00.000Z", addedFromServer: 0, conflictsResolved: 0, conflicts: [], conflictDetails: [],
-      clashes: [], nonTransactionDivergence: [], replacedCloses: [], mergedData: { ...seed, clashRecords: mergedRecords },
+      clashes: [], nonTransactionDivergence: [], replacedCloses: [], mergedData: { ...seed, clashRecords: mergedRecords }, firstSync: mergedFirstSync,
     })),
     buildMergeNoticeText: real.buildMergeNoticeText,
     hasAutoPulled: () => true, markAutoPulled: vi.fn(), getLastSyncTime: () => "2026-10-05T08:00:00.000Z",
@@ -72,7 +73,7 @@ function settled(extra: Partial<LocalFinancials> = {}): LocalFinancials {
     budgetRuleHistory: [{ ym: cycle, ...dash.budgetTargetPct }],
   } as LocalFinancials;
 }
-beforeEach(() => { shown.clear(); behind = false; mergedRecords = []; });
+beforeEach(() => { shown.clear(); behind = false; mergedRecords = []; mergedFirstSync = false; });
 
 it("the conflict merge: the change it settled is shown", { timeout: 20000 }, async () => {
   seed = settled();
@@ -80,6 +81,17 @@ it("the conflict merge: the change it settled is shown", { timeout: 20000 }, asy
   mergedRecords = [INCOME];
   render(<Home />);
   expect(await screen.findByText(SENTENCE, undefined, { timeout: 10000 })).toBeTruthy();
+});
+
+it("the conflict merge on a device's first sync takes the copy's records as shown (session 7)", { timeout: 20000 }, async () => {
+  seed = settled();
+  behind = true;
+  mergedRecords = [INCOME];
+  mergedFirstSync = true;
+  render(<Home />);
+  await waitFor(() => expect(shown.has(INCOME.id)).toBe(true), { timeout: 10000 });
+  await new Promise((r) => setTimeout(r, 500));
+  expect(screen.queryByText(SENTENCE)).toBeNull();
 });
 
 it("opening ESSA on data holding a record this device hasn't shown shows it", { timeout: 20000 }, async () => {

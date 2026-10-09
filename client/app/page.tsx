@@ -29,7 +29,7 @@ import {currentCycleKey, calendarKeyForDate, type CycleKey, type CycleHistory } 
 import { getSession, hasValidSession, signOut } from "../lib/auth";
 import type { Session } from "../lib/auth";
 import { pushToServer, pullFromServer, hasAutoPulled, markAutoPulled, mergeAndPush, fetchAndMerge, buildMergeNoticeText, checkEmailExists, applyBackupChoice, getLastSyncTime, type BackupChoice } from "../lib/syncService";
-import { saveSeen } from "../lib/syncSeen";
+import { saveSeen, loadSeen } from "../lib/syncSeen";
 import { takeUnseenClashes } from "../lib/clashNotice";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "../components/EssaBrand";
@@ -209,7 +209,7 @@ export default function Home() {
       if (userId && await persist(merged.mergedData, userId)) setFinancials(merged.mergedData);
       // Plan H 5d: the changes both devices made that this device hasn't shown,
       // the ones this merge settled included (they are in the merged copy).
-      const named = await takeUnseenClashes(userId, merged.mergedData);
+      const named = await takeUnseenClashes(userId, merged.mergedData, undefined, { firstSync: merged.firstSync });
       const notice = buildMergeNoticeText(merged.addedFromServer, merged.conflictDetails, named, merged.replacedCloses, merged.nonTransactionDivergence ?? []);
       if (notice.text) setMergeNotice(notice);
       setBackupFailed(false);
@@ -324,7 +324,10 @@ export default function Home() {
           const stored = await persist(pulled, s.userId);
           if (superseded()) return;
           if (stored) {
+            const firstSync = !(await loadSeen(s.userId));
             await saveSeen(s.userId, result.data); // plan H 5b: stored, so recorded
+            // Session 7: with no record before, the restored copy's clash records are taken as shown.
+            if (firstSync) await takeUnseenClashes(s.userId, result.data, undefined, { firstSync: true });
             setFinancials(pulled);
             return;
           }
@@ -462,7 +465,7 @@ export default function Home() {
       // What arrived, conflicts, changes both devices made that this device
       // hasn't shown (plan H 5d: settled here or on the other device), replaced
       // closes, and on a first merge with no record, what may differ.
-      const named = await takeUnseenClashes(s.userId, r.mergedData);
+      const named = await takeUnseenClashes(s.userId, r.mergedData, undefined, { firstSync: r.firstSync });
       const notice = buildMergeNoticeText(r.addedFromServer, r.conflictDetails, named, r.replacedCloses, r.nonTransactionDivergence ?? []);
       if (notice.text) setMergeNotice(notice);
     } finally {

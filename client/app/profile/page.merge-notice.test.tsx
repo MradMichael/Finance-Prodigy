@@ -16,6 +16,7 @@ vi.mock("../../lib/auth", () => ({
 }));
 let records: ClashRecord[] = [];
 let divergence: string[] = [];
+let firstSync = false;
 vi.mock("../../lib/syncService", async (importOriginal) => {
   const real = await importOriginal<typeof import("../../lib/syncService")>();
   const { DEFAULT_DATA } = await import("../../lib/localData");
@@ -23,7 +24,7 @@ vi.mock("../../lib/syncService", async (importOriginal) => {
     pushToServer: vi.fn(), pullFromServer: vi.fn(), getLastSyncTime: () => null, confirmOverwriteIfNeeded: vi.fn(async () => true),
     mergeAndPush: vi.fn(async () => ({
       ok: true, syncedAt: "2026-10-08T09:01:00.000Z", addedFromServer: 0, conflictsResolved: 0, conflicts: [], conflictDetails: [],
-      clashes: [], nonTransactionDivergence: divergence, replacedCloses: [], mergedData: { ...DEFAULT_DATA, income: 3000, clashRecords: records },
+      clashes: [], nonTransactionDivergence: divergence, replacedCloses: [], mergedData: { ...DEFAULT_DATA, income: 3000, clashRecords: records }, firstSync,
     })),
     buildMergeNoticeText: real.buildMergeNoticeText, applyBackupChoice: vi.fn(),
   };
@@ -38,7 +39,7 @@ import { activateSessionKey } from "../../lib/crypto";
 beforeEach(async () => {
   localStorage.clear(); sessionStorage.clear();
   activateSessionKey(new Uint8Array(32).fill(7));
-  records = []; divergence = [];
+  records = []; divergence = []; firstSync = false;
   await saveData({ ...DEFAULT_DATA, income: 3000 } as LocalFinancials, "u1");
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -58,4 +59,11 @@ it("a first merge with no record says what may differ", async () => {
   divergence = ["goals"];
   await merge();
   expect(await screen.findByText("✓ Merged. Your goals may differ from your other device — this device's copy was kept. Check Goals if something looks off.")).toBeTruthy();
+});
+
+it("a first merge with no record takes the copy's clash records as shown (session 7)", async () => {
+  records = [{ id: "r-goal", at: new Date().toISOString(), key: "g1", kind: "goal", name: "Laptop", later: true }];
+  firstSync = true;
+  await merge();
+  expect(await screen.findByText("✓ Merged. Nothing new from your other device.")).toBeTruthy();
 });

@@ -12,7 +12,7 @@ import { loadData, saveData, activeTransactions, syncAllowed, resetFinancials, s
 import { computeDashboard } from "../../lib/computeDashboard";
 import { buildReportHtml } from "../../lib/printReport";
 import { pushToServer, pullFromServer, getLastSyncTime, confirmOverwriteIfNeeded, mergeAndPush, buildMergeNoticeText, applyBackupChoice, type BackupChoice } from "../../lib/syncService";
-import { saveSeen } from "../../lib/syncSeen";
+import { saveSeen, loadSeen } from "../../lib/syncSeen";
 import { takeUnseenClashes } from "../../lib/clashNotice";
 import { restoreFromExport } from "../../lib/syncMerge";
 import { REGENERATE } from "../../lib/recoveryMessages";
@@ -163,7 +163,10 @@ export default function ProfilePage() {
         setSyncMsg("✗ Couldn't save the server's copy on this device. " + SAVE_FAILURE_REASON[saveFailureKind(err)] + " Nothing was changed.");
         return;
       }
+      const firstSync = !(await loadSeen(session.userId));
       await saveSeen(session.userId, result.data); // plan H 5b: stored, so recorded
+      // Session 7: with no record before, the restored copy's clash records are taken as shown.
+      if (firstSync) await takeUnseenClashes(session.userId, result.data, undefined, { firstSync: true });
       setLastSync(result.syncedAt);
       setSyncMsg("✓ Data restored from database. Reloading…");
       // The dashboard (app/page.tsx) only reads localStorage once, into React
@@ -203,7 +206,7 @@ export default function ProfilePage() {
     }
     setLastSync(result.syncedAt);
     // Plan H 5d: changes both devices made that this device hasn't shown; on a first merge, what may differ.
-    const named = await takeUnseenClashes(session.userId, result.mergedData);
+    const named = await takeUnseenClashes(session.userId, result.mergedData, undefined, { firstSync: result.firstSync });
     const notice = buildMergeNoticeText(result.addedFromServer, result.conflictDetails, named, result.replacedCloses, result.nonTransactionDivergence ?? []);
     setSyncMsg("✓ Merged. " + (notice.text || "Nothing new from your other device."));
     // Same reload requirement as handlePull -- the dashboard only reads

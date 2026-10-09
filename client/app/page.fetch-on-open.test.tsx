@@ -31,14 +31,14 @@ vi.mock("../lib/localData", async (importOriginal) => {
 });
 // Plan H 5b: the record of this device's last sync, written by the dashboard once the fetched copy is stored.
 const seenSaved = vi.fn(async (_u: string, _d: LocalFinancials) => {});
-vi.mock("../lib/syncSeen", () => ({ saveSeen: (u: string, d: LocalFinancials) => seenSaved(u, d) }));
+vi.mock("../lib/syncSeen", () => ({ saveSeen: (u: string, d: LocalFinancials) => seenSaved(u, d), loadSeen: vi.fn(async () => null) }));
 // Plan H 5d: what this device has shown, stood in for by an in-memory set (lib/clash-records.test.ts tests the real one).
 const shownClashes = new Set<string>();
 vi.mock("../lib/clashNotice", () => ({
-  takeUnseenClashes: vi.fn(async (_u: string, d: LocalFinancials) => {
+  takeUnseenClashes: vi.fn(async (_u: string, d: LocalFinancials, _now?: Date, opts?: { firstSync?: boolean }) => {
     const fresh = (d.clashRecords ?? []).filter((r) => !shownClashes.has(r.id));
     fresh.forEach((r) => shownClashes.add(r.id));
-    return fresh;
+    return opts?.firstSync ? [] : fresh;
   }),
 }));
 
@@ -90,7 +90,7 @@ function settled(extra: Partial<LocalFinancials>): LocalFinancials {
 }
 
 const merged = (d: LocalFinancials, over: Partial<Extract<Fetched, { mergedData: LocalFinancials }>> = {}): Fetched => ({
-  ok: true, mergedData: d, serverCopy: d, localChanged: true, serverBehind: false, addedFromServer: 1, conflictDetails: [], clashes: [], nonTransactionDivergence: [], replacedCloses: [], ...over,
+  ok: true, mergedData: d, serverCopy: d, localChanged: true, serverBehind: false, addedFromServer: 1, conflictDetails: [], clashes: [], nonTransactionDivergence: [], replacedCloses: [], firstSync: false, ...over,
 });
 
 beforeEach(() => {
@@ -170,6 +170,20 @@ describe("backup on: opening ESSA fetches and merges", () => {
     await waitFor(() => expect(fetchAndMerge).toHaveBeenCalledTimes(1));
     await settle(500);
     expect(screen.queryByText('Both devices changed the goal "Laptop" — kept the later change.')).toBeNull();
+  });
+
+  // Owner, session 7: a device's first sync takes the records already in the copy as shown.
+  it("a device's first fetch, with no record yet, shows none of the clash records already in the copy", async () => {
+    seed = settled({ syncChoice: ON });
+    const real = await vi.importActual<typeof import("../lib/syncService")>("../lib/syncService");
+    notice.mockImplementation(((...args: Parameters<typeof real.buildMergeNoticeText>) => real.buildMergeNoticeText(...args)) as never);
+    const REC = { id: "r-goal", at: new Date().toISOString(), key: "g1", kind: "goal" as const, name: "Laptop", later: true };
+    fetchImpl = async (_e, local) => merged({ ...local()!, clashRecords: [REC] }, { addedFromServer: 0, firstSync: true });
+    await open();
+    await waitFor(() => expect(fetchAndMerge).toHaveBeenCalledTimes(1));
+    await settle(500);
+    expect(screen.queryByText('Both devices changed the goal "Laptop" — kept the later change.')).toBeNull();
+    expect(shownClashes.has("r-goal")).toBe(true); // taken as shown, so never shown later
   });
 
   // Owner, session 6: before a device has a record of a last sync, its first

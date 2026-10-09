@@ -79,8 +79,8 @@ describe("the automatic fetch, disclosed with the change that makes it", () => {
   it("is the owner's sentence, word for word, right after what backup uploads", () => {
     expect(text()).toContain(
       "so you can sign in and restore it on another device. " +
-      "With backup on, each of your devices also fetches the copy when you open or return to ESSA, and combines it with what it already has. " +
-      "With backup off, nothing is uploaded automatically.",
+      "With backup on, each of your devices also fetches the copy when you open or return to ESSA, and combines it with what it already has.",
     );
+    // What follows it, the clash-records note (session 7), is pinned in page.clash-records.test.tsx.
   });
 });

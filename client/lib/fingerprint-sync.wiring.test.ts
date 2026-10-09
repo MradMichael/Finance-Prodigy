@@ -138,6 +138,27 @@ describe("what both devices changed reaches the notice (plan H 5d)", () => {
   });
 });
 
+describe("each merge says whether it is this device's first sync (owner, session 7)", () => {
+  it("with no record: the conflict merge and the fetch both say so", async () => {
+    const merged = await mergeAndPush("u1@example.com", data());
+    if (!merged.ok) throw new Error(merged.error);
+    expect(merged.firstSync).toBe(true);
+    localStorage.removeItem("essa_seen_u1");
+    const fetched = await fetchAndMerge("u1@example.com", () => data());
+    if (!fetched.ok || fetched.skipped) throw new Error("expected a merge");
+    expect(fetched.firstSync).toBe(true);
+  });
+  it("with a record: neither does", async () => {
+    await saveSeen("u1", data());
+    const fetched = await fetchAndMerge("u1@example.com", () => data());
+    if (!fetched.ok || fetched.skipped) throw new Error("expected a merge");
+    expect(fetched.firstSync).toBe(false);
+    const merged = await mergeAndPush("u1@example.com", data());
+    if (!merged.ok) throw new Error(merged.error);
+    expect(merged.firstSync).toBe(false);
+  });
+});
+
 describe("clash records travel with the copy (plan H 5d, session 6)", () => {
   const REC = { id: "r-income", at: new Date().toISOString(), key: "income", kind: "setting" as const, setting: "income" as const, kept: 3600, other: 3500 };
 

@@ -394,7 +394,7 @@ export interface MergeConflictDetail {
 export interface ReplacedCloseNotice { cycleLabel: string; standingClosedAt: string }
 
 export type MergeAndPushResult =
-  | { ok: true; syncedAt: string; addedFromServer: number; conflictsResolved: number; conflicts: StoredTransaction[]; conflictDetails: MergeConflictDetail[]; clashes: MergeClash[]; nonTransactionDivergence: string[]; replacedCloses: ReplacedCloseNotice[]; mergedData: LocalFinancials }
+  | { ok: true; syncedAt: string; addedFromServer: number; conflictsResolved: number; conflicts: StoredTransaction[]; conflictDetails: MergeConflictDetail[]; clashes: MergeClash[]; nonTransactionDivergence: string[]; replacedCloses: ReplacedCloseNotice[]; mergedData: LocalFinancials; firstSync: boolean }
   | { ok: false; error: string; conflict?: boolean };
 
 /**
@@ -443,6 +443,7 @@ export async function mergeAndPush(email: string, local: LocalFinancials): Promi
     nonTransactionDivergence: seen ? [] : detectNonTransactionDivergence(local, pulled.data),
     replacedCloses,
     mergedData,
+    firstSync: !seen,
   };
 }
 
@@ -489,6 +490,8 @@ export type FetchAndMergeResult =
       clashes: MergeClash[];
       /** 2.4.52's labels, on a device's first merge only (no record of a last sync yet); else empty. */
       nonTransactionDivergence: string[];
+      /** This device had no record of a last sync before this merge (session 7: its clash records are taken as shown). */
+      firstSync: boolean;
       replacedCloses: ReplacedCloseNotice[];
     }
   | { ok: false; error: string; notFound?: true };
@@ -539,6 +542,7 @@ export async function fetchAndMerge(email: string, currentLocal: () => LocalFina
     addedFromServer: result.transactions.addedFromServer,
     clashes: result.clashes,
     nonTransactionDivergence: seen ? [] : detectNonTransactionDivergence(local, pulled.data),
+    firstSync: !seen,
     ...describeMerge(result),
   };
 }

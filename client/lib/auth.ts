@@ -259,6 +259,8 @@ async function signInFromSync(
   await saveData({ ...pulled.data, userName: name }, id);
   // Plan H 5b: stored, so this is the last sync the next merge compares against.
   await (await import("./syncSeen")).saveSeen(id, pulled.data);
+  // Session 7: a joining device takes the copy's clash records as already shown.
+  await (await import("./clashNotice")).takeUnseenClashes(id, pulled.data, undefined, { firstSync: true });
 
   // This device still needs its own local wrapped-DEK envelope (created
   // above) to unlock its own encrypted storage later, but only surface the
@@ -521,6 +523,8 @@ async function recoverFromSync(
   await saveData({ ...pulled.data, userName: name }, id);
   // Plan H 5b: stored, so this is the last sync the next merge compares against.
   await (await import("./syncSeen")).saveSeen(id, pulled.data);
+  // Session 7: a joining device takes the copy's clash records as already shown.
+  await (await import("./clashNotice")).takeUnseenClashes(id, pulled.data, undefined, { firstSync: true });
 
   return { ok: true, session, newRecoveryCode };
 }
