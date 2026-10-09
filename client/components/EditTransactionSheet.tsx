@@ -89,8 +89,12 @@ export default function EditTransactionSheet({
     )
   );
   const [debtId,          setDebtId]          = useState<string | undefined>(transaction.debtId);
+  // DI-02: the field reads as its help text says ("Positive increases the
+  // debt"), the reverse of the stored sign (derivedDebtBalance subtracts
+  // debtAdjustment, so a negative one raises the debt; Edit Debt stores
+  // current - entered). Shown negated here, negated back on save.
   const [debtAdjustment,  setDebtAdjustment]  = useState<string | null | undefined>(
-    transaction.debtAdjustment == null ? transaction.debtAdjustment : String(transaction.debtAdjustment)
+    transaction.debtAdjustment == null ? transaction.debtAdjustment : String(0 - transaction.debtAdjustment)
   );
   const [lbpConfirmAmount, setLbpConfirmAmount] = useState<number | null>(null);
 
@@ -146,7 +150,7 @@ export default function EditTransactionSheet({
         : (parseFloat(efAmount.replace(/,/g, "")) || 0)
     );
     const debtAdjustmentNum = debtAdjustment == null ? debtAdjustment
-      : roundMoney(parseFloat(debtAdjustment.replace(/,/g, "")) || 0);
+      : roundMoney(0 - (parseFloat(debtAdjustment.replace(/,/g, "")) || 0)); // DI-02: back to the stored sign
     // 2.4.56 -- amtNum is a magnitude; TRANSFER is the one bucket whose
     // stored amount is signed (see retagBucketAmount's own doc comment).
     const signedAmt = bucket === "TRANSFER" ? (transferGained ? amtNum : -amtNum) : amtNum;
@@ -333,7 +337,7 @@ export default function EditTransactionSheet({
                   <p className="text-[10px]" style={{ color: T.mute }}>Debt correction</p>
                   <button type="button" onClick={() => setDebtAdjustment(null)} aria-label="Detach this debt correction" className="text-[10px] font-semibold px-2 py-1 rounded-lg transition-all hover:opacity-80 flex-shrink-0" style={{ color: T.coral, border: `1px solid ${T.coral}40` }}>Detach</button>
                 </div>
-                <MoneyInput value={debtAdjustment} onChange={setDebtAdjustment} placeholder="0" max={moneyMaxFor(currency, financials.lbpRate ?? DEFAULT_LBP_RATE)} />
+                <MoneyInput value={debtAdjustment} onChange={setDebtAdjustment} placeholder="0" max={moneyMaxFor(currency, financials.lbpRate ?? DEFAULT_LBP_RATE)} allowNegative />
                 <p className="text-[9px]" style={{ color: T.mute }}>Positive increases the debt, negative reduces it further.</p>
               </div>
             ) : (
