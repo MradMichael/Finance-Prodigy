@@ -102,6 +102,15 @@ describe("the fetch on open, under the rule", () => {
     expect(r.localChanged).toBe(false);
   });
 
+  it("a card added only on the other device arrives (plan H 5c: cards merge under the rule)", async () => {
+    await saveSeen("u1", data());
+    serverData = data({ cards: [{ id: "c1", type: "Visa", last4: "4242", label: "Visa •••• 4242" }] });
+    const r = await fetchAndMerge("u1@example.com", () => data());
+    if (!r.ok || r.skipped) throw new Error("expected a merge");
+    expect(r.mergedData.cards.map((c) => c.id)).toEqual(["c1"]);
+    expect(r.localChanged).toBe(true);
+  });
+
   it("with no record yet, a goal-only difference is today's: this device's copy, nothing stored, nothing pushed", async () => {
     serverData = data({ goals: [goal({ name: "MacBook" })] });
     const r = await fetchAndMerge("u1@example.com", () => data());

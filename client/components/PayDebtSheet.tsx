@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, StoredDebt, PaymentMethod, StoredCard } from "../lib/localData";
-import { buildDebtPaymentTx, derivedDebtBalance, derivedEfBalance, moneyEquals, roundMoney, moneyMaxFor, allCategories, todayISO, uid, DEFAULT_LBP_RATE, toUSD as toUSDShared, edited } from "../lib/localData";
+import { buildDebtPaymentTx, derivedDebtBalance, derivedEfBalance, moneyEquals, roundMoney, moneyMaxFor, allCategories, todayISO, DEFAULT_LBP_RATE, toUSD as toUSDShared, edited, saveCard as storeCard } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, MoneyInput, DateFieldDMY, PaymentMethodPicker } from "./form/Primitives";
 import { fmtCur } from "./screens/shared";
@@ -33,10 +33,11 @@ export default function PayDebtSheet({
   const update = (patch: Partial<LocalFinancials>) => onChange({ ...financials, ...patch });
   const cards = financials.cards ?? [];
   function saveCard(type: StoredCard["type"], last4: string): StoredCard | null {
-    if (last4.length !== 4 || !/^\d{4}$/.test(last4)) return null;
-    const card: StoredCard = { id: uid(), type, last4, label: `${type} •••• ${last4}` };
-    update({ cards: [...cards, card] });
-    return card;
+    // Plan H 5c: the shared saveCard; the same card typed twice is reused.
+    const saved = storeCard(cards, type, last4);
+    if (!saved) return null;
+    if (saved.cards !== cards) update({ cards: saved.cards });
+    return saved.card;
   }
 
   const [amt,        setAmt]        = useState("");
