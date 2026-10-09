@@ -258,7 +258,7 @@ export default function SetupScreen({
           <p className="text-xs uppercase tracking-widest font-semibold" style={{ color: T.mute }}>Safety net</p>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label htmlFor="ef-target-months" className="block text-xs mb-1.5" style={{ color: T.mute }}>Target (months of income)</label>
+              <label htmlFor="ef-target-months" className="block text-xs mb-1.5" style={{ color: T.mute }}>Target (months of essentials)</label>
               <input
                 id="ef-target-months"
                 className="w-full rounded-xl px-4 py-2.5 text-sm tabular-nums"

@@ -77,7 +77,7 @@ describe("1. Setup has no budget-rule surface", () => {
     setup({ budgetRule: "custom" });
     expect(screen.getByText("Profile")).toBeTruthy();
     expect(screen.getByText("Safety net")).toBeTruthy();
-    expect(screen.getByLabelText(/Target \(months of income\)/i)).toBeTruthy();
+    expect(screen.getByLabelText(/Target \(months of essentials\)/i)).toBeTruthy();
   });
 
   it("has no clickable control left at all — the picker tiles were its only buttons", () => {
