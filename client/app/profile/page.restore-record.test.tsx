@@ -20,7 +20,10 @@ vi.mock("../../lib/syncService", () => ({
 }));
 vi.mock("../../lib/analytics", () => ({ isAnalyticsOptedIn: () => false, setAnalyticsOptIn: vi.fn() }));
 const seenSaved = vi.fn(async (_u: string, _d: LocalFinancials) => {});
-vi.mock("../../lib/syncSeen", () => ({ saveSeen: (u: string, d: LocalFinancials) => seenSaved(u, d) }));
+let hadRecord = false;
+vi.mock("../../lib/syncSeen", () => ({ saveSeen: (u: string, d: LocalFinancials) => seenSaved(u, d), loadSeen: vi.fn(async () => (hadRecord ? { v: 1, kinds: {} } : null)) }));
+const taken = vi.fn(async (..._a: unknown[]) => [] as unknown[]);
+vi.mock("../../lib/clashNotice", () => ({ takeUnseenClashes: (...a: unknown[]) => taken(...a) }));
 let failSave = false;
 vi.mock("../../lib/localData", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../lib/localData")>();
@@ -36,7 +39,7 @@ beforeEach(async () => {
   localStorage.clear(); sessionStorage.clear();
   activateSessionKey(new Uint8Array(32).fill(7));
   SERVER = { ...DEFAULT_DATA, income: 3150.75 } as LocalFinancials;
-  seenSaved.mockClear();
+  seenSaved.mockClear(); taken.mockClear(); hadRecord = false;
   failSave = false;
   await saveData({ ...DEFAULT_DATA, income: 3000 } as LocalFinancials, "u1");
 });
@@ -58,4 +61,19 @@ it("a restore that couldn't be stored records nothing", async () => {
   await restore();
   await screen.findByText(/Couldn't save the server's copy on this device/);
   expect(seenSaved).not.toHaveBeenCalled();
+});
+
+// Session 7: a device with no record of a last sync takes the restored copy's
+// clash records as shown; a device that has one leaves them for the dashboard.
+it("a device with no record takes the restored copy's clash records as shown", async () => {
+  await restore();
+  await waitFor(() => expect(seenSaved).toHaveBeenCalledWith("u1", SERVER));
+  expect(taken).toHaveBeenCalledWith("u1", SERVER, undefined, { firstSync: true });
+});
+
+it("a device with a record leaves them to be shown", async () => {
+  hadRecord = true;
+  await restore();
+  await waitFor(() => expect(seenSaved).toHaveBeenCalledWith("u1", SERVER));
+  expect(taken).not.toHaveBeenCalled();
 });

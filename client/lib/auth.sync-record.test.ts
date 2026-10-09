@@ -36,3 +36,20 @@ it("recovering onto a new device does too", async () => {
   if (!r.ok) throw new Error(r.error);
   expect(await loadSeen(r.session.userId)).toEqual(seenOf(SERVER));
 });
+
+// Session 7 (owner): a device joining an account treats the clash records
+// already in the copy it pulls as shown. They are other devices' news from
+// before it joined, not its own overridden changes.
+it("a device that joins shows none of the clash records already in the copy", async () => {
+  const { takeUnseenClashes } = await import("./clashNotice");
+  const rec = { id: "r-old", at: new Date(Date.now() - 2 * 86_400_000).toISOString(), key: "income", kind: "setting" as const, setting: "income" as const, kept: 3600, other: 3500 };
+  const withRecord = { ...SERVER, clashRecords: [rec] } as LocalFinancials;
+  vi.mocked(pullFromServer).mockResolvedValue({ ok: true, syncedAt: "2026-10-08T09:00:00.000Z", data: withRecord, hasRecoveryCode: true });
+  const signedIn = await signIn("vex-harbor@test.com", "password12345");
+  if (!signedIn.ok) throw new Error(signedIn.error);
+  expect(await takeUnseenClashes(signedIn.session.userId, withRecord)).toEqual([]);
+  localStorage.clear(); sessionStorage.clear();
+  const recovered = await recoverAccount("vex-harbor@test.com", "SOME-REAL-CODE-0000", "brandnewpassword1");
+  if (!recovered.ok) throw new Error(recovered.error);
+  expect(await takeUnseenClashes(recovered.session.userId, withRecord)).toEqual([]);
+});

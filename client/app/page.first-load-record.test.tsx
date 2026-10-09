@@ -22,7 +22,10 @@ vi.mock("../lib/localData", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/localData")>();
   return { ...actual, loadData: vi.fn(async () => seed), saveData: vi.fn(async (d: LocalFinancials) => { if (failSave) throw new Error("QuotaExceededError"); saved.push(d); }) };
 });
-vi.mock("../lib/syncSeen", () => ({ saveSeen: (u: string, d: LocalFinancials) => seenSaved(u, d) }));
+vi.mock("../lib/syncSeen", () => ({ saveSeen: (u: string, d: LocalFinancials) => seenSaved(u, d), loadSeen: vi.fn(async () => null) }));
+// Session 7: what the device marks as already shown when it joins.
+const taken = vi.fn(async (..._a: unknown[]) => [] as unknown[]);
+vi.mock("../lib/clashNotice", () => ({ takeUnseenClashes: (...a: unknown[]) => taken(...a) }));
 vi.mock("../lib/syncService", () => ({
   pullFromServer: vi.fn(async () => ({ ok: true, data: SERVER, syncedAt: "2026-10-08T09:00:00.000Z" })),
   pushToServer: vi.fn(async () => ({ ok: true })),
@@ -37,7 +40,7 @@ vi.mock("../lib/syncService", () => ({
 
 import Home from "./page";
 
-beforeEach(() => { localStorage.clear(); saved.length = 0; seenSaved.mockClear(); failSave = false; });
+beforeEach(() => { localStorage.clear(); saved.length = 0; seenSaved.mockClear(); taken.mockClear(); failSave = false; });
 afterEach(() => { vi.clearAllMocks(); });
 
 it("the restored copy is stored, then recorded as this device's last sync", { timeout: 20000 }, async () => {
@@ -54,4 +57,11 @@ it("a restore that couldn't be stored records nothing", { timeout: 20000 }, asyn
   await screen.findByRole("button", { name: "Setup" }, { timeout: 10000 });
   await new Promise((r) => setTimeout(r, 500));
   expect(seenSaved).not.toHaveBeenCalled();
+});
+
+it("a device with no record takes the restored copy's clash records as already shown (session 7)", { timeout: 20000 }, async () => {
+  seed = { ...DEFAULT_DATA, transactions: [] } as LocalFinancials;
+  render(<Home />);
+  await waitFor(() => expect(seenSaved).toHaveBeenCalledWith("u1", SERVER), { timeout: 8000 });
+  expect(taken).toHaveBeenCalledWith("u1", SERVER, undefined, { firstSync: true });
 });

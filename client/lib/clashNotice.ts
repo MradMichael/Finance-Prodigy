@@ -40,7 +40,7 @@ async function saveShown(userId: string, shown: Shown): Promise<void> {
   }
 }
 
-async function take(userId: string | undefined, data: LocalFinancials, now: Date): Promise<ClashRecord[]> {
+async function take(userId: string | undefined, data: LocalFinancials, now: Date, firstSync: boolean): Promise<ClashRecord[]> {
   if (!userId || typeof window === "undefined") return [];
   const cutoff = now.getTime() - CLASH_RECORD_DAYS * DAY;
   const live = (data.clashRecords ?? []).filter((r) => Date.parse(r.at) >= cutoff);
@@ -53,7 +53,10 @@ async function take(userId: string | undefined, data: LocalFinancials, now: Date
   const forget = now.getTime() - 2 * CLASH_RECORD_DAYS * DAY;
   for (const [id, at] of Object.entries(shown)) if (Date.parse(at) < forget) delete shown[id];
   await saveShown(userId, shown);
-  return fresh;
+  // Session 7 (owner): a device with no record of a last sync takes the records
+  // already in its first pulled copy as shown. They are other devices' news
+  // from before it joined (or before the update), not its own changes.
+  return firstSync ? [] : fresh;
 }
 
 // One at a time: a fetch and the open can arrive together, and each record
@@ -62,10 +65,14 @@ let queue: Promise<unknown> = Promise.resolve();
 
 /**
  * The records in `data` this device hasn't shown yet, oldest first, now
- * remembered as shown. The caller shows them (clashSentence).
+ * remembered as shown. The caller shows them (clashSentence). With
+ * `firstSync` (this device had no record of a last sync before this copy),
+ * they are remembered and none is returned.
  */
-export function takeUnseenClashes(userId: string | undefined, data: LocalFinancials, now: Date = new Date()): Promise<ClashRecord[]> {
-  const next = queue.then(() => take(userId, data, now));
+export function takeUnseenClashes(
+  userId: string | undefined, data: LocalFinancials, now: Date = new Date(), { firstSync = false }: { firstSync?: boolean } = {},
+): Promise<ClashRecord[]> {
+  const next = queue.then(() => take(userId, data, now, firstSync));
   queue = next.catch(() => undefined);
   return next;
 }
