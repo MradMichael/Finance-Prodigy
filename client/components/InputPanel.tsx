@@ -2,6 +2,7 @@
 
 import { useState, useRef } from "react";
 import { useDialogFocus } from "./useDialogFocus";
+import { useScrollFocus } from "./useScrollFocus";
 import type { LocalFinancials, StoredTransaction, StoredGoal, StoredDebt, StoredRecurring, StoredCard, RecurringFrequency, Currency, PaymentMethod, BudgetRuleKey } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
@@ -126,6 +127,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   // resume whichever save flow (add or edit) triggered it.
   const [lbpConfirm, setLbpConfirm] = useState<{ amount: number; proceed: () => void } | null>(null);
   const lbpConfirmRef = useRef<HTMLDivElement>(null);
+  const monthListScrollRef = useScrollFocus(); // A11Y-05
   useDialogFocus(lbpConfirmRef, lbpConfirm != null); // A11Y-02
 
   // Goal form
@@ -1026,7 +1028,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
             </div>
           ) : (
             <>
-              <div className="space-y-2 max-h-72 overflow-y-auto pr-0.5">
+              <div ref={monthListScrollRef} className="space-y-2 max-h-72 overflow-y-auto pr-0.5">
                 {monthTx.map((tx) => {
                   // Safe again now that TRANSFER is a real TX_BUCKETS member
                   // (2.4.55 sub-phase 3) -- the ?? TRANSFER_META fallback
