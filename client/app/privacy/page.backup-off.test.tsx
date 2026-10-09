@@ -47,9 +47,10 @@ describe("the backup-off sentence", () => {
     expect(kept).not.toMatch(/recovery code/i);
   });
 
-  // Moved again by the deletion-records sentence (8 October 2026, page.deletion-records.test.tsx).
+  // Moved again by the deletion-records sentence (8 October 2026, page.deletion-records.test.tsx),
+  // then by the goal-corrections sentence (9 October 2026, page.goal-corrections.test.tsx).
   it("is dated the day it last changed", () => {
-    expect(text()).toContain("Last updated: 8 October 2026");
+    expect(text()).toContain("Last updated: 9 October 2026");
   });
 });
 
