@@ -135,7 +135,7 @@ export default function PrivacyPage() {
         </Section>
 
         <Section title="Contact">
-          <p>Questions about this policy or a data-deletion request: <a href="mailto:mmrad1998@gmail.com" style={{ color: T.jade }}>mmrad1998@gmail.com</a></p>
+          <p>Questions about this policy or a data-deletion request: <a href="mailto:mmrad1998@gmail.com" style={{ color: T.jade, textDecoration: "underline" }}>mmrad1998@gmail.com</a></p>
         </Section>
       </div>
     </div>

@@ -228,6 +228,9 @@ export function DateFieldDMY({
 }) {
   const T = useTheme();
   const [focused, setFocused] = useState(false);
+  // A11Y-05: which box has focus. The ring around the group says the field
+  // has it; this marks the box itself (an inset underline), which nothing did.
+  const [seg, setSeg] = useState<"d" | "m" | "y" | null>(null);
   const [day, setDay] = useState("");
   const [month, setMonth] = useState("");
   const [year, setYear] = useState("");
@@ -319,6 +322,8 @@ export function DateFieldDMY({
     textAlign: "center",
     colorScheme: "dark",
   };
+  const segFocus = (which: "d" | "m" | "y"): React.CSSProperties => ({ boxShadow: seg === which ? `inset 0 -2px 0 ${T.jade}` : "none" });
+  const segLeave = (which: "d" | "m" | "y") => setSeg((s) => (s === which ? null : s));
 
   // A hidden native date input, used purely as a calendar picker widget —
   // its own text display is never shown (that's what caused the original
@@ -362,11 +367,11 @@ export function DateFieldDMY({
         value={day}
         onChange={makeHandler(2, 31, setDay, monthRef)}
         onPaste={handlePasteIntoDay}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setTimeout(() => { if (![dayRef, monthRef, yearRef].some((r) => r.current === document.activeElement)) setFocused(false); }, 0)}
+        onFocus={() => { setFocused(true); setSeg("d"); }}
+        onBlur={() => { segLeave("d"); setTimeout(() => { if (![dayRef, monthRef, yearRef].some((r) => r.current === document.activeElement)) setFocused(false); }, 0); }}
         placeholder="DD"
         maxLength={2}
-        style={{ ...segStyle, width: "1.6em" }}
+        style={{ ...segStyle, ...segFocus("d"), width: "1.6em" }}
       />
       <span style={{ color: T.mute }}>/</span>
       <input
@@ -376,11 +381,11 @@ export function DateFieldDMY({
         value={month}
         onChange={makeHandler(2, 12, setMonth, yearRef)}
         onKeyDown={(e) => handleBackspace(e, month, dayRef, day, setDay)}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setTimeout(() => { if (![dayRef, monthRef, yearRef].some((r) => r.current === document.activeElement)) setFocused(false); }, 0)}
+        onFocus={() => { setFocused(true); setSeg("m"); }}
+        onBlur={() => { segLeave("m"); setTimeout(() => { if (![dayRef, monthRef, yearRef].some((r) => r.current === document.activeElement)) setFocused(false); }, 0); }}
         placeholder="MM"
         maxLength={2}
-        style={{ ...segStyle, width: "1.6em" }}
+        style={{ ...segStyle, ...segFocus("m"), width: "1.6em" }}
       />
       <span style={{ color: T.mute }}>/</span>
       <input
@@ -390,11 +395,11 @@ export function DateFieldDMY({
         value={year}
         onChange={makeHandler(4, 9999, setYear)}
         onKeyDown={(e) => handleBackspace(e, year, monthRef, month, setMonth)}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setTimeout(() => { if (![dayRef, monthRef, yearRef].some((r) => r.current === document.activeElement)) setFocused(false); }, 0)}
+        onFocus={() => { setFocused(true); setSeg("y"); }}
+        onBlur={() => { segLeave("y"); setTimeout(() => { if (![dayRef, monthRef, yearRef].some((r) => r.current === document.activeElement)) setFocused(false); }, 0); }}
         placeholder="YYYY"
         maxLength={4}
-        style={{ ...segStyle, width: "3em" }}
+        style={{ ...segStyle, ...segFocus("y"), width: "3em" }}
       />
       <button
         type="button"

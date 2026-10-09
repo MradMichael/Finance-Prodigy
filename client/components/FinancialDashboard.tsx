@@ -173,6 +173,7 @@ export default function FinancialDashboard({
   // selection, nothing extra shown -- Overview stays exactly as it always
   // has by default.
   const [selectedPastMonth, setSelectedPastMonth] = useState<CycleKey | "">("");
+  const [pastPickerFocused, setPastPickerFocused] = useState(false); // A11Y-05: its focus ring
   // Dismissal is per-mount, not persisted: the banner already expires by
   // itself when the cycle advances, so persisting a flag would add a field
   // whose only job is to be cleaned up later.
@@ -360,8 +361,11 @@ export default function FinancialDashboard({
                 // A <select> yields a plain string; the option values are cycle keys
                 // built from the transaction list, so this is a boundary cast.
                 onChange={(e) => setSelectedPastMonth(e.target.value === "" ? "" : asCycleKey(e.target.value))}
+                onFocus={() => setPastPickerFocused(true)}
+                onBlur={() => setPastPickerFocused(false)}
                 className="rounded-xl px-3 py-2 text-sm"
-                style={{ background: T.panelSoft, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
+                // The outline is replaced by the same ring as MoneyInput's, not removed outright.
+                style={{ background: T.panelSoft, border: `1px solid ${pastPickerFocused ? T.jade : T.line}`, boxShadow: pastPickerFocused ? `0 0 0 3px ${T.jade}28` : "none", color: T.text, outline: "none", colorScheme: "dark" }}
               >
                 <option value="">Select a {noun}…</option>
                 {pastMonths.map((ym) => (

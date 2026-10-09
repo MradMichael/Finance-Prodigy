@@ -37,7 +37,7 @@ export default function SecurityPage() {
           <h1 className="text-2xl" style={{ ...SERIF, color: T.text }}>How ESSA actually protects your data</h1>
           <p className="text-sm mt-2" style={{ color: T.mute }}>
             Written plainly, including the parts that are less impressive than &quot;everything is encrypted.&quot; See the{" "}
-            <Link href="/privacy" style={{ color: T.jade }}>Privacy Policy</Link> for the formal version.
+            <Link href="/privacy" style={{ color: T.jade, textDecoration: "underline" }}>Privacy Policy</Link> for the formal version.
           </p>
         </div>
 
@@ -106,9 +106,9 @@ export default function SecurityPage() {
         <Section title="Questions">
           <p>
             Something here doesn&apos;t add up, or you want more detail before trusting us with real financial
-            data, ask: <a href="mailto:mmrad1998@gmail.com" style={{ color: T.jade }}>mmrad1998@gmail.com</a>.
-            See also the <Link href="/privacy" style={{ color: T.jade }}>Privacy Policy</Link> and{" "}
-            <Link href="/terms" style={{ color: T.jade }}>Terms of Service</Link>.
+            data, ask: <a href="mailto:mmrad1998@gmail.com" style={{ color: T.jade, textDecoration: "underline" }}>mmrad1998@gmail.com</a>.
+            See also the <Link href="/privacy" style={{ color: T.jade, textDecoration: "underline" }}>Privacy Policy</Link> and{" "}
+            <Link href="/terms" style={{ color: T.jade, textDecoration: "underline" }}>Terms of Service</Link>.
           </p>
         </Section>
       </div>

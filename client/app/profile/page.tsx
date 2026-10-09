@@ -756,7 +756,7 @@ export default function ProfilePage() {
         >
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className="text-sm font-semibold" style={{ color: T.text, fontFamily: "Spectral, Georgia, serif" }}>
+              <h2 id="analytics-heading" className="text-sm font-semibold" style={{ color: T.text, fontFamily: "Spectral, Georgia, serif" }}>
                 Help improve ESSA
               </h2>
               <p className="text-xs mt-1" style={{ color: T.mute }}>
@@ -768,6 +768,7 @@ export default function ProfilePage() {
               onClick={toggleAnalytics}
               role="switch"
               aria-checked={analyticsOn}
+              aria-labelledby="analytics-heading" // A11Y-04: named by the heading beside it
               className="flex-shrink-0 w-11 h-6 rounded-full relative transition-colors"
               style={{ background: analyticsOn ? T.jade : T.line }}
             >
