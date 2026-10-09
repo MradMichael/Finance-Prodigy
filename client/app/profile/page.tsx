@@ -12,6 +12,7 @@ import { loadData, saveData, activeTransactions, syncAllowed, resetFinancials, s
 import { computeDashboard } from "../../lib/computeDashboard";
 import { buildReportHtml } from "../../lib/printReport";
 import { pushToServer, pullFromServer, getLastSyncTime, confirmOverwriteIfNeeded, mergeAndPush, recordMergeStored, buildMergeNoticeText, applyBackupChoice, type BackupChoice } from "../../lib/syncService";
+import { PUSH_NOT_RECORDED } from "../../lib/storageNotices";
 import { saveSeen, loadSeen } from "../../lib/syncSeen";
 import { takeUnseenClashes } from "../../lib/clashNotice";
 import { restoreFromExport } from "../../lib/syncMerge";
@@ -224,7 +225,8 @@ export default function ProfilePage() {
     setSyncing(false);
     if (result.ok) {
       setLastSync(result.syncedAt ?? null);
-      setSyncMsg("✓ Pushed to database.");
+      // Session 8 (held, wording for approval): pushed, but this device couldn't record when.
+      setSyncMsg(result.notRecorded ? "✓ Pushed to database. " + PUSH_NOT_RECORDED : "✓ Pushed to database.");
     } else {
       setSyncMsg("✗ " + result.error);
     }

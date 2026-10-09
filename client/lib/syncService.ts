@@ -56,6 +56,11 @@ export interface SyncResult {
   // backup that has data, and kept the backup. Not a failure, so no
   // "Offline" or "Couldn't reach backup".
   declined?: boolean;
+  // Session 8 (held): the server took the push, but this device couldn't
+  // record its time (storage). A success; the caller says storage is the
+  // problem. Unrecorded, the next push meets a conflict and merges again,
+  // finding nothing new.
+  notRecorded?: boolean;
 }
 
 /** COPY-11, owner-approved wording (session 3): the ask before an empty account replaces a backup that has data. */
@@ -182,8 +187,14 @@ export async function pushToServer(
       return { ok: false, error: "Server responded, but the response was malformed. Try again." };
     }
     if (record) {
+      // Session 8 (held): outside the network's catch, which read a storage
+      // throw here as "Could not reach server" for a push the server took.
       const id = syncingUserId(email);
-      if (id) recordSyncTime(id, json.syncedAt);
+      try {
+        if (id) recordSyncTime(id, json.syncedAt);
+      } catch {
+        return { ok: true, syncedAt: json.syncedAt, notRecorded: true };
+      }
       await recordServerCopy(data);
     }
     return { ok: true, syncedAt: json.syncedAt };
