@@ -129,8 +129,9 @@ describe("schema v6", () => {
       ],
     } as unknown as LocalFinancials;
     const out = migrateFinancials(v5);
-    expect(CURRENT_SCHEMA_VERSION).toBe(6);
-    expect(out.schemaVersion).toBe(6);
+    // v7 (plan H 5a) runs after v6 now; the v6 step this test is about still ran.
+    expect(CURRENT_SCHEMA_VERSION).toBe(7);
+    expect(out.schemaVersion).toBe(7);
     expect(out.wishlist?.map((w) => w.updatedAt)).toEqual(["2026-10-01T09:00:00.000Z", "2026-10-04T12:00:00.000Z", "2026-10-05T08:00:00.000Z"]);
     expect(migrateFinancials(out)).toEqual(out); // idempotent
   });

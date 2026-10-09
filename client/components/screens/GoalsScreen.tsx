@@ -99,7 +99,7 @@ export default function GoalsScreen({
       paymentMethod: payMethod, cardId, cardLabel,
       paymentNote: payMethod === "other" && payOtherNote.trim() ? payOtherNote.trim() : undefined,
       date: payDate || todayISO(),
-    });
+    }, financials.transactions);
     if (!result) return;
     onChange({ ...financials, goals: result.goals, transactions: [result.transaction, ...(financials.transactions ?? [])] });
     setPaySuccess(dashGoalId);

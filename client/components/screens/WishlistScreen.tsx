@@ -90,6 +90,7 @@ export default function WishlistScreen({
       id: uid(), name: item.name, emoji: item.emoji,
       targetAmount: item.price,
       currentAmount: 0,
+      openingAmount: 0, // plan H 5a: progress starts from nothing
       currency: item.currency,
       ...withRate(item.currency, lbpRate),
       targetDate: isoLocalDay(targetDate),

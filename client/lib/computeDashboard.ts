@@ -1,5 +1,5 @@
 import type { LocalFinancials, BudgetRuleKey, StoredDebt, StoredTransaction, StoredRecurring, TrackedBalance, Currency, PeriodCloseAcknowledgement } from "./localData";
-import { acknowledgementFor, historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, LBP_RATE_STALE_DAYS, cycleStartDayOf, valueForMonth, makeToUSDForMonth, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, DEFAULT_LBP_RATE, derivedEfBalance, derivedDebtBalance, activeTransactions, parseLocalDate, isRecurringActive, isAfterBalanceBaseline, calendarDaysSince } from "./localData";
+import { goalProgress, acknowledgementFor, historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, LBP_RATE_STALE_DAYS, cycleStartDayOf, valueForMonth, makeToUSDForMonth, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, DEFAULT_LBP_RATE, derivedEfBalance, derivedDebtBalance, activeTransactions, parseLocalDate, isRecurringActive, isAfterBalanceBaseline, calendarDaysSince } from "./localData";
 import { cycleKeyForISO, currentCycleKey, calendarKeyForDate, isInCycle, cycleProgress, cycleBounds, cycleKeyMinus, periodNoun, cycleLabel, type CycleKey, type CalendarKey, type CalendarHistory } from "./period";
 import { simulateDebtPayoff, type DebtInput } from "./debtEngine";
 import { calendarDayOf, dayStart } from "./calendarDay";
@@ -345,10 +345,10 @@ export function toDebtInputs(debts: StoredDebt[], lbpRate: number, transactions:
 export function computeHoldingsByCurrency(data: LocalFinancials, lbpRate: number): { usdAssets: number; lbpAssets: number; holdingsTotalUSD: number } {
   const usdAssets = data.assets.filter((a) => a.currency === "USD").reduce((s, a) => s + a.value, 0)
     + data.trackedBalances.filter((b) => b.currency === "USD").reduce((s, b) => s + (b.actualBalance ?? b.startingBalance), 0)
-    + data.goals.filter((g) => g.currency === "USD").reduce((s, g) => s + g.currentAmount, 0);
+    + data.goals.filter((g) => g.currency === "USD").reduce((s, g) => s + goalProgress(g, data), 0);
   const lbpAssets = data.assets.filter((a) => a.currency === "LBP").reduce((s, a) => s + a.value, 0)
     + data.trackedBalances.filter((b) => b.currency === "LBP").reduce((s, b) => s + (b.actualBalance ?? b.startingBalance), 0)
-    + data.goals.filter((g) => g.currency === "LBP").reduce((s, g) => s + g.currentAmount, 0);
+    + data.goals.filter((g) => g.currency === "LBP").reduce((s, g) => s + goalProgress(g, data), 0);
   const holdingsTotalUSD = toUSDShared(usdAssets, "USD", lbpRate) + toUSDShared(lbpAssets, "LBP", lbpRate);
   return { usdAssets, lbpAssets, holdingsTotalUSD };
 }
@@ -530,7 +530,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
    * disagreeing -- not just tested to currently agree.
    */
   const goalRequirement = (g: LocalFinancials["goals"][number]) => {
-    const rem = Math.max(0, g.targetAmount - g.currentAmount);
+    const rem = Math.max(0, g.targetAmount - goalProgress(g, data));
     const rawMs = Math.round((new Date(g.targetDate).getTime() - now.getTime()) / (30.44 * 24 * 3600 * 1000));
     const ms = Math.max(1, rawMs); // safe denominator -- never displayed directly
     const req = rem / ms; // native currency -- GoalsScreen's quick-add seed
@@ -672,12 +672,12 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     const { rawMs, req, pace } = goalPace(g);
     return {
       id: i + 1, name: g.name, emoji: g.emoji || null, type: "SAVINGS",
-      targetAmount: g.targetAmount, currentAmount: g.currentAmount, currency: g.currency,
+      targetAmount: g.targetAmount, currentAmount: goalProgress(g, data), currency: g.currency,
       paused: !!g.pausedAt,
       projection: {
         // targetAmount of exactly 0 (e.g. a goal saved before an amount was
         // entered) would otherwise divide 0/0 into NaN — treat it as met.
-        pctComplete: g.targetAmount > 0 ? Math.min(100, Math.round((g.currentAmount / g.targetAmount) * 100)) : 100,
+        pctComplete: g.targetAmount > 0 ? Math.min(100, Math.round((goalProgress(g, data) / g.targetAmount) * 100)) : 100,
         // Raw (only floored at 0, not 1) — an overdue goal should read "0 mo
         // left", not the misleading "1 mo left" the div-by-zero-safe `ms`
         // above would otherwise leak into display.
@@ -703,7 +703,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     // (undefined reads as USD), harmless only because every goal has been
     // USD until Phase 1.4 added a currency picker. Passing g.currency here
     // is what the line next to it (a.currency, one line down) already did.
-    + data.goals.reduce((s, g) => s + toUSD(g.currentAmount, g.currency), 0)
+    + data.goals.reduce((s, g) => s + toUSD(goalProgress(g, data), g.currency), 0)
     + data.assets.reduce((s, a) => s + toUSD(a.value, a.currency), 0);
   const nwLiabilities = totalDebtBalance;
   const nwTotal       = nwAssets - nwLiabilities;

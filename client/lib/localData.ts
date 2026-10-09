@@ -447,6 +447,11 @@ export interface StoredTransaction {
   // which is exactly what every existing row means. Same shape as
   // recurringModelNoticeSeen.
   goalId?: string;
+  // Schema v7 (plan H 5a): this row's amount IN ITS GOAL'S CURRENCY, frozen.
+  // Set by the v7 migration on a contribution whose currency differs from
+  // its goal's and that has no stored rate, and by a goal balance correction
+  // (amount 0, this carries the difference). goalProgress reads it first.
+  goalAmount?: number;
   // Added in schema v4 (Phase 2.6.1) -- signed: positive means this
   // transaction also added to the emergency fund, negative means it also
   // drew from it, for derivedEfBalance (2.6.2). Deliberately independent
@@ -527,7 +532,15 @@ export interface StoredGoal {
   name: string;
   emoji: string;
   targetAmount: number;
+  // LEGACY since schema v7 (plan H 5a, session 5): no longer written after
+  // a goal is created, and read only by older clients. Progress is
+  // goalProgress(): openingAmount + the goal's live contributions.
   currentAmount: number;
+  // Schema v7: progress the ledger doesn't hold -- the stored total minus the
+  // goal's live contributions at the migration, or what a new goal starts
+  // with. Can be negative (a stored total smaller than its contributions);
+  // the migration never corrects that (negativeGoalOpenings lists them).
+  openingAmount?: number;
   // Added in schema v2 (docs/ROADMAP.md Phase 1.2) -- every goal before
   // this defaulted to USD implicitly (the only currency goals ever
   // supported), so migrateFinancials backfills "USD" rather than leaving
@@ -1047,7 +1060,7 @@ export function recordDeletion(
 // emergencyFundOpeningBalance and StoredDebt.openingBalance. v5 (period
 // close Phase 1) adds periodCloses. v6 (SYNC-1 step 2) adds edit times and
 // the deletion registry a sync merge needs.
-export const CURRENT_SCHEMA_VERSION = 6;
+export const CURRENT_SCHEMA_VERSION = 7;
 
 // The reference rate a new account starts with, and the fallback used
 // anywhere financials.lbpRate is momentarily absent. Single source of
@@ -1295,6 +1308,33 @@ function addMergeStamps(d: LocalFinancials): LocalFinancials {
     wishlist: (d.wishlist ?? []).map((w) => (w.updatedAt ? w : { ...w, updatedAt: w.boughtAt ?? w.createdAt })),
   };
 }
+/**
+ * v6 -> v7 (plan H 5a, owner-approved, session 5). Goal progress becomes
+ * computed: openingAmount + the goal's live contributions. Each goal's
+ * openingAmount = its stored currentAmount minus its LIVE contributions, so
+ * progress equals the stored total on the day of the upgrade -- nothing
+ * jumps. (A deleted contribution never reduced the stored total, so it stays
+ * folded into the opening amount.) A contribution in another currency with
+ * no stored rate gets its converted amount frozen (goalAmount), at its own
+ * cycle's rate, so a later rate change can't move it. Non-clobbering: a goal
+ * that already has an openingAmount keeps it. A negative result is kept,
+ * never corrected (negativeGoalOpenings lists it for the owner).
+ */
+function addGoalOpenings(d: LocalFinancials): LocalFinancials {
+  const frozen = (d.transactions ?? []).map((t) => {
+    if (!t.goalId || t.goalAmount != null) return t;
+    const g = (d.goals ?? []).find((x) => x.id === t.goalId);
+    if (!g || t.currency === g.currency || t.lbpRateAtEntry) return t;
+    const rate = rateForMonth(d.lbpRateHistory, cycleKeyForISO(t.date, cycleStartDayOf(d)), d.lbpRate);
+    return { ...t, goalAmount: roundMoney(g.currency === "LBP" ? t.amount * rate : t.amount / rate) };
+  });
+  const withFrozen = { ...d, transactions: frozen } as LocalFinancials;
+  return {
+    ...withFrozen,
+    schemaVersion: 7,
+    goals: (d.goals ?? []).map((g) => (g.openingAmount != null ? g : { ...g, openingAmount: roundMoney(g.currentAmount - goalContributions(g, withFrozen)) })),
+  };
+}
 const MIGRATIONS: { fromVersion: number; migrate: (d: LocalFinancials) => LocalFinancials }[] = [
   { fromVersion: 0, migrate: (d) => ({ ...d, schemaVersion: 1 }) },
   { fromVersion: 1, migrate: addCurrencyAndRate },
@@ -1302,6 +1342,7 @@ const MIGRATIONS: { fromVersion: number; migrate: (d: LocalFinancials) => LocalF
   { fromVersion: 3, migrate: addLedgerDerivedFields },
   { fromVersion: 4, migrate: addPeriodCloseRecord },
   { fromVersion: 5, migrate: addMergeStamps },
+  { fromVersion: 6, migrate: addGoalOpenings },
 ];
 
 /** Reads the schema version off a raw, not-yet-migrated value -- treats a
@@ -3147,21 +3188,72 @@ export function buildGoalContributionTx(
 export function applyGoalContribution(
   goals: StoredGoal[], goalId: string, amount: number, lbpRate: number,
   opts: { paymentMethod?: PaymentMethod; cardId?: string; cardLabel?: string; paymentNote?: string; date?: string } = {},
+  transactions: StoredTransaction[] = [],
 ): { goals: StoredGoal[]; transaction: StoredTransaction } | null {
   const goal = goals.find((g) => g.id === goalId);
   if (!goal) return null;
+  const transaction = buildGoalContributionTx(goal, amount, lbpRate, opts);
+  // Plan H 5a: the contribution IS the progress; the stored total is no
+  // longer bumped. achievedAt is stamped once, the first time computed
+  // progress (with this contribution) reaches the target. A goal not yet
+  // migrated (no openingAmount; never on a device, since loading migrates)
+  // still bumps its stored total, which is what its progress reads.
+  const migrated = goal.openingAmount != null;
+  const progress = migrated
+    ? goalProgress(goal, { ...DEFAULT_DATA, lbpRate, transactions: [...transactions, transaction] } as LocalFinancials)
+    : roundMoney(goal.currentAmount + amount);
   const updatedGoals = goals.map((g) => {
     if (g.id !== goalId) return g;
-    const newAmount = roundMoney(g.currentAmount + amount);
-    return {
-      ...g,
-      currentAmount: newAmount,
-      // TIME-02: the LOCAL day; toISOString() is the UTC one, a day early after local midnight east of UTC.
-      achievedAt: newAmount >= g.targetAmount ? (g.achievedAt ?? todayISO()) : g.achievedAt,
-    };
+    const bumped = migrated ? g : { ...g, currentAmount: progress };
+    // TIME-02: the LOCAL day; toISOString() is the UTC one, a day early after local midnight east of UTC.
+    return progress >= g.targetAmount && !g.achievedAt ? { ...bumped, achievedAt: todayISO() } : bumped;
   });
-  const transaction = buildGoalContributionTx(goal, amount, lbpRate, opts);
   return { goals: updatedGoals, transaction };
+}
+
+/** One live contribution, in its goal's currency: frozen if stored, else at its own stored rate (its cycle's rate when it has none). */
+function contributionToGoal(t: StoredTransaction, g: StoredGoal, d: LocalFinancials): number {
+  if (t.goalAmount != null) return t.goalAmount;
+  if (t.currency === g.currency) return t.amount;
+  const rate = t.lbpRateAtEntry ?? rateForMonth(d.lbpRateHistory, cycleKeyForISO(t.date, cycleStartDayOf(d)), d.lbpRate);
+  return g.currency === "LBP" ? t.amount * rate : t.amount / rate;
+}
+
+/** The sum of a goal's live contributions (and corrections), in the goal's currency. */
+export function goalContributions(g: StoredGoal, d: LocalFinancials): number {
+  return roundMoney((d.transactions ?? [])
+    .filter((t) => t.goalId === g.id && t.deletedAt == null && t.purgedAt == null)
+    .reduce((s, t) => s + contributionToGoal(t, g, d), 0));
+}
+
+/**
+ * A goal's progress (plan H 5a): openingAmount + its live contributions. A
+ * goal not yet migrated (no openingAmount) reads its stored total, as before.
+ */
+export function goalProgress(g: StoredGoal, d: LocalFinancials): number {
+  return g.openingAmount == null ? g.currentAmount : roundMoney(g.openingAmount + goalContributions(g, d));
+}
+
+/** Goals whose opening amount came out negative at the v7 migration -- for the owner to correct by hand, never automatically. */
+export function negativeGoalOpenings(d: LocalFinancials): { id: string; name: string; currency: Currency; storedTotal: number; contributions: number; openingAmount: number }[] {
+  return (d.goals ?? [])
+    .filter((g) => (g.openingAmount ?? 0) < 0)
+    .map((g) => ({ id: g.id, name: g.name, currency: g.currency, storedTotal: g.currentAmount, contributions: goalContributions(g, d), openingAmount: g.openingAmount! }));
+}
+
+/**
+ * Edit Goal's "saved so far" as a correction row (plan H 5a), structurally
+ * like buildEfAdjustmentTx: `amount: 0`, so no budget total moves; only
+ * goalAmount carries the difference into progress. DRAFT description, for
+ * the owner (held branch).
+ */
+export function buildGoalCorrectionTx(goal: StoredGoal, delta: number): StoredTransaction {
+  const now = new Date().toISOString();
+  return {
+    id: uid(), amount: 0, currency: goal.currency, bucket: "SAVINGS", goalId: goal.id,
+    description: `Goal balance correction: ${goal.name}`, date: todayISO(), paymentMethod: "other",
+    goalAmount: roundMoney(delta), createdAt: now, updatedAt: now,
+  };
 }
 
 /**

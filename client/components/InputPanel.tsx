@@ -4,7 +4,7 @@ import { useState, useRef } from "react";
 import type { LocalFinancials, StoredTransaction, StoredGoal, StoredDebt, StoredRecurring, StoredCard, RecurringFrequency, Currency, PaymentMethod, BudgetRuleKey } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, remainingInstallments, toUSD as toUSDShared, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, buildExtraPaymentTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, roundMoney, moneyMaxFor, MONEY_MAX_USD, derivedDebtBalance, activeTransactions, softDelete, DEFAULT_LBP_RATE, cycleStartDayOf, syncAllowed } from "../lib/localData";
+import { uid, goalProgress, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, remainingInstallments, toUSD as toUSDShared, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, buildExtraPaymentTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, roundMoney, moneyMaxFor, MONEY_MAX_USD, derivedDebtBalance, activeTransactions, softDelete, DEFAULT_LBP_RATE, cycleStartDayOf, syncAllowed } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker } from "./form/Primitives";
@@ -328,6 +328,8 @@ export default function InputPanel({ financials, dashData, onChange, session, on
       id: uid(), name: gName.trim(), emoji: gEmoji || "🎯",
       targetAmount: parseFloat(gTarget.replace(/,/g, "")),
       currentAmount: parseFloat(gCurrent.replace(/,/g, "")) || 0,
+      // Plan H 5a: what the goal starts with; progress = this + contributions.
+      openingAmount: parseFloat(gCurrent.replace(/,/g, "")) || 0,
       // Currency is locked at creation and never editable afterward --
       // contributions are recorded against a goal in this currency, and
       // changing it later would silently reinterpret them. See
@@ -469,7 +471,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
       paymentMethod: contributeMethod, cardId, cardLabel,
       paymentNote: contributeMethod === "other" && contributeOtherNote.trim() ? contributeOtherNote.trim() : undefined,
       date: contributeDate || todayISO(),
-    });
+    }, financials.transactions);
     if (!result) return;
     update({ goals: result.goals, transactions: [result.transaction, ...financials.transactions] });
     setContributeGoalId(null); setContributeGoalAmt("");
@@ -1210,8 +1212,9 @@ export default function InputPanel({ financials, dashData, onChange, session, on
             // of exactly 0 reads as met, not 0%) -- this used to disagree with
             // every other goal display (GoalsScreen, FinancialDashboard, all of
             // which read dashData.goals) for a goal edited down to a $0 target.
-            const pct = g.targetAmount > 0 ? Math.min(100, (g.currentAmount / g.targetAmount) * 100) : 100;
-            const remaining = Math.max(0, g.targetAmount - g.currentAmount);
+            const saved = goalProgress(g, financials);
+            const pct = g.targetAmount > 0 ? Math.min(100, (saved / g.targetAmount) * 100) : 100;
+            const remaining = Math.max(0, g.targetAmount - saved);
             const isContrib  = contributeGoalId === g.id;
             return (
               <div key={g.id}>
@@ -1231,7 +1234,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                           )}
                         </p>
                         <p className="text-[10px] tabular-nums mt-0.5" style={{ color: T.mute }}>
-                          {fmtCur(g.currentAmount, g.currency)} of {fmtCur(g.targetAmount, g.currency)}
+                          {fmtCur(saved, g.currency)} of {fmtCur(g.targetAmount, g.currency)}
                           {remaining > 0 && <span style={{ color: T.brass }}> · {fmtCur(remaining, g.currency)} to go</span>}
                         </p>
                         {(g.createdAt || g.achievedAt || g.pausedAt) && (
