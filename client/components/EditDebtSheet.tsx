@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, StoredDebt } from "../lib/localData";
-import { derivedDebtBalance, buildDebtAdjustmentTx, roundMoney, moneyMaxFor, DEFAULT_LBP_RATE } from "../lib/localData";
+import { derivedDebtBalance, buildDebtAdjustmentTx, roundMoney, moneyMaxFor, DEFAULT_LBP_RATE, edited } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY } from "./form/Primitives";
 
@@ -41,12 +41,12 @@ export default function EditDebtSheet({
   function save() {
     if (!name.trim()) return;
     update({
-      debts: financials.debts.map((d) => d.id !== debt.id ? d : {
+      debts: financials.debts.map((d) => d.id !== debt.id ? d : edited({
         ...d, name: name.trim(),
         apr: Math.max(0, parseFloat(apr) || 0),
         minPayment: parseFloat(min.replace(/,/g, "")) || 0,
         openedDate: opened || undefined,
-      }),
+      })),
     });
     onClose();
   }

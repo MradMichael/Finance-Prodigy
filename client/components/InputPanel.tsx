@@ -4,7 +4,7 @@ import { useState, useRef } from "react";
 import type { LocalFinancials, StoredTransaction, StoredGoal, StoredDebt, StoredRecurring, StoredCard, RecurringFrequency, Currency, PaymentMethod, BudgetRuleKey } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, goalProgress, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, remainingInstallments, toUSD as toUSDShared, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, buildExtraPaymentTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, roundMoney, moneyMaxFor, MONEY_MAX_USD, derivedDebtBalance, activeTransactions, softDelete, DEFAULT_LBP_RATE, cycleStartDayOf, syncAllowed } from "../lib/localData";
+import { uid, goalProgress, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, remainingInstallments, toUSD as toUSDShared, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, buildExtraPaymentTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, roundMoney, moneyMaxFor, MONEY_MAX_USD, derivedDebtBalance, activeTransactions, softDelete, DEFAULT_LBP_RATE, cycleStartDayOf, syncAllowed, edited, recordDeletion } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker } from "./form/Primitives";
@@ -339,7 +339,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
       targetDate: gDate,
       createdAt: new Date().toISOString(),
     };
-    update({ goals: [...financials.goals, goal] });
+    update({ goals: [...financials.goals, edited(goal)] });
     setGName(""); setGTarget(""); setGCurrent(""); setGDate(""); setGEmoji("🎯"); setGCurrency("USD");
   }
 
@@ -360,7 +360,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
       // starting balance IS its opening balance, trivially.
       openingBalance: balance,
     };
-    update({ debts: [...financials.debts, debt] });
+    update({ debts: [...financials.debts, edited(debt)] });
     setDName(""); setDBalance(""); setDApr(""); setDMin(""); setDOpenedDate(""); setDCurrency("USD");
   }
 
@@ -373,13 +373,13 @@ export default function InputPanel({ financials, dashData, onChange, session, on
       ...withRate(aCurrency, financials.lbpRate ?? DEFAULT_LBP_RATE),
       createdAt: new Date().toISOString(),
     };
-    update({ assets: [...(financials.assets ?? []), asset] });
+    update({ assets: [...(financials.assets ?? []), edited(asset)] });
     setAName(""); setAValue(""); setACurrency("USD");
   }
 
   function deleteAsset(id: string) {
     if (!confirm("Remove this asset?")) return;
-    update({ assets: (financials.assets ?? []).filter((a) => a.id !== id) });
+    update({ assets: (financials.assets ?? []).filter((a) => a.id !== id), deletedKeys: recordDeletion(financials, "assets", id) });
   }
 
   // Human-readable pool name for a transfer leg's own "Transfer to/from X"
@@ -441,7 +441,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
       totalAmount: rEndType === "amount" ? (parseFloat(rTotalAmount.replace(/,/g, "")) || null) : null,
       createdAt: new Date().toISOString(),
     };
-    update({ recurring: [...(financials.recurring ?? []), rec] });
+    update({ recurring: [...(financials.recurring ?? []), edited(rec)] });
     setRName(""); setRAmount(""); setREmoji("🔁"); setRCategory(""); setRStart(todayISO()); setREnd(""); setRTotalAmount(""); setREndType("infinite");
   }
 
@@ -449,7 +449,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   function convertToRecurring(name: string, amount: string, currency: Currency, bucket: Bucket, category: string) {
     const rec = buildQuickRecurring(name, amount, currency, bucket, category);
     if (!rec) return;
-    update({ recurring: [...(financials.recurring ?? []), rec] });
+    update({ recurring: [...(financials.recurring ?? []), edited(rec)] });
   }
 
   function contributeToGoal(goalId: string) {
@@ -497,9 +497,9 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   // fully reversible, matching how editing a debt's balance clears paidOffAt.
   function toggleGoalPause(goalId: string) {
     update({
-      goals: financials.goals.map((g) => g.id !== goalId ? g : {
+      goals: financials.goals.map((g) => g.id !== goalId ? g : edited({
         ...g, pausedAt: g.pausedAt ? undefined : new Date().toISOString(),
-      }),
+      })),
     });
   }
 
@@ -1266,7 +1266,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                           style={{ color: T.jade, border: `1px solid ${T.jade}40` }}
                         >+add</button>
                         <button
-                          onClick={() => { if (confirm("Delete this goal?")) update({ goals: financials.goals.filter((x) => x.id !== g.id) }); }}
+                          onClick={() => { if (confirm("Delete this goal?")) update({ goals: financials.goals.filter((x) => x.id !== g.id), deletedKeys: recordDeletion(financials, "goals", g.id) }); }}
                           aria-label="Delete goal"
                           className="text-xs"
                           style={{ color: T.coral }}
@@ -1493,6 +1493,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                                       // transaction itself is real spend/income and stays.
                                       update({
                                         recurring: recs.filter((x) => x.id !== r.id),
+                                        deletedKeys: recordDeletion(financials, "recurring", r.id),
                                         // 2.4.126: extraForRecurringId is cleared here too. It is a
                                         // link to this same item and would dangle exactly the way
                                         // 2.4.35 describes -- but it gets no cycleDate sentinel,
@@ -1814,7 +1815,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                           >pay</button>
                         )}
                         <button
-                          onClick={() => { if (confirm("Delete this debt?")) update({ debts: financials.debts.filter((x) => x.id !== d.id) }); }}
+                          onClick={() => { if (confirm("Delete this debt?")) update({ debts: financials.debts.filter((x) => x.id !== d.id), deletedKeys: recordDeletion(financials, "debts", d.id) }); }}
                           aria-label="Delete debt"
                           className="text-xs"
                           style={{ color: T.coral }}

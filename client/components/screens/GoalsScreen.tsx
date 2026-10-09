@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, PaymentMethod, StoredCard } from "../../lib/localData";
-import { uid, todayISO, applyGoalContribution, toUSD as toUSDShared, activeTransactions, DEFAULT_LBP_RATE, cycleStartDayOf } from "../../lib/localData";
+import { uid, todayISO, applyGoalContribution, toUSD as toUSDShared, activeTransactions, DEFAULT_LBP_RATE, cycleStartDayOf, edited } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
@@ -128,7 +128,7 @@ export default function GoalsScreen({
     onChange({
       ...financials,
       goals: financials.goals.map((g) =>
-        g.id !== rawGoal.id ? g : { ...g, pausedAt: g.pausedAt ? undefined : new Date().toISOString() }
+        g.id !== rawGoal.id ? g : edited({ ...g, pausedAt: g.pausedAt ? undefined : new Date().toISOString() })
       ),
     });
   }

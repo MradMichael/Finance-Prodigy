@@ -118,8 +118,10 @@ export default function PrivacyPage() {
 
         <Section title="Taking your data with you">
           <p>
-            Profile → Download my data exports everything: transactions, goals, debts, recurring payments,
-            settings, as a JSON file, anytime, with no restriction. Yours to keep, move elsewhere, or back up by hand.
+            Profile → Download my data exports all your data: transactions, goals, debts, recurring payments,
+            settings, as a JSON file, anytime, with no restriction. It leaves out only transactions you&apos;ve deleted,
+            and the small sync record each device keeps to combine copies, which isn&apos;t your data. Yours to keep,
+            move elsewhere, or back up by hand.
           </p>
         </Section>
 

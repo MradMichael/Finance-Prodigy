@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
-import { buildEfAdjustmentTx, roundMoney, cycleStartDayOf } from "../../lib/localData";
+import { buildEfAdjustmentTx, roundMoney, cycleStartDayOf, settingsEdited } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF } from "./shared";
@@ -94,6 +94,7 @@ export default function SetupScreen({
     update({
       cycleStartDay: next,
       cycleStartDayChangedAt: new Date().toISOString(),
+      ...settingsEdited(financials, ["payday"]),
     });
     setStartDayDraft(null);
   }
@@ -180,7 +181,7 @@ export default function SetupScreen({
               // spinner/stepper input, and the handler clamps anything that
               // arrives by paste, autofill, or a browser that doesn't honour
               // `max` on direct entry.
-              onChange={(e) => update({ income: Math.min(MAX_INCOME, Math.max(0, parseFloat(e.target.value) || 0)) })}
+              onChange={(e) => update({ income: Math.min(MAX_INCOME, Math.max(0, parseFloat(e.target.value) || 0)), ...settingsEdited(financials, ["income"]) })}
               placeholder="e.g. 3500"
             />
             <p className="text-[11px] mt-1.5 px-1" style={{ color: T.mute }}>
@@ -274,7 +275,7 @@ export default function SetupScreen({
                   // to tell the commit didn't match what was typed.
                   const parsed = parseInt(e.target.value, 10);
                   if (!isNaN(parsed) && parsed >= 1 && parsed <= 24) {
-                    update({ emergencyFundTargetMonths: parsed });
+                    update({ emergencyFundTargetMonths: parsed, ...settingsEdited(financials, ["efTarget"]) });
                   }
                 }}
               />

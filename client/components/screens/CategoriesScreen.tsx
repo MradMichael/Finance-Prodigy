@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, CategoryRule } from "../../lib/localData";
-import { CATEGORIES, allCategories, categoryLabel, categoryIcon, matchCategoryRule, historizedRecurringContribution, toUSD as toUSDShared, uid, moneyEquals, activeTransactions, DEFAULT_LBP_RATE, cycleStartDayOf, recordDeletion } from "../../lib/localData";
+import { CATEGORIES, allCategories, categoryLabel, categoryIcon, matchCategoryRule, historizedRecurringContribution, toUSD as toUSDShared, uid, moneyEquals, activeTransactions, DEFAULT_LBP_RATE, cycleStartDayOf, recordDeletion, edited } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money } from "./shared";
 import { Label, FocusInput, PrimaryBtn } from "../form/Primitives";
@@ -108,7 +108,7 @@ export default function CategoriesScreen({
       const match = matchCategoryRule(r.name, [rule]);
       if (!match) return r;
       count++;
-      return { ...r, category: match };
+      return edited({ ...r, category: match });
     });
     if (count === 0) { alert(`No uncategorized entries matched "${rule.keyword}".`); return; }
     onChange({ ...financials, transactions: updatedTx, recurring: updatedRecurring });

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
-import { historizedRecurringContribution, toUSD as toUSDShared, moneyEquals, activeTransactions, LBP_RATE_STALE_DAYS, DEFAULT_LBP_RATE, cycleStartDayOf, calendarDaysSince } from "../../lib/localData";
+import { historizedRecurringContribution, toUSD as toUSDShared, moneyEquals, activeTransactions, LBP_RATE_STALE_DAYS, DEFAULT_LBP_RATE, cycleStartDayOf, calendarDaysSince, settingsEdited } from "../../lib/localData";
 import { computeHoldingsByCurrency } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
@@ -61,7 +61,7 @@ export default function CurrencyScreen({ financials, onChange }: { financials: L
     // stamped as "just updated" -- a rejected edit must not read as verified.
     if (!isNaN(parsed)) {
       const clamped = Math.min(LBP_RATE_MAX, Math.max(LBP_RATE_MIN, parsed));
-      onChange({ ...financials, lbpRate: clamped, lbpRateUpdatedAt: new Date().toISOString() });
+      onChange({ ...financials, lbpRate: clamped, lbpRateUpdatedAt: new Date().toISOString(), ...settingsEdited(financials, ["lbpRate"]) });
     }
     setLbpRateInput(null);
   }

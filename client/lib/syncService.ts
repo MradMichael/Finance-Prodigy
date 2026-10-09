@@ -2,10 +2,22 @@
 
 import type { LocalFinancials, StoredTransaction } from "./localData";
 import { isEmptyFinancials } from "./localData";
-import { mergeFinancials, stableStringify, MERGED_FIELDS, type MergeFinancialsResult } from "./syncMerge";
+import { mergeFinancials, stableStringify, MERGED_FIELDS, RULE_FIELDS, type MergeFinancialsResult } from "./syncMerge";
 import { cycleLabelLong, dayLabel } from "./period";
 import { getSyncToken } from "./crypto";
-import { getRecoveryTokenForSync } from "./auth";
+import { getRecoveryTokenForSync, getSession } from "./auth";
+import { loadSeen, saveSeen } from "./syncSeen";
+
+/** Plan H 5b: after a successful push the server holds what this device holds (see saveSeen). */
+async function recordServerCopy(serverCopy: LocalFinancials): Promise<void> {
+  const userId = getSession()?.userId;
+  if (userId) await saveSeen(userId, serverCopy);
+}
+/** This device's record of the server's copy at its last sync, or null (the first merge after the update: today's merge). */
+async function lastSeen() {
+  const userId = getSession()?.userId;
+  return userId ? loadSeen(userId) : null;
+}
 
 // Relative paths — proxied to the real API server by the next.config.js
 // rewrite (server-side), so this works unchanged whether the client and
@@ -152,6 +164,7 @@ export async function pushToServer(
       return { ok: false, error: "Server responded, but the response was malformed. Try again." };
     }
     localStorage.setItem(LAST_SYNC_KEY, json.syncedAt);
+    await recordServerCopy(data);
     return { ok: true, syncedAt: json.syncedAt };
   } catch {
     return { ok: false, error: "Could not reach server. Is it running?" };
@@ -411,13 +424,14 @@ export type MergeAndPushResult =
  * this pull/merge/push sequence is the entire mechanism, client-side only.
  */
 export async function mergeAndPush(email: string, local: LocalFinancials): Promise<MergeAndPushResult> {
+  const seen = await lastSeen();
   const pulled = await pullFromServer(email);
   if (!pulled.ok) return { ok: false, error: pulled.error };
 
   // SYNC-1 step 2: the whole merge, not transactions alone. The wishlist,
   // categories, rules, tracked balances and period closes merge too
   // (lib/syncMerge.ts); everything else keeps this device's copy, as before.
-  const result = mergeFinancials(local, pulled.data, new Date());
+  const result = mergeFinancials(local, pulled.data, new Date(), seen);
   const merged = result.transactions;
   const mergedData: LocalFinancials = result.data;
   // Detected against local's PRE-merge copy vs. the server's copy -- what
@@ -473,6 +487,8 @@ export type FetchAndMergeResult =
       ok: true;
       skipped?: undefined;
       mergedData: LocalFinancials;
+      /** The server's copy as fetched: record it (saveSeen) once mergedData is stored. */
+      serverCopy: LocalFinancials;
       /** The merge brought something this device didn't have. */
       localChanged: boolean;
       /** The merged copy holds something the server lacks, in the fields that merge. */
@@ -484,12 +500,12 @@ export type FetchAndMergeResult =
   | { ok: false; error: string; notFound?: true };
 
 /** The same records, whatever order the two copies hold them in. */
-function sameRecords(a: LocalFinancials, b: LocalFinancials): boolean {
-  const canon = (d: LocalFinancials, k: (typeof MERGED_FIELDS)[number]) => {
+function sameRecords(a: LocalFinancials, b: LocalFinancials, fields: readonly (keyof LocalFinancials)[] = MERGED_FIELDS): boolean {
+  const canon = (d: LocalFinancials, k: keyof LocalFinancials) => {
     const v = d[k];
     return Array.isArray(v) ? v.map((x) => stableStringify(x)).sort() : stableStringify(v ?? {});
   };
-  return MERGED_FIELDS.every((k) => stableStringify(canon(a, k)) === stableStringify(canon(b, k)));
+  return fields.every((k) => stableStringify(canon(a, k)) === stableStringify(canon(b, k)));
 }
 
 /**
@@ -512,16 +528,20 @@ function sameRecords(a: LocalFinancials, b: LocalFinancials): boolean {
  *   overwrite the other device's newer edits to them.
  */
 export async function fetchAndMerge(email: string, currentLocal: () => LocalFinancials | null): Promise<FetchAndMergeResult> {
+  const seen = await lastSeen();
   const pulled = await pullFromServer(email, { record: false, timeoutMs: FETCH_TIMEOUT_MS });
   if (!pulled.ok) return { ok: false, error: pulled.error, ...(pulled.notFound ? { notFound: true as const } : {}) };
   const local = currentLocal();
   if (!local) return { ok: true, skipped: true };
-  const result = mergeFinancials(local, pulled.data, new Date());
+  const result = mergeFinancials(local, pulled.data, new Date(), seen);
+  // Plan H 5b: under the rule, more fields merge, so more fields can differ.
+  const fields = seen ? [...MERGED_FIELDS, ...RULE_FIELDS] : MERGED_FIELDS;
   return {
     ok: true,
     mergedData: result.data,
-    localChanged: !sameRecords(result.data, local),
-    serverBehind: !sameRecords(result.data, pulled.data),
+    serverCopy: pulled.data,
+    localChanged: !sameRecords(result.data, local, fields),
+    serverBehind: !sameRecords(result.data, pulled.data, fields),
     addedFromServer: result.transactions.addedFromServer,
     ...describeMerge(result),
   };

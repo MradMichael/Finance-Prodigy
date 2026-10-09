@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, StoredGoal } from "../lib/localData";
-import { moneyMaxFor, DEFAULT_LBP_RATE, goalProgress, buildGoalCorrectionTx, roundMoney } from "../lib/localData";
+import { moneyMaxFor, DEFAULT_LBP_RATE, goalProgress, buildGoalCorrectionTx, roundMoney, edited } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY } from "./form/Primitives";
 
@@ -42,11 +42,11 @@ export default function EditGoalSheet({
     const migrated = goal.openingAmount != null;
     const delta = roundMoney(currentNum - goalProgress(goal, financials));
     update({
-      goals: financials.goals.map((g) => g.id !== goal.id ? g : {
+      goals: financials.goals.map((g) => g.id !== goal.id ? g : edited({
         ...g, name: name.trim(), emoji: emoji || "🎯",
         targetAmount: targetNum, targetDate: date, ...(migrated ? {} : { currentAmount: currentNum }),
         achievedAt: currentNum >= targetNum ? (g.achievedAt ?? new Date().toISOString()) : undefined,
-      }),
+      })),
       ...(migrated && delta !== 0 ? { transactions: [buildGoalCorrectionTx(goal, delta), ...financials.transactions] } : {}),
     });
     onClose();

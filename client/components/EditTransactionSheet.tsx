@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { LocalFinancials, StoredTransaction, StoredCard, Currency, PaymentMethod } from "../lib/localData";
 import {
   fmtDate, allCategories, looksRecurring, buildQuickRecurring, cycleMonthDivergence,
-  roundMoney, uid, DEFAULT_LBP_RATE, retagBucketAmount, moneyMaxFor, cycleStartDayOf } from "../lib/localData";
+  roundMoney, uid, DEFAULT_LBP_RATE, retagBucketAmount, moneyMaxFor, cycleStartDayOf, edited } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY, CurrencyToggle, PM_OPTIONS, CardPicker } from "./form/Primitives";
 import { cycleKeyForISO, currentCycleKey } from "../lib/period";
@@ -120,7 +120,7 @@ export default function EditTransactionSheet({
   function convertToRecurring() {
     const rec = buildQuickRecurring(desc, amt, currency, bucket === "INCOME" || bucket === "TRANSFER" ? "NEEDS" : bucket, category);
     if (!rec) return;
-    update({ recurring: [...(financials.recurring ?? []), rec] });
+    update({ recurring: [...(financials.recurring ?? []), edited(rec)] });
   }
 
   function save() {

@@ -559,6 +559,17 @@ describe("session and admin helpers", () => {
 });
 
 describe("deleteAccount (2.2.18 -- server-cleanup result is reported, not swallowed)", () => {
+  it("removes this device's sync record with the account (plan H 5b)", async () => {
+    const reg = await signUp("a@test.com", "Alice", "password12345");
+    if (!reg.ok) throw new Error("setup failed");
+    const userId = listUsers()[0].id;
+    localStorage.setItem(`essa_seen_${userId}`, "sealed");
+    localStorage.setItem("essa_seen_someone-else", "sealed");
+    await deleteAccount(userId);
+    expect(localStorage.getItem(`essa_seen_${userId}`)).toBeNull();
+    expect(localStorage.getItem("essa_seen_someone-else")).toBe("sealed");
+  });
+
   it("deletes the account locally and reports serverCleanupOk: true when there's no sync token (never synced)", async () => {
     const reg = await signUp("a@test.com", "Alice", "password12345");
     if (!reg.ok) throw new Error("setup failed");

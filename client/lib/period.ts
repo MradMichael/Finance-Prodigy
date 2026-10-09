@@ -48,9 +48,11 @@ export type CycleKey = string & { readonly __period: "cycle" };
 export type CalendarKey = string & { readonly __period: "calendar" };
 
 /** A cycle-keyed history: incomeHistory, lbpRateHistory, budgetRuleHistory. */
-export type CycleHistory<T = { value: number }> = ({ ym: CycleKey } & T)[];
+// `at` (plan H 5b): when the snapshot effect wrote the entry -- its only
+// writer -- so two devices' different entries for one key order by it.
+export type CycleHistory<T = { value: number }> = ({ ym: CycleKey; at?: string } & T)[];
 /** A calendar-keyed history: netWorthHistory, and nothing else. */
-export type CalendarHistory<T = { value: number }> = ({ ym: CalendarKey } & T)[];
+export type CalendarHistory<T = { value: number }> = ({ ym: CalendarKey; at?: string } & T)[];
 
 /**
  * Boundary casts. Stored data arrives from JSON.parse as plain strings, so

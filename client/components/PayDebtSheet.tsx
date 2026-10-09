@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, StoredDebt, PaymentMethod, StoredCard } from "../lib/localData";
-import { buildDebtPaymentTx, derivedDebtBalance, derivedEfBalance, moneyEquals, roundMoney, moneyMaxFor, allCategories, todayISO, uid, DEFAULT_LBP_RATE, toUSD as toUSDShared } from "../lib/localData";
+import { buildDebtPaymentTx, derivedDebtBalance, derivedEfBalance, moneyEquals, roundMoney, moneyMaxFor, allCategories, todayISO, uid, DEFAULT_LBP_RATE, toUSD as toUSDShared, edited } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, MoneyInput, DateFieldDMY, PaymentMethodPicker } from "./form/Primitives";
 import { fmtCur } from "./screens/shared";
@@ -80,8 +80,11 @@ export default function PayDebtSheet({
     });
     const newTransactions = [tx, ...financials.transactions];
     const newBal = derivedDebtBalance(debt, newTransactions);
-    const updatedDebts = financials.debts.map((d) => d.id !== debt.id ? d : {
-      ...d, paidOffAt: moneyEquals(newBal, 0) ? (d.paidOffAt ?? new Date().toISOString()) : d.paidOffAt,
+    // Plan H 5b: a payment that pays the debt off is the person's edit to it.
+    const updatedDebts = financials.debts.map((d) => {
+      if (d.id !== debt.id) return d;
+      const paidOffAt = moneyEquals(newBal, 0) ? (d.paidOffAt ?? new Date().toISOString()) : d.paidOffAt;
+      return paidOffAt === d.paidOffAt ? d : edited({ ...d, paidOffAt });
     });
     update({ transactions: newTransactions, debts: updatedDebts });
     onClose();

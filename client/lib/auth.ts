@@ -257,6 +257,8 @@ async function signInFromSync(
 
   const { saveData } = await import("./localData");
   await saveData({ ...pulled.data, userName: name }, id);
+  // Plan H 5b: stored, so this is the last sync the next merge compares against.
+  await (await import("./syncSeen")).saveSeen(id, pulled.data);
 
   // This device still needs its own local wrapped-DEK envelope (created
   // above) to unlock its own encrypted storage later, but only surface the
@@ -517,6 +519,8 @@ async function recoverFromSync(
 
   const { saveData } = await import("./localData");
   await saveData({ ...pulled.data, userName: name }, id);
+  // Plan H 5b: stored, so this is the last sync the next merge compares against.
+  await (await import("./syncSeen")).saveSeen(id, pulled.data);
 
   return { ok: true, session, newRecoveryCode };
 }
@@ -674,6 +678,8 @@ export async function deleteAccount(userId: string): Promise<{ serverCleanupOk: 
   putUsers(getUsers().filter((u) => u.id !== userId));
   localStorage.removeItem(SESSION_KEY);
   localStorage.removeItem(`essa_data_${userId}`);
+  // Plan H 5b: this device's sync fingerprints (lib/syncSeen.ts) go with it.
+  localStorage.removeItem(`essa_seen_${userId}`);
 
   if (!user) return { serverCleanupOk: true }; // nothing local to have synced in the first place
   try {

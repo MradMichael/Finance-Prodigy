@@ -552,6 +552,8 @@ export interface StoredGoal {
   createdAt: string;    // ISO — when added to ESSA
   achievedAt?: string;  // ISO — when goal was completed
   pausedAt?: string;    // ISO — when goal was paused/archived; stops counting toward pace/score until resumed (cleared)
+  // Plan H 5b: when a person last edited this record. Stamped by every user edit, never by an automatic write; it orders only a two-sided clash (the fingerprint rule decides everything else).
+  updatedAt?: string;
 }
 
 export interface WishlistItem {
@@ -622,6 +624,8 @@ export interface StoredAsset {
   currency: Currency;
   lbpRateAtEntry?: number;
   createdAt: string; // ISO
+  // Plan H 5b: when a person last edited this record. Stamped by every user edit, never by an automatic write; it orders only a two-sided clash (the fingerprint rule decides everything else).
+  updatedAt?: string;
 }
 
 export interface StoredDebt {
@@ -644,6 +648,8 @@ export interface StoredDebt {
   // snapshots the CURRENT `balance` into this, once, non-clobbering --
   // nothing retroactive, the balance a user already saw doesn't change.
   openingBalance: number;
+  // Plan H 5b: when a person last edited this record. Stamped by every user edit, never by an automatic write; it orders only a two-sided clash (the fingerprint rule decides everything else).
+  updatedAt?: string;
 }
 
 export type RecurringFrequency =
@@ -723,6 +729,8 @@ export interface StoredRecurring {
   // grandfather, so every one of its cycles needs confirmation from its
   // own startDate onward.
   confirmCutoverDate?: string;
+  // Plan H 5b: when a person last edited this record. Stamped by every user edit, never by an automatic write; it orders only a two-sided clash (the fingerprint rule decides everything else).
+  updatedAt?: string;
 }
 
 // Finer-grained than the NEEDS/WANTS/SAVINGS/INCOME bucket -- one flat list
@@ -865,6 +873,12 @@ export interface LocalFinancials {
   /** ISO timestamp of the last time `lbpRate` was actually edited — powers the staleness indicator in SetupScreen (day-level precision; lbpRateHistory above only tracks month granularity). Absent on accounts predating this field, or if the rate has never been edited since. */
   lbpRateUpdatedAt?: string;
   /**
+   * Plan H 5b: when a person last changed each setting (SETTING_KEYS). Stamped
+   * by the setting's editor, never by an automatic write (the budget split's
+   * heal, migrations); it orders only a two-sided clash.
+   */
+  settingsUpdatedAt?: Partial<Record<SettingKey, string>>;
+  /**
    * Day of the month the budget cycle starts on -- the user's payday. 1..31,
    * clamped to a short month's last day (a 31st payday runs to the 30th in
    * September), matching nextOccurrence's own convention.
@@ -977,6 +991,25 @@ export interface DeletedKeys {
   recurring?: Tombstone[];
   assets?: Tombstone[];
   cards?: Tombstone[];
+}
+
+/** The settings the fingerprint rule merges (plan H 5b), each as one key: the budget split is its rule and custom figures together. */
+export const SETTING_KEYS = ["income", "lbpRate", "budget", "payday", "efTarget"] as const;
+export type SettingKey = (typeof SETTING_KEYS)[number];
+
+/**
+ * Plan H 5b: a person's edit to a goal, debt, recurring item or asset, stamped
+ * with when. Only user edits call this -- never a migration, a heal or a
+ * snapshot -- because the stamp orders a two-sided clash, and an automatic
+ * write must not look like a newer edit.
+ */
+export function edited<T extends object>(record: T, at: string = new Date().toISOString()): T & { updatedAt: string } {
+  return { ...record, updatedAt: at };
+}
+
+/** Plan H 5b: a person's change to settings, as the patch that stamps them. Only setting editors call this. */
+export function settingsEdited(d: Pick<LocalFinancials, "settingsUpdatedAt">, keys: readonly SettingKey[], at: string = new Date().toISOString()): Pick<LocalFinancials, "settingsUpdatedAt"> {
+  return { settingsUpdatedAt: { ...(d.settingsUpdatedAt ?? {}), ...Object.fromEntries(keys.map((k) => [k, at])) } };
 }
 
 /** Every collection the deletion registry covers, for code that walks them all. */

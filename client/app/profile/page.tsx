@@ -12,6 +12,7 @@ import { loadData, saveData, activeTransactions, syncAllowed, resetFinancials, s
 import { computeDashboard } from "../../lib/computeDashboard";
 import { buildReportHtml } from "../../lib/printReport";
 import { pushToServer, pullFromServer, getLastSyncTime, confirmOverwriteIfNeeded, mergeAndPush, buildMergeNoticeText, applyBackupChoice, type BackupChoice } from "../../lib/syncService";
+import { saveSeen } from "../../lib/syncSeen";
 import { restoreFromExport } from "../../lib/syncMerge";
 import { REGENERATE } from "../../lib/recoveryMessages";
 import type { LocalFinancials } from "../../lib/localData";
@@ -161,6 +162,7 @@ export default function ProfilePage() {
         setSyncMsg("✗ Couldn't save the server's copy on this device. " + SAVE_FAILURE_REASON[saveFailureKind(err)] + " Nothing was changed.");
         return;
       }
+      await saveSeen(session.userId, result.data); // plan H 5b: stored, so recorded
       setLastSync(result.syncedAt);
       setSyncMsg("✓ Data restored from database. Reloading…");
       // The dashboard (app/page.tsx) only reads localStorage once, into React

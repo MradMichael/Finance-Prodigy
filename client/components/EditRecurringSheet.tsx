@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, StoredRecurring, RecurringFrequency, Currency } from "../lib/localData";
-import { FREQ_LABELS, allCategories, fmtDate, pendingBackfillCycles, moneyMaxFor, DEFAULT_LBP_RATE } from "../lib/localData";
+import { FREQ_LABELS, allCategories, fmtDate, pendingBackfillCycles, moneyMaxFor, DEFAULT_LBP_RATE, edited } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY, CurrencyToggle } from "./form/Primitives";
 
@@ -54,13 +54,13 @@ export default function EditRecurringSheet({
     const amt = parseFloat(amount.replace(/,/g, ""));
     if (!name.trim() || isNaN(amt) || !start) return;
     update({
-      recurring: (financials.recurring ?? []).map((r) => r.id !== recurring.id ? r : {
+      recurring: (financials.recurring ?? []).map((r) => r.id !== recurring.id ? r : edited({
         ...r, name: name.trim(), emoji: emoji || "🔁",
         amount: amt, currency, frequency: freq,
         bucket, category: category || undefined, startDate: start,
         endDate:     endType === "date"   ? (end.trim() || null) : null,
         totalAmount: endType === "amount" ? (parseFloat(totalAmount.replace(/,/g, "")) || null) : null,
-      }),
+      })),
     });
     onClose();
   }
