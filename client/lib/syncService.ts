@@ -6,7 +6,7 @@ import { mergeFinancials, stableStringify, MERGED_FIELDS, RULE_FIELDS, type Merg
 import { cycleLabelLong, dayLabel } from "./period";
 import { getSyncToken } from "./crypto";
 import { getRecoveryTokenForSync, getSession } from "./auth";
-import { loadSeen, saveSeen } from "./syncSeen";
+import { loadSeen, saveSeen, clearSeen } from "./syncSeen";
 
 /** Plan H 5b: after a successful push the server holds what this device holds (see saveSeen). */
 async function recordServerCopy(serverCopy: LocalFinancials): Promise<void> {
@@ -123,8 +123,11 @@ async function parseJsonSafe(res: Response): Promise<{ error?: string; [key: str
 
 export async function pushToServer(
   email: string, data: LocalFinancials,
-  // "Reset all data" passes true: its own typed confirm already says the backup is replaced.
-  { allowEmptyOverwrite = false }: { allowEmptyOverwrite?: boolean } = {},
+  // "Reset all data" passes allowEmptyOverwrite: its own typed confirm already says the backup is replaced.
+  // DI-15: the conflict merge passes `record: false` (the caller records once
+  // it has stored the merged copy: recordMergeStored) and the sync time of the
+  // copy it pulled as `baseSyncedAt`.
+  { allowEmptyOverwrite = false, record = true, baseSyncedAt: base }: { allowEmptyOverwrite?: boolean; record?: boolean; baseSyncedAt?: string } = {},
 ): Promise<SyncResult> {
   const token = getSyncToken();
   if (!token) return { ok: false, error: "Not signed in. Sign in again to sync." };
@@ -143,7 +146,7 @@ export async function pushToServer(
   // or one running before this field existed -- the server treats a missing
   // value as unknown rather than rejecting, so an old/mid-upgrade client
   // isn't broken by a server that now expects it.
-  const baseSyncedAt = getLastSyncTime();
+  const baseSyncedAt = base ?? getLastSyncTime();
   try {
     const res = await fetch("/api/sync/push", {
       method: "POST",
@@ -163,8 +166,10 @@ export async function pushToServer(
     if (json === null || typeof json.syncedAt !== "string") {
       return { ok: false, error: "Server responded, but the response was malformed. Try again." };
     }
-    localStorage.setItem(LAST_SYNC_KEY, json.syncedAt);
-    await recordServerCopy(data);
+    if (record) {
+      localStorage.setItem(LAST_SYNC_KEY, json.syncedAt);
+      await recordServerCopy(data);
+    }
     return { ok: true, syncedAt: json.syncedAt };
   } catch {
     return { ok: false, error: "Could not reach server. Is it running?" };
@@ -394,6 +399,7 @@ export interface MergeConflictDetail {
 export interface ReplacedCloseNotice { cycleLabel: string; standingClosedAt: string }
 
 export type MergeAndPushResult =
+  // mergedData is on the server, not yet on this device: store it, then recordMergeStored (or mergeNotStored if the store fails).
   | { ok: true; syncedAt: string; addedFromServer: number; conflictsResolved: number; conflicts: StoredTransaction[]; conflictDetails: MergeConflictDetail[]; clashes: MergeClash[]; nonTransactionDivergence: string[]; replacedCloses: ReplacedCloseNotice[]; mergedData: LocalFinancials; firstSync: boolean }
   | { ok: false; error: string; conflict?: boolean };
 
@@ -415,10 +421,17 @@ export type MergeAndPushResult =
  * No server-side change: the server stores one opaque blob with zero
  * merge awareness (confirmed by reading server/src/routes/sync.ts), so
  * this pull/merge/push sequence is the entire mechanism, client-side only.
+ *
+ * DI-15: **the sync is NOT recorded here**, neither the time nor the sync
+ * record. This device doesn't hold the merged copy until the caller stores
+ * it. The caller then calls recordMergeStored, or mergeNotStored if the store
+ * failed. Recorded at the push, a failed store left a device whose next merge
+ * read the other device's changes as its own edits and reverted them, and
+ * whose next push landed without a conflict and overwrote the merged copy.
  */
 export async function mergeAndPush(email: string, local: LocalFinancials): Promise<MergeAndPushResult> {
   const seen = await lastSeen();
-  const pulled = await pullFromServer(email);
+  const pulled = await pullFromServer(email, { record: false });
   if (!pulled.ok) return { ok: false, error: pulled.error };
 
   // SYNC-1 step 2: the whole merge, not transactions alone. The wishlist,
@@ -429,7 +442,9 @@ export async function mergeAndPush(email: string, local: LocalFinancials): Promi
   const mergedData: LocalFinancials = result.data;
   const { conflictDetails, replacedCloses } = describeMerge(result);
 
-  const pushed = await pushToServer(email, mergedData);
+  // Built on the copy just pulled, so the server takes it; this device's own
+  // sync time stays where it was until the merged copy is stored.
+  const pushed = await pushToServer(email, mergedData, { record: false, baseSyncedAt: pulled.syncedAt });
   if (!pushed.ok) return { ok: false, error: pushed.error ?? "Merge succeeded locally, but push failed.", conflict: pushed.conflict };
 
   return {
@@ -445,6 +460,32 @@ export async function mergeAndPush(email: string, local: LocalFinancials): Promi
     mergedData,
     firstSync: !seen,
   };
+}
+
+/**
+ * DI-15: the conflict merge's copy is stored on this device, so record the
+ * sync: its time (this device's next push builds on the merged copy) and the
+ * sync record (plan H 5b: the server holds the merged copy, and so does this
+ * device now).
+ */
+export async function recordMergeStored(userId: string, merged: { syncedAt: string; mergedData: LocalFinancials }): Promise<void> {
+  try {
+    localStorage.setItem(LAST_SYNC_KEY, merged.syncedAt);
+  } catch {
+    // Unrecorded: the next push meets a conflict and merges again, finding nothing new.
+  }
+  await saveSeen(userId, merged.mergedData);
+}
+
+/**
+ * DI-15: the conflict merge reached the server but couldn't be stored here.
+ * The sync time stays at the last sync this device holds, so its next push
+ * meets a conflict and merges again rather than overwriting the merged copy.
+ * The sync record is dropped (owner, session 7): that merge is a first merge,
+ * which keeps this device's copy and says what may differ.
+ */
+export function mergeNotStored(userId: string): void {
+  clearSeen(userId);
 }
 
 /** What a merge resolved, as the notice names it. Shared by the conflict merge and the fetch. */
