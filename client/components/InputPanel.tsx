@@ -242,11 +242,18 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   // Shared by commitTransaction and commitSplitTransaction -- resolves the
   // card being paid with (saves a new one if the add-card panel is open),
   // so this small but easy-to-get-wrong bit of logic isn't duplicated.
-  function resolveCard(): { cardId?: string; cardLabel?: string } {
+  // A card typed into the open panel comes back as `cards`, for the caller to
+  // write in the SAME update as the entry: saving it in an update of its own
+  // lost it, because the entry's update was built from the older state and
+  // replaced it (the lost-card bug, owner's item 6, session 6).
+  function resolveCard(): { cardId?: string; cardLabel?: string; cards?: StoredCard[] } {
     if (txPayMethod !== "card") return {};
     if (showAddCard) {
-      const saved = saveCard(newCardType, newCardLast4);
-      if (saved) { setNewCardLast4(""); setShowAddCard(false); return { cardId: saved.id, cardLabel: saved.label }; }
+      const saved = storeCard(cards, newCardType, newCardLast4);
+      if (saved) {
+        setNewCardLast4(""); setShowAddCard(false);
+        return { cardId: saved.card.id, cardLabel: saved.card.label, ...(saved.cards !== cards ? { cards: saved.cards } : {}) };
+      }
       return {};
     }
     if (txCardId) {
@@ -259,7 +266,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   function commitTransaction() {
     const amt = parseFloat(txAmt);
     if (!amt || amt <= 0) return;
-    const { cardId, cardLabel } = resolveCard();
+    const { cardId, cardLabel, cards: withNewCard } = resolveCard();
     const description = txDesc.trim() || txBucket.charAt(0) + txBucket.slice(1).toLowerCase();
     // "If null only": a category rule only ever fills in a category the
     // user hasn't already picked -- never overrides an explicit choice.
@@ -286,7 +293,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
       ...(txBucket === "SAVINGS" && txAddToEF ? { efAmount: roundMoney(efAmtUSD) } : {}),
       ...(txBucket !== "SAVINGS" && txBucket !== "INCOME" && txBucket !== "TRANSFER" && txFromEF ? { efAmount: roundMoney(-efAmtUSD) } : {}),
     };
-    update({ transactions: [tx, ...financials.transactions] });
+    update({ transactions: [tx, ...financials.transactions], ...(withNewCard ? { cards: withNewCard } : {}) });
     setTxAmt(""); setTxDesc(""); setTxPayNote(""); setTxAddToEF(false); setTxFromEF(false); setTxEfAmt(""); setTxCategory("");
   }
 
@@ -302,7 +309,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     const amtUSDLeg = parseFloat(txSplitUSD.replace(/,/g, ""));
     const amtLBPLeg = parseFloat(txSplitLBP.replace(/,/g, ""));
     if (!(amtUSDLeg > 0) || !(amtLBPLeg > 0)) return;
-    const { cardId, cardLabel } = resolveCard();
+    const { cardId, cardLabel, cards: withNewCard } = resolveCard();
     const description = txDesc.trim() || txBucket.charAt(0) + txBucket.slice(1).toLowerCase();
     const autoCategory = txCategory || matchCategoryRule(description, financials.categoryRules);
     const now = new Date().toISOString();
@@ -319,7 +326,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
       id: uid(), amount: amtLBPLeg, currency: "LBP", ...shared,
       ...withRate("LBP", financials.lbpRate ?? DEFAULT_LBP_RATE),
     };
-    update({ transactions: [legUSD, legLBP, ...financials.transactions] });
+    update({ transactions: [legUSD, legLBP, ...financials.transactions], ...(withNewCard ? { cards: withNewCard } : {}) });
     setTxSplitUSD(""); setTxSplitLBP(""); setTxSplitMode(false); setTxDesc(""); setTxPayNote(""); setTxCategory("");
   }
 
