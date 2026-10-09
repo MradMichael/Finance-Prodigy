@@ -11,7 +11,7 @@ import type { Session } from "../../lib/auth";
 import { loadData, saveData, activeTransactions, syncAllowed, resetFinancials, saveFailureKind, SAVE_FAILURE_REASON, exportFileName } from "../../lib/localData";
 import { computeDashboard } from "../../lib/computeDashboard";
 import { buildReportHtml } from "../../lib/printReport";
-import { pushToServer, pullFromServer, getLastSyncTime, confirmOverwriteIfNeeded, mergeAndPush, buildMergeNoticeText, applyBackupChoice, type BackupChoice } from "../../lib/syncService";
+import { pushToServer, pullFromServer, getLastSyncTime, confirmOverwriteIfNeeded, mergeAndPush, recordMergeStored, mergeNotStored, buildMergeNoticeText, applyBackupChoice, type BackupChoice } from "../../lib/syncService";
 import { saveSeen, loadSeen } from "../../lib/syncSeen";
 import { takeUnseenClashes } from "../../lib/clashNotice";
 import { restoreFromExport } from "../../lib/syncMerge";
@@ -200,10 +200,12 @@ export default function ProfilePage() {
     try {
       await saveData(result.mergedData, session.userId);
     } catch (err) {
+      mergeNotStored(session.userId); // DI-15: not held here, so not recorded; the record is dropped
       setSyncing(false);
       setSyncMsg("✗ The merge reached the server, but couldn't be saved on this device. " + SAVE_FAILURE_REASON[saveFailureKind(err)]);
       return;
     }
+    await recordMergeStored(session.userId, result); // DI-15: stored, so now the sync is recorded
     setLastSync(result.syncedAt);
     // Plan H 5d: changes both devices made that this device hasn't shown; on a first merge, what may differ.
     const named = await takeUnseenClashes(session.userId, result.mergedData, undefined, { firstSync: result.firstSync });

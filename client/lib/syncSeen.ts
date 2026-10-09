@@ -88,9 +88,18 @@ export function seenOf(d: LocalFinancials): SeenMap {
 
 const seenKey = (userId: string) => `essa_seen_${userId}`;
 
+// DI-15: a record that couldn't be written to storage (full, a private
+// window's quota) is still this device's record while the page is open.
+// Without it, every merge after it was a "first merge" and said what may
+// differ again. Only a failed write puts a record here; the next written one
+// takes it out. Fingerprints only, never data.
+const unsaved = new Map<string, SeenMap>();
+
 /** This device's fingerprints for the account, or null before its first sync since the update. */
 export async function loadSeen(userId: string): Promise<SeenMap | null> {
   if (typeof window === "undefined") return null;
+  const held = unsaved.get(userId);
+  if (held) return held;
   const raw = localStorage.getItem(seenKey(userId));
   if (!raw) return null;
   try {
@@ -111,16 +120,27 @@ export async function loadSeen(userId: string): Promise<SeenMap | null> {
  */
 export async function saveSeen(userId: string, serverCopy: LocalFinancials): Promise<void> {
   if (typeof window === "undefined") return;
+  let seen: SeenMap;
+  try {
+    seen = seenOf(serverCopy);
+  } catch {
+    return; // not a copy the rule can read: nothing recorded, today's merge next time
+  }
   try {
     const { encryptJSON } = await import("./crypto");
-    localStorage.setItem(seenKey(userId), await encryptJSON(JSON.stringify(seenOf(serverCopy))));
+    localStorage.setItem(seenKey(userId), await encryptJSON(JSON.stringify(seen)));
+    unsaved.delete(userId);
   } catch {
-    // Not recorded: the next merge compares against the previous record, or
-    // falls back to today's merge. Nothing is lost either way.
+    // Not written (DI-15): held for this page instead, and the stored record,
+    // now stale, is dropped so it can't be read in its place after a reload.
+    // That reload's next merge is then a first merge, once.
+    unsaved.set(userId, seen);
+    try { localStorage.removeItem(seenKey(userId)); } catch { /* nothing to drop */ }
   }
 }
 
-/** Deleting the account removes it with everything else. */
+/** Deleting the account removes it with everything else; DI-15 drops it when a merge couldn't be stored. */
 export function clearSeen(userId: string): void {
+  unsaved.delete(userId);
   if (typeof window !== "undefined") localStorage.removeItem(seenKey(userId));
 }
