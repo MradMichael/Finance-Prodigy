@@ -1,7 +1,8 @@
 // DI-15 on Profile → Merge: the merge reaches the server, then Profile stores
 // the merged copy. Only once that store succeeds does it record the sync;
-// when the store fails, it drops the record (and says what it already says:
-// the merge reached the server but couldn't be saved here).
+// when the store fails, it leaves the previous record as it was (owner,
+// session 8), and says what it already says: the merge reached the server but
+// couldn't be saved here.
 import { it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import type { LocalFinancials } from "../../lib/localData";
@@ -30,6 +31,7 @@ vi.mock("../../lib/localData", async (importOriginal) => {
   };
 });
 const recordMergeStored = vi.fn(async (_u: string, _r: unknown) => { log.push("recorded"); });
+// The old drop (session 7). It must not be called: a failed store keeps the previous record (owner, session 8).
 const mergeNotStored = vi.fn((_u: string) => { log.push("record dropped"); });
 let mergeResult: Record<string, unknown>;
 vi.mock("../../lib/syncService", async (importOriginal) => {
@@ -77,12 +79,11 @@ it("records the sync only once the merged copy is stored", async () => {
   expect(mergeNotStored).not.toHaveBeenCalled();
 });
 
-it("a store that fails records nothing and drops the record", async () => {
+it("a store that fails records nothing and leaves the previous record as it was", async () => {
   storeFails = true;
   await merge();
   expect(await screen.findByText(/The merge reached the server, but couldn't be saved on this device\./)).toBeTruthy();
-  await waitFor(() => expect(log).toContain("record dropped"));
-  expect(log).toEqual(["store failed", "record dropped"]);
-  expect(mergeNotStored).toHaveBeenCalledWith("u1");
+  expect(log).toEqual(["store failed"]);
+  expect(mergeNotStored).not.toHaveBeenCalled();
   expect(recordMergeStored).not.toHaveBeenCalled();
 });

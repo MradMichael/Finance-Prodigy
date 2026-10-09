@@ -7,9 +7,11 @@
 // - the sync time was written at the pull and the push, so the next plain
 //   push landed without a conflict and overwrote the merged copy outright.
 // Now the conflict merge records neither; the caller records both once the
-// merged copy is stored, and drops the record when the store fails. The next
-// merge is then a first merge: this device's copy is kept and the "may
-// differ" sentence names what differs (today's behaviour, never silent).
+// merged copy is stored. When the store fails, both stay as they were (owner,
+// session 8): the previous record still describes the copy this device holds,
+// so the next merge takes the other device's changes, with nothing to
+// announce. (Session 7 dropped the record instead; that made the next merge a
+// first merge that kept this device's copy and said what may differ.)
 //
 // The fake server below applies the real push rule (server/src/routes/
 // sync.ts): a push whose baseSyncedAt is older than the server's copy is a
@@ -19,7 +21,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 const SESSION = { userId: "u1", email: "u1@example.com", name: "U One" };
 vi.mock("./auth", () => ({ getRecoveryTokenForSync: vi.fn(async () => undefined), getSession: () => SESSION }));
 
-import { pushToServer, mergeAndPush, getLastSyncTime, recordMergeStored, mergeNotStored } from "./syncService";
+import { pushToServer, mergeAndPush, getLastSyncTime, recordMergeStored } from "./syncService";
 import { loadSeen, saveSeen, seenOf } from "./syncSeen";
 import { activateSessionKey } from "./crypto";
 import { DEFAULT_DATA, type LocalFinancials, type StoredGoal } from "./localData";
@@ -126,28 +128,34 @@ describe("the conflict merge records nothing itself", () => {
   });
 });
 
-describe("the caller's store failed (owner: drop the record)", () => {
+describe("the caller's store failed (owner, session 8: keep the previous record)", () => {
+  // The caller does nothing to the record: it still describes the copy this
+  // device holds, the one it last synced, so the next merge reads it right.
   async function failedStore() {
     const mine = await setUp();
+    const before = await loadSeen("u1");
     const r = await mergeAndPush("u1@example.com", mine);
     if (!r.ok) throw new Error("expected a merge");
-    mergeNotStored("u1");
-    return mine;
+    return { mine, before };
   }
 
-  it("drops the sync record and leaves the sync time at the last sync this device holds", async () => {
-    await failedStore();
-    expect(localStorage.getItem(SEEN)).toBeNull();
-    expect(await loadSeen("u1")).toBeNull();
+  it("keeps the previous sync record, and the sync time at the last sync this device holds", async () => {
+    const { before } = await failedStore();
+    expect(before).not.toBeNull();
+    expect(localStorage.getItem(SEEN)).not.toBeNull(); // still stored, not just held
+    expect(await loadSeen("u1")).toEqual(before);
     expect(getLastSyncTime()).toBe(T(1));
   });
 
-  it("the next merge is a first merge: this device's copy is kept, and the 'may differ' sentence names the goals", async () => {
-    const mine = await failedStore();
+  it("the next merge takes the other device's rename, with nothing to announce: not a first merge, not a clash", async () => {
+    const { mine } = await failedStore();
     const again = await mergeAndPush("u1@example.com", mine);
     if (!again.ok) throw new Error("expected a merge");
-    expect(again.firstSync).toBe(true);
-    expect(again.nonTransactionDivergence).toContain("goals");
+    expect(again.mergedData.goals[0].name).toBe("MacBook");
+    expect(again.mergedData.income).toBe(3300); // this device's own edit still stands
+    expect(again.firstSync).toBe(false);
+    expect(again.nonTransactionDivergence).toEqual([]);
+    expect(again.clashes).toEqual([]);
   });
 });
 

@@ -42,7 +42,7 @@ vi.mock("../lib/syncService", async (importOriginal) => {
     })),
     pullFromServer: vi.fn(async () => ({ ok: false, error: "none" })),
     pushToServer: vi.fn(async () => ({ ok: false, conflict: true, error: "Server data has changed since your last sync." })),
-    recordMergeStored: vi.fn(async () => {}), mergeNotStored: vi.fn(), // DI-15
+    recordMergeStored: vi.fn(async () => {}), // DI-15
     mergeAndPush: vi.fn(async () => ({
       ok: true, syncedAt: "2026-10-08T09:01:00.000Z", addedFromServer: 0, conflictsResolved: 0, conflicts: [], conflictDetails: [],
       clashes: [], nonTransactionDivergence: [], replacedCloses: [], mergedData: { ...seed, clashRecords: mergedRecords }, firstSync: mergedFirstSync,

@@ -19,7 +19,7 @@ vi.mock("../lib/auth", () => ({
 }));
 vi.mock("../lib/syncService", () => ({
   pushToServer: vi.fn(), pullFromServer: vi.fn(), getLastSyncTime: () => null, confirmOverwriteIfNeeded: vi.fn(async () => true),
-  mergeAndPush: vi.fn(), recordMergeStored: vi.fn(), mergeNotStored: vi.fn(), buildMergeNoticeText: () => ({ text: "" }), applyBackupChoice: vi.fn(),
+  mergeAndPush: vi.fn(), recordMergeStored: vi.fn(), buildMergeNoticeText: () => ({ text: "" }), applyBackupChoice: vi.fn(),
 }));
 vi.mock("../lib/analytics", () => ({ isAnalyticsOptedIn: () => true, setAnalyticsOptIn: vi.fn() }));
 

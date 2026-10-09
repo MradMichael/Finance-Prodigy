@@ -22,7 +22,7 @@ vi.mock("../../lib/syncService", async (importOriginal) => {
   const { DEFAULT_DATA } = await import("../../lib/localData");
   return {
     pushToServer: vi.fn(), pullFromServer: vi.fn(), getLastSyncTime: () => null, confirmOverwriteIfNeeded: vi.fn(async () => true),
-    recordMergeStored: vi.fn(async () => {}), mergeNotStored: vi.fn(), // DI-15
+    recordMergeStored: vi.fn(async () => {}), // DI-15
     mergeAndPush: vi.fn(async () => ({
       ok: true, syncedAt: "2026-10-08T09:01:00.000Z", addedFromServer: 0, conflictsResolved: 0, conflicts: [], conflictDetails: [],
       clashes: [], nonTransactionDivergence: divergence, replacedCloses: [], mergedData: { ...DEFAULT_DATA, income: 3000, clashRecords: records }, firstSync,
