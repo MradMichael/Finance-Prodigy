@@ -335,6 +335,7 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
             />
             <select
               value={filter}
+              aria-label="Month" // A11Y-04 (owner-approved name, session 8)
               // Option values are cycle keys plus the literal "all" -- boundary cast.
                 onChange={(e) => setFilter(e.target.value === "all" ? "all" : asCycleKey(e.target.value))}
               className="px-3 py-2 rounded-xl text-sm"
