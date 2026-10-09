@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
+import { useDialogFocus } from "./useDialogFocus";
 import { useTheme } from "../contexts/ThemeContext";
 
 /**
@@ -23,6 +24,8 @@ export default function RecoveryCodeModal({
   note?: string;
 }) {
   const T = useTheme();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(dialogRef); // A11Y-02: a named modal dialog, focus in and back
   const [confirmed, setConfirmed] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -39,10 +42,14 @@ export default function RecoveryCodeModal({
       style={{ background: "rgba(0,0,0,0.6)" }}
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="recovery-code-title"
         className="w-full max-w-sm rounded-2xl p-7 shadow-2xl"
         style={{ background: T.panel, border: `1px solid ${T.line}` }}
       >
-        <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.brass }}>
+        <p id="recovery-code-title" className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.brass }}>
           Save your recovery code
         </p>
         <h2 className="text-lg mt-1 mb-3" style={{ color: T.text, fontFamily: "Spectral, Georgia, serif" }}>

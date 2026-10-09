@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
+import { useDialogFocus } from "./useDialogFocus";
 import { toUSD, moneyMaxFor, type Currency, type TrackedBalance, type PeriodCloseAcknowledgement } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { MoneyInput, Label, FocusInput } from "./form/Primitives";
@@ -100,6 +101,8 @@ export default function CloseCycleModal({
   ) => void;
 }) {
   const T = useTheme();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(dialogRef); // A11Y-02: a named modal dialog, focus in and back
   const [amounts, setAmounts] = useState<Record<string, string>>({});
   // Pre-filled from the derived figure, so an unchanged row is confirmed by
   // not touching it. Seeded once at mount rather than defaulted at read
@@ -182,10 +185,14 @@ export default function CloseCycleModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)" }}>
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="close-cycle-title"
         className="w-full max-w-md rounded-2xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto"
         style={{ background: T.panel, border: `1px solid ${T.line}` }}
       >
-        <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.jade }}>Close this cycle</p>
+        <p id="close-cycle-title" className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.jade }}>Close this cycle</p>
         <h2 className="text-lg mt-1 mb-1" style={{ color: T.text, fontFamily: "Spectral, Georgia, serif" }}>{cycleLabel}</h2>
         <p className="text-xs mb-5" style={{ color: T.mute }}>
           State what each account actually holds. This sets its baseline to that figure, as of the
