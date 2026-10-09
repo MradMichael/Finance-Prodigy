@@ -49,7 +49,7 @@ export default function TermsPage() {
         </div>
 
         <Section title="Acceptance">
-          <p>By creating an account, you agree to these terms and to the <Link href="/privacy" style={{ color: T.jade }}>Privacy Policy</Link>. If you don&apos;t agree, don&apos;t use ESSA.</p>
+          <p>By creating an account, you agree to these terms and to the <Link href="/privacy" style={{ color: T.jade, textDecoration: "underline" }}>Privacy Policy</Link>. If you don&apos;t agree, don&apos;t use ESSA.</p>
         </Section>
 
         <Section title="What ESSA is">
@@ -72,7 +72,7 @@ export default function TermsPage() {
         </Section>
 
         <Section title="Your account and recovery code">
-          <p>You&apos;re responsible for keeping your password and your recovery code safe. There is no email-based password reset. If you lose both, your data cannot be recovered by us or anyone else. See the <Link href="/privacy" style={{ color: T.jade }}>Privacy Policy</Link> for how the encryption behind this works.</p>
+          <p>You&apos;re responsible for keeping your password and your recovery code safe. There is no email-based password reset. If you lose both, your data cannot be recovered by us or anyone else. See the <Link href="/privacy" style={{ color: T.jade, textDecoration: "underline" }}>Privacy Policy</Link> for how the encryption behind this works.</p>
         </Section>
 
         <Section title="Acceptable use">
@@ -108,7 +108,7 @@ export default function TermsPage() {
         </Section>
 
         <Section title="Contact">
-          <p>Questions about these terms: <a href="mailto:mmrad1998@gmail.com" style={{ color: T.jade }}>mmrad1998@gmail.com</a></p>
+          <p>Questions about these terms: <a href="mailto:mmrad1998@gmail.com" style={{ color: T.jade, textDecoration: "underline" }}>mmrad1998@gmail.com</a></p>
         </Section>
       </div>
     </div>
