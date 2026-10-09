@@ -1,7 +1,9 @@
 "use client";
 
+import { useRef } from "react";
 import { useTheme } from "../contexts/ThemeContext";
 import type { BackupChoice } from "../lib/syncService";
+import { useDialogFocus } from "./useDialogFocus";
 
 /**
  * The load-time backup choice for an account that has not made one (audit
@@ -37,6 +39,8 @@ export default function SyncChoicePrompt({ hasServerCopy, busy, onChoose }: {
   onChoose: (choice: BackupChoice) => void;
 }) {
   const T = useTheme();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(dialogRef); // A11Y-02: it was 21 Tab presses in, behind the page
   const btn = (label: string, choice: BackupChoice, primary = false, danger = false) => (
     <button
       disabled={busy}
@@ -55,6 +59,7 @@ export default function SyncChoicePrompt({ hasServerCopy, busy, onChoose }: {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)" }}>
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="sync-choice-title"

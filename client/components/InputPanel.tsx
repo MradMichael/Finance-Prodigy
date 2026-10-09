@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import { useDialogFocus } from "./useDialogFocus";
 import type { LocalFinancials, StoredTransaction, StoredGoal, StoredDebt, StoredRecurring, StoredCard, RecurringFrequency, Currency, PaymentMethod, BudgetRuleKey } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
@@ -124,6 +125,8 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   // it anyway" vs "let me fix the currency", so this stores enough to
   // resume whichever save flow (add or edit) triggered it.
   const [lbpConfirm, setLbpConfirm] = useState<{ amount: number; proceed: () => void } | null>(null);
+  const lbpConfirmRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(lbpConfirmRef, lbpConfirm != null); // A11Y-02
 
   // Goal form
   const [gName,    setGName]    = useState("");
@@ -2031,6 +2034,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
         onKeyDown={(e) => { if (e.key === "Escape") setLbpConfirm(null); }}
       >
         <div
+          ref={lbpConfirmRef}
           role="dialog"
           aria-modal="true"
           aria-label="Confirm low LBP amount"
