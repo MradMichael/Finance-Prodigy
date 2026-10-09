@@ -16,10 +16,12 @@
 //     keep this device's copy must not push: a device merely opened would
 //     overwrite the other device's newer edits to them.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+// DI-16: the sync time is per account, recorded for the signed-in account syncing its own address.
+vi.mock("./auth", () => ({ getRecoveryTokenForSync: vi.fn(async () => undefined), getSession: () => ({ userId: "u1", email: "u1@example.com", name: "U One" }) }));
 import { fetchAndMerge, pullFromServer } from "./syncService";
 import { DEFAULT_DATA, type LocalFinancials, type StoredTransaction } from "./localData";
 
-const LAST_SYNC = "essa_last_sync";
+const LAST_SYNC = "essa_last_sync_u1";
 const tx = (id: string, description: string, amount: number, date: string): StoredTransaction => ({
   id, description, amount, currency: "USD", bucket: "WANTS", category: "dining", date,
   updatedAt: `${date}T12:00:00.000Z`,

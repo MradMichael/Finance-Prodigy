@@ -77,3 +77,21 @@ describe("/admin page gate (AUD-01)", () => {
     expect(replaceMock).not.toHaveBeenCalledWith("/");
   });
 });
+
+// DI-16 (session 8): the sync time is per account, so each user's row shows
+// its own. It was one browser-wide value, so only the signed-in row showed it.
+describe("each user's row shows that account's own last sync (DI-16)", () => {
+  it("both rows show a time, each from its own key", async () => {
+    seedUser({ id: "u1", isAdmin: true });
+    seedUser({ id: "u2", isAdmin: false });
+    seedSession("u1");
+    localStorage.setItem("essa_last_sync_u1", "2026-10-01T09:00:00.000Z");
+    localStorage.setItem("essa_last_sync_u2", "2026-09-01T09:00:00.000Z");
+    render(<AdminPage />);
+    await waitFor(() => expect(screen.getByText("Admin panel")).toBeInTheDocument());
+    const rows = screen.getAllByText(/^Last sync: /);
+    expect(rows).toHaveLength(2);
+    expect(rows.filter((r) => r.textContent === "Last sync: Never")).toHaveLength(0);
+    expect(new Set(rows.map((r) => r.textContent)).size).toBe(2);
+  });
+});

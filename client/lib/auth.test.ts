@@ -9,6 +9,7 @@ vi.mock("./syncService", () => ({
   getRecoveryTokenForSync: vi.fn(),
   confirmOverwriteIfNeeded: vi.fn(),
   deleteFromServer: vi.fn(),
+  recordSyncTime: vi.fn(), // DI-16
 }));
 
 const USERS_KEY = "essa_users_v1";
@@ -579,6 +580,17 @@ describe("deleteAccount (2.2.18 -- server-cleanup result is reported, not swallo
     await deleteAccount(userId);
     expect(localStorage.getItem(`essa_clashes_shown_${userId}`)).toBeNull();
     expect(localStorage.getItem("essa_clashes_shown_someone-else")).toBe("sealed");
+  });
+
+  it("removes this account's own sync time, and no other account's (DI-16)", async () => {
+    const reg = await signUp("a@test.com", "Alice", "password12345");
+    if (!reg.ok) throw new Error("setup failed");
+    const userId = listUsers()[0].id;
+    localStorage.setItem(`essa_last_sync_${userId}`, "2026-10-01T09:00:00.000Z");
+    localStorage.setItem("essa_last_sync_someone-else", "2026-10-01T09:00:00.000Z");
+    await deleteAccount(userId);
+    expect(localStorage.getItem(`essa_last_sync_${userId}`)).toBeNull();
+    expect(localStorage.getItem("essa_last_sync_someone-else")).toBe("2026-10-01T09:00:00.000Z");
   });
 
   it("deletes the account locally and reports serverCleanupOk: true when there's no sync token (never synced)", async () => {
