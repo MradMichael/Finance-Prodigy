@@ -570,6 +570,17 @@ describe("deleteAccount (2.2.18 -- server-cleanup result is reported, not swallo
     expect(localStorage.getItem("essa_seen_someone-else")).toBe("sealed");
   });
 
+  it("removes this device's memory of the clash notices it has shown (plan H 5d)", async () => {
+    const reg = await signUp("a@test.com", "Alice", "password12345");
+    if (!reg.ok) throw new Error("setup failed");
+    const userId = listUsers()[0].id;
+    localStorage.setItem(`essa_clashes_shown_${userId}`, "sealed");
+    localStorage.setItem("essa_clashes_shown_someone-else", "sealed");
+    await deleteAccount(userId);
+    expect(localStorage.getItem(`essa_clashes_shown_${userId}`)).toBeNull();
+    expect(localStorage.getItem("essa_clashes_shown_someone-else")).toBe("sealed");
+  });
+
   it("deletes the account locally and reports serverCleanupOk: true when there's no sync token (never synced)", async () => {
     const reg = await signUp("a@test.com", "Alice", "password12345");
     if (!reg.ok) throw new Error("setup failed");

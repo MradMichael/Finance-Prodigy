@@ -239,6 +239,7 @@ function applyMergedUndos(side: LocalFinancials, merged: PeriodClose[]): LocalFi
 /** The fields mergeFinancials combines; every other field is this device's copy. */
 export const MERGED_FIELDS = [
   "transactions", "trackedBalances", "wishlist", "customCategories", "categoryRules", "periodCloses", "deletedKeys", "revivedKeys",
+  "clashRecords",
 ] as const satisfies readonly (keyof LocalFinancials)[];
 
 /**
@@ -291,6 +292,31 @@ function withoutDeleted(d: LocalFinancials, deleted: DeletedKeys | undefined, re
 export type MergeClash =
   | { kind: "goal" | "debt" | "recurring" | "asset" | "wishlist" | "category" | "rule"; name: string; later: boolean }
   | { kind: "setting"; setting: SettingKey; kept: unknown; other: unknown };
+
+/**
+ * Plan H 5d (owner, session 6): a settled clash as the copy keeps it, so every
+ * device says it once, the overridden one included. `key` is the record's id
+ * (a setting's name for a setting). `id` is a fingerprint of the clash and
+ * the two versions, so the same clash merged on two devices is one record.
+ */
+export type ClashRecord = MergeClash & { id: string; at: string; key: string };
+/** Days a clash record stays in the copy after the merge that made it. */
+export const CLASH_RECORD_DAYS = 30;
+
+/** A clash as the merge found it: the kept and other versions, fingerprinted for the record's id. */
+interface Settled { clash: MergeClash; key: string; kept: string; other: string }
+
+/** Both copies' records and this merge's, once each (the earliest stays), none older than CLASH_RECORD_DAYS, oldest first. */
+function mergeClashRecords(a: ClashRecord[] | undefined, b: ClashRecord[] | undefined, fresh: ClashRecord[], now: Date): ClashRecord[] {
+  const cutoff = now.getTime() - CLASH_RECORD_DAYS * 86_400_000;
+  const byId = new Map<string, ClashRecord>();
+  for (const r of [...(a ?? []), ...(b ?? []), ...fresh]) {
+    if (Date.parse(r.at) < cutoff) continue;
+    const held = byId.get(r.id);
+    if (!held || r.at < held.at) byId.set(r.id, r);
+  }
+  return [...byId.values()].sort((x, y) => (x.at !== y.at ? (x.at < y.at ? -1 : 1) : x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
+}
 
 /**
  * Plan H 5c: cards with the same type and last four digits are one card. The
@@ -389,11 +415,11 @@ function remapBalanceRefs(d: LocalFinancials, collapsed: Map<string, TrackedBala
  */
 function mergeBySeen<T>(
   local: T[], server: T[], keyOf: (t: T) => string, seen: Record<string, string> | undefined, stampOf: (t: T) => string | undefined,
-): { items: T[]; clashed: { winner: T; local: T; server: T; later: boolean }[] } {
+): { items: T[]; clashed: { winner: T; local: T; server: T; later: boolean; key: string }[] } {
   const serverBy = new Map(server.map((s) => [keyOf(s), s]));
   const localKeys = new Set(local.map(keyOf));
   const items: T[] = [];
-  const clashed: { winner: T; local: T; server: T; later: boolean }[] = [];
+  const clashed: { winner: T; local: T; server: T; later: boolean; key: string }[] = [];
   for (const l of local) {
     const k = keyOf(l);
     const s = serverBy.get(k);
@@ -406,7 +432,7 @@ function mergeBySeen<T>(
     const tl = instant(stampOf(l)), ts = instant(stampOf(s));
     const winner = tl !== ts ? (tl > ts ? l : s) : tieBreak(l, s);
     items.push(winner);
-    clashed.push({ winner, local: l, server: s, later: tl !== ts }); // the kept one's time is later, or only it has one
+    clashed.push({ winner, local: l, server: s, later: tl !== ts, key: k }); // the kept one's time is later, or only it has one
   }
   for (const s of server) if (!localKeys.has(keyOf(s))) items.push(s);
   return { items, clashed };
@@ -429,7 +455,7 @@ function settingShown(d: LocalFinancials, key: SettingKey): unknown {
 function mergeSettingsBySeen(local: LocalFinancials, server: LocalFinancials, seen: Record<string, string> | undefined) {
   const patch: Record<string, unknown> = {};
   const stamps: Partial<Record<SettingKey, string>> = { ...(local.settingsUpdatedAt ?? {}) };
-  const clashes: MergeClash[] = [];
+  const settled: Settled[] = [];
   for (const key of SETTING_KEYS) {
     const lv = settingValue(local, key), sv = settingValue(server, key);
     const fl = fingerprint(lv), fs = fingerprint(sv);
@@ -445,14 +471,16 @@ function mergeSettingsBySeen(local: LocalFinancials, server: LocalFinancials, se
         // Named only when the two values a person sees differ: both devices
         // healing one split alike, or one rate stamped at two times, is no news.
         const kept = settingShown(from, key), was = settingShown(other, key);
-        if (stableStringify(kept) !== stableStringify(was)) clashes.push({ kind: "setting", setting: key, kept, other: was });
+        if (stableStringify(kept) !== stableStringify(was)) {
+          settled.push({ clash: { kind: "setting", setting: key, kept, other: was }, key, kept: from === local ? fl : fs, other: from === local ? fs : fl });
+        }
       }
     }
     for (const f of SETTING_FIELDS[key]) patch[f] = from[f];
     const stamp = from.settingsUpdatedAt?.[key];
     if (stamp) stamps[key] = stamp; else delete stamps[key];
   }
-  return { patch: patch as Partial<LocalFinancials>, settingsUpdatedAt: stamps, clashes };
+  return { patch: patch as Partial<LocalFinancials>, settingsUpdatedAt: stamps, settled };
 }
 
 /** Each merged item carries the earliest `field` any copy of it holds (a once-only stamp). */
@@ -472,12 +500,15 @@ const byYm = <T extends { ym: string }>(xs: T[]) => [...xs].sort((a, b) => (a.ym
  * called with a record of this device's last sync; without one (the first
  * merge after the update) the merge stays exactly today's.
  */
-function mergeUnderRule(local: LocalFinancials, server: LocalFinancials, deletedKeys: DeletedKeys | undefined, revivedKeys: RevivedKeys | undefined, seen: SeenMap) {
-  const clashes: MergeClash[] = [];
+function mergeUnderRule(local: LocalFinancials, server: LocalFinancials, deletedKeys: DeletedKeys | undefined, revivedKeys: RevivedKeys | undefined, seen: SeenMap, mergedAt: string) {
+  const settled: Settled[] = [];
   const s = (k: SeenKind) => seen.kinds[k];
   const stamp = (t: { updatedAt?: string }) => t.updatedAt;
-  const named = <T extends { name: string }>(kind: "goal" | "debt" | "recurring" | "asset" | "wishlist", r: { clashed: { winner: T; later: boolean }[] }) =>
-    r.clashed.forEach((c) => clashes.push({ kind, name: c.winner.name, later: c.later }));
+  type Clashed<T> = { clashed: { winner: T; local: T; server: T; later: boolean; key: string }[] };
+  const settle = <T>(r: Clashed<T>, clashOf: (c: Clashed<T>["clashed"][number]) => MergeClash) =>
+    r.clashed.forEach((c) => settled.push({ clash: clashOf(c), key: c.key, kept: fingerprint(c.winner), other: fingerprint(c.winner === c.local ? c.server : c.local) }));
+  const named = <T extends { name: string }>(kind: "goal" | "debt" | "recurring" | "asset" | "wishlist", r: Clashed<T>) =>
+    settle(r, (c) => ({ kind, name: c.winner.name, later: c.later }));
   const live = <T>(xs: T[] | undefined, keyOf: (t: T) => string, c: keyof DeletedKeys) => {
     const gone = deletedKeySet(deletedKeys?.[c], revivedKeys?.[c]);
     return (xs ?? []).filter((x) => !gone.has(keyOf(x)));
@@ -496,12 +527,12 @@ function mergeUnderRule(local: LocalFinancials, server: LocalFinancials, deleted
   const assets = mergeBySeen(local.assets ?? [], server.assets ?? [], (a) => a.id, s("assets"), stamp); named("asset", assets);
   const wishlist = mergeBySeen(live(local.wishlist, (w) => w.id, "wishlist"), live(server.wishlist, (w) => w.id, "wishlist"), (w) => w.id, s("wishlist"), stamp); named("wishlist", wishlist);
   const categories = mergeBySeen(live(local.customCategories, (c) => c.value, "customCategories"), live(server.customCategories, (c) => c.value, "customCategories"), (c) => c.value, s("customCategories"), stamp);
-  categories.clashed.forEach((c) => clashes.push({ kind: "category", name: c.winner.label, later: c.later }));
+  settle(categories, (c) => ({ kind: "category", name: c.winner.label, later: c.later }));
   const rules = mergeBySeen(live(local.categoryRules, (r) => r.id, "categoryRules"), live(server.categoryRules, (r) => r.id, "categoryRules"), (r) => r.id, s("categoryRules"), stamp);
-  rules.clashed.forEach((c) => clashes.push({ kind: "rule", name: c.winner.keyword, later: c.later }));
+  settle(rules, (c) => ({ kind: "rule", name: c.winner.keyword, later: c.later }));
 
   const settings = mergeSettingsBySeen(local, server, s("settings"));
-  clashes.push(...settings.clashes);
+  settled.push(...settings.settled);
 
   const at = (e: { at?: string }) => e.at;
   const hist = <T extends { ym: string; at?: string }>(l: T[] | undefined, sv: T[] | undefined, k: SeenKind) =>
@@ -520,7 +551,11 @@ function mergeUnderRule(local: LocalFinancials, server: LocalFinancials, deleted
       budgetRuleHistory: hist(local.budgetRuleHistory, server.budgetRuleHistory, "budgetRuleHistory"),
       netWorthHistory: hist(local.netWorthHistory, server.netWorthHistory, "netWorthHistory"),
     } as Partial<LocalFinancials>,
-    clashes,
+    clashes: settled.map((x) => x.clash),
+    records: settled.map((x): ClashRecord => ({
+      ...x.clash, key: x.key, at: mergedAt,
+      id: fingerprint({ kind: x.clash.kind, key: x.key, kept: x.kept, other: x.other }),
+    })),
   };
 }
 
@@ -554,7 +589,10 @@ export function mergeFinancials(localIn: LocalFinancials, serverIn: LocalFinanci
   const serverU = applyMergedUndos(server, closes);
   const transactions = mergeTransactions(localU.transactions ?? [], serverU.transactions ?? [], revivedKeys?.transactions);
   const liveLocally = new Set((local.periodCloses ?? []).filter((c) => !c.reopenedAt).map(closeKey));
-  const ruled = seen ? mergeUnderRule(local, server, deletedKeys, revivedKeys, seen) : null;
+  const ruled = seen ? mergeUnderRule(local, server, deletedKeys, revivedKeys, seen, at) : null;
+  // Plan H 5d (session 6): records from both copies and this merge, pruned by age.
+  // Written even when empty, so an emptied list replaces this device's copy.
+  const clashRecords = mergeClashRecords(local.clashRecords, server.clashRecords, ruled?.records ?? [], now);
   return {
     data: {
       ...local,
@@ -568,6 +606,7 @@ export function mergeFinancials(localIn: LocalFinancials, serverIn: LocalFinanci
       ...(revivedKeys ? { revivedKeys } : {}),
       ...(ruled ? ruled.data : {}),
       ...(cards ? { cards: cards.cards } : {}),
+      clashRecords: clashRecords.length ? clashRecords : undefined,
     },
     clashes: ruled?.clashes ?? [],
     transactions,

@@ -30,6 +30,7 @@ import { getSession, hasValidSession, signOut } from "../lib/auth";
 import type { Session } from "../lib/auth";
 import { pushToServer, pullFromServer, hasAutoPulled, markAutoPulled, mergeAndPush, fetchAndMerge, buildMergeNoticeText, checkEmailExists, applyBackupChoice, getLastSyncTime, type BackupChoice } from "../lib/syncService";
 import { saveSeen } from "../lib/syncSeen";
+import { takeUnseenClashes } from "../lib/clashNotice";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "../components/EssaBrand";
 import RecurringModelNoticeModal from "../components/RecurringModelNoticeModal";
@@ -206,7 +207,10 @@ export default function Home() {
       if (!merged.ok) { setSyncStatus("conflict"); return; }
       const userId = sessionRef.current?.userId;
       if (userId && await persist(merged.mergedData, userId)) setFinancials(merged.mergedData);
-      const notice = buildMergeNoticeText(merged.addedFromServer, merged.conflictDetails, merged.clashes, merged.replacedCloses);
+      // Plan H 5d: the changes both devices made that this device hasn't shown,
+      // the ones this merge settled included (they are in the merged copy).
+      const named = await takeUnseenClashes(userId, merged.mergedData);
+      const notice = buildMergeNoticeText(merged.addedFromServer, merged.conflictDetails, named, merged.replacedCloses, merged.nonTransactionDivergence ?? []);
       if (notice.text) setMergeNotice(notice);
       setBackupFailed(false);
       retryTimersRef.current.forEach(clearTimeout); retryTimersRef.current = [];
@@ -455,9 +459,11 @@ export default function Home() {
         if (syncTimer.current) { clearTimeout(syncTimer.current); syncTimer.current = null; }
         void autoSync(r.mergedData, s.email);
       }
-      // What arrived, conflicts, changes both devices made (plan H 5d), and
-      // replaced closes.
-      const notice = buildMergeNoticeText(r.addedFromServer, r.conflictDetails, r.clashes, r.replacedCloses);
+      // What arrived, conflicts, changes both devices made that this device
+      // hasn't shown (plan H 5d: settled here or on the other device), replaced
+      // closes, and on a first merge with no record, what may differ.
+      const named = await takeUnseenClashes(s.userId, r.mergedData);
+      const notice = buildMergeNoticeText(r.addedFromServer, r.conflictDetails, named, r.replacedCloses, r.nonTransactionDivergence ?? []);
       if (notice.text) setMergeNotice(notice);
     } finally {
       fetchingRef.current = false;
@@ -669,6 +675,19 @@ export default function Home() {
   useEffect(() => {
     if (loaded && backupOn) void runFetch();
   }, [loaded, backupOn, runFetch]);
+  // Plan H 5d: with backup on, the fetch on open says any change both devices
+  // made that this device hasn't shown. With it off there is no fetch, so the
+  // copy this device opened with (a restore, a sign-in) is checked once here.
+  const clashCheckRef = useRef<string | null>(null);
+  useEffect(() => {
+    const s = sessionRef.current;
+    if (!loaded || backupOn || !s || !financials || clashCheckRef.current === s.userId) return;
+    clashCheckRef.current = s.userId;
+    void takeUnseenClashes(s.userId, financials).then((named) => {
+      const notice = buildMergeNoticeText(0, [], named);
+      if (notice.text) setMergeNotice(notice);
+    });
+  }, [loaded, backupOn, financials]);
   useEffect(() => {
     const onReturn = () => { if (document.visibilityState === "visible") void runFetch(); };
     window.addEventListener("focus", onReturn);

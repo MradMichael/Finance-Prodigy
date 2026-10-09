@@ -1,6 +1,7 @@
 "use client";
 
 import type { CycleKey, CycleHistory, CalendarHistory } from "./period";
+import type { ClashRecord } from "./syncMerge";
 import {CYCLE_START_DAY, cycleKeyForISO, cycleLabel, cycleBounds, cycleKeyMinus, currentCycleKey, cycleCloseInstant } from "./period";
 import { stableStringify, tieBreak } from "./canonical";
 import { type CalendarDay, asCalendarDay, storedDay, calendarDayOf, todayCalendarDay, dayStart, occurrenceDay, addDays } from "./calendarDay";
@@ -957,6 +958,14 @@ export interface LocalFinancials {
    * every deletedKeys entry as a deletion, and ignores this field.
    */
   revivedKeys?: RevivedKeys;
+  /**
+   * Plan H 5d (owner, session 6): each change both devices made that a merge
+   * settled, kept in the copy so every device can say it once, including
+   * the one whose change was overridden. Pruned 30 days after the merge that
+   * made it (lib/syncMerge.ts). What each device has already shown lives on
+   * that device only (lib/clashNotice.ts). Older code ignores the field.
+   */
+  clashRecords?: ClashRecord[];
 }
 
 /** Keys a restore brought back, per collection, each with its restore generation. */
@@ -3299,8 +3308,8 @@ export function negativeGoalOpenings(d: LocalFinancials): { id: string; name: st
 /**
  * Edit Goal's "saved so far" as a correction row (plan H 5a), structurally
  * like buildEfAdjustmentTx: `amount: 0`, so no budget total moves; only
- * goalAmount carries the difference into progress. DRAFT description, for
- * the owner (held branch).
+ * goalAmount carries the difference into progress. Its description,
+ * "Goal balance correction: <name>", is owner-approved (session 6).
  */
 export function buildGoalCorrectionTx(goal: StoredGoal, delta: number): StoredTransaction {
   const now = new Date().toISOString();

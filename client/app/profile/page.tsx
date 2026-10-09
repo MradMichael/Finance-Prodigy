@@ -13,6 +13,7 @@ import { computeDashboard } from "../../lib/computeDashboard";
 import { buildReportHtml } from "../../lib/printReport";
 import { pushToServer, pullFromServer, getLastSyncTime, confirmOverwriteIfNeeded, mergeAndPush, buildMergeNoticeText, applyBackupChoice, type BackupChoice } from "../../lib/syncService";
 import { saveSeen } from "../../lib/syncSeen";
+import { takeUnseenClashes } from "../../lib/clashNotice";
 import { restoreFromExport } from "../../lib/syncMerge";
 import { REGENERATE } from "../../lib/recoveryMessages";
 import type { LocalFinancials } from "../../lib/localData";
@@ -201,7 +202,9 @@ export default function ProfilePage() {
       return;
     }
     setLastSync(result.syncedAt);
-    const notice = buildMergeNoticeText(result.addedFromServer, result.conflictDetails, result.clashes, result.replacedCloses);
+    // Plan H 5d: changes both devices made that this device hasn't shown; on a first merge, what may differ.
+    const named = await takeUnseenClashes(session.userId, result.mergedData);
+    const notice = buildMergeNoticeText(result.addedFromServer, result.conflictDetails, named, result.replacedCloses, result.nonTransactionDivergence ?? []);
     setSyncMsg("✓ Merged. " + (notice.text || "Nothing new from your other device."));
     // Same reload requirement as handlePull -- the dashboard only reads
     // localStorage once, on its own mount.

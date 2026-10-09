@@ -138,6 +138,55 @@ describe("what both devices changed reaches the notice (plan H 5d)", () => {
   });
 });
 
+describe("clash records travel with the copy (plan H 5d, session 6)", () => {
+  const REC = { id: "r-income", at: new Date().toISOString(), key: "income", kind: "setting" as const, setting: "income" as const, kept: 3600, other: 3500 };
+
+  it("a record only the server holds is a change here: the fetched copy is stored", async () => {
+    await saveSeen("u1", data());
+    serverData = data({ clashRecords: [REC] });
+    const r = await fetchAndMerge("u1@example.com", () => data());
+    if (!r.ok || r.skipped) throw new Error("expected a merge");
+    expect(r.mergedData.clashRecords).toEqual([REC]);
+    expect(r.localChanged).toBe(true);
+  });
+
+  it("a record only this device holds is something the server lacks: pushed", async () => {
+    await saveSeen("u1", data());
+    const r = await fetchAndMerge("u1@example.com", () => data({ clashRecords: [REC] }));
+    if (!r.ok || r.skipped) throw new Error("expected a merge");
+    expect(r.serverBehind).toBe(true);
+  });
+});
+
+describe("a device with no record yet says what may differ, that first merge only (owner, session 6)", () => {
+  // Before its first sync since the update the merge keeps this device's copy
+  // of goals and the rest, as it always did; 2.4.52's sentence says so.
+  it("the conflict merge", async () => {
+    serverData = data({ goals: [goal({ name: "MacBook" })] });
+    const r = await mergeAndPush("u1@example.com", data());
+    if (!r.ok) throw new Error(r.error);
+    expect(r.nonTransactionDivergence).toEqual(["goals"]);
+  });
+
+  it("the fetch on open", async () => {
+    serverData = data({ goals: [goal({ name: "MacBook" })] });
+    const r = await fetchAndMerge("u1@example.com", () => data());
+    if (!r.ok || r.skipped) throw new Error("expected a merge");
+    expect(r.nonTransactionDivergence).toEqual(["goals"]);
+  });
+
+  it("with a record, neither does: the rule settles it, and a clash is named instead", async () => {
+    await saveSeen("u1", data());
+    serverData = data({ goals: [goal({ name: "MacBook" })] });
+    const fetched = await fetchAndMerge("u1@example.com", () => data());
+    if (!fetched.ok || fetched.skipped) throw new Error("expected a merge");
+    expect(fetched.nonTransactionDivergence).toEqual([]);
+    const merged = await mergeAndPush("u1@example.com", data());
+    if (!merged.ok) throw new Error(merged.error);
+    expect(merged.nonTransactionDivergence).toEqual([]);
+  });
+});
+
 describe("the first merge after the update", () => {
   it("with no record, the conflict merge pushes exactly today's merge", async () => {
     const local = data({ goals: [goal({ name: "Laptop Pro" })], income: 3200 });
