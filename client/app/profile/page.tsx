@@ -11,7 +11,7 @@ import type { Session } from "../../lib/auth";
 import { loadData, saveData, activeTransactions, syncAllowed, resetFinancials, saveFailureKind, SAVE_FAILURE_REASON, exportFileName } from "../../lib/localData";
 import { computeDashboard } from "../../lib/computeDashboard";
 import { buildReportHtml } from "../../lib/printReport";
-import { pushToServer, pullFromServer, getLastSyncTime, confirmOverwriteIfNeeded, mergeAndPush, recordMergeStored, mergeNotStored, buildMergeNoticeText, applyBackupChoice, type BackupChoice } from "../../lib/syncService";
+import { pushToServer, pullFromServer, getLastSyncTime, confirmOverwriteIfNeeded, mergeAndPush, recordMergeStored, buildMergeNoticeText, applyBackupChoice, type BackupChoice } from "../../lib/syncService";
 import { saveSeen, loadSeen } from "../../lib/syncSeen";
 import { takeUnseenClashes } from "../../lib/clashNotice";
 import { restoreFromExport } from "../../lib/syncMerge";
@@ -200,7 +200,7 @@ export default function ProfilePage() {
     try {
       await saveData(result.mergedData, session.userId);
     } catch (err) {
-      mergeNotStored(session.userId); // DI-15: not held here, so not recorded; the record is dropped
+      // DI-15: not held here, so nothing is recorded; the previous record stays (owner, session 8).
       setSyncing(false);
       setSyncMsg("✗ The merge reached the server, but couldn't be saved on this device. " + SAVE_FAILURE_REASON[saveFailureKind(err)]);
       return;

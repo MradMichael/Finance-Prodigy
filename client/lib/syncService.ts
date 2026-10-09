@@ -6,7 +6,7 @@ import { mergeFinancials, stableStringify, MERGED_FIELDS, RULE_FIELDS, type Merg
 import { cycleLabelLong, dayLabel } from "./period";
 import { getSyncToken } from "./crypto";
 import { getRecoveryTokenForSync, getSession } from "./auth";
-import { loadSeen, saveSeen, clearSeen } from "./syncSeen";
+import { loadSeen, saveSeen } from "./syncSeen";
 
 /** Plan H 5b: after a successful push the server holds what this device holds (see saveSeen). */
 async function recordServerCopy(serverCopy: LocalFinancials): Promise<void> {
@@ -399,7 +399,7 @@ export interface MergeConflictDetail {
 export interface ReplacedCloseNotice { cycleLabel: string; standingClosedAt: string }
 
 export type MergeAndPushResult =
-  // mergedData is on the server, not yet on this device: store it, then recordMergeStored (or mergeNotStored if the store fails).
+  // mergedData is on the server, not yet on this device: store it, then recordMergeStored. If the store fails, record nothing.
   | { ok: true; syncedAt: string; addedFromServer: number; conflictsResolved: number; conflicts: StoredTransaction[]; conflictDetails: MergeConflictDetail[]; clashes: MergeClash[]; nonTransactionDivergence: string[]; replacedCloses: ReplacedCloseNotice[]; mergedData: LocalFinancials; firstSync: boolean }
   | { ok: false; error: string; conflict?: boolean };
 
@@ -424,10 +424,13 @@ export type MergeAndPushResult =
  *
  * DI-15: **the sync is NOT recorded here**, neither the time nor the sync
  * record. This device doesn't hold the merged copy until the caller stores
- * it. The caller then calls recordMergeStored, or mergeNotStored if the store
- * failed. Recorded at the push, a failed store left a device whose next merge
- * read the other device's changes as its own edits and reverted them, and
- * whose next push landed without a conflict and overwrote the merged copy.
+ * it; then the caller calls recordMergeStored. If the store fails, nothing is
+ * recorded and nothing is dropped (owner, session 8): the time and the record
+ * still describe the copy this device holds, so its next push meets a
+ * conflict, and the merge that follows takes the other device's changes.
+ * Recorded at the push, a failed store left a device whose next merge read
+ * the other device's changes as its own edits and reverted them, and whose
+ * next push landed without a conflict and overwrote the merged copy.
  */
 export async function mergeAndPush(email: string, local: LocalFinancials): Promise<MergeAndPushResult> {
   const seen = await lastSeen();
@@ -475,17 +478,6 @@ export async function recordMergeStored(userId: string, merged: { syncedAt: stri
     // Unrecorded: the next push meets a conflict and merges again, finding nothing new.
   }
   await saveSeen(userId, merged.mergedData);
-}
-
-/**
- * DI-15: the conflict merge reached the server but couldn't be stored here.
- * The sync time stays at the last sync this device holds, so its next push
- * meets a conflict and merges again rather than overwriting the merged copy.
- * The sync record is dropped (owner, session 7): that merge is a first merge,
- * which keeps this device's copy and says what may differ.
- */
-export function mergeNotStored(userId: string): void {
-  clearSeen(userId);
 }
 
 /** What a merge resolved, as the notice names it. Shared by the conflict merge and the fetch. */

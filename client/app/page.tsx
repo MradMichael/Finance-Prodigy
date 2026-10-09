@@ -28,7 +28,7 @@ import { computeDashboard } from "../lib/computeDashboard";
 import {currentCycleKey, calendarKeyForDate, type CycleKey, type CycleHistory } from "../lib/period";
 import { getSession, hasValidSession, signOut } from "../lib/auth";
 import type { Session } from "../lib/auth";
-import { pushToServer, pullFromServer, hasAutoPulled, markAutoPulled, mergeAndPush, recordMergeStored, mergeNotStored, fetchAndMerge, buildMergeNoticeText, checkEmailExists, applyBackupChoice, getLastSyncTime, type BackupChoice } from "../lib/syncService";
+import { pushToServer, pullFromServer, hasAutoPulled, markAutoPulled, mergeAndPush, recordMergeStored, fetchAndMerge, buildMergeNoticeText, checkEmailExists, applyBackupChoice, getLastSyncTime, type BackupChoice } from "../lib/syncService";
 import { saveSeen, loadSeen } from "../lib/syncSeen";
 import { takeUnseenClashes } from "../lib/clashNotice";
 import { useTheme } from "../contexts/ThemeContext";
@@ -206,13 +206,12 @@ export default function Home() {
       const merged = await mergeAndPush(email, data);
       if (!merged.ok) { setSyncStatus("conflict"); return; }
       const userId = sessionRef.current?.userId;
-      // DI-15: the sync is recorded only once the merged copy is stored here;
-      // a failed store drops the record instead (lib/syncService.ts).
+      // DI-15: the sync is recorded only once the merged copy is stored here.
+      // A failed store records nothing and drops nothing: the previous record
+      // still describes this device's copy (owner, session 8; lib/syncService.ts).
       if (userId && await persist(merged.mergedData, userId)) {
         setFinancials(merged.mergedData);
         await recordMergeStored(userId, merged);
-      } else if (userId) {
-        mergeNotStored(userId);
       }
       // Plan H 5d: the changes both devices made that this device hasn't shown,
       // the ones this merge settled included (they are in the merged copy).

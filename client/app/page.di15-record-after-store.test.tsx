@@ -1,9 +1,9 @@
 // DI-15 on the dashboard: autoSync's conflict merge reaches the server, then
 // the dashboard stores the merged copy. Only once that store succeeds does it
 // record the sync (the time and the sync record); when the store fails, it
-// drops the record, so the next merge is a first merge that says what may
-// differ, never one that silently reverts the other device's changes
-// (lib/di15-record-after-store.test.ts has the merge itself).
+// leaves both as they were (owner, session 8), so the next merge reads this
+// device's copy against its last real sync and takes the other device's
+// changes (lib/di15-record-after-store.test.ts has the merge itself).
 //
 // The fixture's monthly snapshots are already current, so the load-time
 // snapshot write doesn't happen.
@@ -33,6 +33,7 @@ vi.mock("../lib/localData", async (importOriginal) => {
 vi.mock("../lib/syncSeen", () => ({ saveSeen: vi.fn(async () => {}), loadSeen: vi.fn(async () => null) }));
 vi.mock("../lib/clashNotice", () => ({ takeUnseenClashes: vi.fn(async () => []) }));
 const recordMergeStored = vi.fn(async (_u: string, _r: unknown) => { log.push("recorded"); });
+// The old drop (session 7). It must not be called: a failed store keeps the previous record (owner, session 8).
 const mergeNotStored = vi.fn((_u: string) => { log.push("record dropped"); });
 let mergeResult: Record<string, unknown>;
 vi.mock("../lib/syncService", async (importOriginal) => {
@@ -91,12 +92,12 @@ it("records the sync only once the merged copy is stored", { timeout: 20000 }, a
   expect(mergeNotStored).not.toHaveBeenCalled();
 });
 
-it("a store that fails records nothing and drops the record", { timeout: 20000 }, async () => {
+it("a store that fails records nothing and leaves the previous record as it was", { timeout: 20000 }, async () => {
   storeFails = true;
   render(<Home />);
-  await waitFor(() => expect(log).toContain("record dropped"), { timeout: 10000 });
-  expect(log.slice(0, 2)).toEqual(["store failed", "record dropped"]);
-  expect(mergeNotStored).toHaveBeenCalledWith("u1");
+  await waitFor(() => expect(log).toContain("store failed"), { timeout: 10000 });
+  await new Promise((r) => setTimeout(r, 300)); // anything the failure path would do, done
+  expect(log.every((e) => e === "store failed")).toBe(true);
+  expect(mergeNotStored).not.toHaveBeenCalled();
   expect(recordMergeStored).not.toHaveBeenCalled();
-  expect(log).not.toContain("stored");
 });
