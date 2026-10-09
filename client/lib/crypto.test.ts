@@ -250,12 +250,15 @@ describe("toB64 / fromB64 at any size (DI-07)", () => {
     }
   });
 
+  // A size test, not a speed test: on a slower machine 8 MB takes over the
+  // default 5 s (measured 5.5 s alone, 10-11 s in the full suite), so it gets
+  // its own limit.
   it("encodes and decodes 8 MB, 64x the old ~124 KB ceiling", () => {
     const bytes = pattern(8 * 1024 * 1024);
     const b64 = toB64(bytes);
     expect(b64).toBe(reference(bytes));
     expect(Buffer.from(fromB64(b64)).equals(Buffer.from(bytes))).toBe(true);
-  });
+  }, 60_000);
 
   it("encryptJSON / decryptJSON round-trip a plaintext well past 2 MB (the server's backup cap), not just past the old ceiling", async () => {
     const { dek } = await createEnvelopes("pw", "user-1");
