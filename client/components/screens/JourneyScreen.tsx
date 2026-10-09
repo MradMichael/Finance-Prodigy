@@ -226,11 +226,16 @@ export default function JourneyScreen({
                 <span style={{ ...NUMS, color: T.mute }}>{catFirst.savings}%</span> to{" "}
                 <span style={{ ...NUMS, color: T.jade }}>{catLatest.savings}%</span>.
               </p>
-              <p className="text-sm mt-2" style={{ color: T.mute }}>
-                {catLatest.savings >= catFirst.savings
-                  ? "You're putting more of every dollar to work for your future than when you started."
-                  : "Wants crept up a little. Not a crisis, just a pattern worth noticing next time you log a purchase."}
-              </p>
+              {/* COPY-03: "more" only when the savings share actually grew (a
+                  tie used to take this branch); "Wants crept up" when it fell,
+                  or held while wants grew; neither when nothing moved. */}
+              {(catLatest.savings !== catFirst.savings || catLatest.wants > catFirst.wants) && (
+                <p className="text-sm mt-2" style={{ color: T.mute }}>
+                  {catLatest.savings > catFirst.savings
+                    ? "You're putting more of every dollar to work for your future than when you started."
+                    : "Wants crept up a little. Not a crisis, just a pattern worth noticing next time you log a purchase."}
+                </p>
+              )}
             </>
           )}
           {latestMonthTotals && (latestMonthTotals.needs + latestMonthTotals.wants + latestMonthTotals.savings) > 0 ? (

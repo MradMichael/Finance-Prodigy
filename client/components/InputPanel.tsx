@@ -1461,7 +1461,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                               </div>
                               <div className="flex flex-col items-end gap-1 flex-shrink-0">
                                 <span className="text-xs font-semibold tabular-nums" style={{ color: b.color }}>
-                                  {sym}{mo.toFixed(0)}<span className="font-normal" style={{ color: T.mute }}>/mo</span>
+                                  {sym}{Math.round(mo).toLocaleString("en-US")}<span className="font-normal" style={{ color: T.mute }}>/mo</span>
                                 </span>
                                 <div className="flex gap-1.5 opacity-70 transition-opacity">
                                   <button
@@ -1618,7 +1618,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                     >
                       <span>{recs.length} recurring</span>
                       <span className="font-semibold tabular-nums" style={{ color: T.text }}>
-                        ${totalMonthly.toFixed(0)}<span style={{ color: T.mute }}>/mo total</span>
+                        ${Math.round(totalMonthly).toLocaleString("en-US")}<span style={{ color: T.mute }}>/mo total</span>
                       </span>
                     </div>
                   </div>

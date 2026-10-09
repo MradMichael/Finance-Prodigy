@@ -38,7 +38,9 @@ function renderSetup(over: Partial<LocalFinancials> = {}) {
 const saved = (onChange: ReturnType<typeof vi.fn>): LocalFinancials | undefined =>
   onChange.mock.calls.length ? onChange.mock.calls[onChange.mock.calls.length - 1][0] as LocalFinancials : undefined;
 
-const months = () => screen.getByLabelText(/Target \(months of income\)/i) as HTMLInputElement;
+// COPY-02: the target is months of essentials (the safety-net math divides by
+// essentials, not income), so the label says so.
+const months = () => screen.getByLabelText(/Target \(months of essentials\)/i) as HTMLInputElement;
 
 // ───────────────────────── EF target months ─────────────────────────
 
