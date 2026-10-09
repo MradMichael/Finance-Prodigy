@@ -650,8 +650,8 @@ export default function ProfilePage() {
               Your data
             </h2>
             <p className="text-xs mt-1" style={{ color: T.mute }}>
-              Download everything ESSA has for your account: transactions, goals, debts, recurring payments, and
-              settings, as a JSON file. Yours to keep, move elsewhere, or back up by hand.
+              Download your data. Transactions you&apos;ve deleted aren&apos;t included. Yours to keep, move
+              elsewhere, or back up by hand.
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
