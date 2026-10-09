@@ -502,7 +502,8 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   // average and Projections' funding plan (see computeDashboard.ts's
   // goalScores / ProjectionsScreen's openGoals) while keeping it, and its
   // saved amount, around for history -- resuming (clearing pausedAt) is
-  // fully reversible, matching how editing a debt's balance clears paidOffAt.
+  // fully reversible. (A debt's paidOffAt is not like this: once stamped,
+  // nothing in the app clears it, and a merge keeps the earliest stamp.)
   function toggleGoalPause(goalId: string) {
     update({
       goals: financials.goals.map((g) => g.id !== goalId ? g : edited({

@@ -95,3 +95,17 @@ describe("TEST-03: the export leaves out deleted transactions", () => {
     expect(exported.transactions.map((t) => t.id)).toEqual(["t-active"]);
   });
 });
+
+// PRIV-02's second site (owner-approved wording, session 7): Profile no longer
+// claims the file is everything; it says what the file leaves out, and the
+// test above shows that is true.
+describe("PRIV-02: Profile says what the export leaves out", () => {
+  it("'Download your data. Transactions you've deleted aren't included.', and no claim of everything", async () => {
+    await open();
+    const section = screen.getByRole("heading", { name: "Your data" }).parentElement!;
+    expect((section.textContent ?? "").replace(/\s+/g, " ")).toContain(
+      "Download your data. Transactions you've deleted aren't included. Yours to keep, move elsewhere, or back up by hand.",
+    );
+    expect(document.body.textContent).not.toMatch(/Download everything/);
+  });
+});
