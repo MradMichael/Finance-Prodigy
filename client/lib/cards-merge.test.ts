@@ -14,7 +14,7 @@
 // once this device has a record of its last sync: the first merge after
 // the update is today's (this device's cards).
 import { describe, it, expect } from "vitest";
-import { DEFAULT_DATA, saveCard, type LocalFinancials, type StoredCard, type StoredTransaction, type TrackedBalance } from "./localData";
+import { DEFAULT_DATA, saveCard, type LocalFinancials, type PeriodClose, type StoredCard, type StoredTransaction, type TrackedBalance } from "./localData";
 import { mergeFinancials } from "./syncMerge";
 import { seenOf } from "./syncSeen";
 
@@ -76,7 +76,8 @@ describe("(b, c) at merge: duplicates collapse to the earliest, every reference 
     expect(d.transactions.map((t) => [t.id, t.cardId, t.cardLabel]).sort()).toEqual([
       ["t1", "c-laptop", "Visa •••• 4242"], ["t2", "c-laptop", "Visa •••• 4242"],
     ]);
-    expect(d.trackedBalances.map((b) => [b.id, b.cardId]).sort()).toEqual([["b1", "c-laptop"], ["b2", "c-laptop"]]);
+    // Both balances tracked this one card, so they collapse with it (session 6; below).
+    expect(d.trackedBalances.map((b) => [b.id, b.cardId])).toEqual([["b1", "c-laptop"]]);
   });
 
   it("a remap is not an edit: the same transaction remapped on one side only is no conflict, and keeps its edit time", () => {
@@ -108,5 +109,63 @@ describe("(b, c) at merge: duplicates collapse to the earliest, every reference 
     expect(r.data.cards).toEqual([LAPTOP]);
     expect(r.data.transactions.find((t) => t.id === "t2")?.cardId).toBe("c-phone");
     expect(mergeFinancials(phone, laptop, T0).data.cards).toEqual([PHONE]);
+  });
+});
+
+describe("tracked balances follow their card (session 6)", () => {
+  // The same Visa, added on both devices before the update, and tracked on
+  // each: two cards and two tracked balances for one account. The cards
+  // collapse to the earliest; the balances collapse with them, to the lower
+  // id, and their check-ins merge by the existing rule: the later re-anchor,
+  // then the later check-in.
+  const LAPTOP = card("c-laptop", { createdAt: "2026-09-01T10:00:00.000Z" });
+  const PHONE = card("c-phone", { createdAt: "2026-09-03T10:00:00.000Z" });
+  const tracked = (id: string, cardId: string, actualBalance: number, actualBalanceDate: string) =>
+    ({ ...tb(id, cardId), actualBalance, actualBalanceDate }) as TrackedBalance;
+  const close = (tbId: string): PeriodClose => ({
+    cycleKey: "2026-09", rangeStart: "2026-09-01T00:00:00.000Z", rangeEnd: "2026-10-01T00:00:00.000Z", startDayAtClose: 1,
+    closedAt: "2026-10-01T08:00:00.000Z", accounts: [{ trackedBalanceId: tbId, actual: 380, expectedAtClose: 380, discrepancy: 0 }],
+  }) as unknown as PeriodClose;
+  const both = base({ cards: [] });
+  const laptop = base({ cards: [LAPTOP], trackedBalances: [tracked("tb-laptop", "c-laptop", 400, "2026-10-05T09:00:00.000Z")] });
+  const phone = base({ cards: [PHONE], trackedBalances: [tracked("tb-phone", "c-phone", 380, "2026-10-07T09:00:00.000Z")], periodCloses: [close("tb-phone")] });
+
+  it("one tracked balance remains, on the kept card, with the later check-in, from either side", () => {
+    for (const r of [mergeFinancials(laptop, phone, T0, seenOf(both)), mergeFinancials(phone, laptop, T0, seenOf(both))]) {
+      expect(r.data.trackedBalances).toHaveLength(1);
+      expect(r.data.trackedBalances[0]).toMatchObject({ id: "tb-laptop", cardId: "c-laptop", actualBalance: 380, actualBalanceDate: "2026-10-07T09:00:00.000Z" });
+    }
+  });
+
+  it("a close that recorded the dropped balance now names the kept one", () => {
+    for (const r of [mergeFinancials(laptop, phone, T0, seenOf(both)), mergeFinancials(phone, laptop, T0, seenOf(both))]) {
+      expect(r.data.periodCloses?.[0].accounts.map((a) => a.trackedBalanceId)).toEqual(["tb-laptop"]);
+    }
+  });
+
+  it("balances on a card that didn't collapse are left alone, even two on one card", () => {
+    const one = base({ cards: [LAPTOP], trackedBalances: [tracked("tb-a", "c-laptop", 400, "2026-10-05T09:00:00.000Z"), tracked("tb-b", "c-laptop", 390, "2026-10-06T09:00:00.000Z")] });
+    expect(mergeFinancials(one, one, T0, seenOf(both)).data.trackedBalances.map((b) => b.id).sort()).toEqual(["tb-a", "tb-b"]);
+  });
+
+  it("a device already holding both balances ends with one", () => {
+    const holder = base({ cards: [LAPTOP, PHONE], trackedBalances: [tracked("tb-laptop", "c-laptop", 400, "2026-10-05T09:00:00.000Z"), tracked("tb-phone", "c-phone", 380, "2026-10-07T09:00:00.000Z")] });
+    const other = base({ cards: [LAPTOP] });
+    for (const r of [mergeFinancials(holder, other, T0, seenOf(both)), mergeFinancials(other, holder, T0, seenOf(both))]) {
+      expect(r.data.trackedBalances.map((b) => [b.id, b.actualBalance])).toEqual([["tb-laptop", 380]]);
+    }
+  });
+
+  it("a balance deleted on one side takes no part: the kept one keeps its own check-in", () => {
+    const holder = base({ cards: [LAPTOP, PHONE], trackedBalances: [tracked("tb-laptop", "c-laptop", 400, "2026-10-05T09:00:00.000Z"), tracked("tb-phone", "c-phone", 380, "2026-10-07T09:00:00.000Z")] });
+    const deleter = base({ cards: [LAPTOP], deletedKeys: { trackedBalances: [{ key: "tb-phone", deletedAt: "2026-10-07T10:00:00.000Z" }] } });
+    for (const r of [mergeFinancials(holder, deleter, T0, seenOf(both)), mergeFinancials(deleter, holder, T0, seenOf(both))]) {
+      expect(r.data.trackedBalances.map((b) => [b.id, b.actualBalance])).toEqual([["tb-laptop", 400]]);
+    }
+  });
+
+  it("with no record of a last sync, nothing collapses: the merge is as before", () => {
+    const r = mergeFinancials(laptop, phone, T0);
+    expect(r.data.trackedBalances.map((b) => [b.id, b.cardId]).sort()).toEqual([["tb-laptop", "c-laptop"], ["tb-phone", "c-phone"]]);
   });
 });
