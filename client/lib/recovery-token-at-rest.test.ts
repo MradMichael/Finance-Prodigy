@@ -17,7 +17,7 @@ import { deriveRecoveryToken, hasActiveKey } from "./crypto";
 import { DEFAULT_DATA } from "./localData";
 
 vi.mock("./syncService", () => ({
-  pullFromServer: vi.fn(), relinkSync: vi.fn(), confirmOverwriteIfNeeded: vi.fn(), deleteFromServer: vi.fn(),
+  pullFromServer: vi.fn(), relinkSync: vi.fn(), confirmOverwriteIfNeeded: vi.fn(), deleteFromServer: vi.fn(), recordSyncTime: vi.fn(),
   // FB-1b2: regenerating asks the server first. "No copy" keeps it on the
   // local path this file is about; the server paths have their own file.
   probeServerCopy: vi.fn(async () => ({ kind: "none" })),

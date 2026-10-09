@@ -19,7 +19,9 @@ vi.mock("./crypto", async (importOriginal) => {
   return { ...actual, getSyncToken: vi.fn() };
 });
 // getSession: no session, so no sync fingerprints are read or written here (plan H 5b) -- these tests are about today's merge.
-vi.mock("./auth", () => ({ getRecoveryTokenForSync: vi.fn(), getSession: () => null }));
+// DI-16: the sync time is per account. Tests about it sign in (`session`); the rest run with nobody signed in.
+let session: { userId: string; email: string; name: string } | null = null;
+vi.mock("./auth", () => ({ getRecoveryTokenForSync: vi.fn(), getSession: () => session }));
 
 function mockFetchOnce(status: number, body: unknown) {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
@@ -39,6 +41,7 @@ async function activateDummyKey() {
 }
 
 beforeEach(() => {
+  session = null;
   localStorage.clear();
   sessionStorage.clear();
   vi.restoreAllMocks();
@@ -82,6 +85,7 @@ describe("pushToServer", () => {
   });
 
   it("succeeds and records the sync time on a valid 200 response", async () => {
+    session = { userId: "u1", email: "a@test.com", name: "U One" };
     mockFetchOnce(200, { syncedAt: "2026-03-01T12:00:00.000Z" });
     const result = await pushToServer("a@test.com", DEFAULT_DATA);
     expect(result).toEqual({ ok: true, syncedAt: "2026-03-01T12:00:00.000Z" });
@@ -108,6 +112,7 @@ describe("pushToServer", () => {
   });
 
   it("BUG regression guard (2.4.38): sends baseSyncedAt from the last known sync time, and surfaces a stale-push conflict distinctly from a generic failure", async () => {
+    session = { userId: "u1", email: "a@test.com", name: "U One" };
     // Prime getLastSyncTime() via a prior successful push, matching how a
     // real session would have one before this second push happens.
     mockFetchOnce(200, { syncedAt: "2026-01-01T00:00:00.000Z" });

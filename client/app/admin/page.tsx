@@ -165,13 +165,12 @@ function AdminPageContent() {
     ensureFirstUserIsAdmin();
     if (!isAdmin(s.userId)) { router.replace("/"); return; }
 
-    // Build user rows. essa_last_sync is a single browser-wide key, not
-    // namespaced per account — attaching it to every row would misleadingly
-    // claim every listed user "last synced" at the same moment. Only the
-    // currently signed-in user's row can honestly show it.
+    // Build user rows. DI-16 (session 8): the sync time is per account now,
+    // so each row shows its own account's (it was one browser-wide value, so
+    // only the signed-in user's row could show it).
     const rows: UserRow[] = listUsers().map((u) => ({
       ...u,
-      lastSync: u.id === s.userId ? localStorage.getItem("essa_last_sync") : null,
+      lastSync: getLastSyncTime(u.id),
       hasData:  !!localStorage.getItem(`essa_data_${u.id}`),
     }));
     setUsers(rows);

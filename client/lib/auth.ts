@@ -259,6 +259,8 @@ async function signInFromSync(
   await saveData({ ...pulled.data, userName: name }, id);
   // Plan H 5b: stored, so this is the last sync the next merge compares against.
   await (await import("./syncSeen")).saveSeen(id, pulled.data);
+  // DI-16: and its time, for this account (the pull ran before the account existed here).
+  (await import("./syncService")).recordSyncTime(id, pulled.syncedAt);
   // Session 7: a joining device takes the copy's clash records as already shown.
   await (await import("./clashNotice")).takeUnseenClashes(id, pulled.data, undefined, { firstSync: true });
 
@@ -523,6 +525,8 @@ async function recoverFromSync(
   await saveData({ ...pulled.data, userName: name }, id);
   // Plan H 5b: stored, so this is the last sync the next merge compares against.
   await (await import("./syncSeen")).saveSeen(id, pulled.data);
+  // DI-16: and its time, for this account (the pull ran before the account existed here).
+  (await import("./syncService")).recordSyncTime(id, pulled.syncedAt);
   // Session 7: a joining device takes the copy's clash records as already shown.
   await (await import("./clashNotice")).takeUnseenClashes(id, pulled.data, undefined, { firstSync: true });
 
@@ -686,6 +690,8 @@ export async function deleteAccount(userId: string): Promise<{ serverCleanupOk: 
   localStorage.removeItem(`essa_seen_${userId}`);
   // Plan H 5d: and its memory of the clash notices it has shown (lib/clashNotice.ts).
   localStorage.removeItem(`essa_clashes_shown_${userId}`);
+  // DI-16: and its own sync time.
+  localStorage.removeItem(`essa_last_sync_${userId}`);
 
   if (!user) return { serverCleanupOk: true }; // nothing local to have synced in the first place
   try {

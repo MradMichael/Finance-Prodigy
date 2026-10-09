@@ -22,7 +22,22 @@ async function lastSeen() {
 // Relative paths — proxied to the real API server by the next.config.js
 // rewrite (server-side), so this works unchanged whether the client and
 // API are both local or deployed to separate origins (e.g. Vercel + Railway).
-const LAST_SYNC_KEY = "essa_last_sync";
+// DI-16 (session 8): one sync time per account. It was one browser-wide
+// value, so after one account synced, another's push carried that account's
+// time as its base and could overwrite its own server copy without the
+// conflict merge. The old value moves to the account signed in when the new
+// code first reads it (getLastSyncTime), and to no other.
+const LEGACY_LAST_SYNC_KEY = "essa_last_sync";
+const lastSyncKey = (userId: string) => `essa_last_sync_${userId}`;
+/** The signed-in account, if the address being synced is its own; else null (nothing is recorded or read for it). */
+function syncingUserId(email: string): string | null {
+  const s = getSession();
+  return s && s.email.toLowerCase() === email.toLowerCase().trim() ? s.userId : null;
+}
+/** Records the sync time for one account (sign-in and recovery call it once the account exists here). */
+export function recordSyncTime(userId: string, syncedAt: string): void {
+  localStorage.setItem(lastSyncKey(userId), syncedAt);
+}
 // Generous relative to the admin health check's 4s — a push can carry up to
 // a ~2MB data blob, not just a bare ping, so it needs real headroom before
 // being treated as hung rather than just slow.
@@ -146,7 +161,7 @@ export async function pushToServer(
   // or one running before this field existed -- the server treats a missing
   // value as unknown rather than rejecting, so an old/mid-upgrade client
   // isn't broken by a server that now expects it.
-  const baseSyncedAt = base ?? getLastSyncTime();
+  const baseSyncedAt = base ?? getLastSyncTime(syncingUserId(email)); // DI-16: this account's own
   try {
     const res = await fetch("/api/sync/push", {
       method: "POST",
@@ -167,7 +182,8 @@ export async function pushToServer(
       return { ok: false, error: "Server responded, but the response was malformed. Try again." };
     }
     if (record) {
-      localStorage.setItem(LAST_SYNC_KEY, json.syncedAt);
+      const id = syncingUserId(email);
+      if (id) recordSyncTime(id, json.syncedAt);
       await recordServerCopy(data);
     }
     return { ok: true, syncedAt: json.syncedAt };
@@ -317,7 +333,10 @@ export async function pullFromServer(
     if (json === null || typeof json.syncedAt !== "string" || !("data" in json)) {
       return { ok: false, error: "Server responded, but the response was malformed. Try again." };
     }
-    if (record) localStorage.setItem(LAST_SYNC_KEY, json.syncedAt);
+    if (record) {
+      const id = syncingUserId(email);
+      if (id) recordSyncTime(id, json.syncedAt);
+    }
     return { ok: true, data: json.data as LocalFinancials, syncedAt: json.syncedAt, hasRecoveryCode: json.hasRecoveryCode === true };
   } catch {
     return { ok: false, error: "Could not reach server. Is it running?" };
@@ -473,7 +492,7 @@ export async function mergeAndPush(email: string, local: LocalFinancials): Promi
  */
 export async function recordMergeStored(userId: string, merged: { syncedAt: string; mergedData: LocalFinancials }): Promise<void> {
   try {
-    localStorage.setItem(LAST_SYNC_KEY, merged.syncedAt);
+    recordSyncTime(userId, merged.syncedAt);
   } catch {
     // Unrecorded: the next push meets a conflict and merges again, finding nothing new.
   }
@@ -768,9 +787,22 @@ export function closeMomentLabel(iso: string): string {
   return `${dayLabel(d)}, ${hm}`;
 }
 
-export function getLastSyncTime(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(LAST_SYNC_KEY);
+/** This account's sync time on this device (the signed-in account's by default), or null. */
+export function getLastSyncTime(userId: string | null = getSession()?.userId ?? null): string | null {
+  if (typeof window === "undefined" || !userId) return null;
+  const own = localStorage.getItem(lastSyncKey(userId));
+  if (own !== null) return own;
+  // DI-16 migration: the old browser-wide value belongs to the account signed
+  // in when this first runs, and to no other (owner, session 8).
+  const legacy = localStorage.getItem(LEGACY_LAST_SYNC_KEY);
+  if (legacy === null || userId !== getSession()?.userId) return null;
+  try {
+    recordSyncTime(userId, legacy);
+    localStorage.removeItem(LEGACY_LAST_SYNC_KEY);
+  } catch {
+    // Not moved (storage full): read as this account's for now, moved on a later read.
+  }
+  return legacy;
 }
 
 const AUTO_PULL_KEY_PREFIX = "essa_auto_pull_done_";
