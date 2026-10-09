@@ -98,6 +98,8 @@ export default function EditTransactionSheet({
     transaction.debtAdjustment == null ? transaction.debtAdjustment : String(0 - transaction.debtAdjustment)
   );
   const [lbpConfirmAmount, setLbpConfirmAmount] = useState<number | null>(null);
+  const sheetRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(sheetRef); // A11Y-02: a named modal dialog, focus in and back
   const lbpConfirmRef = useRef<HTMLDivElement>(null);
   useDialogFocus(lbpConfirmRef, lbpConfirmAmount != null); // A11Y-02
 
@@ -181,12 +183,16 @@ export default function EditTransactionSheet({
       onClick={onClose}
     >
       <div
+        ref={sheetRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="edit-entry-title"
         className="w-full max-w-sm rounded-2xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto"
         style={{ background: T.panel, border: `1px solid ${T.line}` }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">
-          <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.jade }}>Edit entry</p>
+          <p id="edit-entry-title" className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.jade }}>Edit entry</p>
           <button onClick={onClose} aria-label="Close" className="text-lg leading-none" style={{ color: T.mute }}>✕</button>
         </div>
 

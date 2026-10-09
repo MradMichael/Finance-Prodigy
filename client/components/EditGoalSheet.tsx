@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
+import { useDialogFocus } from "./useDialogFocus";
 import type { LocalFinancials, StoredGoal } from "../lib/localData";
 import { moneyMaxFor, DEFAULT_LBP_RATE, goalProgress, buildGoalCorrectionTx, roundMoney, edited } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
@@ -21,6 +22,8 @@ export default function EditGoalSheet({
   onClose: () => void;
 }) {
   const T = useTheme();
+  const sheetRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(sheetRef); // A11Y-02: a named modal dialog, focus in and back
   const update = (patch: Partial<LocalFinancials>) => onChange({ ...financials, ...patch });
 
   const [name,    setName]    = useState(goal.name);
@@ -59,12 +62,16 @@ export default function EditGoalSheet({
       onClick={onClose}
     >
       <div
+        ref={sheetRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="edit-goal-title"
         className="w-full max-w-sm rounded-2xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto"
         style={{ background: T.panel, border: `1px solid ${T.line}` }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">
-          <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.jade }}>Edit goal</p>
+          <p id="edit-goal-title" className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.jade }}>Edit goal</p>
           <button onClick={onClose} aria-label="Close" className="text-lg leading-none" style={{ color: T.mute }}>✕</button>
         </div>
 
