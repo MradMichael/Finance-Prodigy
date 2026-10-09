@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useScrollFocus } from "../components/useScrollFocus";
 import { syncStatusLongLabel } from "../components/shell/SyncDot";
 import { useRouter } from "next/navigation";
 import FinancialDashboard from "../components/FinancialDashboard";
@@ -65,6 +66,9 @@ function failedSyncStatus(): SyncStatus {
 export default function Home() {
   const router  = useRouter();
   const T       = useTheme();
+  // A11Y-05: the main scrolling areas are Tab stops when nothing in them is (Statistics).
+  const loadingScrollRef = useScrollFocus();
+  const mainScrollRef = useScrollFocus();
   const [session,    setSession]    = useState<Session | null>(null);
   const [financials, setFinancials] = useState<LocalFinancials | null>(null);
   const [screen,     setScreen]     = useState<Screen>("overview");
@@ -712,7 +716,7 @@ export default function Home() {
       <div className="min-h-screen flex flex-col" style={{ background: T.ink }}>
         <div className="flex flex-1 overflow-hidden">
           <div className="hidden md:block flex-shrink-0 animate-pulse" style={{ width: 220, background: T.panel, borderRight: `1px solid ${T.line}` }} />
-          <div className="flex-1 overflow-y-auto px-4 py-8 md:px-10">
+          <div ref={loadingScrollRef} className="flex-1 overflow-y-auto px-4 py-8 md:px-10">
             <div className="max-w-3xl mx-auto space-y-6">
               <div className="flex items-center gap-3">
                 <Signet size={40} />
@@ -768,7 +772,7 @@ export default function Home() {
         />
 
         {/* Main content */}
-        <div style={{ flex: 1, overflowY: "auto" }}>
+        <div ref={mainScrollRef} style={{ flex: 1, overflowY: "auto" }}>
           {screen === "overview"     && <FinancialDashboard data={dashboardData} financials={financials ?? undefined} onNavigate={setScreen} onConfirmRecurring={handleConfirmRecurringPayment} loggingRecurringIds={loggingRecurringIds} justConfirmedIds={justConfirmedIds} />}
           {screen === "budget"       && <BudgetScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
           {screen === "setup"        && <SetupScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}

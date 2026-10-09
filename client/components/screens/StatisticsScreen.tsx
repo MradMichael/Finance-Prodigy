@@ -4,6 +4,7 @@ import type { LocalFinancials } from "../../lib/localData";
 import { nextOccurrence, dayAfter, isRecurringActive, toUSD as toUSDShared, DEFAULT_LBP_RATE, cycleStartDayOf } from "../../lib/localData";
 import { periodTotals, type computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
+import { useScrollFocus } from "../useScrollFocus";
 import { SERIF, NUMS, money } from "./shared";
 import {currentCycleKey, cycleKeyMinus, cycleBounds, cycleLabel, ymKeyToCycleKey, periodNoun } from "../../lib/period";
 import { calendarDayOf } from "../../lib/calendarDay";
@@ -24,6 +25,7 @@ export default function StatisticsScreen({
   dashData: ReturnType<typeof computeDashboard>;
 }) {
   const T = useTheme();
+  const tableScrollRef = useScrollFocus(); // A11Y-05: the wide table scrolls sideways
   const startDay = cycleStartDayOf(financials);
   const noun = periodNoun(startDay);
   const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
@@ -227,7 +229,7 @@ export default function StatisticsScreen({
           {!hasTrendActivity ? (
             <p className="text-sm" style={{ color: T.mute }}>Once you&apos;ve logged income and spending, each {noun}&apos;s book appears here.</p>
           ) : (
-            <div className="overflow-x-auto">
+            <div ref={tableScrollRef} className="overflow-x-auto">
               <table className="w-full text-xs" style={{ borderCollapse: "collapse" }}>
                 <thead>
                   <tr style={{ borderBottom: `1px solid ${T.line}` }}>

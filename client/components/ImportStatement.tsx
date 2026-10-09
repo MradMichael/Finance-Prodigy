@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useDialogFocus } from "./useDialogFocus";
+import { useScrollFocus } from "./useScrollFocus";
 import type { LocalFinancials, StoredCard, StoredTransaction, TrackedBalance } from "../lib/localData";
 import { uid, todayISO, allCategories, matchCategoryRule, activeTransactions, reanchorTrackedBalance, DEFAULT_LBP_RATE, MONEY_MAX_USD, saveCard as storeCard } from "../lib/localData";
 import { trackedBalanceExpected } from "../lib/computeDashboard";
@@ -42,6 +43,7 @@ export default function ImportStatement({
 }) {
   const T = useTheme();
   const dialogRef = useRef<HTMLDivElement>(null);
+  const rowsScrollRef = useScrollFocus(); // A11Y-05
   useDialogFocus(dialogRef); // A11Y-02: focus in, Tab kept inside, and Escape (handled on the overlay) now reaches it
   const [step, setStep] = useState<Step>("pick");
   const [error, setError] = useState<string | null>(null);
@@ -359,7 +361,7 @@ export default function ImportStatement({
               {unparsedAmountCount > 0 && ` ${unparsedAmountCount} row${unparsedAmountCount === 1 ? "" : "s"} had an amount in an unexpected format and couldn't be read. Check the statement for anything missing.`}
             </p>
 
-            <div className="space-y-2 max-h-96 overflow-y-auto">
+            <div ref={rowsScrollRef} className="space-y-2 max-h-96 overflow-y-auto">
               {rows.map((r) => (
                 <div
                   key={r.key}
