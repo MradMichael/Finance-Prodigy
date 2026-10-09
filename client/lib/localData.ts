@@ -3590,9 +3590,10 @@ export function buildEfAdjustmentTx(delta: number): StoredTransaction {
 /**
  * Phase 2.6.4 (step 3) -- structurally identical to buildEfAdjustmentTx
  * above, for the same reason: Edit Debt's Balance field reads as "your real
- * current balance," and saving computes `delta = entered -
- * derivedDebtBalance(debt, transactions)` and builds this one transaction to
- * carry it. `amount: 0` is deliberate -- a correction is not a real payment
+ * current balance," and saving computes `delta = derivedDebtBalance(debt,
+ * transactions) - entered` and builds this one transaction to carry it: the
+ * reverse of the EF builder's sign, because derivedDebtBalance SUBTRACTS
+ * debtAdjustment (DI-02; EditDebtSheet's commitBalance). `amount: 0` is deliberate -- a correction is not a real payment
  * and must not move any budget total; only `debtAdjustment` (independent of
  * `amount`, see StoredTransaction's own comment) should move the balance.
  * Unlike buildEfAdjustmentTx, this carries the DEBT's own currency, not USD

@@ -49,27 +49,32 @@ export function FocusInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
  * currency-blind and cannot scale the ceiling itself.
  */
 export function MoneyInput({
-  value, onChange, placeholder, style, id, max,
+  value, onChange, placeholder, style, id, max, allowNegative = false,
 }: {
   value: string; onChange: (raw: string) => void; placeholder?: string; style?: React.CSSProperties; id?: string;
   /** Ceiling in this field's own currency. Enforced on blur, never mid-typing. */
   max: number;
+  /** DI-02: a signed figure (a correction), one leading minus allowed; `max` bounds both directions. */
+  allowNegative?: boolean;
 }) {
   const T = useTheme();
   const [focused, setFocused] = useState(false);
 
   function fmt(raw: string): string {
     if (!raw) return "";
+    if (raw.startsWith("-")) return "-" + fmt(raw.slice(1));
     const [int, dec] = raw.split(".");
     const intFmt = parseInt(int || "0").toLocaleString("en-US");
     return dec !== undefined ? `${intFmt}.${dec}` : intFmt;
   }
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const raw = e.target.value.replace(/,/g, "").replace(/[^\d.]/g, "");
+    const typed = e.target.value.trimStart();
+    const sign = allowNegative && typed.startsWith("-") ? "-" : "";
+    const raw = typed.replace(/,/g, "").replace(/[^\d.]/g, "");
     const parts = raw.split(".");
     const clean = parts[0] + (parts.length > 1 ? "." + parts.slice(1).join("") : "");
-    onChange(clean);
+    onChange(sign + clean);
   }
 
   return (
@@ -89,6 +94,7 @@ export function MoneyInput({
         setFocused(false);
         const n = parseFloat(value);
         if (Number.isFinite(n) && n > max) onChange(String(max));
+        else if (allowNegative && Number.isFinite(n) && n < -max) onChange(String(-max));
       }}
       placeholder={placeholder}
       className="w-full rounded-xl px-3 py-2.5 text-sm transition-all duration-150"
