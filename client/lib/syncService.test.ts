@@ -371,17 +371,19 @@ describe("buildMergeNoticeText (Phase 2.7 sub-phase 3 -- the exact wording rules
     expect(text).toBe('Merged with your other device — 2 new transactions added, kept the newer edit to "Groceries" ($75, was $50).');
   });
 
+  // 2.4.52's sentences, kept for a device's first merge only, before it has a
+  // record of a last sync (owner, session 6). The labels are the fifth argument.
   // 2.4.52, detection-only -- appended when detectNonTransactionDivergence
   // (below) found a non-transaction entity array that differs from the
   // server's copy. Deliberately does NOT set showReviewLink -- that flag
   // means "there's a filtered Transactions view to link to," which has no
   // equivalent for a diverged debt/goal/etc.
   it("nothing to report and no divergence: still empty, unchanged from before this finding", () => {
-    expect(buildMergeNoticeText(0, [], [])).toEqual({ text: "", showReviewLink: false });
+    expect(buildMergeNoticeText(0, [], [], [], [])).toEqual({ text: "", showReviewLink: false });
   });
 
   it("divergence alone (no transaction activity at all) still produces a notice -- the exact silent case 2.4.52 closes", () => {
-    const { text, showReviewLink } = buildMergeNoticeText(0, [], ["debts"]);
+    const { text, showReviewLink } = buildMergeNoticeText(0, [], [], [], ["debts"]);
     expect(text).toBe("Your debts may differ from your other device — this device's copy was kept. Check Debts if something looks off.");
     expect(showReviewLink).toBe(false);
   });
@@ -389,18 +391,23 @@ describe("buildMergeNoticeText (Phase 2.7 sub-phase 3 -- the exact wording rules
   // Named in the lists' own order (goals, debts, recurring items, assets,
   // cards), whatever order they arrive in, so the screens read in step.
   it("multiple diverged entity types are named together in one sentence", () => {
-    const { text } = buildMergeNoticeText(0, [], ["debts", "goals", "recurring items"]);
+    const { text } = buildMergeNoticeText(0, [], [], [], ["debts", "goals", "recurring items"]);
     expect(text).toBe("Your goals, debts or recurring items may differ from your other device — this device's copy was kept. Check Goals, Debts and Recurring if something looks off.");
   });
 
   it("combines with real transaction activity in one message, divergence sentence appended after", () => {
-    const { text } = buildMergeNoticeText(2, [], ["goals"]);
+    const { text } = buildMergeNoticeText(2, [], [], [], ["goals"]);
     expect(text).toBe("Merged with your other device — 2 new transactions added. Your goals may differ from your other device — this device's copy was kept. Check Goals if something looks off.");
   });
 
   it("3+ conflicts still sets showReviewLink even when divergence is also present -- the two signals are independent", () => {
     const details = [detail(), detail(), detail()];
-    const { showReviewLink } = buildMergeNoticeText(0, details, ["cards"]);
+    const { showReviewLink } = buildMergeNoticeText(0, details, [], [], ["cards"]);
+    expect(showReviewLink).toBe(true);
+  });
+  it("3+ conflicts still set showReviewLink when other changes are named too", () => {
+    const details = [detail(), detail(), detail()];
+    const { showReviewLink } = buildMergeNoticeText(0, details, [{ kind: "goal", name: "Trip", later: true }]);
     expect(showReviewLink).toBe(true);
   });
 });

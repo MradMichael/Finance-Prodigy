@@ -54,7 +54,7 @@ describe("both sides changed: the later edit, named", () => {
     const server = base({ goals: [goal({ name: "MacBook", updatedAt: "2026-10-06T10:00:00.000Z" })] });
     for (const r of [merge(local, server), mergeFinancials(server, local, T0, seenOf(BASE))]) {
       expect(r.data.goals[0].name).toBe("MacBook");
-      expect(r.clashes).toEqual([{ kind: "goal", name: "MacBook" }]);
+      expect(r.clashes).toEqual([{ kind: "goal", name: "MacBook", later: true }]);
     }
   });
 

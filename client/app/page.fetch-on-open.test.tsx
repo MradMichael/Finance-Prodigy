@@ -32,6 +32,15 @@ vi.mock("../lib/localData", async (importOriginal) => {
 // Plan H 5b: the record of this device's last sync, written by the dashboard once the fetched copy is stored.
 const seenSaved = vi.fn(async (_u: string, _d: LocalFinancials) => {});
 vi.mock("../lib/syncSeen", () => ({ saveSeen: (u: string, d: LocalFinancials) => seenSaved(u, d) }));
+// Plan H 5d: what this device has shown, stood in for by an in-memory set (lib/clash-records.test.ts tests the real one).
+const shownClashes = new Set<string>();
+vi.mock("../lib/clashNotice", () => ({
+  takeUnseenClashes: vi.fn(async (_u: string, d: LocalFinancials) => {
+    const fresh = (d.clashRecords ?? []).filter((r) => !shownClashes.has(r.id));
+    fresh.forEach((r) => shownClashes.add(r.id));
+    return fresh;
+  }),
+}));
 
 type Fetched = Awaited<ReturnType<typeof import("../lib/syncService").fetchAndMerge>>;
 let fetchImpl: (email: string, local: () => LocalFinancials | null) => Promise<Fetched>;
@@ -81,14 +90,14 @@ function settled(extra: Partial<LocalFinancials>): LocalFinancials {
 }
 
 const merged = (d: LocalFinancials, over: Partial<Extract<Fetched, { mergedData: LocalFinancials }>> = {}): Fetched => ({
-  ok: true, mergedData: d, serverCopy: d, localChanged: true, serverBehind: false, addedFromServer: 1, conflictDetails: [], replacedCloses: [], ...over,
+  ok: true, mergedData: d, serverCopy: d, localChanged: true, serverBehind: false, addedFromServer: 1, conflictDetails: [], clashes: [], nonTransactionDivergence: [], replacedCloses: [], ...over,
 });
 
 beforeEach(() => {
   localStorage.clear();
   localStorage.setItem("essa_sidebar_pinned", "1"); // the status label shows only when the sidebar is open
   saved.length = 0; push.mockClear(); fetchAndMerge.mockClear(); notice.mockClear(); pull.mockClear();
-  seenSaved.mockClear(); failSave = false;
+  seenSaved.mockClear(); failSave = false; shownClashes.clear();
   autoPulled = true;
   fetchImpl = async (_e, local) => merged({ ...local()!, transactions: [...local()!.transactions, BISTRO] });
 });
@@ -129,13 +138,49 @@ describe("backup on: opening ESSA fetches and merges", () => {
     expect(push).not.toHaveBeenCalled();
   });
 
-  it("the notice says what arrived; the 'may differ' sentence is left to the next push's merge", async () => {
+  it("the notice says what arrived", async () => {
     seed = settled({ syncChoice: ON });
     const real = await vi.importActual<typeof import("../lib/syncService")>("../lib/syncService");
     notice.mockImplementation(((...args: Parameters<typeof real.buildMergeNoticeText>) => real.buildMergeNoticeText(...args)) as never);
     await open();
     expect(await screen.findByText("Merged with your other device — 1 new transaction added.")).toBeTruthy();
-    expect(notice.mock.calls[0]).toEqual([1, [], [], []]);
+    expect(notice.mock.calls[0]).toEqual([1, [], [], [], []]);
+  });
+
+  // Plan H 5d: what both devices changed reaches the notice from the fetch too.
+  it("a change both devices made is named", async () => {
+    seed = settled({ syncChoice: ON });
+    const real = await vi.importActual<typeof import("../lib/syncService")>("../lib/syncService");
+    notice.mockImplementation(((...args: Parameters<typeof real.buildMergeNoticeText>) => real.buildMergeNoticeText(...args)) as never);
+    // The record arrives in the fetched copy (the other device settled it); this device hasn't shown it.
+    const REC = { id: "r-goal", at: new Date().toISOString(), key: "g1", kind: "goal" as const, name: "Laptop", later: true };
+    fetchImpl = async (_e, local) => merged({ ...local()!, clashRecords: [REC] }, { addedFromServer: 0 });
+    await open();
+    expect(await screen.findByText('Both devices changed the goal "Laptop" — kept the later change.')).toBeTruthy();
+  });
+
+  it("the overridden device's notice: a record it has already shown is not shown again", async () => {
+    seed = settled({ syncChoice: ON });
+    const real = await vi.importActual<typeof import("../lib/syncService")>("../lib/syncService");
+    notice.mockImplementation(((...args: Parameters<typeof real.buildMergeNoticeText>) => real.buildMergeNoticeText(...args)) as never);
+    const REC = { id: "r-goal", at: new Date().toISOString(), key: "g1", kind: "goal" as const, name: "Laptop", later: true };
+    shownClashes.add(REC.id);
+    fetchImpl = async (_e, local) => merged({ ...local()!, clashRecords: [REC] }, { addedFromServer: 0 });
+    await open();
+    await waitFor(() => expect(fetchAndMerge).toHaveBeenCalledTimes(1));
+    await settle(500);
+    expect(screen.queryByText('Both devices changed the goal "Laptop" — kept the later change.')).toBeNull();
+  });
+
+  // Owner, session 6: before a device has a record of a last sync, its first
+  // merge keeps 2.4.52's sentence about what may differ.
+  it("a device's first merge, with no record yet, says what may differ", async () => {
+    seed = settled({ syncChoice: ON });
+    const real = await vi.importActual<typeof import("../lib/syncService")>("../lib/syncService");
+    notice.mockImplementation(((...args: Parameters<typeof real.buildMergeNoticeText>) => real.buildMergeNoticeText(...args)) as never);
+    fetchImpl = async (_e, local) => merged(local()!, { addedFromServer: 0, nonTransactionDivergence: ["goals"] });
+    await open();
+    expect(await screen.findByText("Your goals may differ from your other device — this device's copy was kept. Check Goals if something looks off.")).toBeTruthy();
   });
 
   // Owner, 2026-10-07: "Offline" only when the device is actually offline.

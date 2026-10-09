@@ -1,8 +1,8 @@
 "use client";
 
-import type { LocalFinancials, StoredTransaction } from "./localData";
-import { isEmptyFinancials } from "./localData";
-import { mergeFinancials, stableStringify, MERGED_FIELDS, RULE_FIELDS, type MergeFinancialsResult } from "./syncMerge";
+import type { LocalFinancials, StoredTransaction, SettingKey } from "./localData";
+import { isEmptyFinancials, BUDGET_RULES } from "./localData";
+import { mergeFinancials, stableStringify, MERGED_FIELDS, RULE_FIELDS, type MergeFinancialsResult, type MergeClash } from "./syncMerge";
 import { cycleLabelLong, dayLabel } from "./period";
 import { getSyncToken } from "./crypto";
 import { getRecoveryTokenForSync, getSession } from "./auth";
@@ -319,6 +319,10 @@ export async function pullFromServer(
   }
 }
 
+// Plan H 5d (owner, session 6): 2.4.52's detection, kept for one case only:
+// a device's first merge, before it has a record of a last sync. That merge
+// keeps this device's copy of these fields, as it always did, and says so.
+//
 // 2.4.52, detection-only. Field -> the human-readable label used in the
 // notice sentence, listed in the order they should appear if several
 // diverge at once. Deliberately just these six -- the finding's own scope
@@ -379,7 +383,6 @@ export function detectNonTransactionDivergence(local: LocalFinancials, server: L
   }
   return diverged;
 }
-
 export interface MergeConflictDetail {
   /** What the merge kept -- same object as mergeTransactions' own conflicts array. */
   winner: StoredTransaction;
@@ -391,7 +394,7 @@ export interface MergeConflictDetail {
 export interface ReplacedCloseNotice { cycleLabel: string; standingClosedAt: string }
 
 export type MergeAndPushResult =
-  | { ok: true; syncedAt: string; addedFromServer: number; conflictsResolved: number; conflicts: StoredTransaction[]; conflictDetails: MergeConflictDetail[]; nonTransactionDivergence: string[]; replacedCloses: ReplacedCloseNotice[]; mergedData: LocalFinancials }
+  | { ok: true; syncedAt: string; addedFromServer: number; conflictsResolved: number; conflicts: StoredTransaction[]; conflictDetails: MergeConflictDetail[]; clashes: MergeClash[]; nonTransactionDivergence: string[]; replacedCloses: ReplacedCloseNotice[]; mergedData: LocalFinancials }
   | { ok: false; error: string; conflict?: boolean };
 
 /**
@@ -402,22 +405,12 @@ export type MergeAndPushResult =
  * elsewhere transactions survive, tombstones win, a genuine same-id
  * conflict resolves by updatedAt), push the merged result back.
  *
- * Non-transaction fields (goals/debts/recurring/assets/cards/
- * trackedBalances/settings) are NOT merged this phase -- design scope
- * (docs/ROADMAP.md Phase 2.7): those have no delete-tombstones today, so
- * naively unioning them by id risks resurrecting something one device
- * hard-deleted, the same class of bug 2.6.3(b) exists to prevent. They
- * keep today's pick-a-side resolution -- local's own values, since local
- * is the side initiating the merge -- with the transaction merge layered
- * on top.
- *
- * 2.4.52, detection-only (added after this sub-phase, its own separate
- * pass): a real divergence in those fields (e.g. a debt edited on one
- * device, a different edit to the same debt on the other) is now at least
- * DETECTED (nonTransactionDivergence, via detectNonTransactionDivergence)
- * -- it is still resolved as "local wins," exactly as before; detecting is
- * not resolving. A genuine non-transaction merge remains real, undesigned
- * future work, not implied by this function's name.
+ * Plan H (SYNC-1 step 4): with a record of this device's last sync, goals,
+ * debts, recurring items, assets, cards, settings and the histories merge
+ * too (lib/syncMerge.ts), and each change both devices made is returned as a
+ * clash for the notice to name. Without a record (the first merge after the
+ * update), they keep this device's copy, as before, and 2.4.52's "may
+ * differ" detection says so: that first merge only (owner, session 6).
  *
  * No server-side change: the server stores one opaque blob with zero
  * merge awareness (confirmed by reading server/src/routes/sync.ts), so
@@ -434,10 +427,6 @@ export async function mergeAndPush(email: string, local: LocalFinancials): Promi
   const result = mergeFinancials(local, pulled.data, new Date(), seen);
   const merged = result.transactions;
   const mergedData: LocalFinancials = result.data;
-  // Detected against local's PRE-merge copy vs. the server's copy -- what
-  // actually diverged between the two devices, for the fields that still
-  // keep this device's copy.
-  const nonTransactionDivergence = detectNonTransactionDivergence(local, pulled.data);
   const { conflictDetails, replacedCloses } = describeMerge(result);
 
   const pushed = await pushToServer(email, mergedData);
@@ -450,7 +439,8 @@ export async function mergeAndPush(email: string, local: LocalFinancials): Promi
     conflictsResolved: merged.conflictsResolved,
     conflicts: merged.conflicts,
     conflictDetails,
-    nonTransactionDivergence,
+    clashes: result.clashes,
+    nonTransactionDivergence: seen ? [] : detectNonTransactionDivergence(local, pulled.data),
     replacedCloses,
     mergedData,
   };
@@ -495,6 +485,10 @@ export type FetchAndMergeResult =
       serverBehind: boolean;
       addedFromServer: number;
       conflictDetails: MergeConflictDetail[];
+      /** Plan H: changes both devices made, settled by edit time. */
+      clashes: MergeClash[];
+      /** 2.4.52's labels, on a device's first merge only (no record of a last sync yet); else empty. */
+      nonTransactionDivergence: string[];
       replacedCloses: ReplacedCloseNotice[];
     }
   | { ok: false; error: string; notFound?: true };
@@ -543,6 +537,8 @@ export async function fetchAndMerge(email: string, currentLocal: () => LocalFina
     localChanged: !sameRecords(result.data, local, fields),
     serverBehind: !sameRecords(result.data, pulled.data, fields),
     addedFromServer: result.transactions.addedFromServer,
+    clashes: result.clashes,
+    nonTransactionDivergence: seen ? [] : detectNonTransactionDivergence(local, pulled.data),
     ...describeMerge(result),
   };
 }
@@ -566,18 +562,18 @@ function fmtMoney(n: number): string {
 export function buildMergeNoticeText(
   addedFromServer: number,
   conflictDetails: MergeConflictDetail[],
-  // 2.4.52, detection-only -- labels from detectNonTransactionDivergence.
-  // Appended as its own sentence, not folded into the transaction-conflict
-  // wording above: it's a different kind of signal (a possible divergence
-  // that was never inspected, not a resolved conflict with a known winner
-  // and loser), and it must be able to appear even when addedFromServer is
-  // 0 and conflictDetails is empty -- a debt-only edit conflict with zero
-  // transaction activity is exactly the silent case this closes.
-  nonTransactionDivergence: string[] = [],
+  // Plan H 5d: what both devices changed outside transactions (a goal, a
+  // setting...), settled by edit time. One sentence each, after what
+  // arrived; they count toward the three-or-more collapse. They replace
+  // 2.4.52's "may differ" sentences (owner, session 5).
+  clashes: MergeClash[] = [],
   // SYNC-1 step 2: a close made on this device that another device's
   // earlier close of the same cycle replaced. Told plainly, because the owner
   // made it and it was undone.
   replacedCloses: ReplacedCloseNotice[] = [],
+  // 2.4.52's labels (detectNonTransactionDivergence), on a device's first
+  // merge only, before it has a record of a last sync (owner, session 6).
+  nonTransactionDivergence: string[] = [],
 ): { text: string; showReviewLink: boolean } {
   const parts: string[] = [];
   if (addedFromServer > 0) {
@@ -606,16 +602,20 @@ export function buildMergeNoticeText(
   // all, with the review link, in place of every sentence below; one or two
   // keep their own. It retires 2026-09-01's "N edit conflicts resolved (kept
   // the most recent edit each time)".
-  const collapsed = described.length >= 3;
+  const collapsed = described.length + clashes.length >= 3;
   const edits = collapsed ? [] : described.filter(isNewer);
   const undated = collapsed ? [] : described.filter((d) => !isNewer(d));
-  const showReviewLink = collapsed;
+  // The review link opens the Transactions screen's conflict view, so only when a transaction is among them.
+  const showReviewLink = collapsed && described.length > 0;
   const describe = (d: MergeConflictDetail) =>
     `kept the newer edit to "${d.winner.description}" (${fmtMoney(d.winner.amount)}, was ${fmtMoney(d.loser.amount)})`;
   if (edits.length) parts.push(edits.map(describe).join(" and "));
   const mainText = parts.length > 0 ? `Merged with your other device — ${parts.join(", ")}.` : "";
   const collapseLine = collapsed
-    ? collapsedConflictLine(described.map((d) => ({ kind: "transaction", name: d.winner.description })))
+    ? collapsedConflictLine([
+        ...described.map((d) => ({ kind: "transaction", name: d.winner.description })),
+        ...clashes.map((c) => ({ kind: c.kind, name: c.kind === "setting" ? SETTING_NAMES[c.setting] : c.name })),
+      ])
     : "";
 
   // Owner's wording (2026-10-06, -07). A sentence for the lists and one for
@@ -638,6 +638,7 @@ export function buildMergeNoticeText(
     ...undated.map((d) => isTie(d)
       ? `Both devices changed "${d.winner.description}" at the same moment — kept ${fmtMoney(d.winner.amount)} (the other copy said ${fmtMoney(d.loser.amount)}).`
       : `Your devices had different versions of "${d.winner.description}" — kept ${fmtMoney(d.winner.amount)} (the other copy said ${fmtMoney(d.loser.amount)}).`),
+    ...(collapsed ? [] : clashes.map(clashSentence)),
     lists.length
       ? `Your ${joinNames(lists.map(([, label]) => label), "or")} may differ from your other device — this device's copy was kept. Check ${joinNames(listScreens, "and")} if something looks off.`
       : "",
@@ -650,6 +651,55 @@ export function buildMergeNoticeText(
       `Two devices closed ${r.cycleLabel}. The earlier close, made on another device on ${closeMomentLabel(r.standingClosedAt)}, stands; this device's close was undone, and any note you wrote on it stays visible under Close history on Balance Check.`),
   ].filter(Boolean);
   return sentences.length ? { text: sentences.join(" "), showReviewLink } : { text: "", showReviewLink: false };
+}
+
+/**
+ * Plan H 5d. Each setting by the name the owner approved for the retired
+ * "may differ" sentence (2026-10-06, -07).
+ */
+const SETTING_NAMES: Record<SettingKey, string> = {
+  income: "income", lbpRate: "LBP rate", budget: "budget split", payday: "payday", efTarget: "emergency fund target",
+};
+/** Each setting's value as the sentence shows it (owner-approved, session 6). */
+function settingValueText(setting: SettingKey, v: unknown): string {
+  switch (setting) {
+    case "income": return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(Number(v));
+    case "lbpRate": return `L£ ${Number(v).toLocaleString("en-US")} / $1`;
+    case "payday": {
+      const n = Number(v);
+      const suffix = n % 100 >= 11 && n % 100 <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[n % 10] ?? "th";
+      return `the ${n}${suffix}`;
+    }
+    case "efTarget": return `${Number(v)} month${Number(v) === 1 ? "" : "s"}`;
+    case "budget": {
+      const b = v as { rule: string; needs?: number; wants?: number };
+      if (b.rule !== "custom") return BUDGET_RULES[b.rule as keyof typeof BUDGET_RULES]?.label ?? b.rule;
+      const needs = b.needs ?? 0, wants = b.wants ?? 0;
+      return `${needs} / ${wants} / ${100 - needs - wants}`;
+    }
+  }
+}
+/** Each kind's noun (owner-approved, session 6). */
+const CLASH_NOUNS = {
+  goal: "the goal", debt: "the debt", recurring: "the recurring payment", asset: "the asset",
+  wishlist: "the wishlist item", category: "the category", rule: "the category rule",
+} as const;
+
+/**
+ * Plan H 5d: one change both devices made, as the notice says it. Approved
+ * (owner, session 5): 'Both devices changed the goal "<name>" — kept the
+ * later change.' and "Both devices changed your <setting> — kept <value>
+ * (the other device had <value>)." Other kinds use the goal's sentence with
+ * their own noun; a pick that is not the later edit (equal times, or none)
+ * claims no "later". Both approved in session 6.
+ */
+export function clashSentence(c: MergeClash): string {
+  if (c.kind === "setting") {
+    return `Both devices changed your ${SETTING_NAMES[c.setting]} — kept ${settingValueText(c.setting, c.kept)} (the other device had ${settingValueText(c.setting, c.other)}).`;
+  }
+  return c.later
+    ? `Both devices changed ${CLASH_NOUNS[c.kind]} "${c.name}" — kept the later change.`
+    : `Your devices had different versions of ${CLASH_NOUNS[c.kind]} "${c.name}" — ESSA kept one of them.`;
 }
 
 /** "a", "a and b", "a, b and c": the owner's style, no comma before the last word. */

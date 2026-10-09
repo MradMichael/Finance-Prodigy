@@ -680,6 +680,8 @@ export async function deleteAccount(userId: string): Promise<{ serverCleanupOk: 
   localStorage.removeItem(`essa_data_${userId}`);
   // Plan H 5b: this device's sync fingerprints (lib/syncSeen.ts) go with it.
   localStorage.removeItem(`essa_seen_${userId}`);
+  // Plan H 5d: and its memory of the clash notices it has shown (lib/clashNotice.ts).
+  localStorage.removeItem(`essa_clashes_shown_${userId}`);
 
   if (!user) return { serverCleanupOk: true }; // nothing local to have synced in the first place
   try {

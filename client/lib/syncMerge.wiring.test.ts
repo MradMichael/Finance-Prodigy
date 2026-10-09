@@ -30,18 +30,23 @@ describe("the conflict merge uses the engine", () => {
   });
   afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear(); localStorage.clear(); });
 
-  it("both devices' wishlist items reach the server; this device's settings are kept and named", async () => {
+  // Plan H 5d: with no record of a last sync (this test sets none), settings
+  // are this device's copy as before, and nothing is named: 2.4.52's "may
+  // differ" sentence retired (owner, session 5).
+  it("both devices' wishlist items reach the server; with no record, this device's settings are kept and named (that first merge only)", async () => {
     const local = { ...DEFAULT_DATA, income: 3150.75, wishlist: [wish("w1", "Quartz lamp", 64.2, "2026-10-06T17:18:40.000Z"), wish("w3", "Cobalt kettle", 41.6, "2026-10-06T17:19:50.000Z")] } as LocalFinancials;
     const r = await mergeAndPush("a@test.com", local);
     if (!r.ok) throw new Error(r.error);
     expect((pushed?.wishlist ?? []).map((w) => w.name).sort()).toEqual(["Cobalt kettle", "Quartz lamp", "Velvet easel"]);
     expect(pushed?.income).toBe(3150.75);
+    expect(r.clashes).toEqual([]);
     expect(r.nonTransactionDivergence).toContain("income");
     expect(r.replacedCloses).toEqual([]);
   });
 });
 
-describe("the divergence notice", () => {
+describe("the notice", () => {
+  // 2.4.52's sentences, for a device's first merge only (owner, session 6).
   it("names settings that differ, and no longer tracked balances (they merge now)", () => {
     const local = { ...DEFAULT_DATA, income: 3150.75, lbpRate: 89_500, cycleStartDay: 27, emergencyFundTargetMonths: 6, trackedBalances: [] } as LocalFinancials;
     const server = { ...local, income: 3420.4, lbpRate: 89_700, cycleStartDay: 1, emergencyFundTargetMonths: 4, budgetRule: "70-20-10", trackedBalances: [{ id: "x" }] } as unknown as LocalFinancials;
@@ -54,10 +59,10 @@ describe("the divergence notice", () => {
   // Owner, 2026-10-07: items joined properly, "income and LBP rate"; and both
   // sentences end "this device's copy was kept.", without "automatically".
   it("the sentence for settings names the screens they live on, items joined properly (owner's wording)", () => {
-    expect(buildMergeNoticeText(0, [], ["income", "LBP rate"]).text).toBe(
+    expect(buildMergeNoticeText(0, [], [], [], ["income", "LBP rate"]).text).toBe(
       "Your income and LBP rate may differ from your other device — this device's copy was kept. Check Setup, Budget and Currency if something looks off.",
     );
-    expect(buildMergeNoticeText(0, [], ["income", "LBP rate", "payday"]).text).toBe(
+    expect(buildMergeNoticeText(0, [], [], [], ["income", "LBP rate", "payday"]).text).toBe(
       "Your income, LBP rate and payday may differ from your other device — this device's copy was kept. Check Setup, Budget and Currency if something looks off.",
     );
   });
@@ -67,7 +72,7 @@ describe("the divergence notice", () => {
   // Recurring, assets and cards on My Finances. With all five differing it
   // reads exactly as the owner wrote it.
   it("the sentence for the lists, all five differing, is the owner's sentence", () => {
-    const { text } = buildMergeNoticeText(0, [], ["goals", "debts", "recurring items", "assets", "cards"]);
+    const { text } = buildMergeNoticeText(0, [], [], [], ["goals", "debts", "recurring items", "assets", "cards"]);
     expect(text).toBe(
       "Your goals, debts, recurring items, assets or cards may differ from your other device — this device's copy was kept. Check Goals, Debts, Recurring and My Finances if something looks off.",
     );
@@ -76,10 +81,10 @@ describe("the divergence notice", () => {
   // Fewer lists: the same sentence, naming only those lists and the screens
   // that show them (assets and cards share My Finances, named once).
   it("the lists sentence names only the lists that differ, and their screens", () => {
-    expect(buildMergeNoticeText(0, [], ["cards"]).text).toBe(
+    expect(buildMergeNoticeText(0, [], [], [], ["cards"]).text).toBe(
       "Your cards may differ from your other device — this device's copy was kept. Check My Finances if something looks off.",
     );
-    expect(buildMergeNoticeText(0, [], ["assets", "cards"]).text).toBe(
+    expect(buildMergeNoticeText(0, [], [], [], ["assets", "cards"]).text).toBe(
       "Your assets or cards may differ from your other device — this device's copy was kept. Check My Finances if something looks off.",
     );
   });
@@ -91,7 +96,7 @@ describe("the divergence notice", () => {
   });
 
   it("lists and settings that both differ get a sentence each, lists first", () => {
-    const { text } = buildMergeNoticeText(0, [], ["goals", "cards", "payday"]);
+    const { text } = buildMergeNoticeText(0, [], [], [], ["goals", "cards", "payday"]);
     expect(text).toBe(
       "Your goals or cards may differ from your other device — this device's copy was kept. Check Goals and My Finances if something looks off. "
       + "Your payday may differ from your other device — this device's copy was kept. Check Setup, Budget and Currency if something looks off.",
