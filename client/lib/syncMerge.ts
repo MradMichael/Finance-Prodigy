@@ -365,6 +365,16 @@ function mergeSettingsBySeen(local: LocalFinancials, server: LocalFinancials, se
   return { patch: patch as Partial<LocalFinancials>, settingsUpdatedAt: stamps, clashes };
 }
 
+/** Each merged item carries the earliest `field` any copy of it holds (a once-only stamp). */
+function keepEarliest<T extends { id: string }, K extends keyof T>(merged: T[], copies: T[], field: K): T[] {
+  const earliest = new Map<string, T[K]>();
+  for (const c of copies) {
+    const v = c[field];
+    if (v && (!earliest.has(c.id) || v < earliest.get(c.id)!)) earliest.set(c.id, v);
+  }
+  return merged.map((m) => (earliest.has(m.id) ? { ...m, [field]: earliest.get(m.id) } : m));
+}
+
 const byYm = <T extends { ym: string }>(xs: T[]) => [...xs].sort((a, b) => (a.ym < b.ym ? -1 : a.ym > b.ym ? 1 : 0));
 
 /**
@@ -385,14 +395,13 @@ function mergeUnderRule(local: LocalFinancials, server: LocalFinancials, deleted
 
   const goals = mergeBySeen(local.goals ?? [], server.goals ?? [], (g) => g.id, s("goals"), stamp);
   named("goal", goals);
-  // achievedAt is stamped once and never cleared by a merge: the earliest stays.
-  const achieved = new Map<string, string>();
-  for (const g of [...(local.goals ?? []), ...(server.goals ?? [])]) {
-    if (g.achievedAt && (!achieved.has(g.id) || g.achievedAt < achieved.get(g.id)!)) achieved.set(g.id, g.achievedAt);
-  }
-  const goalsOut = goals.items.map((g) => (achieved.has(g.id) ? { ...g, achievedAt: achieved.get(g.id) } : g));
+  // A goal's achievedAt and a debt's paidOffAt are stamped once and never
+  // cleared by a merge: the earliest either side holds stays. Only a person
+  // clears one, and no screen does today.
+  const goalsOut = keepEarliest(goals.items, [...(local.goals ?? []), ...(server.goals ?? [])], "achievedAt");
 
   const debts = mergeBySeen(local.debts ?? [], server.debts ?? [], (d) => d.id, s("debts"), stamp); named("debt", debts);
+  const debtsOut = keepEarliest(debts.items, [...(local.debts ?? []), ...(server.debts ?? [])], "paidOffAt");
   const recurring = mergeBySeen(local.recurring ?? [], server.recurring ?? [], (r) => r.id, s("recurring"), stamp); named("recurring", recurring);
   const assets = mergeBySeen(local.assets ?? [], server.assets ?? [], (a) => a.id, s("assets"), stamp); named("asset", assets);
   const wishlist = mergeBySeen(live(local.wishlist, (w) => w.id, "wishlist"), live(server.wishlist, (w) => w.id, "wishlist"), (w) => w.id, s("wishlist"), stamp); named("wishlist", wishlist);
@@ -414,7 +423,7 @@ function mergeUnderRule(local: LocalFinancials, server: LocalFinancials, deleted
       // Always written: a kept value with no edit time must clear this device's, or
       // its stale time would ride along on the merged copy and win the next clash.
       settingsUpdatedAt: Object.keys(settings.settingsUpdatedAt).length ? settings.settingsUpdatedAt : undefined,
-      goals: goalsOut, debts: debts.items, recurring: recurring.items, assets: assets.items,
+      goals: goalsOut, debts: debtsOut, recurring: recurring.items, assets: assets.items,
       wishlist: wishlist.items, customCategories: categories.items, categoryRules: rules.items,
       incomeHistory: hist(local.incomeHistory, server.incomeHistory, "incomeHistory"),
       lbpRateHistory: hist(local.lbpRateHistory, server.lbpRateHistory, "lbpRateHistory"),
