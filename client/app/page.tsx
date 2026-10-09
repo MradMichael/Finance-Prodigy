@@ -232,7 +232,7 @@ export default function Home() {
       // Plan H 5d: the changes both devices made that this device hasn't shown,
       // the ones this merge settled included (they are in the merged copy).
       const named = await takeUnseenClashes(userId, merged.mergedData, undefined, { firstSync: merged.firstSync });
-      const notice = buildMergeNoticeText(merged.addedFromServer, merged.conflictDetails, named, merged.replacedCloses, merged.nonTransactionDivergence ?? []);
+      const notice = buildMergeNoticeText(merged.addedFromServer, merged.conflictDetails, named, merged.replacedCloses, merged.nonTransactionDivergence ?? [], merged.closedEdits ?? []);
       if (notice.text) setMergeNotice(notice);
       setBackupFailed(false);
       retryTimersRef.current.forEach(clearTimeout); retryTimersRef.current = [];
@@ -491,7 +491,7 @@ export default function Home() {
       // hasn't shown (plan H 5d: settled here or on the other device), replaced
       // closes, and on a first merge with no record, what may differ.
       const named = await takeUnseenClashes(s.userId, r.mergedData, undefined, { firstSync: r.firstSync });
-      const notice = buildMergeNoticeText(r.addedFromServer, r.conflictDetails, named, r.replacedCloses, r.nonTransactionDivergence ?? []);
+      const notice = buildMergeNoticeText(r.addedFromServer, r.conflictDetails, named, r.replacedCloses, r.nonTransactionDivergence ?? [], r.closedEdits ?? []);
       if (notice.text) setMergeNotice(notice);
     } finally {
       fetchingRef.current = false;

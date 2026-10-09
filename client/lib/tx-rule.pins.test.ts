@@ -63,6 +63,11 @@ describe("pinned: two deletions or two purges are never a conflict (DI-12)", () 
     const today = mergeFinancials(copy([onPhone]), copy([onLaptop]), NOW, null).data.transactions[0];
     pinned(copy([onPhone]), copy([onLaptop]), copy([KEBAB]), today);
   });
+  it("two deleted copies are still picked by time, not by which side changed since the last sync", () => {
+    const mine = deleted(KEBAB, "2026-10-02T21:30:00.000Z");                 // what this device last synced
+    const theirs = deleted({ ...KEBAB, amount: 21 }, "2026-10-01T10:00:00.000Z"); // changed since, by a slow clock
+    pinned(copy([mine]), copy([theirs]), copy([mine]), mine);
+  });
   it("two purges: the same copy kept, no conflict", () => {
     const del = deleted(KEBAB, "2026-09-01T10:00:00.000Z");
     const a = purgeTransaction(del, new Date("2026-10-02T07:41:00.000Z"));

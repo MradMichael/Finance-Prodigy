@@ -90,7 +90,7 @@ function settled(extra: Partial<LocalFinancials>): LocalFinancials {
 }
 
 const merged = (d: LocalFinancials, over: Partial<Extract<Fetched, { mergedData: LocalFinancials }>> = {}): Fetched => ({
-  ok: true, mergedData: d, serverCopy: d, localChanged: true, serverBehind: false, addedFromServer: 1, conflictDetails: [], clashes: [], nonTransactionDivergence: [], replacedCloses: [], firstSync: false, ...over,
+  ok: true, mergedData: d, serverCopy: d, localChanged: true, serverBehind: false, addedFromServer: 1, conflictDetails: [], clashes: [], nonTransactionDivergence: [], replacedCloses: [], firstSync: false, closedEdits: [], ...over,
 });
 
 beforeEach(() => {
@@ -144,7 +144,7 @@ describe("backup on: opening ESSA fetches and merges", () => {
     notice.mockImplementation(((...args: Parameters<typeof real.buildMergeNoticeText>) => real.buildMergeNoticeText(...args)) as never);
     await open();
     expect(await screen.findByText("Merged with your other device — 1 new transaction added.")).toBeTruthy();
-    expect(notice.mock.calls[0]).toEqual([1, [], [], [], []]);
+    expect(notice.mock.calls[0]).toEqual([1, [], [], [], [], []]); // item 7: and no edits inside a closed cycle
   });
 
   // Plan H 5d: what both devices changed reaches the notice from the fetch too.
