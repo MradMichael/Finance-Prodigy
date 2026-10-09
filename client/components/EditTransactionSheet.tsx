@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
+import { useDialogFocus } from "./useDialogFocus";
 import type { LocalFinancials, StoredTransaction, StoredCard, Currency, PaymentMethod } from "../lib/localData";
 import {
   fmtDate, allCategories, looksRecurring, buildQuickRecurring, cycleMonthDivergence,
@@ -97,6 +98,8 @@ export default function EditTransactionSheet({
     transaction.debtAdjustment == null ? transaction.debtAdjustment : String(0 - transaction.debtAdjustment)
   );
   const [lbpConfirmAmount, setLbpConfirmAmount] = useState<number | null>(null);
+  const lbpConfirmRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(lbpConfirmRef, lbpConfirmAmount != null); // A11Y-02
 
   const divergence = cycleMonthDivergence(transaction, financials.recurring ?? [], startDay);
   // A transfer, like income, doesn't fit "convert to a recurring bill" --
@@ -359,6 +362,7 @@ export default function EditTransactionSheet({
           onClick={(e) => { if (e.target === e.currentTarget) setLbpConfirmAmount(null); }}
         >
           <div
+            ref={lbpConfirmRef}
             role="dialog"
             aria-modal="true"
             aria-label="Confirm low LBP amount"
