@@ -130,6 +130,7 @@ export default function Sidebar({
           onFocus={() => setHovered(true)}
           onBlur={handleBlurWithinSidebar}
           aria-label={`${session.name}: account settings`}
+          data-sync-status={syncStatus}
           className="w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-xl transition-all hover:opacity-80"
           style={{ whiteSpace: "nowrap" }}
         >

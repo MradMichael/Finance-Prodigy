@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useScrollFocus } from "../components/useScrollFocus";
+import { MERGE_NOT_STORED, PUSH_NOT_RECORDED_NOTICE } from "../lib/storageNotices";
 import { syncStatusLongLabel } from "../components/shell/SyncDot";
 import { useRouter } from "next/navigation";
 import FinancialDashboard from "../components/FinancialDashboard";
@@ -213,9 +214,20 @@ export default function Home() {
       // DI-15: the sync is recorded only once the merged copy is stored here.
       // A failed store records nothing and drops nothing: the previous record
       // still describes this device's copy (owner, session 8; lib/syncService.ts).
-      if (userId && await persist(merged.mergedData, userId)) {
+      if (!userId) { setSyncStatus("idle"); return; }
+      if (await persist(merged.mergedData, userId)) {
         setFinancials(merged.mergedData);
         await recordMergeStored(userId, merged);
+      } else {
+        // Session 8 (held, wording for approval): the merge is in the backup,
+        // not on this device. No "Synced" and no merge notice: it would name
+        // changes this device doesn't show. persist has already shown the save
+        // error, with its reason; this says what is on this device.
+        setMergeNotice({ text: MERGE_NOT_STORED, showReviewLink: false });
+        setBackupFailed(false); // the backup did take it
+        retryTimersRef.current.forEach(clearTimeout); retryTimersRef.current = [];
+        setSyncStatus("idle");
+        return;
       }
       // Plan H 5d: the changes both devices made that this device hasn't shown,
       // the ones this merge settled included (they are in the merged copy).
@@ -242,6 +254,9 @@ export default function Home() {
       setBackupFailed(false);
       retryTimersRef.current.forEach(clearTimeout); retryTimersRef.current = [];
       setSyncStatus("synced");
+      // Session 8 (held, wording for approval): backed up, but this device
+      // couldn't record when; storage, not the network, is the problem.
+      if (result.notRecorded) setMergeNotice({ text: PUSH_NOT_RECORDED_NOTICE, showReviewLink: false });
       // fade back to idle after 4 s so the indicator doesn't stay forever
       setTimeout(() => setSyncStatus((s) => s !== "syncing" ? "idle" : s), 4000);
       return;

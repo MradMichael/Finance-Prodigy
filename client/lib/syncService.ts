@@ -56,6 +56,11 @@ export interface SyncResult {
   // backup that has data, and kept the backup. Not a failure, so no
   // "Offline" or "Couldn't reach backup".
   declined?: boolean;
+  // Session 8 (held): the server took the push, but this device couldn't
+  // record its time (storage). A success; the caller says storage is the
+  // problem. Unrecorded, the next push meets a conflict and merges again,
+  // finding nothing new.
+  notRecorded?: boolean;
 }
 
 /** COPY-11, owner-approved wording (session 3): the ask before an empty account replaces a backup that has data. */
@@ -182,8 +187,14 @@ export async function pushToServer(
       return { ok: false, error: "Server responded, but the response was malformed. Try again." };
     }
     if (record) {
+      // Session 8 (held): outside the network's catch, which read a storage
+      // throw here as "Could not reach server" for a push the server took.
       const id = syncingUserId(email);
-      if (id) recordSyncTime(id, json.syncedAt);
+      try {
+        if (id) recordSyncTime(id, json.syncedAt);
+      } catch {
+        return { ok: true, syncedAt: json.syncedAt, notRecorded: true };
+      }
       await recordServerCopy(data);
     }
     return { ok: true, syncedAt: json.syncedAt };
@@ -304,7 +315,7 @@ export async function relinkSync(
 export async function pullFromServer(
   email: string,
   { record = true, timeoutMs = SYNC_TIMEOUT_MS }: { record?: boolean; timeoutMs?: number } = {},
-): Promise<{ ok: true; data: LocalFinancials; syncedAt: string; hasRecoveryCode: boolean } | { ok: false; error: string; notFound?: true }> {
+): Promise<{ ok: true; data: LocalFinancials; syncedAt: string; hasRecoveryCode: boolean; notRecorded?: true } | { ok: false; error: string; notFound?: true }> {
   const token = getSyncToken();
   if (!token) return { ok: false, error: "Not signed in. Sign in again to sync." };
   try {
@@ -333,11 +344,19 @@ export async function pullFromServer(
     if (json === null || typeof json.syncedAt !== "string" || !("data" in json)) {
       return { ok: false, error: "Server responded, but the response was malformed. Try again." };
     }
+    const pulled = { ok: true as const, data: json.data as LocalFinancials, syncedAt: json.syncedAt, hasRecoveryCode: json.hasRecoveryCode === true };
     if (record) {
+      // Session 9 (owner): outside the network's catch, as the push's (session
+      // 8): the server answered, so a storage throw here isn't "Could not
+      // reach server", and the copy is still handed back.
       const id = syncingUserId(email);
-      if (id) recordSyncTime(id, json.syncedAt);
+      try {
+        if (id) recordSyncTime(id, json.syncedAt);
+      } catch {
+        return { ...pulled, notRecorded: true as const };
+      }
     }
-    return { ok: true, data: json.data as LocalFinancials, syncedAt: json.syncedAt, hasRecoveryCode: json.hasRecoveryCode === true };
+    return pulled;
   } catch {
     return { ok: false, error: "Could not reach server. Is it running?" };
   }
