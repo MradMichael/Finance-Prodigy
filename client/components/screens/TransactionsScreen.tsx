@@ -88,6 +88,7 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
   // actually managing day to day; "All time" is a choice to make, not the
   // thing they see first (owner's live-use report, 2026-09-01).
   const [filter, setFilter] = useState<CycleKey | "all">(currentCycleKey(new Date(), startDay));
+  const [monthPickerFocused, setMonthPickerFocused] = useState(false); // its focus ring (session 9, as A11Y-05)
   const [query,  setQuery]  = useState("");
   const [donutView, setDonutView] = useState<"type" | "category">("type");
   // Phase 2.6.3b: "Recently deleted" -- always-visible entry point (the pill
@@ -338,8 +339,11 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
               aria-label="Month" // A11Y-04 (owner-approved name, session 8)
               // Option values are cycle keys plus the literal "all" -- boundary cast.
                 onChange={(e) => setFilter(e.target.value === "all" ? "all" : asCycleKey(e.target.value))}
+              onFocus={() => setMonthPickerFocused(true)}
+              onBlur={() => setMonthPickerFocused(false)}
               className="px-3 py-2 rounded-xl text-sm"
-              style={{ background: T.panel, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
+              // The outline is replaced by the same ring as Overview's picker and MoneyInput, not removed outright.
+              style={{ background: T.panel, border: `1px solid ${monthPickerFocused ? T.jade : T.line}`, boxShadow: monthPickerFocused ? `0 0 0 3px ${T.jade}28` : "none", color: T.text, outline: "none" }}
             >
               <option value="all">All time</option>
               {months.map((m) => <option key={m} value={m}>{fmtMo(m)}</option>)}
