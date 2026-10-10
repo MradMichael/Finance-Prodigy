@@ -1492,10 +1492,12 @@ export function migrateFinancials(raw: unknown, migrations: typeof MIGRATIONS = 
  */
 export function resetFinancials(d: LocalFinancials, now: Date = new Date()): LocalFinancials {
   // DI-13: a deletion recorded for every item cleared, so another device's
-  // merge can't bring it back. Earlier records are kept. Settings aren't
-  // items: each device keeps its own (the merge already does). The records
-  // carry the current restore generation, so resetting after a restore
-  // undoes it (recordDeletion).
+  // merge can't bring it back. Earlier records are kept. Settings go back to
+  // their defaults here, and other devices take them too: the merge's rule
+  // takes a setting from the server copy when this device hasn't changed it
+  // since its last sync (owner, session 11). The records carry the current
+  // restore generation, so resetting after a restore undoes it
+  // (recordDeletion).
   const keysOf = itemKeysByCollection(d);
   let deletedKeys: DeletedKeys = d.deletedKeys ?? {};
   for (const collection of DELETED_COLLECTIONS) {
