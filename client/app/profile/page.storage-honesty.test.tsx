@@ -4,7 +4,7 @@
 import { it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import type { LocalFinancials } from "../../lib/localData";
-import { PUSH_NOT_RECORDED, PULL_NOT_RECORDED } from "../../lib/storageNotices";
+import { PUSH_NOT_RECORDED } from "../../lib/storageNotices";
 
 const SESSION = { userId: "u1", email: "u1@example.com", name: "U One" };
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn(), push: vi.fn() }) }));
@@ -53,7 +53,8 @@ it("an ordinary push says what it said", async () => {
 
 // Session 9 (owner): Profile → Pull, when the server answered but this device
 // couldn't note when. Session 10: the restore records the time once the copy
-// is stored, so it's that write that fails here.
+// is stored, so it's that write that fails here; and the sentence is the
+// owner's (session 10), pinned here as shown.
 it("a pull the server answered, whose time this device couldn't note: restored, and it says so, not 'Could not reach server'", async () => {
   pullResult = { ok: true, data: { ...DEFAULT_DATA, income: 4000 }, syncedAt: "2026-10-08T09:02:00.000Z", hasRecoveryCode: true };
   const realSetItem = Storage.prototype.setItem;
@@ -63,7 +64,7 @@ it("a pull the server answered, whose time this device couldn't note: restored, 
   });
   render(<ThemeProvider><ProfilePage /></ThemeProvider>);
   fireEvent.click(await screen.findByRole("button", { name: /Restore from database/ }));
-  expect(await screen.findByText("✓ Data restored from database. " + PULL_NOT_RECORDED + " Reloading…")).toBeTruthy();
+  expect(await screen.findByText("✓ Data restored from database. This device couldn't note when this restore happened; the restored data is in place. Reloading…")).toBeTruthy();
   expect(screen.queryByText(/Could not reach server/)).toBeNull();
 });
 
