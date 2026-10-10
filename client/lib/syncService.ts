@@ -7,6 +7,8 @@ import { cycleLabelLong, dayLabel } from "./period";
 import { getSyncToken } from "./crypto";
 import { getRecoveryTokenForSync, getSession } from "./auth";
 import { loadSeen, saveSeen } from "./syncSeen";
+import { CLOSED_EDIT_SENTENCE, type ClosedEdit } from "./closedEditNotice";
+import { noticeMoney } from "./noticeMoney";
 
 /** Plan H 5b: after a successful push the server holds what this device holds (see saveSeen). */
 async function recordServerCopy(serverCopy: LocalFinancials): Promise<void> {
@@ -438,7 +440,7 @@ export interface ReplacedCloseNotice { cycleLabel: string; standingClosedAt: str
 
 export type MergeAndPushResult =
   // mergedData is on the server, not yet on this device: store it, then recordMergeStored. If the store fails, record nothing.
-  | { ok: true; syncedAt: string; addedFromServer: number; conflictsResolved: number; conflicts: StoredTransaction[]; conflictDetails: MergeConflictDetail[]; clashes: MergeClash[]; nonTransactionDivergence: string[]; replacedCloses: ReplacedCloseNotice[]; mergedData: LocalFinancials; firstSync: boolean }
+  | { ok: true; syncedAt: string; addedFromServer: number; conflictsResolved: number; conflicts: StoredTransaction[]; conflictDetails: MergeConflictDetail[]; clashes: MergeClash[]; nonTransactionDivergence: string[]; replacedCloses: ReplacedCloseNotice[]; mergedData: LocalFinancials; firstSync: boolean; /** Item 7: the other device's edits inside a closed cycle. */ closedEdits: ClosedEdit[] }
   | { ok: false; error: string; conflict?: boolean };
 
 /**
@@ -500,6 +502,7 @@ export async function mergeAndPush(email: string, local: LocalFinancials): Promi
     replacedCloses,
     mergedData,
     firstSync: !seen,
+    closedEdits: result.closedEdits,
   };
 }
 
@@ -564,6 +567,8 @@ export type FetchAndMergeResult =
       /** This device had no record of a last sync before this merge (session 7: its clash records are taken as shown). */
       firstSync: boolean;
       replacedCloses: ReplacedCloseNotice[];
+      /** Item 7: the other device's edits inside a closed cycle. */
+      closedEdits: ClosedEdit[];
     }
   | { ok: false; error: string; notFound?: true };
 
@@ -614,6 +619,7 @@ export async function fetchAndMerge(email: string, currentLocal: () => LocalFina
     clashes: result.clashes,
     nonTransactionDivergence: seen ? [] : detectNonTransactionDivergence(local, pulled.data),
     firstSync: !seen,
+    closedEdits: result.closedEdits,
     ...describeMerge(result),
   };
 }
@@ -630,10 +636,6 @@ export async function fetchAndMerge(email: string, currentLocal: () => LocalFina
  * detect -- see 2.4.52) stays quiet, matching today's roughly-silent
  * successful-sync behavior.
  */
-function fmtMoney(n: number): string {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
-}
-
 export function buildMergeNoticeText(
   addedFromServer: number,
   conflictDetails: MergeConflictDetail[],
@@ -649,6 +651,9 @@ export function buildMergeNoticeText(
   // 2.4.52's labels (detectNonTransactionDivergence), on a device's first
   // merge only, before it has a record of a last sync (owner, session 6).
   nonTransactionDivergence: string[] = [],
+  // Item 7 (owner, session 8): the other device's one-sided edits inside a
+  // closed cycle. DRAFT wording (lib/closedEditNotice.ts), held for approval.
+  closedEdits: ClosedEdit[] = [],
 ): { text: string; showReviewLink: boolean } {
   const parts: string[] = [];
   if (addedFromServer > 0) {
@@ -673,23 +678,35 @@ export function buildMergeNoticeText(
   // the line for any caller.
   const gone = (t: StoredTransaction) => t.deletedAt != null || t.purgedAt != null;
   const described = conflictDetails.filter((d) => !gone(d.winner) && !gone(d.loser));
+  // Item 7 (owner, session 8): a transaction both devices changed reaches the
+  // overridden device as a clash record, named in the same sentences as this
+  // merge's own conflicts. A record for a transaction this merge already
+  // names (the merging device's own) isn't named twice.
+  const txClashes = clashes.filter((c): c is Extract<MergeClash, { kind: "transaction" }> =>
+    c.kind === "transaction" && !described.some((d) => d.winner.id === (c as { key?: string }).key));
+  const otherClashes = clashes.filter((c): c is Exclude<MergeClash, { kind: "transaction" }> => c.kind !== "transaction");
+  // Session 9 (owner): each amount in its own currency (noticeMoney).
+  const named: { name: string; kept: string; other: string; how: "newer" | "tie" | "versions" }[] = [
+    ...described.map((d) => ({ name: d.winner.description, kept: noticeMoney(d.winner.amount, d.winner.currency), other: noticeMoney(d.loser.amount, d.loser.currency), how: isNewer(d) ? "newer" as const : isTie(d) ? "tie" as const : "versions" as const })),
+    ...txClashes.map((c) => ({ name: c.name, kept: noticeMoney(c.kept, c.keptCurrency), other: noticeMoney(c.other, c.otherCurrency), how: c.how })),
+  ];
   // Three or more conflicts in all (owner, session 4): one line for them
   // all, with the review link, in place of every sentence below; one or two
   // keep their own. It retires 2026-09-01's "N edit conflicts resolved (kept
   // the most recent edit each time)".
-  const collapsed = described.length + clashes.length >= 3;
-  const edits = collapsed ? [] : described.filter(isNewer);
-  const undated = collapsed ? [] : described.filter((d) => !isNewer(d));
+  const collapsed = named.length + otherClashes.length >= 3;
+  const edits = collapsed ? [] : named.filter((n) => n.how === "newer");
+  const undated = collapsed ? [] : named.filter((n) => n.how !== "newer");
   // The review link opens the Transactions screen's conflict view, so only when a transaction is among them.
   const showReviewLink = collapsed && described.length > 0;
-  const describe = (d: MergeConflictDetail) =>
-    `kept the newer edit to "${d.winner.description}" (${fmtMoney(d.winner.amount)}, was ${fmtMoney(d.loser.amount)})`;
+  const describe = (n: (typeof named)[number]) =>
+    `kept the newer edit to "${n.name}" (${n.kept}, was ${n.other})`;
   if (edits.length) parts.push(edits.map(describe).join(" and "));
   const mainText = parts.length > 0 ? `Merged with your other device — ${parts.join(", ")}.` : "";
   const collapseLine = collapsed
     ? collapsedConflictLine([
-        ...described.map((d) => ({ kind: "transaction", name: d.winner.description })),
-        ...clashes.map((c) => ({ kind: c.kind, name: c.kind === "setting" ? SETTING_NAMES[c.setting] : c.name })),
+        ...named.map((n) => ({ kind: "transaction", name: n.name })),
+        ...otherClashes.map((c) => ({ kind: c.kind, name: c.kind === "setting" ? SETTING_NAMES[c.setting] : c.name })),
       ])
     : "";
 
@@ -710,10 +727,12 @@ export function buildMergeNoticeText(
   const sentences = [
     mainText,
     collapseLine,
-    ...undated.map((d) => isTie(d)
-      ? `Both devices changed "${d.winner.description}" at the same moment — kept ${fmtMoney(d.winner.amount)} (the other copy said ${fmtMoney(d.loser.amount)}).`
-      : `Your devices had different versions of "${d.winner.description}" — kept ${fmtMoney(d.winner.amount)} (the other copy said ${fmtMoney(d.loser.amount)}).`),
-    ...(collapsed ? [] : clashes.map(clashSentence)),
+    ...undated.map((n) => n.how === "tie"
+      ? `Both devices changed "${n.name}" at the same moment — kept ${n.kept} (the other copy said ${n.other}).`
+      : `Your devices had different versions of "${n.name}" — kept ${n.kept} (the other copy said ${n.other}).`),
+    ...(collapsed ? [] : otherClashes.map(clashSentence)),
+    // DRAFT (item 7, held): the other device's edits inside a closed cycle.
+    ...closedEdits.map(CLOSED_EDIT_SENTENCE),
     lists.length
       ? `Your ${joinNames(lists.map(([, label]) => label), "or")} may differ from your other device — this device's copy was kept. Check ${joinNames(listScreens, "and")} if something looks off.`
       : "",
@@ -769,6 +788,14 @@ const CLASH_NOUNS = {
  * claims no "later". Both approved in session 6.
  */
 export function clashSentence(c: MergeClash): string {
+  // Item 7: a transaction's record, in the approved transaction sentences.
+  if (c.kind === "transaction") {
+    const kept = noticeMoney(c.kept, c.keptCurrency), other = noticeMoney(c.other, c.otherCurrency);
+    if (c.how === "newer") return `Merged with your other device — kept the newer edit to "${c.name}" (${kept}, was ${other}).`;
+    return c.how === "tie"
+      ? `Both devices changed "${c.name}" at the same moment — kept ${kept} (the other copy said ${other}).`
+      : `Your devices had different versions of "${c.name}" — kept ${kept} (the other copy said ${other}).`;
+  }
   if (c.kind === "setting") {
     return `Both devices changed your ${SETTING_NAMES[c.setting]} — kept ${settingValueText(c.setting, c.kept)} (the other device had ${settingValueText(c.setting, c.other)}).`;
   }

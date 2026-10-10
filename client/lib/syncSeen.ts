@@ -11,12 +11,14 @@
 // it is never uploaded, never exported, and never merged. Deleting the
 // account removes it.
 import { stableStringify } from "./canonical";
-import { SETTING_KEYS, type LocalFinancials, type SettingKey } from "./localData";
+import { SETTING_KEYS, type LocalFinancials, type SettingKey, type StoredTransaction } from "./localData";
 
 /** The keyed parts of an account the rule merges. */
 export const SEEN_KINDS = [
   "goals", "debts", "recurring", "assets", "wishlist", "customCategories", "categoryRules",
   "settings", "incomeHistory", "lbpRateHistory", "budgetRuleHistory", "netWorthHistory",
+  // Item 7 (owner, session 8): every transaction, by id.
+  "transactions",
 ] as const;
 export type SeenKind = (typeof SEEN_KINDS)[number];
 
@@ -31,6 +33,24 @@ export const SETTING_FIELDS: Record<SettingKey, readonly (keyof LocalFinancials)
   payday: ["cycleStartDay", "cycleStartDayChangedAt"],
   efTarget: ["emergencyFundTargetMonths"],
 };
+
+/**
+ * Item 7 (owner, session 8): fields only a migration adds to existing
+ * transactions (addCurrencyAndRate's lbpRateAtEntry, addGoalOpenings'
+ * goalAmount). Left out of a transaction's fingerprint, so a migration that
+ * runs on one device first doesn't look like that device changing every row.
+ * Both are also set when a row is entered, but never changed alone by a
+ * person: an edit that changes them changes the amount or currency too.
+ */
+export const MIGRATION_ONLY_TX_FIELDS = ["lbpRateAtEntry", "goalAmount"] as const;
+/** A transaction as its fingerprint sees it. */
+export function transactionContent(t: StoredTransaction): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...t };
+  for (const f of MIGRATION_ONLY_TX_FIELDS) delete out[f];
+  return out;
+}
+/** A transaction's fingerprint, without the migration-only fields. */
+export const transactionFingerprint = (t: StoredTransaction): string => fingerprint(transactionContent(t));
 
 /** A setting's value, as one record (absent fields left out). */
 export function settingValue(d: LocalFinancials, key: SettingKey): Record<string, unknown> {
@@ -72,6 +92,7 @@ export function keyedRecords(d: LocalFinancials, kind: SeenKind): Map<string, un
     case "lbpRateHistory": return byYm(d.lbpRateHistory);
     case "budgetRuleHistory": return byYm(d.budgetRuleHistory);
     case "netWorthHistory": return byYm(d.netWorthHistory);
+    case "transactions": return new Map((d.transactions ?? []).map((t) => [t.id, transactionContent(t) as unknown]));
   }
 }
 

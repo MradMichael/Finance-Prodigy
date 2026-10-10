@@ -43,7 +43,8 @@ async function saveShown(userId: string, shown: Shown): Promise<void> {
 async function take(userId: string | undefined, data: LocalFinancials, now: Date, firstSync: boolean): Promise<ClashRecord[]> {
   if (!userId || typeof window === "undefined") return [];
   const cutoff = now.getTime() - CLASH_RECORD_DAYS * DAY;
-  const live = (data.clashRecords ?? []).filter((r) => Date.parse(r.at) >= cutoff);
+  // Item 7: transactions' records live in their own field (older code's list stays theirs).
+  const live = [...(data.clashRecords ?? []), ...(data.transactionClashRecords ?? [])].filter((r) => Date.parse(r.at) >= cutoff);
   if (live.length === 0) return [];
   const shown = await loadShown(userId);
   const fresh = live.filter((r) => !(r.id in shown))

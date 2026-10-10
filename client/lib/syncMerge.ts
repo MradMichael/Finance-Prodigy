@@ -31,11 +31,13 @@ import {
   mergeTransactions, undoCloseEffects, periodCloseKey, DELETED_COLLECTIONS,
   deletedKeySet, itemKeysByCollection, restoreGeneration, SETTING_KEYS, type SettingKey,
   type LocalFinancials, type PeriodClose, type TrackedBalance, type DeletedKeys, type Tombstone, type RevivedKeys, type MergeTransactionsResult,
-  type StoredCard,
+  type StoredCard, type StoredTransaction,
 } from "./localData";
 
 import { stableStringify, tieBreak } from "./canonical";
-import { fingerprint, settingValue, SETTING_FIELDS, type SeenMap, type SeenKind } from "./syncSeen";
+import { fingerprint, transactionFingerprint, settingValue, SETTING_FIELDS, type SeenMap, type SeenKind } from "./syncSeen";
+import { cycleLabelLong } from "./period";
+import type { ClosedEdit } from "./closedEditNotice";
 
 export type { Tombstone } from "./localData";
 export { stableStringify } from "./canonical";
@@ -239,7 +241,7 @@ function applyMergedUndos(side: LocalFinancials, merged: PeriodClose[]): LocalFi
 /** The fields mergeFinancials combines; every other field is this device's copy. */
 export const MERGED_FIELDS = [
   "transactions", "trackedBalances", "wishlist", "customCategories", "categoryRules", "periodCloses", "deletedKeys", "revivedKeys",
-  "clashRecords",
+  "clashRecords", "transactionClashRecords",
 ] as const satisfies readonly (keyof LocalFinancials)[];
 
 /**
@@ -263,6 +265,15 @@ export interface MergeFinancialsResult {
   serverTransactions: LocalFinancials["transactions"];
   /** Closes that were live on THIS device and lost to another device's earlier close of the same cycle. */
   supersededFromLocal: ReplacedClose[];
+  /** Item 7 (owner): the other device's one-sided edits to transactions inside a closed cycle, for the notice (DRAFT wording). */
+  closedEdits: ClosedEdit[];
+}
+
+/** Item 7: how a two-sided transaction conflict was settled, as the notice words it. */
+function howSettled(winner: StoredTransaction, loser: StoredTransaction): "newer" | "tie" | "versions" {
+  const w = winner.updatedAt ? Date.parse(winner.updatedAt) : null, l = loser.updatedAt ? Date.parse(loser.updatedAt) : null;
+  if (w !== null && (l === null || w > l)) return "newer";
+  return w !== null && w === l ? "tie" : "versions";
 }
 
 /**
@@ -291,7 +302,13 @@ function withoutDeleted(d: LocalFinancials, deleted: DeletedKeys | undefined, re
 /** A two-sided change the fingerprint rule settled by edit time (plan H 5b), for the notice to name. */
 export type MergeClash =
   | { kind: "goal" | "debt" | "recurring" | "asset" | "wishlist" | "category" | "rule"; name: string; later: boolean }
-  | { kind: "setting"; setting: SettingKey; kept: unknown; other: unknown };
+  | { kind: "setting"; setting: SettingKey; kept: unknown; other: unknown }
+  // Item 7 (owner, session 8): a transaction both devices changed, as a clash
+  // record only, so the overridden device is told in the approved transaction
+  // sentences; the merging device names it from the merge's own conflicts.
+  // `how`: "newer" (the kept copy's edit time is later, or only it has one),
+  // "tie" (the same time), "versions" (neither has one).
+  | { kind: "transaction"; name: string; kept: number; other: number; how: "newer" | "tie" | "versions"; keptCurrency?: "USD" | "LBP"; otherCurrency?: "USD" | "LBP" };
 
 /**
  * Plan H 5d (owner, session 6): a settled clash as the copy keeps it, so every
@@ -587,12 +604,42 @@ export function mergeFinancials(localIn: LocalFinancials, serverIn: LocalFinanci
   const { closes, replaced } = mergeCloses(local.periodCloses ?? [], server.periodCloses ?? [], at);
   const localU = applyMergedUndos(local, closes);
   const serverU = applyMergedUndos(server, closes);
-  const transactions = mergeTransactions(localU.transactions ?? [], serverU.transactions ?? [], revivedKeys?.transactions);
+  // Item 7 (owner, session 8): with a record of transactions at the last sync,
+  // transactions merge under the fingerprint rule. Which side changed is
+  // judged on each side's copy before the card remap (`local0`/`server0`).
+  const txSeen = seen?.kinds.transactions;
+  const byId = (d: LocalFinancials) => new Map((d.transactions ?? []).map((t) => [t.id, t]));
+  const txRule = txSeen ? { seen: txSeen, fingerprint: transactionFingerprint, beforeLocal: byId(local0), beforeServer: byId(server0) } : undefined;
+  const transactions = mergeTransactions(localU.transactions ?? [], serverU.transactions ?? [], revivedKeys?.transactions, txRule);
+  // Each two-sided conflict, as a clash record, the same from either side.
+  const localTx = byId(localU), serverTx = byId(serverU);
+  const txRecords: ClashRecord[] = txRule ? transactions.conflicts.map((winner) => {
+    const l = localTx.get(winner.id)!, s = serverTx.get(winner.id)!;
+    const loser = stableStringify(winner) === stableStringify(l) ? s : l;
+    const clash: MergeClash = { kind: "transaction", name: winner.description, kept: winner.amount, other: loser.amount, how: howSettled(winner, loser), keptCurrency: winner.currency, otherCurrency: loser.currency };
+    return { ...clash, key: winner.id, at, id: fingerprint({ kind: "transaction", key: winner.id, kept: transactionFingerprint(winner), other: transactionFingerprint(loser) }) };
+  }) : [];
+  // The other device's one-sided changes inside a closed (not reopened)
+  // cycle (owner, sessions 8-9): its edits, its adds, and its deletes (named
+  // from this device's copy: a purged one is scrubbed). With a record only,
+  // like the rule; a first merge is today's merge.
+  const liveCloses = closes.filter((c) => !c.reopenedAt);
+  const inClosed = (kind: ClosedEdit["kind"], t: StoredTransaction): ClosedEdit[] => {
+    const c = liveCloses.find((x) => t.date >= x.rangeStart && t.date <= x.rangeEnd);
+    return c ? [{ kind, description: t.description, amount: t.amount, currency: t.currency, cycleLabel: cycleLabelLong(c.cycleKey, c.startDayAtClose) }] : [];
+  };
+  const closedEdits: ClosedEdit[] = txRule ? [
+    ...transactions.oneSidedFromServer.flatMap((t) => inClosed("changed", t)),
+    ...transactions.addedRows.filter((t) => t.deletedAt == null && t.purgedAt == null).flatMap((t) => inClosed("added", t)),
+    ...transactions.deletedRows.flatMap((d) => inClosed("deleted", d.local)),
+  ] : [];
   const liveLocally = new Set((local.periodCloses ?? []).filter((c) => !c.reopenedAt).map(closeKey));
   const ruled = seen ? mergeUnderRule(local, server, deletedKeys, revivedKeys, seen, at) : null;
   // Plan H 5d (session 6): records from both copies and this merge, pruned by age.
   // Written even when empty, so an emptied list replaces this device's copy.
   const clashRecords = mergeClashRecords(local.clashRecords, server.clashRecords, ruled?.records ?? [], now);
+  // Item 7: transactions' records apart, where older code doesn't look.
+  const transactionClashRecords = mergeClashRecords(local.transactionClashRecords, server.transactionClashRecords, txRecords, now);
   return {
     data: {
       ...local,
@@ -607,11 +654,13 @@ export function mergeFinancials(localIn: LocalFinancials, serverIn: LocalFinanci
       ...(ruled ? ruled.data : {}),
       ...(cards ? { cards: cards.cards } : {}),
       clashRecords: clashRecords.length ? clashRecords : undefined,
+      transactionClashRecords: transactionClashRecords.length ? transactionClashRecords : undefined,
     },
     clashes: ruled?.clashes ?? [],
     transactions,
     localTransactions: localU.transactions,
     serverTransactions: serverU.transactions,
     supersededFromLocal: replaced.filter((r) => liveLocally.has(closeKey(r.superseded))),
+    closedEdits,
   };
 }

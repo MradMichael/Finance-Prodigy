@@ -211,7 +211,7 @@ export default function ProfilePage() {
     setLastSync(result.syncedAt);
     // Plan H 5d: changes both devices made that this device hasn't shown; on a first merge, what may differ.
     const named = await takeUnseenClashes(session.userId, result.mergedData, undefined, { firstSync: result.firstSync });
-    const notice = buildMergeNoticeText(result.addedFromServer, result.conflictDetails, named, result.replacedCloses, result.nonTransactionDivergence ?? []);
+    const notice = buildMergeNoticeText(result.addedFromServer, result.conflictDetails, named, result.replacedCloses, result.nonTransactionDivergence ?? [], result.closedEdits ?? []);
     setSyncMsg("✓ Merged. " + (notice.text || "Nothing new from your other device."));
     // Same reload requirement as handlePull -- the dashboard only reads
     // localStorage once, on its own mount.

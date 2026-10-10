@@ -966,6 +966,14 @@ export interface LocalFinancials {
    * that device only (lib/clashNotice.ts). Older code ignores the field.
    */
   clashRecords?: ClashRecord[];
+  /**
+   * Item 7 (owner, session 8): the same, for transactions both devices
+   * changed. Kept apart from clashRecords because older code words every
+   * clashRecords entry and has no sentence for a transaction; it ignores this
+   * field. Pruned the same way (lib/syncMerge.ts); read with clashRecords
+   * (lib/clashNotice.ts).
+   */
+  transactionClashRecords?: ClashRecord[];
 }
 
 /** Keys a restore brought back, per collection, each with its restore generation. */
@@ -3833,6 +3841,27 @@ export interface MergeTransactionsResult {
   conflictsResolved: number;
   /** The winning copy of each transaction counted in conflictsResolved (conflicts.length === conflictsResolved, always) -- a bare count can't tell a user WHAT changed (which amount, which description) when a last-writer-wins pick silently overrides an edit; this is what a caller needs to say that, not just that something happened. */
   conflicts: StoredTransaction[];
+  /** Item 7: the server's copies taken because only the server's side changed (the fingerprint rule). Empty without a rule. */
+  oneSidedFromServer: StoredTransaction[];
+  /** Session 9: rows only the server holds (the other device added them). */
+  addedRows: StoredTransaction[];
+  /** Session 9: rows live here that the server's deleted or purged copy outranked (the other device deleted them), with this device's copy. */
+  deletedRows: { server: StoredTransaction; local: StoredTransaction }[];
+}
+
+/**
+ * Item 7 (owner, session 8): the fingerprint rule for transactions, plan H's
+ * rule. `seen` is this device's fingerprint of each transaction as the
+ * server held it at the last sync; `fingerprint` leaves out migration-only
+ * fields. Which side changed is judged on each side's copy as it was before
+ * the merge's own rewrites (`beforeLocal` / `beforeServer`: the card remap),
+ * because the record was taken before them too.
+ */
+export interface TransactionRule {
+  seen: Record<string, string>;
+  fingerprint: (t: StoredTransaction) => string;
+  beforeLocal?: Map<string, StoredTransaction>;
+  beforeServer?: Map<string, StoredTransaction>;
 }
 
 /**
@@ -3875,7 +3904,7 @@ function tombstoneRank(t: StoredTransaction): number {
  * passed first, so two devices merging the same pair kept different
  * versions.
  */
-function resolveTransactionConflict(a: StoredTransaction, b: StoredTransaction, revivedGen?: number): { winner: StoredTransaction; isConflict: boolean } {
+function resolveTransactionConflict(a: StoredTransaction, b: StoredTransaction, revivedGen?: number, rule?: TransactionRule): { winner: StoredTransaction; isConflict: boolean; fromServerOnly?: boolean } {
   const rankA = tombstoneRank(a);
   const rankB = tombstoneRank(b);
   // DI-13 follow-up (session 4): a restore from a file revives the live copy
@@ -3891,6 +3920,17 @@ function resolveTransactionConflict(a: StoredTransaction, b: StoredTransaction, 
   const timeA = a.updatedAt ? new Date(a.updatedAt).getTime() : -Infinity;
   const timeB = b.updatedAt ? new Date(b.updatedAt).getTime() : -Infinity;
   const winner = timeA !== timeB ? (timeA > timeB ? a : b) : tieBreak(a, b);
+  // Item 7 (owner, session 8): two live copies, after every rank and revival
+  // check above. `a` is this device's, `b` the server's. A deleted or purged
+  // pair keeps the rule above exactly (pinned: tx-rule.pins.test.ts).
+  if (rule && rankA === 0) {
+    const fa = rule.fingerprint(rule.beforeLocal?.get(a.id) ?? a);
+    const fb = rule.fingerprint(rule.beforeServer?.get(b.id) ?? b);
+    const base = rule.seen[a.id];
+    if (fa === fb) return { winner, isConflict: false };                                // they differ only in fields a migration adds
+    if (base !== undefined && fa === base) return { winner: b, isConflict: false, fromServerOnly: true }; // only the server changed
+    if (base !== undefined && fb === base) return { winner: a, isConflict: false };     // only this device changed
+  }
   // DI-12 (owner, 2026-10-07): two deletions, or two purges, of one
   // transaction are the same fact whatever their times -- never a conflict.
   // Each device purges on its own load with its own `now`, so two purged
@@ -3915,23 +3955,28 @@ function resolveTransactionConflict(a: StoredTransaction, b: StoredTransaction, 
  * comment claimed more than the code did. lib/transaction-tie-break.test.ts
  * pins the tie.
  */
-export function mergeTransactions(local: StoredTransaction[], server: StoredTransaction[], revived?: Record<string, number>): MergeTransactionsResult {
+export function mergeTransactions(local: StoredTransaction[], server: StoredTransaction[], revived?: Record<string, number>, rule?: TransactionRule): MergeTransactionsResult {
   const serverById = new Map(server.map((t) => [t.id, t]));
   const localIds = new Set(local.map((t) => t.id));
   const transactions: StoredTransaction[] = [];
   const conflicts: StoredTransaction[] = [];
+  const oneSidedFromServer: StoredTransaction[] = [];
+  const addedRows: StoredTransaction[] = [];
+  const deletedRows: { server: StoredTransaction; local: StoredTransaction }[] = [];
   let addedFromServer = 0;
 
   for (const l of local) {
     const s = serverById.get(l.id);
     if (!s) { transactions.push(l); continue; }
-    const { winner, isConflict } = resolveTransactionConflict(l, s, revived?.[l.id]);
+    const { winner, isConflict, fromServerOnly } = resolveTransactionConflict(l, s, revived?.[l.id], rule);
     if (isConflict) conflicts.push(winner);
+    if (fromServerOnly) oneSidedFromServer.push(winner);
+    if (winner === s && tombstoneRank(l) === 0 && tombstoneRank(s) > 0) deletedRows.push({ server: s, local: l });
     transactions.push(winner);
   }
   for (const s of server) {
-    if (!localIds.has(s.id)) { transactions.push(s); addedFromServer++; }
+    if (!localIds.has(s.id)) { transactions.push(s); addedFromServer++; addedRows.push(s); }
   }
 
-  return { transactions, addedFromServer, conflictsResolved: conflicts.length, conflicts };
+  return { transactions, addedFromServer, conflictsResolved: conflicts.length, conflicts, oneSidedFromServer, addedRows, deletedRows };
 }
