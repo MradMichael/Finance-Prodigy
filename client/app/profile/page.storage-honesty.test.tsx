@@ -4,7 +4,7 @@
 import { it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import type { LocalFinancials } from "../../lib/localData";
-import { PUSH_NOT_RECORDED } from "../../lib/storageNotices";
+import { PUSH_NOT_RECORDED, PULL_NOT_RECORDED } from "../../lib/storageNotices";
 
 const SESSION = { userId: "u1", email: "u1@example.com", name: "U One" };
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn(), push: vi.fn() }) }));
@@ -13,10 +13,11 @@ vi.mock("../../lib/auth", () => ({
   deleteAccount: vi.fn(), ensureFirstUserIsAdmin: vi.fn(), regenerateRecoveryCode: vi.fn(),
 }));
 let pushResult: Record<string, unknown>;
+let pullResult: Record<string, unknown>;
 vi.mock("../../lib/syncService", async (importOriginal) => {
   const real = await importOriginal<typeof import("../../lib/syncService")>();
   return {
-    pushToServer: vi.fn(async () => pushResult), pullFromServer: vi.fn(), getLastSyncTime: () => null, confirmOverwriteIfNeeded: vi.fn(async () => true),
+    pushToServer: vi.fn(async () => pushResult), pullFromServer: vi.fn(async () => pullResult), getLastSyncTime: () => null, confirmOverwriteIfNeeded: vi.fn(async () => true),
     mergeAndPush: vi.fn(), recordMergeStored: vi.fn(), buildMergeNoticeText: real.buildMergeNoticeText, applyBackupChoice: vi.fn(),
   };
 });
@@ -47,4 +48,21 @@ it("an ordinary push says what it said", async () => {
   render(<ThemeProvider><ProfilePage /></ThemeProvider>);
   fireEvent.click(await screen.findByRole("button", { name: /Push to database/ }));
   expect(await screen.findByText("✓ Pushed to database.")).toBeTruthy();
+});
+
+// Session 9 (owner): Profile → Pull, when the server answered but this device
+// couldn't note when.
+it("a pull the server answered, whose time this device couldn't note: restored, and it says so, not 'Could not reach server'", async () => {
+  pullResult = { ok: true, data: { ...DEFAULT_DATA, income: 4000 }, syncedAt: "2026-10-08T09:02:00.000Z", hasRecoveryCode: true, notRecorded: true };
+  render(<ThemeProvider><ProfilePage /></ThemeProvider>);
+  fireEvent.click(await screen.findByRole("button", { name: /Restore from database/ }));
+  expect(await screen.findByText("✓ Data restored from database. " + PULL_NOT_RECORDED + " Reloading…")).toBeTruthy();
+  expect(screen.queryByText(/Could not reach server/)).toBeNull();
+});
+
+it("an ordinary pull says what it said", async () => {
+  pullResult = { ok: true, data: { ...DEFAULT_DATA, income: 4000 }, syncedAt: "2026-10-08T09:02:00.000Z", hasRecoveryCode: true };
+  render(<ThemeProvider><ProfilePage /></ThemeProvider>);
+  fireEvent.click(await screen.findByRole("button", { name: /Restore from database/ }));
+  expect(await screen.findByText("✓ Data restored from database. Reloading…")).toBeTruthy();
 });

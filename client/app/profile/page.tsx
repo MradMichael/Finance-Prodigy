@@ -12,7 +12,7 @@ import { loadData, saveData, activeTransactions, syncAllowed, resetFinancials, s
 import { computeDashboard } from "../../lib/computeDashboard";
 import { buildReportHtml } from "../../lib/printReport";
 import { pushToServer, pullFromServer, getLastSyncTime, confirmOverwriteIfNeeded, mergeAndPush, recordMergeStored, buildMergeNoticeText, applyBackupChoice, type BackupChoice } from "../../lib/syncService";
-import { PUSH_NOT_RECORDED } from "../../lib/storageNotices";
+import { PUSH_NOT_RECORDED, PULL_NOT_RECORDED } from "../../lib/storageNotices";
 import { saveSeen, loadSeen } from "../../lib/syncSeen";
 import { takeUnseenClashes } from "../../lib/clashNotice";
 import { restoreFromExport } from "../../lib/syncMerge";
@@ -169,7 +169,8 @@ export default function ProfilePage() {
       // Session 7: with no record before, the restored copy's clash records are taken as shown.
       if (firstSync) await takeUnseenClashes(session.userId, result.data, undefined, { firstSync: true });
       setLastSync(result.syncedAt);
-      setSyncMsg("✓ Data restored from database. Reloading…");
+      // Session 9: restored, but this device couldn't note when (storage); said, and given time to be read.
+      setSyncMsg(result.notRecorded ? "✓ Data restored from database. " + PULL_NOT_RECORDED + " Reloading…" : "✓ Data restored from database. Reloading…");
       // The dashboard (app/page.tsx) only reads localStorage once, into React
       // state, on its own mount -- it has no way to know data changed here on
       // a different route. Without a hard reload, the dashboard keeps showing
@@ -177,7 +178,7 @@ export default function ProfilePage() {
       // edit there would silently overwrite the just-restored data with a
       // merge based on that stale state. A full navigation forces it to
       // remount and re-read the localStorage this just wrote.
-      setTimeout(() => { window.location.href = "/"; }, 700);
+      setTimeout(() => { window.location.href = "/"; }, result.notRecorded ? 3000 : 700);
     } else {
       setSyncing(false);
       setSyncMsg("✗ " + result.error);
