@@ -1,6 +1,6 @@
 // Plan H 5b: the first-load restore (an empty device adopting the server's
 // copy) stores that copy as the device's data, so it becomes the device's
-// last sync -- once stored, and only then.
+// last sync -- once stored, and only then. Session 10: its time too.
 //
 // Harness as in page.nothing-to-lose.test.tsx: only the I/O boundaries are stubbed.
 import { it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -26,8 +26,10 @@ vi.mock("../lib/syncSeen", () => ({ saveSeen: (u: string, d: LocalFinancials) =>
 // Session 7: what the device marks as already shown when it joins.
 const taken = vi.fn(async (..._a: unknown[]) => [] as unknown[]);
 vi.mock("../lib/clashNotice", () => ({ takeUnseenClashes: (...a: unknown[]) => taken(...a) }));
+const timeRecorded = vi.fn((_u: string, _t: string) => true);
 vi.mock("../lib/syncService", () => ({
   pullFromServer: vi.fn(async () => ({ ok: true, data: SERVER, syncedAt: "2026-10-08T09:00:00.000Z" })),
+  recordRestoreStored: (u: string, t: string) => timeRecorded(u, t),
   pushToServer: vi.fn(async () => ({ ok: true })),
   mergeAndPush: vi.fn(async () => ({ ok: false })),
   buildMergeNoticeText: () => ({ text: "" }),
@@ -48,6 +50,7 @@ it("the restored copy is stored, then recorded as this device's last sync", { ti
   render(<Home />);
   await waitFor(() => expect(seenSaved).toHaveBeenCalledWith("u1", SERVER), { timeout: 8000 });
   expect(saved.some((d) => d.income === 3150.75)).toBe(true);
+  expect(timeRecorded).toHaveBeenCalledWith("u1", "2026-10-08T09:00:00.000Z");
 });
 
 it("a restore that couldn't be stored records nothing", { timeout: 20000 }, async () => {
@@ -57,6 +60,7 @@ it("a restore that couldn't be stored records nothing", { timeout: 20000 }, asyn
   await screen.findByRole("button", { name: "Setup" }, { timeout: 10000 });
   await new Promise((r) => setTimeout(r, 500));
   expect(seenSaved).not.toHaveBeenCalled();
+  expect(timeRecorded).not.toHaveBeenCalled();
 });
 
 it("a device with no record takes the restored copy's clash records as already shown (session 7)", { timeout: 20000 }, async () => {

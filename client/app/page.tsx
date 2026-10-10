@@ -30,7 +30,7 @@ import { computeDashboard } from "../lib/computeDashboard";
 import {currentCycleKey, calendarKeyForDate, type CycleKey, type CycleHistory } from "../lib/period";
 import { getSession, hasValidSession, signOut } from "../lib/auth";
 import type { Session } from "../lib/auth";
-import { pushToServer, pullFromServer, hasAutoPulled, markAutoPulled, mergeAndPush, recordMergeStored, fetchAndMerge, buildMergeNoticeText, checkEmailExists, applyBackupChoice, getLastSyncTime, type BackupChoice } from "../lib/syncService";
+import { pushToServer, pullFromServer, hasAutoPulled, markAutoPulled, mergeAndPush, recordMergeStored, recordRestoreStored, fetchAndMerge, buildMergeNoticeText, checkEmailExists, applyBackupChoice, getLastSyncTime, type BackupChoice } from "../lib/syncService";
 import { saveSeen, loadSeen } from "../lib/syncSeen";
 import { takeUnseenClashes } from "../lib/clashNotice";
 import { useTheme } from "../contexts/ThemeContext";
@@ -337,7 +337,8 @@ export default function Home() {
         markAutoPulled(s.userId);
         // This pull is the open's fetch (SYNC-1 step 3); don't pull twice.
         lastFetchAtRef.current = Date.now();
-        const result = await pullFromServer(s.email);
+        // Session 10 (DI-15 on pulls): its time is recorded once the copy is stored, below.
+        const result = await pullFromServer(s.email, { record: false });
         // The one that matters: `data` was captured before this await, and a
         // newer run has since unlocked the UI. Anything the user typed in the
         // meantime is live state, and applying either branch below would
@@ -349,6 +350,8 @@ export default function Home() {
           const stored = await persist(pulled, s.userId);
           if (superseded()) return;
           if (stored) {
+            // A time storage refuses isn't recorded: the next push merges (session 10).
+            recordRestoreStored(s.userId, result.syncedAt);
             const firstSync = !(await loadSeen(s.userId));
             await saveSeen(s.userId, result.data); // plan H 5b: stored, so recorded
             // Session 7: with no record before, the restored copy's clash records are taken as shown.

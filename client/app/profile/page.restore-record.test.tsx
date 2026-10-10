@@ -1,6 +1,7 @@
 // Plan H 5b: Profile → Restore from database replaces this device's data with
 // the server's copy. Once that copy is stored it is this device's last sync,
 // and is recorded as such; a restore that couldn't be stored records nothing.
+// Session 10: its time too, once stored (recordRestoreStored).
 import { it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
 import type { LocalFinancials } from "../../lib/localData";
@@ -13,8 +14,10 @@ vi.mock("../../lib/auth", () => ({
   deleteAccount: vi.fn(), ensureFirstUserIsAdmin: vi.fn(), regenerateRecoveryCode: vi.fn(),
 }));
 let SERVER: LocalFinancials;
+const timeRecorded = vi.fn((_u: string, _t: string) => true);
 vi.mock("../../lib/syncService", () => ({
   pushToServer: vi.fn(), pullFromServer: vi.fn(async () => ({ ok: true, data: SERVER, syncedAt: "2026-10-08T09:00:00.000Z" })),
+  recordRestoreStored: (u: string, t: string) => timeRecorded(u, t),
   getLastSyncTime: () => null, confirmOverwriteIfNeeded: vi.fn(async () => true), mergeAndPush: vi.fn(),
   buildMergeNoticeText: () => ({ text: "" }), applyBackupChoice: vi.fn(),
 }));
@@ -39,7 +42,7 @@ beforeEach(async () => {
   localStorage.clear(); sessionStorage.clear();
   activateSessionKey(new Uint8Array(32).fill(7));
   SERVER = { ...DEFAULT_DATA, income: 3150.75 } as LocalFinancials;
-  seenSaved.mockClear(); taken.mockClear(); hadRecord = false;
+  seenSaved.mockClear(); taken.mockClear(); timeRecorded.mockClear(); hadRecord = false;
   failSave = false;
   await saveData({ ...DEFAULT_DATA, income: 3000 } as LocalFinancials, "u1");
 });
@@ -54,6 +57,8 @@ it("stored, then recorded as this device's last sync", async () => {
   await restore();
   await waitFor(() => expect(seenSaved).toHaveBeenCalledWith("u1", SERVER));
   expect(vi.mocked(saveData).mock.invocationCallOrder.at(-1)!).toBeLessThan(seenSaved.mock.invocationCallOrder[0]);
+  expect(timeRecorded).toHaveBeenCalledWith("u1", "2026-10-08T09:00:00.000Z");
+  expect(vi.mocked(saveData).mock.invocationCallOrder.at(-1)!).toBeLessThan(timeRecorded.mock.invocationCallOrder[0]);
 });
 
 it("a restore that couldn't be stored records nothing", async () => {
@@ -61,6 +66,7 @@ it("a restore that couldn't be stored records nothing", async () => {
   await restore();
   await screen.findByText(/Couldn't save the server's copy on this device/);
   expect(seenSaved).not.toHaveBeenCalled();
+  expect(timeRecorded).not.toHaveBeenCalled();
 });
 
 // Session 7: a device with no record of a last sync takes the restored copy's

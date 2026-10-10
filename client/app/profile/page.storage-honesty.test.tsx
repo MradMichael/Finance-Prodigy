@@ -18,6 +18,7 @@ vi.mock("../../lib/syncService", async (importOriginal) => {
   const real = await importOriginal<typeof import("../../lib/syncService")>();
   return {
     pushToServer: vi.fn(async () => pushResult), pullFromServer: vi.fn(async () => pullResult), getLastSyncTime: () => null, confirmOverwriteIfNeeded: vi.fn(async () => true),
+    recordRestoreStored: real.recordRestoreStored,
     mergeAndPush: vi.fn(), recordMergeStored: vi.fn(), buildMergeNoticeText: real.buildMergeNoticeText, applyBackupChoice: vi.fn(),
   };
 });
@@ -51,9 +52,15 @@ it("an ordinary push says what it said", async () => {
 });
 
 // Session 9 (owner): Profile → Pull, when the server answered but this device
-// couldn't note when.
+// couldn't note when. Session 10: the restore records the time once the copy
+// is stored, so it's that write that fails here.
 it("a pull the server answered, whose time this device couldn't note: restored, and it says so, not 'Could not reach server'", async () => {
-  pullResult = { ok: true, data: { ...DEFAULT_DATA, income: 4000 }, syncedAt: "2026-10-08T09:02:00.000Z", hasRecoveryCode: true, notRecorded: true };
+  pullResult = { ok: true, data: { ...DEFAULT_DATA, income: 4000 }, syncedAt: "2026-10-08T09:02:00.000Z", hasRecoveryCode: true };
+  const realSetItem = Storage.prototype.setItem;
+  vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, k: string, v: string) {
+    if (k === "essa_last_sync_u1") throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
+    return realSetItem.call(this, k, v);
+  });
   render(<ThemeProvider><ProfilePage /></ThemeProvider>);
   fireEvent.click(await screen.findByRole("button", { name: /Restore from database/ }));
   expect(await screen.findByText("✓ Data restored from database. " + PULL_NOT_RECORDED + " Reloading…")).toBeTruthy();
