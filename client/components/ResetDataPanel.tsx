@@ -46,10 +46,11 @@ export default function ResetDataPanel({ counts, backupOn, onConfirm }: {
       </p>
       <p className="text-xs leading-relaxed" style={{ color: backupOn ? T.coral : T.mute }}>
         {backupOn
-          // DI-13, owner-approved wording (session 4): other devices remove
-          // the reset's entries (it records a deletion for each), but keep
-          // their own settings, which aren't merged.
-          ? "Backup is on, so this also replaces your backup on our server with the empty copy. Your other devices remove the same entries the next time they sync, but keep their own settings, such as income and payday."
+          // Owner's wording (session 11): other devices remove the reset's
+          // entries (it records a deletion for each) and take its settings,
+          // the merge's rule for anything they haven't changed since their
+          // last sync (lib/reset-propagates.test.ts).
+          ? "Backup is on, so this also replaces your backup on our server with the empty copy. Your other devices are reset the same way the next time they sync, settings included."
           : "Backup is off, so this happens only on this device. Nothing on our server changes."}
       </p>
       <label htmlFor="reset-confirm" className="block text-xs" style={{ color: T.mute }}>

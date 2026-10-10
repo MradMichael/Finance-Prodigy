@@ -8,9 +8,14 @@
 // Now the reset records a deletion (key and time, SYNC-1 step 2's list) for
 // every item it clears, transactions included, and the merge honours those
 // records for every collection, including the five lists that still keep this
-// device's copy. Settings (income, rate, payday...) aren't items: each device
-// keeps its own, as the merge already does.
+// device's copy.
+//
+// Settings (income, rate, payday...) reset too (owner, session 11). Since plan
+// H's rule, a device with a record of its last sync takes the reset copy's
+// values for every setting it hasn't changed since. A device's first merge,
+// with no record, still keeps its own: closed by session 11's item 2.
 import { describe, it, expect } from "vitest";
+import { seenOf } from "./syncSeen";
 import { resetFinancials, DEFAULT_DATA, type LocalFinancials, type StoredTransaction, type PeriodClose } from "./localData";
 import { mergeFinancials } from "./syncMerge";
 import { asCycleKey } from "./period";
@@ -92,9 +97,19 @@ describe("DI-13: no merge brings the cleared items back", () => {
     expect(r.transactions.addedFromServer).toBe(0);
   });
 
-  it("settings are not items: each device keeps its own", () => {
+  it("settings reset too: the other device's next sync takes the reset's income (owner, session 11)", () => {
+    const r = mergeFinancials(full, reset, new Date("2026-10-07T18:05:00.000Z"), seenOf(full)); // it last synced the full copy
+    expect(r.data.income).toBe(0);
+    expect(r.data.cycleStartDay ?? 1).toBe(reset.cycleStartDay ?? 1); // payday too
+    expect(r.clashes).toEqual([]); // nothing to settle: only the resetting device changed them
+  });
+
+  it("and the device that reset keeps its reset settings when the other device's old copy comes back", () => {
+    expect(mergeFinancials(reset, full, new Date("2026-10-07T18:05:00.000Z"), seenOf(full)).data.income).toBe(0);
+  });
+
+  it("a device's first merge, with no record of a last sync, still keeps its own settings (closed by item 2)", () => {
     expect(mergeFinancials(full, reset).data.income).toBe(3150.75);
-    expect(mergeFinancials(reset, full).data.income).toBe(0);
   });
 
   it("something added after the reset, with a new key, is kept", () => {
