@@ -27,9 +27,12 @@ async function lastSeen() {
 // DI-16 (session 8): one sync time per account. It was one browser-wide
 // value, so after one account synced, another's push carried that account's
 // time as its base and could overwrite its own server copy without the
-// conflict merge. The old value moves to the account signed in when the new
-// code first reads it (getLastSyncTime), and to no other.
+// conflict merge. Session 9 (owner): the old value goes to no account; an
+// account with no time of its own sends FIRST_PUSH_BASE, so its first push
+// always meets the conflict merge (when a server copy exists).
 const LEGACY_LAST_SYNC_KEY = "essa_last_sync";
+/** A base older than any server copy: the server refuses it whenever it holds one (409), so the push merges first. */
+export const FIRST_PUSH_BASE = "1970-01-01T00:00:00.000Z";
 const lastSyncKey = (userId: string) => `essa_last_sync_${userId}`;
 /** The signed-in account, if the address being synced is its own; else null (nothing is recorded or read for it). */
 function syncingUserId(email: string): string | null {
@@ -168,7 +171,10 @@ export async function pushToServer(
   // or one running before this field existed -- the server treats a missing
   // value as unknown rather than rejecting, so an old/mid-upgrade client
   // isn't broken by a server that now expects it.
-  const baseSyncedAt = base ?? getLastSyncTime(syncingUserId(email)); // DI-16: this account's own
+  // DI-16: this account's own time; with none yet (session 9, owner), a base
+  // older than any server copy, so the first push merges rather than lands.
+  const syncing = syncingUserId(email);
+  const baseSyncedAt = base ?? getLastSyncTime(syncing) ?? (syncing ? FIRST_PUSH_BASE : undefined);
   try {
     const res = await fetch("/api/sync/push", {
       method: "POST",
@@ -836,19 +842,10 @@ export function closeMomentLabel(iso: string): string {
 /** This account's sync time on this device (the signed-in account's by default), or null. */
 export function getLastSyncTime(userId: string | null = getSession()?.userId ?? null): string | null {
   if (typeof window === "undefined" || !userId) return null;
-  const own = localStorage.getItem(lastSyncKey(userId));
-  if (own !== null) return own;
-  // DI-16 migration: the old browser-wide value belongs to the account signed
-  // in when this first runs, and to no other (owner, session 8).
-  const legacy = localStorage.getItem(LEGACY_LAST_SYNC_KEY);
-  if (legacy === null || userId !== getSession()?.userId) return null;
-  try {
-    recordSyncTime(userId, legacy);
-    localStorage.removeItem(LEGACY_LAST_SYNC_KEY);
-  } catch {
-    // Not moved (storage full): read as this account's for now, moved on a later read.
-  }
-  return legacy;
+  // Session 9 (owner): the old browser-wide value is no account's. It's removed
+  // when found; an account with no time of its own pushes on FIRST_PUSH_BASE.
+  if (localStorage.getItem(LEGACY_LAST_SYNC_KEY) !== null) localStorage.removeItem(LEGACY_LAST_SYNC_KEY);
+  return localStorage.getItem(lastSyncKey(userId));
 }
 
 const AUTO_PULL_KEY_PREFIX = "essa_auto_pull_done_";
