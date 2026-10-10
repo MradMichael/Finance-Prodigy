@@ -27,7 +27,7 @@ import { activateSessionKey } from "./crypto";
 import { DEFAULT_DATA, type LocalFinancials, type StoredGoal } from "./localData";
 
 const SEEN = "essa_seen_u1";
-const LAST_SYNC = "essa_last_sync";
+const LAST_SYNC = "essa_last_sync_u1"; // DI-16: this account's own sync time (the old shared key is no account's, session 9)
 const goal = (o: Partial<StoredGoal> = {}): StoredGoal => ({
   id: "g1", name: "Laptop", emoji: "💻", targetAmount: 1200, currentAmount: 0, openingAmount: 100, currency: "USD", targetDate: "2027-03-01",
   createdAt: "2026-05-01T09:00:00.000Z", updatedAt: "2026-10-01T09:00:00.000Z", ...o,

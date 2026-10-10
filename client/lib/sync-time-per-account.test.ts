@@ -19,7 +19,7 @@ const B = { userId: "ub", email: "b@example.com", name: "B" };
 let session: typeof A | null = null;
 vi.mock("./auth", () => ({ getRecoveryTokenForSync: vi.fn(async () => undefined), getSession: () => session }));
 
-import { pushToServer, pullFromServer, getLastSyncTime, recordMergeStored } from "./syncService";
+import { pushToServer, pullFromServer, getLastSyncTime, recordMergeStored, mergeAndPush } from "./syncService";
 import { activateSessionKey } from "./crypto";
 import { DEFAULT_DATA, type LocalFinancials, type StoredGoal } from "./localData";
 
@@ -119,35 +119,53 @@ describe("one sync time per account", () => {
   });
 });
 
-describe("migration of the old browser-wide value", () => {
-  it("moves to the account signed in when it's first read, and the old key is removed", () => {
+describe("the old browser-wide value (owner, session 9: no account takes it)", () => {
+  it("is read by no account, and the orphaned key is removed", () => {
     localStorage.setItem("essa_last_sync", T(4));
     session = B;
-    expect(getLastSyncTime()).toBe(T(4));
+    expect(getLastSyncTime()).toBeNull();
     expect(localStorage.getItem("essa_last_sync")).toBeNull();
-    expect(getLastSyncTime()).toBe(T(4));
-  });
-
-  it("goes to that account only: another account signed in later starts without one", () => {
-    localStorage.setItem("essa_last_sync", T(4));
-    session = B;
-    getLastSyncTime();
     session = A;
     expect(getLastSyncTime()).toBeNull();
   });
 
-  it("reading another account's time (the admin page's rows) doesn't take the old value", () => {
-    localStorage.setItem("essa_last_sync", T(4));
+  it("the account that didn't write it merges correctly on its first push: a very old base, so the conflict merge, not an overwrite", async () => {
+    await twoAccountsOneDevice();
+    // The state before the update: one shared value (A's, the latest), and no account's own.
+    localStorage.setItem("essa_last_sync", T(3));
+    localStorage.removeItem("essa_last_sync_ua"); localStorage.removeItem("essa_last_sync_ub");
     session = B;
-    expect(getLastSyncTime("ua")).toBeNull();
-    expect(localStorage.getItem("essa_last_sync")).toBe(T(4)); // still there, for B
-    expect(getLastSyncTime()).toBe(T(4));
+    const stale = data("Laptop", 3100); // B's copy, before the other device's rename, plus an edit
+    const pushed = await pushToServer(B.email, stale);
+    expect(pushed.ok).toBe(false);
+    expect(pushed.conflict).toBe(true);
+    expect(servers[B.email].data.goals[0].name).toBe("MacBook");
+    const merged = await mergeAndPush(B.email, stale);
+    if (!merged.ok) throw new Error(merged.error);
+    expect(merged.mergedData.goals[0].name).toBe("MacBook"); // the other device's rename, taken
+    expect(merged.mergedData.income).toBe(3100);             // this device's edit, kept
+    expect(servers[B.email].data.goals[0].name).toBe("MacBook");
   });
 
-  it("an account that already has its own time keeps it; the old value is left for no one", () => {
+  it("a brand-new account's first push, with no server copy, is accepted", async () => {
     session = A;
-    localStorage.setItem("essa_last_sync_ua", T(6));
-    localStorage.setItem("essa_last_sync", T(4));
-    expect(getLastSyncTime()).toBe(T(6));
+    const r = await pushToServer(A.email, data("Camera", 5000));
+    expect(r.ok).toBe(true);
+    expect(getLastSyncTime()).toBe(r.syncedAt);
+  });
+
+  it("with nobody signed in, a push carries no base, as before", async () => {
+    session = null;
+    await pushToServer(B.email, data("Laptop"));
+    const calls = vi.mocked(fetch).mock.calls;
+    const body = JSON.parse(String((calls[calls.length - 1][1] as RequestInit).body)) as { baseSyncedAt?: string };
+    expect(body.baseSyncedAt).toBeUndefined();
+  });
+
+  it("once it has its own time, an account pushes on that time", async () => {
+    session = A;
+    await pushToServer(A.email, data("Camera", 5000));
+    const r = await pushToServer(A.email, data("Camera", 5100));
+    expect(r.ok).toBe(true);
   });
 });
