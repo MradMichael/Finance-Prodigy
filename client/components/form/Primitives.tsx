@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { flushSync } from "react-dom";
 import type { Currency, PaymentMethod, StoredCard } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 
@@ -59,6 +60,7 @@ export function MoneyInput({
 }) {
   const T = useTheme();
   const [focused, setFocused] = useState(false);
+  const focusTurn = useRef(0); // session 10, item 6: a blur before the swap cancels it
 
   function fmt(raw: string): string {
     if (!raw) return "";
@@ -84,13 +86,36 @@ export function MoneyInput({
       inputMode="decimal"
       value={focused ? value : fmt(value)}
       onChange={handleChange}
-      onFocus={() => setFocused(true)}
+      // Session 10, item 6 (held): replacing an input's value throws its
+      // selection away. The swap to the bare figure was the re-render after
+      // focus, so the select-all a browser makes on Tab (or a script's) was
+      // lost, and typing appended to the old figure. Now the swap waits for
+      // the end of the focusing task, once the browser has placed the
+      // selection (Tab's select-all, a click's caret, select()), moves each
+      // end to the same digit, and only then renders as focused, so the
+      // re-render finds the bare figure already in place and leaves it.
+      onFocus={(e) => {
+        const input = e.currentTarget;
+        const turn = ++focusTurn.current;
+        queueMicrotask(() => {
+          if (!input.isConnected || focusTurn.current !== turn) return;
+          const shown = input.value;
+          if (shown !== value) {
+            const at = (pos: number | null) => (pos === null ? null : shown.slice(0, pos).replace(/,/g, "").length);
+            const start = at(input.selectionStart), end = at(input.selectionEnd);
+            input.value = value;
+            if (start !== null && end !== null) input.setSelectionRange(start, end);
+          }
+          flushSync(() => setFocused(true));
+        });
+      }}
       // Clamped on blur, never per keystroke. 2.4.74 established that
       // bounding a controlled field on every keystroke breaks entry outright:
       // each prefix of a real figure fails the bound and the value snaps
       // back, so the field becomes untypable. Typing stays unobstructed here;
       // the finished value is corrected once, visibly, when the field is left.
       onBlur={() => {
+        focusTurn.current++;
         setFocused(false);
         const n = parseFloat(value);
         if (Number.isFinite(n) && n > max) onChange(String(max));

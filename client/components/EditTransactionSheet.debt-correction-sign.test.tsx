@@ -85,9 +85,11 @@ it("a correction that lowered the debt reads as negative, and keeps its sign whe
   expect(derivedDebtBalance(DEBT, out.transactions)).toBe(4940);
 });
 
-it("the minus sign stays a leading sign: one, in front", () => {
+it("the minus sign stays a leading sign: one, in front", async () => {
   const { field } = open();
-  fireEvent.focus(field);
+  // Session 10, item 6: the field shows its bare figure from the end of the focusing task.
+  const focus = async () => { fireEvent.focus(field); await new Promise((r) => setTimeout(r, 0)); };
+  await focus();
   fireEvent.change(field, { target: { value: "1-2-3" } });
   expect(field.value).toBe("123");
   fireEvent.change(field, { target: { value: "--1,250" } });
@@ -95,12 +97,12 @@ it("the minus sign stays a leading sign: one, in front", () => {
   fireEvent.blur(field);
   expect(field.value).toBe("-1,250");
   // The field's ceiling bounds a negative too (USD: 100,000,000).
-  fireEvent.focus(field);
+  await focus();
   fireEvent.change(field, { target: { value: "-200000000" } });
   fireEvent.blur(field);
   expect(field.value).toBe("-100,000,000");
   // A minus typed alone shows as itself, not as a number it isn't.
-  fireEvent.focus(field);
+  await focus();
   fireEvent.change(field, { target: { value: "-" } });
   fireEvent.blur(field);
   expect(field.value).toBe("-");
