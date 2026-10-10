@@ -98,7 +98,10 @@ it("nor over an unpushed 'delete everything' that leaves this device empty: the 
   expect(store.income).toBe(0);
 });
 
-it("when the one-time flag can't be saved either, the first load makes no restore pull at all", { timeout: 30000 }, async () => {
+// Session 11, item 4 (owner): when storage refuses the one-time flag too,
+// the page loads, and doesn't pull. It used to stop on markAutoPulled's throw
+// and stay on its loading screen.
+it("when the one-time flag can't be saved either, the page loads and makes no restore pull", { timeout: 30000 }, async () => {
   failKeys = (k) => k.startsWith("essa_last_sync_") || k.startsWith("essa_auto_pull_done_");
   store = { ...DEFAULT_DATA, transactions: [] } as LocalFinancials;
   const rejections: unknown[] = [];
@@ -106,11 +109,24 @@ it("when the one-time flag can't be saved either, the first load makes no restor
   process.on("unhandledRejection", onRejection);
   try {
     render(<Home />);
-    await new Promise((r) => setTimeout(r, 1500));
+    await screen.findByRole("button", { name: "Setup" }, { timeout: 10000 });
+    await new Promise((r) => setTimeout(r, 500));
   } finally { process.off("unhandledRejection", onRejection); }
-  expect(pageCalls).toHaveLength(0);
+  expect(rejections).toEqual([]);
+  expect(pageCalls).toHaveLength(0); // no pull: without its flag, it would be a retry on every load
   expect(store.income).toBe(0);
-  // markAutoPulled's throw ends the load before the pull (session 10: the
-  // page stays on its loading screen; reported, not changed here).
-  expect(rejections.map(String)).toEqual(["QuotaExceededError: The quota has been exceeded."]);
+  expect(localStorage.getItem("essa_auto_pull_done_u1")).toBeNull();
+});
+
+it("and once storage takes the flag, a later load of the still-empty device restores", { timeout: 30000 }, async () => {
+  failKeys = (k) => k.startsWith("essa_auto_pull_done_");
+  store = { ...DEFAULT_DATA, transactions: [] } as LocalFinancials;
+  render(<Home />);
+  await screen.findByRole("button", { name: "Setup" }, { timeout: 10000 });
+  expect(pageCalls).toHaveLength(0);
+  cleanup();
+  failKeys = () => false;
+  render(<Home />);
+  await waitFor(() => expect(store.income).toBe(3150.75), { timeout: 8000 });
+  expect(pageCalls).toHaveLength(1);
 });

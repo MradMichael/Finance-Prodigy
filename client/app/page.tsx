@@ -333,8 +333,12 @@ export default function Home() {
       // edit being overwritten (isEmptyFinancials gates that; the
       // hasAutoPulled flag makes it a one-time attempt, not a retry loop).
       if (superseded()) return;
-      if (isEmptyFinancials(data) && !hasAutoPulled(s.userId)) {
-        markAutoPulled(s.userId);
+      // Session 11, item 4 (owner): when storage refuses the one-time flag,
+      // the page loads without the pull. It used to stop on the throw and
+      // stay on its loading screen; and unflagged, a pull would retry on
+      // every load. A later load whose flag is stored restores as before.
+      const flagged = (id: string) => { try { markAutoPulled(id); return true; } catch { return false; } };
+      if (isEmptyFinancials(data) && !hasAutoPulled(s.userId) && flagged(s.userId)) {
         // This pull is the open's fetch (SYNC-1 step 3); don't pull twice.
         lastFetchAtRef.current = Date.now();
         // Session 10 (DI-15 on pulls): its time is recorded once the copy is stored, below.
