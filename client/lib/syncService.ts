@@ -910,6 +910,15 @@ export async function deleteFromServer(email: string, token: string): Promise<Sy
  * body, never the URL, so it stays out of the hosts' request logs (2.4.165).
  */
 export async function checkEmailExists(email: string): Promise<boolean> {
+  return (await serverCopyExists(email)) === true;
+}
+
+/**
+ * Session 10, item 5: the same question, with "not known" kept apart: null
+ * when there's no answer, an error, or an answer that isn't one. For a claim
+ * that there's no copy, which only the server's own "no" supports.
+ */
+export async function serverCopyExists(email: string): Promise<boolean | null> {
   try {
     const res = await fetch("/api/auth/check-email", {
       method: "POST",
@@ -917,10 +926,10 @@ export async function checkEmailExists(email: string): Promise<boolean> {
       body: JSON.stringify({ email }),
       signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
     });
-    if (!res.ok) return false;
-    const json = await res.json();
-    return json.exists === true;
+    if (!res.ok) return null;
+    const json = await parseJsonSafe(res);
+    return typeof json?.exists === "boolean" ? json.exists : null;
   } catch {
-    return false;
+    return null;
   }
 }

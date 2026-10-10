@@ -18,7 +18,7 @@ vi.mock("../lib/auth", () => ({
   deleteAccount: vi.fn(), ensureFirstUserIsAdmin: vi.fn(), regenerateRecoveryCode: vi.fn(),
 }));
 vi.mock("../lib/syncService", () => ({
-  pushToServer: vi.fn(), pullFromServer: vi.fn(), getLastSyncTime: () => null, confirmOverwriteIfNeeded: vi.fn(async () => true),
+  pushToServer: vi.fn(), pullFromServer: vi.fn(), serverCopyExists: vi.fn(async () => null), getLastSyncTime: () => null, confirmOverwriteIfNeeded: vi.fn(async () => true),
   mergeAndPush: vi.fn(), recordMergeStored: vi.fn(), buildMergeNoticeText: () => ({ text: "" }), applyBackupChoice: vi.fn(),
 }));
 vi.mock("../lib/analytics", () => ({ isAnalyticsOptedIn: () => true, setAnalyticsOptIn: vi.fn() }));

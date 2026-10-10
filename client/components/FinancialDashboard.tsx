@@ -23,7 +23,8 @@ import {
 } from "recharts";
 import { useTheme } from "../contexts/ThemeContext";
 import { moneyEquals, type LocalFinancials, cycleStartDayOf } from "../lib/localData";
-import { getLastSyncTime } from "../lib/syncService";
+import { getLastSyncTime, serverCopyExists } from "../lib/syncService";
+import { getSession } from "../lib/auth";
 import { periodTotals, bucketDisplayState, type DashboardPayload } from "../lib/computeDashboard";
 import OnboardingChecklist from "./OnboardingChecklist";
 import { fmtCur, type Screen } from "./screens/shared";
@@ -159,10 +160,22 @@ export default function FinancialDashboard({
   // Profile -- surfaced here rather than silently discovered the day it's
   // too late to matter. sessionStorage/localStorage read, so it's done in
   // an effect rather than during render.
+  //
+  // Session 10, item 5 (owner): said only when it's known there's no server
+  // copy. No sync time here doesn't mean that: the time is per account since
+  // DI-16 (one that synced under the old browser-wide time has none of its
+  // own), and storage can refuse to save it. So the server is asked, and only
+  // when the banner would otherwise show; a copy, or no answer, claims nothing.
   const [neverSynced, setNeverSynced] = useState(false);
+  const wouldClaim = financials?.syncChoice?.enabled !== false && (data.month.income > 0 || data.hasLoggedTransactions);
   useEffect(() => {
-    setNeverSynced(getLastSyncTime() === null);
-  }, []);
+    if (!wouldClaim) return;
+    const s = getSession();
+    if (!s || getLastSyncTime(s.userId) !== null) return;
+    let live = true;
+    void serverCopyExists(s.email).then((exists) => { if (live) setNeverSynced(exists === false); });
+    return () => { live = false; };
+  }, [wouldClaim]);
 
   // 2.4.55 sub-phase 3 -- past-month review. Deliberately NOT a
   // parameterized version of this whole live dashboard: health score,
@@ -247,7 +260,7 @@ export default function FinancialDashboard({
         {/* COPY-05 (owner, 2026-09-30): with backup off, nothing prompts an
             upload -- the choice was made, and Profile already says what it
             means. On, or still undecided, the banner shows as before. */}
-        {neverSynced && financials?.syncChoice?.enabled !== false && (month.income > 0 || data.hasLoggedTransactions) && (
+        {neverSynced && wouldClaim && (
           <button
             onClick={() => router.push("/profile")}
             className="w-full text-left transition-opacity hover:opacity-80"

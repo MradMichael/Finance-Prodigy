@@ -32,7 +32,7 @@ vi.mock("../lib/syncService", () => ({
   buildMergeNoticeText: () => ({ text: "" }),
   hasAutoPulled: vi.fn(() => true),
   markAutoPulled: vi.fn(),
-  getLastSyncTime: () => null,
+  serverCopyExists: vi.fn(async () => null), getLastSyncTime: () => null,
   checkEmailExists: vi.fn(async () => false),
   applyBackupChoice: vi.fn(),
 }));

@@ -25,7 +25,7 @@ vi.mock("../lib/syncService", () => ({
   pushToServer: vi.fn(async () => ({ ok: true })),
   mergeAndPush: vi.fn(async () => ({ ok: false })),
   buildMergeNoticeText: (added: number) => ({ text: added ? `Merged with your other device — ${added} new transaction added.` : "", showReviewLink: false }),
-  hasAutoPulled: () => true, markAutoPulled: vi.fn(), getLastSyncTime: () => null,
+  hasAutoPulled: () => true, markAutoPulled: vi.fn(), serverCopyExists: vi.fn(async () => null), getLastSyncTime: () => null,
   checkEmailExists: vi.fn(async () => true), applyBackupChoice: vi.fn(),
 }));
 
