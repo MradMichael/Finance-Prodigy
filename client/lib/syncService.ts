@@ -513,6 +513,23 @@ export async function mergeAndPush(email: string, local: LocalFinancials): Promi
 }
 
 /**
+ * Session 10 (DI-15 on pulls): a restore's copy is stored on this device, so
+ * record its time. Restores pull with `record: false` and call this after
+ * the store: recorded first, a store that failed left this device's old copy
+ * on the server's newest time, and its next push overwrote the server's copy
+ * without a conflict. False when storage refused the time: the copy is in
+ * place, and the next push merges (FIRST_PUSH_BASE or the older time).
+ */
+export function recordRestoreStored(userId: string, syncedAt: string): boolean {
+  try {
+    recordSyncTime(userId, syncedAt);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * DI-15: the conflict merge's copy is stored on this device, so record the
  * sync: its time (this device's next push builds on the merged copy) and the
  * sync record (plan H 5b: the server holds the merged copy, and so does this

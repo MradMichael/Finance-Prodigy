@@ -52,6 +52,7 @@ const pull = vi.fn(async () => ({ ok: false, error: "none" }) as unknown);
 vi.mock("../lib/syncService", () => ({
   fetchAndMerge: (e: string, l: () => LocalFinancials | null) => fetchAndMerge(e, l),
   pullFromServer: () => pull(),
+  recordRestoreStored: vi.fn(() => true),
   pushToServer: (e: string, d: LocalFinancials) => push(e, d),
   mergeAndPush: vi.fn(async () => ({ ok: false })),
   buildMergeNoticeText: (a: number, ...rest: unknown[]) => notice(a, ...rest),

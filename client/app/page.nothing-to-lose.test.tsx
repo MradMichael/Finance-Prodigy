@@ -33,6 +33,7 @@ vi.mock("../lib/localData", async (importOriginal) => {
 });
 vi.mock("../lib/syncService", () => ({
   pullFromServer: vi.fn(async () => { pullCalls++; return pullAnswer; }),
+  recordRestoreStored: vi.fn(() => true),
   pushToServer: vi.fn(async () => ({ ok: true })),
   mergeAndPush: vi.fn(async () => ({ ok: false })),
   buildMergeNoticeText: () => ({ text: "" }),
