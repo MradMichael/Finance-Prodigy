@@ -69,7 +69,7 @@ vi.mock("../lib/syncService", () => ({
   buildMergeNoticeText: () => ({ text: "" }),
   hasAutoPulled: vi.fn(() => localStorage.getItem("ap") === "1"),
   markAutoPulled: vi.fn(() => localStorage.setItem("ap", "1")),
-  getLastSyncTime: () => null,
+  serverCopyExists: vi.fn(async () => null), getLastSyncTime: () => null,
   // Opt-in sync part 3 (audit 2.4.153): the undecided-account prompt asks the
   // server whether a copy exists. Not under test here.
   checkEmailExists: vi.fn(async () => false),

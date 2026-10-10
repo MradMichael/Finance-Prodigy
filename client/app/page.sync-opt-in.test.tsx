@@ -55,7 +55,7 @@ vi.mock("../lib/syncService", () => ({
   buildMergeNoticeText: () => ({ text: "" }),
   hasAutoPulled: vi.fn(() => true),
   markAutoPulled: vi.fn(),
-  getLastSyncTime: () => lastSyncHere,
+  serverCopyExists: vi.fn(async () => null), getLastSyncTime: () => lastSyncHere,
   checkEmailExists: vi.fn(async () => serverHasCopy),
   applyBackupChoice: (...a: unknown[]) => applyChoice(...(a as [string, LocalFinancials, string])),
 }));
