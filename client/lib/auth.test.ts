@@ -10,6 +10,7 @@ vi.mock("./syncService", () => ({
   confirmOverwriteIfNeeded: vi.fn(),
   deleteFromServer: vi.fn(),
   recordSyncTime: vi.fn(), // DI-16
+  recordRestoreStored: vi.fn(() => true), // session 11: what sign-in and recovery call
 }));
 
 const USERS_KEY = "essa_users_v1";
