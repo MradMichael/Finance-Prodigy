@@ -3843,6 +3843,10 @@ export interface MergeTransactionsResult {
   conflicts: StoredTransaction[];
   /** Item 7: the server's copies taken because only the server's side changed (the fingerprint rule). Empty without a rule. */
   oneSidedFromServer: StoredTransaction[];
+  /** Session 9: rows only the server holds (the other device added them). */
+  addedRows: StoredTransaction[];
+  /** Session 9: rows live here that the server's deleted or purged copy outranked (the other device deleted them), with this device's copy. */
+  deletedRows: { server: StoredTransaction; local: StoredTransaction }[];
 }
 
 /**
@@ -3957,6 +3961,8 @@ export function mergeTransactions(local: StoredTransaction[], server: StoredTran
   const transactions: StoredTransaction[] = [];
   const conflicts: StoredTransaction[] = [];
   const oneSidedFromServer: StoredTransaction[] = [];
+  const addedRows: StoredTransaction[] = [];
+  const deletedRows: { server: StoredTransaction; local: StoredTransaction }[] = [];
   let addedFromServer = 0;
 
   for (const l of local) {
@@ -3965,11 +3971,12 @@ export function mergeTransactions(local: StoredTransaction[], server: StoredTran
     const { winner, isConflict, fromServerOnly } = resolveTransactionConflict(l, s, revived?.[l.id], rule);
     if (isConflict) conflicts.push(winner);
     if (fromServerOnly) oneSidedFromServer.push(winner);
+    if (winner === s && tombstoneRank(l) === 0 && tombstoneRank(s) > 0) deletedRows.push({ server: s, local: l });
     transactions.push(winner);
   }
   for (const s of server) {
-    if (!localIds.has(s.id)) { transactions.push(s); addedFromServer++; }
+    if (!localIds.has(s.id)) { transactions.push(s); addedFromServer++; addedRows.push(s); }
   }
 
-  return { transactions, addedFromServer, conflictsResolved: conflicts.length, conflicts, oneSidedFromServer };
+  return { transactions, addedFromServer, conflictsResolved: conflicts.length, conflicts, oneSidedFromServer, addedRows, deletedRows };
 }

@@ -1,16 +1,13 @@
-// DRAFT, held for the owner's approval (session 8, item 7). Not approved
-// wording; the branch that uses it is held until it is.
-//
-// Owner: one-sided edits inside closed periods are named. When the other
-// device changed a transaction dated inside a cycle this account has closed
-// (a live close, not reopened), the merge that takes the change says so.
+// Owner-approved (session 9): the other device's one-sided changes to
+// transactions inside a cycle this account has closed (a live close, not
+// reopened) are named by the merge that takes them: an edit (draft B,
+// approved), an add, a delete (the owner's wording).
+import { noticeMoney } from "./noticeMoney";
 
-/** One edit the other device made inside a closed cycle, as the notice names it. */
-export interface ClosedEdit { description: string; amount: number; currency: "USD" | "LBP"; cycleLabel: string }
+/** One change the other device made inside a closed cycle, as the notice names it. */
+export interface ClosedEdit { kind: "changed" | "added" | "deleted"; description: string; amount: number; currency: "USD" | "LBP"; cycleLabel: string }
 
-const money = (amount: number, currency: "USD" | "LBP") =>
-  currency === "LBP" ? `L£${amount.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : `$${amount.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+const VERB: Record<ClosedEdit["kind"], string> = { changed: "changed", added: "added", deleted: "deleted" };
 
-/** DRAFT sentence. */
 export const CLOSED_EDIT_SENTENCE = (e: ClosedEdit): string =>
-  `Your other device changed "${e.description}" (${money(e.amount, e.currency)}) in ${e.cycleLabel}, a cycle you've closed.`;
+  `Your other device ${VERB[e.kind]} "${e.description}" (${noticeMoney(e.amount, e.currency)}) in ${e.cycleLabel}, a cycle you've closed.`;

@@ -2206,7 +2206,7 @@ describe("migrateFinancials", () => {
     });
 
     it("both empty is empty; one empty is just the other side, with no false conflicts", () => {
-      expect(mergeTransactions([], [])).toEqual({ transactions: [], addedFromServer: 0, conflictsResolved: 0, conflicts: [], oneSidedFromServer: [] });
+      expect(mergeTransactions([], [])).toEqual({ transactions: [], addedFromServer: 0, conflictsResolved: 0, conflicts: [], oneSidedFromServer: [], addedRows: [], deletedRows: [] });
       const local = [makeTx()];
       const result = mergeTransactions(local, []);
       expect(result.transactions).toEqual(local);

@@ -308,7 +308,7 @@ export type MergeClash =
   // sentences; the merging device names it from the merge's own conflicts.
   // `how`: "newer" (the kept copy's edit time is later, or only it has one),
   // "tie" (the same time), "versions" (neither has one).
-  | { kind: "transaction"; name: string; kept: number; other: number; how: "newer" | "tie" | "versions" };
+  | { kind: "transaction"; name: string; kept: number; other: number; how: "newer" | "tie" | "versions"; keptCurrency?: "USD" | "LBP"; otherCurrency?: "USD" | "LBP" };
 
 /**
  * Plan H 5d (owner, session 6): a settled clash as the copy keeps it, so every
@@ -616,15 +616,23 @@ export function mergeFinancials(localIn: LocalFinancials, serverIn: LocalFinanci
   const txRecords: ClashRecord[] = txRule ? transactions.conflicts.map((winner) => {
     const l = localTx.get(winner.id)!, s = serverTx.get(winner.id)!;
     const loser = stableStringify(winner) === stableStringify(l) ? s : l;
-    const clash: MergeClash = { kind: "transaction", name: winner.description, kept: winner.amount, other: loser.amount, how: howSettled(winner, loser) };
+    const clash: MergeClash = { kind: "transaction", name: winner.description, kept: winner.amount, other: loser.amount, how: howSettled(winner, loser), keptCurrency: winner.currency, otherCurrency: loser.currency };
     return { ...clash, key: winner.id, at, id: fingerprint({ kind: "transaction", key: winner.id, kept: transactionFingerprint(winner), other: transactionFingerprint(loser) }) };
   }) : [];
-  // The other device's one-sided edits inside a closed (not reopened) cycle.
+  // The other device's one-sided changes inside a closed (not reopened)
+  // cycle (owner, sessions 8-9): its edits, its adds, and its deletes (named
+  // from this device's copy: a purged one is scrubbed). With a record only,
+  // like the rule; a first merge is today's merge.
   const liveCloses = closes.filter((c) => !c.reopenedAt);
-  const closedEdits: ClosedEdit[] = transactions.oneSidedFromServer.flatMap((t) => {
+  const inClosed = (kind: ClosedEdit["kind"], t: StoredTransaction): ClosedEdit[] => {
     const c = liveCloses.find((x) => t.date >= x.rangeStart && t.date <= x.rangeEnd);
-    return c ? [{ description: t.description, amount: t.amount, currency: t.currency, cycleLabel: cycleLabelLong(c.cycleKey, c.startDayAtClose) }] : [];
-  });
+    return c ? [{ kind, description: t.description, amount: t.amount, currency: t.currency, cycleLabel: cycleLabelLong(c.cycleKey, c.startDayAtClose) }] : [];
+  };
+  const closedEdits: ClosedEdit[] = txRule ? [
+    ...transactions.oneSidedFromServer.flatMap((t) => inClosed("changed", t)),
+    ...transactions.addedRows.filter((t) => t.deletedAt == null && t.purgedAt == null).flatMap((t) => inClosed("added", t)),
+    ...transactions.deletedRows.flatMap((d) => inClosed("deleted", d.local)),
+  ] : [];
   const liveLocally = new Set((local.periodCloses ?? []).filter((c) => !c.reopenedAt).map(closeKey));
   const ruled = seen ? mergeUnderRule(local, server, deletedKeys, revivedKeys, seen, at) : null;
   // Plan H 5d (session 6): records from both copies and this merge, pruned by age.

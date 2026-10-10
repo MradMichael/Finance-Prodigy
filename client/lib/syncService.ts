@@ -8,6 +8,7 @@ import { getSyncToken } from "./crypto";
 import { getRecoveryTokenForSync, getSession } from "./auth";
 import { loadSeen, saveSeen } from "./syncSeen";
 import { CLOSED_EDIT_SENTENCE, type ClosedEdit } from "./closedEditNotice";
+import { noticeMoney } from "./noticeMoney";
 
 /** Plan H 5b: after a successful push the server holds what this device holds (see saveSeen). */
 async function recordServerCopy(serverCopy: LocalFinancials): Promise<void> {
@@ -635,10 +636,6 @@ export async function fetchAndMerge(email: string, currentLocal: () => LocalFina
  * detect -- see 2.4.52) stays quiet, matching today's roughly-silent
  * successful-sync behavior.
  */
-function fmtMoney(n: number): string {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
-}
-
 export function buildMergeNoticeText(
   addedFromServer: number,
   conflictDetails: MergeConflictDetail[],
@@ -688,9 +685,10 @@ export function buildMergeNoticeText(
   const txClashes = clashes.filter((c): c is Extract<MergeClash, { kind: "transaction" }> =>
     c.kind === "transaction" && !described.some((d) => d.winner.id === (c as { key?: string }).key));
   const otherClashes = clashes.filter((c): c is Exclude<MergeClash, { kind: "transaction" }> => c.kind !== "transaction");
-  const named: { name: string; kept: number; other: number; how: "newer" | "tie" | "versions" }[] = [
-    ...described.map((d) => ({ name: d.winner.description, kept: d.winner.amount, other: d.loser.amount, how: isNewer(d) ? "newer" as const : isTie(d) ? "tie" as const : "versions" as const })),
-    ...txClashes.map((c) => ({ name: c.name, kept: c.kept, other: c.other, how: c.how })),
+  // Session 9 (owner): each amount in its own currency (noticeMoney).
+  const named: { name: string; kept: string; other: string; how: "newer" | "tie" | "versions" }[] = [
+    ...described.map((d) => ({ name: d.winner.description, kept: noticeMoney(d.winner.amount, d.winner.currency), other: noticeMoney(d.loser.amount, d.loser.currency), how: isNewer(d) ? "newer" as const : isTie(d) ? "tie" as const : "versions" as const })),
+    ...txClashes.map((c) => ({ name: c.name, kept: noticeMoney(c.kept, c.keptCurrency), other: noticeMoney(c.other, c.otherCurrency), how: c.how })),
   ];
   // Three or more conflicts in all (owner, session 4): one line for them
   // all, with the review link, in place of every sentence below; one or two
@@ -702,7 +700,7 @@ export function buildMergeNoticeText(
   // The review link opens the Transactions screen's conflict view, so only when a transaction is among them.
   const showReviewLink = collapsed && described.length > 0;
   const describe = (n: (typeof named)[number]) =>
-    `kept the newer edit to "${n.name}" (${fmtMoney(n.kept)}, was ${fmtMoney(n.other)})`;
+    `kept the newer edit to "${n.name}" (${n.kept}, was ${n.other})`;
   if (edits.length) parts.push(edits.map(describe).join(" and "));
   const mainText = parts.length > 0 ? `Merged with your other device — ${parts.join(", ")}.` : "";
   const collapseLine = collapsed
@@ -730,8 +728,8 @@ export function buildMergeNoticeText(
     mainText,
     collapseLine,
     ...undated.map((n) => n.how === "tie"
-      ? `Both devices changed "${n.name}" at the same moment — kept ${fmtMoney(n.kept)} (the other copy said ${fmtMoney(n.other)}).`
-      : `Your devices had different versions of "${n.name}" — kept ${fmtMoney(n.kept)} (the other copy said ${fmtMoney(n.other)}).`),
+      ? `Both devices changed "${n.name}" at the same moment — kept ${n.kept} (the other copy said ${n.other}).`
+      : `Your devices had different versions of "${n.name}" — kept ${n.kept} (the other copy said ${n.other}).`),
     ...(collapsed ? [] : otherClashes.map(clashSentence)),
     // DRAFT (item 7, held): the other device's edits inside a closed cycle.
     ...closedEdits.map(CLOSED_EDIT_SENTENCE),
@@ -792,10 +790,11 @@ const CLASH_NOUNS = {
 export function clashSentence(c: MergeClash): string {
   // Item 7: a transaction's record, in the approved transaction sentences.
   if (c.kind === "transaction") {
-    if (c.how === "newer") return `Merged with your other device — kept the newer edit to "${c.name}" (${fmtMoney(c.kept)}, was ${fmtMoney(c.other)}).`;
+    const kept = noticeMoney(c.kept, c.keptCurrency), other = noticeMoney(c.other, c.otherCurrency);
+    if (c.how === "newer") return `Merged with your other device — kept the newer edit to "${c.name}" (${kept}, was ${other}).`;
     return c.how === "tie"
-      ? `Both devices changed "${c.name}" at the same moment — kept ${fmtMoney(c.kept)} (the other copy said ${fmtMoney(c.other)}).`
-      : `Your devices had different versions of "${c.name}" — kept ${fmtMoney(c.kept)} (the other copy said ${fmtMoney(c.other)}).`;
+      ? `Both devices changed "${c.name}" at the same moment — kept ${kept} (the other copy said ${other}).`
+      : `Your devices had different versions of "${c.name}" — kept ${kept} (the other copy said ${other}).`;
   }
   if (c.kind === "setting") {
     return `Both devices changed your ${SETTING_NAMES[c.setting]} — kept ${settingValueText(c.setting, c.kept)} (the other device had ${settingValueText(c.setting, c.other)}).`;

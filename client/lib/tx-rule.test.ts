@@ -201,7 +201,7 @@ describe("one-sided edits from the other device inside a closed cycle are named 
     const theirs = at(inSept, "2026-10-04T10:00:00.000Z", { amount: 21 });
     const r = mergeFinancials(closed([inSept]), closed([theirs]), NOW, seenOf(closed([inSept])));
     expect(kebab(r)).toEqual(theirs);
-    expect(r.closedEdits).toEqual([{ description: "Kebab at Barbar", amount: 21, currency: "USD", cycleLabel: "Sep 2026" }]); // the cycle label the close notices already use (cycleLabelLong)
+    expect(r.closedEdits).toEqual([{ kind: "changed", description: "Kebab at Barbar", amount: 21, currency: "USD", cycleLabel: "Sep 2026" }]); // the cycle label the close notices already use (cycleLabelLong)
     expect(buildMergeNoticeText(0, [], [], [], [], r.closedEdits).text).toBe(CLOSED_EDIT_SENTENCE(r.closedEdits[0]));
   });
 
