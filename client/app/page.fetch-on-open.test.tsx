@@ -145,7 +145,7 @@ describe("backup on: opening ESSA fetches and merges", () => {
     notice.mockImplementation(((...args: Parameters<typeof real.buildMergeNoticeText>) => real.buildMergeNoticeText(...args)) as never);
     await open();
     expect(await screen.findByText("Merged with your other device — 1 new transaction added.")).toBeTruthy();
-    expect(notice.mock.calls[0]).toEqual([1, [], [], [], [], []]); // item 7: and no edits inside a closed cycle
+    expect(notice.mock.calls[0]).toEqual([1, [], [], [], [], [], undefined]); // item 7: and no edits inside a closed cycle; session 10 (held): and no reset elsewhere
   });
 
   // Plan H 5d: what both devices changed reaches the notice from the fetch too.

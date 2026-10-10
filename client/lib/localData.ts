@@ -950,6 +950,13 @@ export interface LocalFinancials {
    */
   deletedKeys?: DeletedKeys;
   /**
+   * Session 10, item 2 (held): when "Reset all data" last ran on this
+   * account, from any device. Its deletion records carry the same moment, so
+   * a merge can tell what another device's reset cleared here, and say so.
+   * The later of both copies is kept.
+   */
+  resetAt?: string;
+  /**
    * DI-13 follow-up (sessions 3-4): every live key a restore from a file
    * brought back, by collection, with that restore's generation. Per key, a
    * revival with a later generation than the key's deletion (a record here,
@@ -1506,6 +1513,7 @@ export function resetFinancials(d: LocalFinancials, now: Date = new Date()): Loc
   const anything = DELETED_COLLECTIONS.some((c) => (deletedKeys[c] ?? []).length > 0);
   return {
     ...DEFAULT_DATA, ...(d.syncChoice ? { syncChoice: d.syncChoice } : {}), ...(anything ? { deletedKeys } : {}),
+    resetAt: now.toISOString(), // session 10, item 2 (held): the moment its deletion records carry
     // Kept: the reset's records are at the current generation and outrank them
     // anyway, and dropping them could lower the derived generation.
     ...(d.revivedKeys ? { revivedKeys: d.revivedKeys } : {}),

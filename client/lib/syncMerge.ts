@@ -31,13 +31,14 @@ import {
   mergeTransactions, undoCloseEffects, periodCloseKey, DELETED_COLLECTIONS,
   deletedKeySet, itemKeysByCollection, restoreGeneration, SETTING_KEYS, type SettingKey,
   type LocalFinancials, type PeriodClose, type TrackedBalance, type DeletedKeys, type Tombstone, type RevivedKeys, type MergeTransactionsResult,
-  type StoredCard, type StoredTransaction,
+  type StoredCard, type StoredTransaction, isEmptyFinancials,
 } from "./localData";
 
 import { stableStringify, tieBreak } from "./canonical";
 import { fingerprint, transactionFingerprint, settingValue, SETTING_FIELDS, type SeenMap, type SeenKind } from "./syncSeen";
 import { cycleLabelLong } from "./period";
 import type { ClosedEdit } from "./closedEditNotice";
+import type { ResetElsewhere } from "./resetNotice";
 
 export type { Tombstone } from "./localData";
 export { stableStringify } from "./canonical";
@@ -267,6 +268,28 @@ export interface MergeFinancialsResult {
   supersededFromLocal: ReplacedClose[];
   /** Item 7 (owner): the other device's one-sided edits to transactions inside a closed cycle, for the notice (DRAFT wording). */
   closedEdits: ClosedEdit[];
+  /** Session 10, item 2 (held): another device's "Reset all data", when this merge cleared something this device held. */
+  resetElsewhere?: ResetElsewhere;
+}
+
+/**
+ * Session 10, item 2 (held): the server copy's reset is later than any this
+ * device has taken, and the merge cleared at least one item this device held
+ * by a deletion recorded at that reset's moment (resetFinancials stamps both
+ * alike). `kept`: the merged copy still holds something, made here since this
+ * device's last sync.
+ */
+function resetClearedHere(local: LocalFinancials, server: LocalFinancials, merged: LocalFinancials): ResetElsewhere | undefined {
+  const at = server.resetAt;
+  if (!at || (local.resetAt && local.resetAt >= at)) return undefined;
+  const live = (d: LocalFinancials) => itemKeysByCollection({ ...d, transactions: (d.transactions ?? []).filter((t) => t.deletedAt == null && t.purgedAt == null) });
+  const before = live(local), after = live(merged);
+  const cleared = DELETED_COLLECTIONS.some((c) => {
+    const atReset = new Set((server.deletedKeys?.[c] ?? []).filter((t) => t.deletedAt === at).map((t) => t.key));
+    const still = new Set(after[c]);
+    return before[c].some((k) => atReset.has(k) && !still.has(k));
+  });
+  return cleared ? { at, kept: !isEmptyFinancials(merged) } : undefined;
 }
 
 /** Item 7: how a two-sided transaction conflict was settled, as the notice words it. */
@@ -640,27 +663,31 @@ export function mergeFinancials(localIn: LocalFinancials, serverIn: LocalFinanci
   const clashRecords = mergeClashRecords(local.clashRecords, server.clashRecords, ruled?.records ?? [], now);
   // Item 7: transactions' records apart, where older code doesn't look.
   const transactionClashRecords = mergeClashRecords(local.transactionClashRecords, server.transactionClashRecords, txRecords, now);
+  const resetAt = [local.resetAt, server.resetAt].filter((t): t is string => !!t).sort().at(-1);
+  const data: LocalFinancials = {
+    ...local,
+    transactions: transactions.transactions,
+    trackedBalances: mergeTrackedBalances(localU.trackedBalances ?? [], serverU.trackedBalances ?? [], deletedKeys?.trackedBalances ?? [], revivedKeys?.trackedBalances),
+    wishlist: mergeByKey(local.wishlist ?? [], server.wishlist ?? [], (w) => w.id, deletedKeys?.wishlist, revivedKeys?.wishlist),
+    customCategories: mergeByKey(local.customCategories ?? [], server.customCategories ?? [], (c) => c.value, deletedKeys?.customCategories, revivedKeys?.customCategories),
+    categoryRules: mergeByKey(local.categoryRules ?? [], server.categoryRules ?? [], (r) => r.id, deletedKeys?.categoryRules, revivedKeys?.categoryRules),
+    periodCloses: closes,
+    ...(deletedKeys ? { deletedKeys } : {}),
+    ...(revivedKeys ? { revivedKeys } : {}),
+    ...(ruled ? ruled.data : {}),
+    ...(cards ? { cards: cards.cards } : {}),
+    clashRecords: clashRecords.length ? clashRecords : undefined,
+    transactionClashRecords: transactionClashRecords.length ? transactionClashRecords : undefined,
+    ...(resetAt ? { resetAt } : {}),
+  };
   return {
-    data: {
-      ...local,
-      transactions: transactions.transactions,
-      trackedBalances: mergeTrackedBalances(localU.trackedBalances ?? [], serverU.trackedBalances ?? [], deletedKeys?.trackedBalances ?? [], revivedKeys?.trackedBalances),
-      wishlist: mergeByKey(local.wishlist ?? [], server.wishlist ?? [], (w) => w.id, deletedKeys?.wishlist, revivedKeys?.wishlist),
-      customCategories: mergeByKey(local.customCategories ?? [], server.customCategories ?? [], (c) => c.value, deletedKeys?.customCategories, revivedKeys?.customCategories),
-      categoryRules: mergeByKey(local.categoryRules ?? [], server.categoryRules ?? [], (r) => r.id, deletedKeys?.categoryRules, revivedKeys?.categoryRules),
-      periodCloses: closes,
-      ...(deletedKeys ? { deletedKeys } : {}),
-      ...(revivedKeys ? { revivedKeys } : {}),
-      ...(ruled ? ruled.data : {}),
-      ...(cards ? { cards: cards.cards } : {}),
-      clashRecords: clashRecords.length ? clashRecords : undefined,
-      transactionClashRecords: transactionClashRecords.length ? transactionClashRecords : undefined,
-    },
+    data,
     clashes: ruled?.clashes ?? [],
     transactions,
     localTransactions: localU.transactions,
     serverTransactions: serverU.transactions,
     supersededFromLocal: replaced.filter((r) => liveLocally.has(closeKey(r.superseded))),
     closedEdits,
+    resetElsewhere: resetClearedHere(localIn, serverIn, data),
   };
 }
