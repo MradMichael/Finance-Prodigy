@@ -12,8 +12,9 @@
 //
 // Settings (income, rate, payday...) reset too (owner, session 11). Since plan
 // H's rule, a device with a record of its last sync takes the reset copy's
-// values for every setting it hasn't changed since. A device's first merge,
-// with no record, still keeps its own: closed by session 11's item 2.
+// values for every setting it hasn't changed since. Session 11's item 2: a
+// newer reset takes every setting a device hasn't changed since that reset,
+// record or not (lib/reset-elsewhere.test.ts has the cases).
 import { describe, it, expect } from "vitest";
 import { seenOf } from "./syncSeen";
 import { resetFinancials, DEFAULT_DATA, type LocalFinancials, type StoredTransaction, type PeriodClose } from "./localData";
@@ -108,8 +109,8 @@ describe("DI-13: no merge brings the cleared items back", () => {
     expect(mergeFinancials(reset, full, new Date("2026-10-07T18:05:00.000Z"), seenOf(full)).data.income).toBe(0);
   });
 
-  it("a device's first merge, with no record of a last sync, still keeps its own settings (closed by item 2)", () => {
-    expect(mergeFinancials(full, reset).data.income).toBe(3150.75);
+  it("a device's first merge, with no record of a last sync, takes the reset's settings too (item 2)", () => {
+    expect(mergeFinancials(full, reset).data.income).toBe(0);
   });
 
   it("something added after the reset, with a new key, is kept", () => {

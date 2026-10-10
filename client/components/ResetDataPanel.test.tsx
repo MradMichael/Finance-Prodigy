@@ -20,7 +20,7 @@ describe("resetFinancials", () => {
     const d = { ...DEFAULT_DATA, income: 3000, goals: [{ id: "g" }], syncChoice: choice } as unknown as LocalFinancials;
     const out = resetFinancials(d, new Date("2026-10-07T18:00:00.000Z"));
     // DI-13: beside the cleared data, the deletion it records for each item;
-    // session 10 (held): and the reset's moment, the same as theirs.
+    // session 10 (item 2): and the reset's moment, the same as theirs.
     const { deletedKeys, resetAt, ...rest } = out;
     expect(rest).toEqual({ ...DEFAULT_DATA, syncChoice: choice });
     expect(deletedKeys).toEqual({ goals: [{ key: "g", deletedAt: "2026-10-07T18:00:00.000Z" }] });

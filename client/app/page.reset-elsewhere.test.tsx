@@ -4,7 +4,7 @@
 // What does it show?
 //
 // Until this branch: it cleared everything and said nothing (session 10's
-// proof). HELD: it now says so, in drafted wording (lib/resetNotice.ts).
+// proof). Now it says so, in the owner's wording (lib/resetNotice.ts; session 11).
 //
 // The real fetchAndMerge, pushToServer and buildMergeNoticeText run; the
 // server answers through a stubbed fetch. This device last synced the copy
@@ -85,16 +85,25 @@ it("this device takes the reset: everything it held is cleared", { timeout: 3000
 /** The merge notice's text (the page's second live region; its first span, without the Dismiss button). */
 const noticeText = () => screen.getAllByRole("status")[1].querySelector("span")?.textContent ?? "";
 
-it("HELD: and says so (draft R1)", { timeout: 30000 }, async () => {
+it("and says so (R1)", { timeout: 30000 }, async () => {
   render(<Home />);
   await waitFor(() => expect(noticeText()).toBe(`Your other device reset all data on ${dayLabel(RESET_AT)}. This device now matches it.`), { timeout: 10000 });
 });
 
-it("HELD: something added here since the last sync is kept, and the notice says so (draft R2)", { timeout: 30000 }, async () => {
+it("something added here since the last sync is kept, and the notice says so (R2)", { timeout: 30000 }, async () => {
   store = { ...store, transactions: [...store.transactions, tx("Vex lantern")] }; // added here, not yet backed up
   render(<Home />);
   await waitFor(() => expect(noticeText()).toBe(`Your other device reset all data on ${dayLabel(RESET_AT)}. This device now matches it, except for changes made here that hadn't been backed up yet.`), { timeout: 10000 });
   expect(store.transactions.filter((t) => !t.deletedAt).map((t) => t.id)).toEqual(["Vex lantern"]);
+});
+
+it("a device that held only settings is told too, and takes them (R1; owner, session 11)", { timeout: 30000 }, async () => {
+  const { transactions: _t, goals: _g, debts: _d, ...rest } = settled();
+  store = { ...rest, transactions: [], goals: [], debts: [] } as LocalFinancials; lastSynced = store;
+  serverCopy = resetFinancials(store, RESET_AT);
+  render(<Home />);
+  await waitFor(() => expect(noticeText()).toBe(`Your other device reset all data on ${dayLabel(RESET_AT)}. This device now matches it.`), { timeout: 10000 });
+  expect(store.income).toBe(0);
 });
 
 it("the device that ran the reset is told nothing", { timeout: 30000 }, async () => {

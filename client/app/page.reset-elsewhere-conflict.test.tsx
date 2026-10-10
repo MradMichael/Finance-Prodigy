@@ -1,4 +1,4 @@
-// Session 10, item 2 (HELD), the conflict merge's path: in its own file, so no
+// Session 10, item 2, the conflict merge's path: in its own file, so no
 // earlier test's page, still finishing its work, writes into this one's store.
 // Harness as in page.reset-elsewhere.test.tsx.
 //
@@ -8,7 +8,7 @@
 // What does it show?
 //
 // Until this branch: it cleared everything and said nothing (session 10's
-// proof). HELD: it now says so, in drafted wording (lib/resetNotice.ts).
+// proof). Now it says so, in the owner's wording (lib/resetNotice.ts; session 11).
 //
 // The real fetchAndMerge, pushToServer and buildMergeNoticeText run; the
 // server answers through a stubbed fetch. This device last synced the copy
@@ -81,7 +81,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 /** The merge notice's text (the page's second live region; its first span, without the Dismiss button). */
 const noticeText = () => screen.getAllByRole("status")[1].querySelector("span")?.textContent ?? "";
 
-it("HELD: the conflict merge says so too", { timeout: 30000 }, async () => {
+it("the conflict merge says so too", { timeout: 30000 }, async () => {
   // Stale monthly snapshots: the load writes them and uploads. This device's
   // time predates the reset, so the upload meets the conflict and merges.
   const { netWorthHistory: _n, incomeHistory: _i, lbpRateHistory: _l, budgetRuleHistory: _b, ...stale } = settled();

@@ -31,7 +31,7 @@ import {
   mergeTransactions, undoCloseEffects, periodCloseKey, DELETED_COLLECTIONS,
   deletedKeySet, itemKeysByCollection, restoreGeneration, SETTING_KEYS, type SettingKey,
   type LocalFinancials, type PeriodClose, type TrackedBalance, type DeletedKeys, type Tombstone, type RevivedKeys, type MergeTransactionsResult,
-  type StoredCard, type StoredTransaction, isEmptyFinancials,
+  type StoredCard, type StoredTransaction,
 } from "./localData";
 
 import { stableStringify, tieBreak } from "./canonical";
@@ -268,28 +268,61 @@ export interface MergeFinancialsResult {
   supersededFromLocal: ReplacedClose[];
   /** Item 7 (owner): the other device's one-sided edits to transactions inside a closed cycle, for the notice (DRAFT wording). */
   closedEdits: ClosedEdit[];
-  /** Session 10, item 2 (held): another device's "Reset all data", when this merge cleared something this device held. */
+  /** Session 10, item 2: another device's "Reset all data", when this merge cleared something this device held (an item, or a setting: session 11). */
   resetElsewhere?: ResetElsewhere;
 }
 
 /**
- * Session 10, item 2 (held): the server copy's reset is later than any this
- * device has taken, and the merge cleared at least one item this device held
- * by a deletion recorded at that reset's moment (resetFinancials stamps both
- * alike). `kept`: the merged copy still holds something, made here since this
- * device's last sync.
+ * Session 11, item 2 (owner): the settings a reset newer than any this device
+ * has taken resets here: every one this device hasn't changed since that
+ * reset, record of a last sync or not ("settings included"). Null when the
+ * server copy carries no newer reset.
+ */
+function settingsTakenByReset(local: LocalFinancials, server: LocalFinancials): SettingKey[] | null {
+  const at = server.resetAt;
+  if (!at || (local.resetAt && local.resetAt >= at)) return null;
+  return SETTING_KEYS.filter((key) => !((local.settingsUpdatedAt?.[key] ?? "") > at));
+}
+
+/** Those settings, from the server copy, onto the merged copy (their edit times with them). */
+function withResetSettings(merged: LocalFinancials, server: LocalFinancials, keys: SettingKey[]): LocalFinancials {
+  const patch: Record<string, unknown> = {};
+  const stamps: Partial<Record<SettingKey, string>> = { ...(merged.settingsUpdatedAt ?? {}) };
+  for (const key of keys) {
+    for (const f of SETTING_FIELDS[key]) patch[f] = server[f];
+    const stamp = server.settingsUpdatedAt?.[key];
+    if (stamp) stamps[key] = stamp; else delete stamps[key];
+  }
+  return { ...merged, ...patch, settingsUpdatedAt: Object.keys(stamps).length ? stamps : undefined } as LocalFinancials;
+}
+
+/**
+ * Session 10, item 2: the server copy's reset is later than any this device
+ * has taken, and the merge cleared something this device held: an item, by a
+ * deletion recorded at that reset's moment (resetFinancials stamps both
+ * alike), or (session 11) a setting, now the reset copy's. `kept`: something
+ * of this device's own survived: an item the server copy doesn't hold, or a
+ * setting changed here after the reset.
  */
 function resetClearedHere(local: LocalFinancials, server: LocalFinancials, merged: LocalFinancials): ResetElsewhere | undefined {
   const at = server.resetAt;
   if (!at || (local.resetAt && local.resetAt >= at)) return undefined;
   const live = (d: LocalFinancials) => itemKeysByCollection({ ...d, transactions: (d.transactions ?? []).filter((t) => t.deletedAt == null && t.purgedAt == null) });
-  const before = live(local), after = live(merged);
-  const cleared = DELETED_COLLECTIONS.some((c) => {
+  const before = live(local), after = live(merged), onServer = live(server);
+  const itemCleared = DELETED_COLLECTIONS.some((c) => {
     const atReset = new Set((server.deletedKeys?.[c] ?? []).filter((t) => t.deletedAt === at).map((t) => t.key));
     const still = new Set(after[c]);
     return before[c].some((k) => atReset.has(k) && !still.has(k));
   });
-  return cleared ? { at, kept: !isEmptyFinancials(merged) } : undefined;
+  const fp = (d: LocalFinancials, k: SettingKey) => fingerprint(settingValue(d, k));
+  const settingCleared = SETTING_KEYS.some((k) => fp(local, k) !== fp(merged, k) && fp(merged, k) === fp(server, k));
+  if (!itemCleared && !settingCleared) return undefined;
+  const ownItem = DELETED_COLLECTIONS.some((c) => {
+    const theirs = new Set(onServer[c]);
+    return after[c].some((k) => !theirs.has(k));
+  });
+  const ownSetting = SETTING_KEYS.some((k) => fp(merged, k) !== fp(server, k));
+  return { at, kept: ownItem || ownSetting };
 }
 
 /** Item 7: how a two-sided transaction conflict was settled, as the notice words it. */
@@ -658,13 +691,17 @@ export function mergeFinancials(localIn: LocalFinancials, serverIn: LocalFinanci
   ] : [];
   const liveLocally = new Set((local.periodCloses ?? []).filter((c) => !c.reopenedAt).map(closeKey));
   const ruled = seen ? mergeUnderRule(local, server, deletedKeys, revivedKeys, seen, at) : null;
+  // Session 11, item 2: the settings a newer reset takes are the reset's, so
+  // no clash over them is named (the reset's own sentence tells it).
+  const resetKeys = settingsTakenByReset(localIn, serverIn);
+  const notReset = <T extends MergeClash>(c: T) => !(resetKeys && c.kind === "setting" && resetKeys.includes(c.setting));
   // Plan H 5d (session 6): records from both copies and this merge, pruned by age.
   // Written even when empty, so an emptied list replaces this device's copy.
-  const clashRecords = mergeClashRecords(local.clashRecords, server.clashRecords, ruled?.records ?? [], now);
+  const clashRecords = mergeClashRecords(local.clashRecords, server.clashRecords, (ruled?.records ?? []).filter(notReset), now);
   // Item 7: transactions' records apart, where older code doesn't look.
   const transactionClashRecords = mergeClashRecords(local.transactionClashRecords, server.transactionClashRecords, txRecords, now);
   const resetAt = [local.resetAt, server.resetAt].filter((t): t is string => !!t).sort().at(-1);
-  const data: LocalFinancials = {
+  const merged: LocalFinancials = {
     ...local,
     transactions: transactions.transactions,
     trackedBalances: mergeTrackedBalances(localU.trackedBalances ?? [], serverU.trackedBalances ?? [], deletedKeys?.trackedBalances ?? [], revivedKeys?.trackedBalances),
@@ -680,9 +717,10 @@ export function mergeFinancials(localIn: LocalFinancials, serverIn: LocalFinanci
     transactionClashRecords: transactionClashRecords.length ? transactionClashRecords : undefined,
     ...(resetAt ? { resetAt } : {}),
   };
+  const data = resetKeys ? withResetSettings(merged, serverIn, resetKeys) : merged;
   return {
     data,
-    clashes: ruled?.clashes ?? [],
+    clashes: (ruled?.clashes ?? []).filter(notReset),
     transactions,
     localTransactions: localU.transactions,
     serverTransactions: serverU.transactions,

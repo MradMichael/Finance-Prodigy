@@ -447,7 +447,7 @@ export interface ReplacedCloseNotice { cycleLabel: string; standingClosedAt: str
 
 export type MergeAndPushResult =
   // mergedData is on the server, not yet on this device: store it, then recordMergeStored. If the store fails, record nothing.
-  | { ok: true; syncedAt: string; addedFromServer: number; conflictsResolved: number; conflicts: StoredTransaction[]; conflictDetails: MergeConflictDetail[]; clashes: MergeClash[]; nonTransactionDivergence: string[]; replacedCloses: ReplacedCloseNotice[]; mergedData: LocalFinancials; firstSync: boolean; /** Item 7: the other device's edits inside a closed cycle. */ closedEdits: ClosedEdit[]; /** Session 10, item 2 (held): another device's reset, when it cleared something here. */ resetElsewhere?: ResetElsewhere }
+  | { ok: true; syncedAt: string; addedFromServer: number; conflictsResolved: number; conflicts: StoredTransaction[]; conflictDetails: MergeConflictDetail[]; clashes: MergeClash[]; nonTransactionDivergence: string[]; replacedCloses: ReplacedCloseNotice[]; mergedData: LocalFinancials; firstSync: boolean; /** Item 7: the other device's edits inside a closed cycle. */ closedEdits: ClosedEdit[]; /** Session 10, item 2: another device's reset, when it cleared something here. */ resetElsewhere?: ResetElsewhere }
   | { ok: false; error: string; conflict?: boolean };
 
 /**
@@ -594,7 +594,7 @@ export type FetchAndMergeResult =
       replacedCloses: ReplacedCloseNotice[];
       /** Item 7: the other device's edits inside a closed cycle. */
       closedEdits: ClosedEdit[];
-      /** Session 10, item 2 (held): another device's reset, when it cleared something here. */
+      /** Session 10, item 2: another device's reset, when it cleared something here. */
       resetElsewhere?: ResetElsewhere;
     }
   | { ok: false; error: string; notFound?: true };
@@ -682,7 +682,7 @@ export function buildMergeNoticeText(
   // Item 7 (owner, session 8): the other device's one-sided edits inside a
   // closed cycle. DRAFT wording (lib/closedEditNotice.ts), held for approval.
   closedEdits: ClosedEdit[] = [],
-  // Session 10, item 2 (HELD: wording awaits the owner): another device's
+  // Session 10, item 2 (owner-approved wording, session 11): another device's
   // "Reset all data", when this merge cleared what this device held. First,
   // before what else the merge did (lib/resetNotice.ts).
   resetElsewhere?: ResetElsewhere,
