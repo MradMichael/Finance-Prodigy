@@ -12,7 +12,7 @@ import { loadData, saveData, activeTransactions, syncAllowed, resetFinancials, s
 import { computeDashboard } from "../../lib/computeDashboard";
 import { buildReportHtml } from "../../lib/printReport";
 import { pushToServer, pullFromServer, getLastSyncTime, confirmOverwriteIfNeeded, mergeAndPush, recordMergeStored, recordRestoreStored, buildMergeNoticeText, applyBackupChoice, type BackupChoice } from "../../lib/syncService";
-import { PUSH_NOT_RECORDED, PULL_NOT_RECORDED } from "../../lib/storageNotices";
+import { PUSH_NOT_RECORDED, RESTORE_NOT_RECORDED_NOTICE } from "../../lib/storageNotices";
 import { saveSeen, loadSeen } from "../../lib/syncSeen";
 import { takeUnseenClashes } from "../../lib/clashNotice";
 import { restoreFromExport } from "../../lib/syncMerge";
@@ -171,8 +171,8 @@ export default function ProfilePage() {
       // Session 7: with no record before, the restored copy's clash records are taken as shown.
       if (firstSync) await takeUnseenClashes(session.userId, result.data, undefined, { firstSync: true });
       setLastSync(result.syncedAt);
-      // Session 9: restored, but this device couldn't note when (storage); said, and given time to be read.
-      setSyncMsg(notRecorded ? "✓ Data restored from database. " + PULL_NOT_RECORDED + " Reloading…" : "✓ Data restored from database. Reloading…");
+      // Session 9: restored, but this device couldn't note when (storage); said, and given time to be read (owner's sentence, session 10).
+      setSyncMsg(notRecorded ? RESTORE_NOT_RECORDED_NOTICE : "✓ Data restored from database. Reloading…");
       // The dashboard (app/page.tsx) only reads localStorage once, into React
       // state, on its own mount -- it has no way to know data changed here on
       // a different route. Without a hard reload, the dashboard keeps showing
