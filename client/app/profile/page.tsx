@@ -228,7 +228,7 @@ export default function ProfilePage() {
     setSyncing(false);
     if (result.ok) {
       setLastSync(result.syncedAt ?? null);
-      // Session 8 (held, wording for approval): pushed, but this device couldn't record when.
+      // Session 8 (owner-approved wording, merged session 9): pushed, but this device couldn't record when.
       setSyncMsg(result.notRecorded ? "✓ Pushed to database. " + PUSH_NOT_RECORDED : "✓ Pushed to database.");
     } else {
       setSyncMsg("✗ " + result.error);

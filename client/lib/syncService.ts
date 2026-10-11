@@ -62,7 +62,7 @@ export interface SyncResult {
   // backup that has data, and kept the backup. Not a failure, so no
   // "Offline" or "Couldn't reach backup".
   declined?: boolean;
-  // Session 8 (held): the server took the push, but this device couldn't
+  // Session 8 (merged session 9): the server took the push, but this device couldn't
   // record its time (storage). A success; the caller says storage is the
   // problem. Unrecorded, the next push meets a conflict and merges again,
   // finding nothing new.
@@ -196,7 +196,7 @@ export async function pushToServer(
       return { ok: false, error: "Server responded, but the response was malformed. Try again." };
     }
     if (record) {
-      // Session 8 (held): outside the network's catch, which read a storage
+      // Session 8 (merged session 9): outside the network's catch, which read a storage
       // throw here as "Could not reach server" for a push the server took.
       const id = syncingUserId(email);
       try {
@@ -669,7 +669,7 @@ export function buildMergeNoticeText(
   // merge only, before it has a record of a last sync (owner, session 6).
   nonTransactionDivergence: string[] = [],
   // Item 7 (owner, session 8): the other device's one-sided edits inside a
-  // closed cycle. DRAFT wording (lib/closedEditNotice.ts), held for approval.
+  // closed cycle. Owner-approved wording (lib/closedEditNotice.ts, session 9).
   closedEdits: ClosedEdit[] = [],
   // Session 10, item 2 (owner-approved wording, session 11): another device's
   // "Reset all data", when this merge cleared what this device held. First,
@@ -753,7 +753,7 @@ export function buildMergeNoticeText(
       ? `Both devices changed "${n.name}" at the same moment — kept ${n.kept} (the other copy said ${n.other}).`
       : `Your devices had different versions of "${n.name}" — kept ${n.kept} (the other copy said ${n.other}).`),
     ...(collapsed ? [] : otherClashes.map(clashSentence)),
-    // DRAFT (item 7, held): the other device's edits inside a closed cycle.
+    // Item 7 (owner-approved, session 9): the other device's edits inside a closed cycle.
     ...closedEdits.map(CLOSED_EDIT_SENTENCE),
     lists.length
       ? `Your ${joinNames(lists.map(([, label]) => label), "or")} may differ from your other device — this device's copy was kept. Check ${joinNames(listScreens, "and")} if something looks off.`

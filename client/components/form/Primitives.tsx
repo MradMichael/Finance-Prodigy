@@ -86,7 +86,7 @@ export function MoneyInput({
       inputMode="decimal"
       value={focused ? value : fmt(value)}
       onChange={handleChange}
-      // Session 10, item 6 (held): replacing an input's value throws its
+      // Session 10, item 6 (merged as built, session 11): replacing an input's value throws its
       // selection away. The swap to the bare figure was the re-render after
       // focus, so the select-all a browser makes on Tab (or a script's) was
       // lost, and typing appended to the old figure. Now the swap waits for
