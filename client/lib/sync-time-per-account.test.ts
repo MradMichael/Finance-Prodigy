@@ -84,12 +84,11 @@ describe("reproduced: one account's sync time used for another's push", () => {
 });
 
 describe("one sync time per account", () => {
-  it("a pull records the time for the account signed in, and only for it", async () => {
+  it("a pull records no time, even for the account signed in: its caller records once the copy is stored (session 11)", async () => {
     servers[B.email] = { data: data("Laptop"), syncedAt: T(7) };
     session = B;
     expect((await pullFromServer(B.email)).ok).toBe(true);
-    expect(getLastSyncTime()).toBe(T(7));
-    session = A;
+    expect(localStorage.getItem("essa_last_sync_ub")).toBeNull();
     expect(getLastSyncTime()).toBeNull();
   });
 

@@ -54,21 +54,24 @@ it("a network failure still says so", async () => {
 
 // Session 9 (owner): pulls too. A pull the server answered, whose time this
 // device then couldn't write, read as "Could not reach server", and the
-// automatic first-load restore skipped a copy it had in hand.
-it("a pull the server answered is a success even when this device can't record its time, with the data", async () => {
+// automatic first-load restore skipped a copy it had in hand. Session 11
+// (owner): a pull records no time at all, so storage can't fail it; its
+// callers record once the copy is stored (recordRestoreStored).
+it("a pull the server answered is a success, with the data, whatever storage would do", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ ok: true, data, syncedAt: "2026-10-08T09:02:00.000Z" }), { status: 200 })));
   full = true;
   const r = await pullFromServer("u1@example.com");
   expect(r.ok).toBe(true);
   if (!r.ok) throw new Error(r.error);
   expect(r.data.income).toBe(3000);
-  expect(r.notRecorded).toBe(true);
+  expect("notRecorded" in r).toBe(false);
 });
 
-it("an ordinary pull isn't flagged, and a network failure still says so", async () => {
+it("a pull writes no sync time, and a network failure still says so", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ ok: true, data, syncedAt: "2026-10-08T09:02:00.000Z" }), { status: 200 })));
   const r = await pullFromServer("u1@example.com");
-  expect(r.ok && r.notRecorded).toBeFalsy();
+  expect(r.ok).toBe(true);
+  expect(Object.keys(localStorage).filter((k) => k.startsWith("essa_last_sync"))).toEqual([]);
   vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("Failed to fetch"); }));
   const down = await pullFromServer("u1@example.com");
   expect(down).toEqual({ ok: false, error: "Could not reach server. Is it running?" });

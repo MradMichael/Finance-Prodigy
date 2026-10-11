@@ -156,7 +156,7 @@ export default function ProfilePage() {
     if (!(await confirmOverwriteIfNeeded(session.userId, "what's on the server"))) return;
     setSyncing(true); setSyncMsg("");
     // Session 10 (DI-15 on pulls): the time is recorded once the copy is stored (recordRestoreStored).
-    const result = await pullFromServer(session.email, { record: false });
+    const result = await pullFromServer(session.email);
     if (result.ok) {
       try {
         await saveData(result.data, session.userId);
