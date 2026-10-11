@@ -1,5 +1,5 @@
-// Session 11, item 7 (HELD: wording awaits the owner): the plain address
-// check, disclosed. What it is, verified in the code:
+// Session 11, item 7; the owner's split wording (session 12, item 4): the
+// plain address check, disclosed. What it is, verified in the code:
 //   - The client sends the address, and nothing else, in the body of
 //     POST /api/auth/check-email (lib/syncService.ts serverCopyExists). The
 //     callers: the sign-up page as the address is typed (once it holds an
@@ -24,16 +24,16 @@ import { ThemeProvider } from "../../contexts/ThemeContext";
 
 afterEach(cleanup);
 
-describe("the plain address check (HELD draft)", () => {
+describe("the plain address check (owner's wording, session 12)", () => {
   it("is disclosed: when the address is sent, and what the server does with it", () => {
     render(<ThemeProvider><PrivacyPage /></ThemeProvider>);
     const text = (document.body.textContent ?? "").replace(/\s+/g, " ");
     expect(text).toContain(
-      "To tell you whether an address already has a backup on our server, ESSA sends that address, and nothing else, to our server: " +
-      "on the sign-up page as you type it, when you finish signing up, when ESSA asks you about backup, and on your overview when " +
-      "this device has no record of a backup; our server only checks whether a backup exists for it and answers yes or no, " +
-      "without storing the address or writing it to its logs.",
+      "To tell you whether an address already has a backup, ESSA sends that address, and nothing else, to our server. " +
+      "It does this on the sign-up page as you type, when you finish signing up, when ESSA asks you about backup, and on your overview " +
+      "when this device has no record of a backup. Our server only answers yes or no; it doesn't store the address or write it to its logs.",
     );
+    expect(text).not.toContain("only checks whether a backup exists for it"); // session 11's draft, replaced
   });
 
   it("moves the date at the top", () => {

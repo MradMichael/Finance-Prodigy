@@ -21,7 +21,8 @@ it("says what a deletion leaves behind, and for how long, under Deleting your da
   render(<ThemeProvider><PrivacyPage /></ThemeProvider>);
   const section = screen.getByRole("heading", { name: "Deleting your data" }).closest("section")!;
   expect((section.textContent ?? "").replace(/\s+/g, " ")).toContain(
-    "When you delete an item, or reset all data, ESSA keeps a short record that it was deleted — its internal key (for a custom category, its name in lowercase) and when — so your other devices remove it too. " +
+    // Session 12 (owner): the reset's own moment is kept too (resetAt), so another device can tell it was reset.
+    "When you delete an item, or reset all data, ESSA keeps a short record that it was deleted — its internal key (for a custom category, its name in lowercase) and when — and when you last reset all data, so your other devices remove it too. " +
     // Session 5 (owner-approved amendment): a deleted transaction keeps more.
     // Session 6 (owner-approved, tighter): "up to" 30 days, because Delete
     // permanently ends it at once and the purge runs only when ESSA is opened.
