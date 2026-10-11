@@ -27,8 +27,10 @@ export default function SignUpPage() {
   }, [router]);
 
   // Soft warning only — there's no real server-side user registry (sign-up
-  // itself never touches the network), so this can only detect "this email
-  // has synced data from some other device," not a true duplicate account.
+  // creates the account on this device only; the one request it makes is this
+  // address check, as the address is typed and once at the end), so this can
+  // only detect "this email has synced data from some other device," not a
+  // true duplicate account.
   // Debounced so it doesn't fire on every keystroke; never blocks signing up.
   useEffect(() => {
     if (!email.includes("@")) { setEmailSyncedElsewhere(false); return; }

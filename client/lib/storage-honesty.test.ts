@@ -1,4 +1,4 @@
-// Session 8, item 6 (HELD: its wording awaits the owner): a push the server
+// Session 8, item 6 (wording approved and merged, session 9): a push the server
 // took, whose sync time this device then couldn't write (storage full), was
 // reported as "Could not reach server": the record step sat inside the
 // network try, so its throw read as a network failure. The push succeeded;

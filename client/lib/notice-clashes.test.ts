@@ -8,7 +8,7 @@
 //   "Both devices changed your <setting> — kept <value> (the other device had <value>)."
 // Each setting keeps the name the owner approved for the retired sentence
 // ("income", "LBP rate", "budget split", "payday", "emergency fund target").
-// DRAFTS, for the owner (held branch): each setting's value format,
+// Approved by the owner (session 6): each setting's value format,
 // the other kinds' sentences, and the sentence for a pick that is not the
 // later edit (equal times, or no times).
 import { describe, it, expect } from "vitest";

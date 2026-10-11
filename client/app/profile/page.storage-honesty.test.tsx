@@ -1,4 +1,4 @@
-// Session 8, item 6 (HELD: wording awaits the owner): Profile → Push to
+// Session 8, item 6 (wording approved and merged, session 9): Profile → Push to
 // database, when the server took the push but this device couldn't record its
 // time. It used to say "✗ Could not reach server. Is it running?".
 import { it, expect, vi, beforeEach, afterEach } from "vitest";

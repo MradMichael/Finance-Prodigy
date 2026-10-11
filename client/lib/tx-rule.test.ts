@@ -11,7 +11,7 @@
 // The fingerprint leaves out fields only a migration adds (goalAmount,
 // lbpRateAtEntry), so a migration on one device isn't "changed everything".
 // One-sided edits from the other device inside a closed cycle are named
-// (owner; the wording is a DRAFT, lib/closedEditNotice.ts).
+// (owner; the wording is approved, session 9: lib/closedEditNotice.ts).
 import { describe, it, expect } from "vitest";
 import { mergeFinancials } from "./syncMerge";
 import { seenOf, type SeenMap } from "./syncSeen";

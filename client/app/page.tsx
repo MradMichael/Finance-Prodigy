@@ -219,7 +219,7 @@ export default function Home() {
         setFinancials(merged.mergedData);
         await recordMergeStored(userId, merged);
       } else {
-        // Session 8 (held, wording for approval): the merge is in the backup,
+        // Session 8 (owner-approved wording, merged session 9): the merge is in the backup,
         // not on this device. No "Synced" and no merge notice: it would name
         // changes this device doesn't show. persist has already shown the save
         // error, with its reason; this says what is on this device.
@@ -254,7 +254,7 @@ export default function Home() {
       setBackupFailed(false);
       retryTimersRef.current.forEach(clearTimeout); retryTimersRef.current = [];
       setSyncStatus("synced");
-      // Session 8 (held, wording for approval): backed up, but this device
+      // Session 8 (owner-approved wording, merged session 9): backed up, but this device
       // couldn't record when; storage, not the network, is the problem.
       if (result.notRecorded) setMergeNotice({ text: PUSH_NOT_RECORDED_NOTICE, showReviewLink: false });
       // fade back to idle after 4 s so the indicator doesn't stay forever

@@ -1,4 +1,4 @@
-// Session 8, item 6 (HELD: wording awaits the owner). Built on DI-15's harness.
+// Session 8, item 6 (wording approved and merged, session 9). Built on DI-15's harness.
 // DI-15 on the dashboard: autoSync's conflict merge reaches the server, then
 // the dashboard stores the merged copy. Only once that store succeeds does it
 // record the sync (the time and the sync record); when the store fails, it

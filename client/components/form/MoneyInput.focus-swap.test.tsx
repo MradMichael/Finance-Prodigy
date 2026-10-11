@@ -1,4 +1,4 @@
-// Session 10, item 6 (HELD): the money field shows "450,000" and swaps to
+// Session 10, item 6 (merged as built, session 11): the money field shows "450,000" and swaps to
 // "450000" on focus, so typing never has to step over commas. The swap was a
 // re-render after the focus event, and replacing an input's value throws away
 // its selection. Reproduced live in Edge: Tab into a field holding 450,000

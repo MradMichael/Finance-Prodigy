@@ -266,7 +266,7 @@ export interface MergeFinancialsResult {
   serverTransactions: LocalFinancials["transactions"];
   /** Closes that were live on THIS device and lost to another device's earlier close of the same cycle. */
   supersededFromLocal: ReplacedClose[];
-  /** Item 7 (owner): the other device's one-sided edits to transactions inside a closed cycle, for the notice (DRAFT wording). */
+  /** Item 7 (owner): the other device's one-sided edits to transactions inside a closed cycle, for the notice (owner-approved wording, session 9). */
   closedEdits: ClosedEdit[];
   /** Session 10, item 2: another device's "Reset all data", when this merge cleared something this device held (an item, or a setting: session 11). */
   resetElsewhere?: ResetElsewhere;
