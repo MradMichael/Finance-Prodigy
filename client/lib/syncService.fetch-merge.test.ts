@@ -67,9 +67,9 @@ describe("fetchAndMerge", () => {
     expect(localStorage.getItem(LAST_SYNC)).toBe("2026-10-05T08:00:00.000Z");
   });
 
-  it("a plain pull still records it (Restore, the first-load pull, the conflict merge)", async () => {
+  it("nor does a plain pull (session 11): Restore and the first-load restore record once stored", async () => {
     await pullFromServer("u1@example.com");
-    expect(localStorage.getItem(LAST_SYNC)).toBe("2026-10-06T19:02:11.000Z");
+    expect(localStorage.getItem(LAST_SYNC)).toBe("2026-10-05T08:00:00.000Z");
   });
 
   it("merges against the local copy as it is when the pull lands, not when it started", async () => {

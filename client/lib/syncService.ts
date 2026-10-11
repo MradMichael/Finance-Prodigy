@@ -81,7 +81,7 @@ export const EMPTY_PUSH_DECLINED = "Not uploaded: your backup on the server has 
  * fail the same way) is no reason to ask.
  */
 async function emptyOverwriteAllowed(email: string): Promise<boolean> {
-  const pulled = await pullFromServer(email, { record: false });
+  const pulled = await pullFromServer(email);
   if (!pulled.ok || isEmptyFinancials(pulled.data)) return true;
   return confirm(EMPTY_OVERWRITE_ASK);
 }
@@ -254,9 +254,9 @@ export type ServerCopyProbe =
  * replaced through /relink.
  *
  * It's /pull with the bearer token, read for its status only. The body is
- * discarded, and unlike pullFromServer it doesn't record a last-sync time:
- * that time is 2.4.38's stale-push baseline, and only a pull whose data was
- * actually taken may move it.
+ * discarded, and like pullFromServer (session 11) it records no last-sync
+ * time: that time is 2.4.38's stale-push baseline, and only a copy actually
+ * stored here may move it.
  *
  *   copy           200: a copy exists and this device's password token is
  *                  the one it holds (sync.ts:255); hasRecoveryCode says
@@ -316,15 +316,16 @@ export async function relinkSync(
 }
 
 /**
- * `record: false` leaves the last-sync time alone (SYNC-1 step 3's fetch: see
- * fetchAndMerge). `timeoutMs` lets a background fetch wait out Render's
- * wake-up. `notFound` marks the API's own "no copy" answer, apart from a
- * failure.
+ * Reads the server's copy and records nothing (session 11, owner): whoever
+ * stores the copy records its time, once stored (recordRestoreStored,
+ * recordMergeStored; sign-in and recovery). `timeoutMs` lets a background
+ * fetch wait out Render's wake-up. `notFound` marks the API's own "no copy"
+ * answer, apart from a failure.
  */
 export async function pullFromServer(
   email: string,
-  { record = true, timeoutMs = SYNC_TIMEOUT_MS }: { record?: boolean; timeoutMs?: number } = {},
-): Promise<{ ok: true; data: LocalFinancials; syncedAt: string; hasRecoveryCode: boolean; notRecorded?: true } | { ok: false; error: string; notFound?: true }> {
+  { timeoutMs = SYNC_TIMEOUT_MS }: { timeoutMs?: number } = {},
+): Promise<{ ok: true; data: LocalFinancials; syncedAt: string; hasRecoveryCode: boolean } | { ok: false; error: string; notFound?: true }> {
   const token = getSyncToken();
   if (!token) return { ok: false, error: "Not signed in. Sign in again to sync." };
   try {
@@ -353,19 +354,7 @@ export async function pullFromServer(
     if (json === null || typeof json.syncedAt !== "string" || !("data" in json)) {
       return { ok: false, error: "Server responded, but the response was malformed. Try again." };
     }
-    const pulled = { ok: true as const, data: json.data as LocalFinancials, syncedAt: json.syncedAt, hasRecoveryCode: json.hasRecoveryCode === true };
-    if (record) {
-      // Session 9 (owner): outside the network's catch, as the push's (session
-      // 8): the server answered, so a storage throw here isn't "Could not
-      // reach server", and the copy is still handed back.
-      const id = syncingUserId(email);
-      try {
-        if (id) recordSyncTime(id, json.syncedAt);
-      } catch {
-        return { ...pulled, notRecorded: true as const };
-      }
-    }
-    return pulled;
+    return { ok: true, data: json.data as LocalFinancials, syncedAt: json.syncedAt, hasRecoveryCode: json.hasRecoveryCode === true };
   } catch {
     return { ok: false, error: "Could not reach server. Is it running?" };
   }
@@ -481,7 +470,7 @@ export type MergeAndPushResult =
  */
 export async function mergeAndPush(email: string, local: LocalFinancials): Promise<MergeAndPushResult> {
   const seen = await lastSeen();
-  const pulled = await pullFromServer(email, { record: false });
+  const pulled = await pullFromServer(email);
   if (!pulled.ok) return { ok: false, error: pulled.error };
 
   // SYNC-1 step 2: the whole merge, not transactions alone. The wishlist,
@@ -516,8 +505,8 @@ export async function mergeAndPush(email: string, local: LocalFinancials): Promi
 
 /**
  * Session 10 (DI-15 on pulls): a restore's copy is stored on this device, so
- * record its time. Restores pull with `record: false` and call this after
- * the store: recorded first, a store that failed left this device's old copy
+ * record its time. Restores call this after the store (pullFromServer
+ * records nothing; session 11): recorded first, a store that failed left this device's old copy
  * on the server's newest time, and its next push overwrote the server's copy
  * without a conflict. False when storage refused the time: the copy is in
  * place, and the next push merges (FIRST_PUSH_BASE or the older time).
@@ -629,7 +618,7 @@ function sameRecords(a: LocalFinancials, b: LocalFinancials, fields: readonly (k
  */
 export async function fetchAndMerge(email: string, currentLocal: () => LocalFinancials | null): Promise<FetchAndMergeResult> {
   const seen = await lastSeen();
-  const pulled = await pullFromServer(email, { record: false, timeoutMs: FETCH_TIMEOUT_MS });
+  const pulled = await pullFromServer(email, { timeoutMs: FETCH_TIMEOUT_MS });
   if (!pulled.ok) return { ok: false, error: pulled.error, ...(pulled.notFound ? { notFound: true as const } : {}) };
   const local = currentLocal();
   if (!local) return { ok: true, skipped: true };

@@ -342,7 +342,7 @@ export default function Home() {
         // This pull is the open's fetch (SYNC-1 step 3); don't pull twice.
         lastFetchAtRef.current = Date.now();
         // Session 10 (DI-15 on pulls): its time is recorded once the copy is stored, below.
-        const result = await pullFromServer(s.email, { record: false });
+        const result = await pullFromServer(s.email);
         // The one that matters: `data` was captured before this await, and a
         // newer run has since unlocked the UI. Anything the user typed in the
         // meantime is live state, and applying either branch below would
