@@ -51,8 +51,8 @@ describe("and not otherwise", () => {
     expect(again.resetElsewhere).toBeUndefined();
   });
 
-  it("not for an older reset than one this device has taken", () => {
-    const mine = { ...held, resetAt: "2026-10-09T13:00:00.000Z" };
+  it("not when this device took a reset of its own, and meets another device's (session 12: no order between them)", () => {
+    const mine = resetFinancials(held, new Date("2026-10-09T13:00:00.000Z")); // this device's own reset, not yet uploaded
     expect(mergeFinancials(mine, resetFinancials(held, RESET), NOW, seenOf(held)).resetElsewhere).toBeUndefined();
   });
 
@@ -79,10 +79,11 @@ describe("and not otherwise", () => {
   });
 });
 
-// Owner, session 11: settings are reset too ("settings included"), on every
-// device, record or not, except a setting changed there after the reset. A
+// Owner, session 11: settings are reset too ("settings included"), and a
 // device that held only settings is told as well: R1 when nothing of its own
-// is kept.
+// is kept. Session 12 (owner): what a device changed since its own last sync
+// is kept, judged by its record, never by an edit time (reset-keeps-unsynced
+// .test.ts); with no record, the reset is taken whole.
 describe("settings, everywhere (owner, session 11)", () => {
   const settingsOnly = { ...DEFAULT_DATA, ...ON, income: 3150.75, transactions: [] } as LocalFinancials;
   const after = "2026-10-09T13:00:00.000Z", before = "2026-10-09T11:00:00.000Z";
@@ -103,14 +104,23 @@ describe("settings, everywhere (owner, session 11)", () => {
     expect(mergeFinancials(held, resetFinancials(held, RESET), NOW, null).data.income).toBe(0);
   });
 
-  it("a setting changed here before the reset (since the last sync) takes the reset's, and no clash is named", () => {
+  it("a setting changed here since the last sync is kept, whatever its edit time reads (session 12), and no clash is named", () => {
     const local = { ...settingsOnly, income: 3500, settingsUpdatedAt: { income: before } } as LocalFinancials;
     const r = mergeFinancials(local, resetFinancials(settingsOnly, RESET), NOW, seenOf(settingsOnly));
-    expect(r.data.income).toBe(0);
-    expect(r.data.settingsUpdatedAt?.income).toBeUndefined(); // the reset's value brings its own edit time (none), not the stale one
+    expect(r.data.income).toBe(3500);
+    expect(r.data.settingsUpdatedAt?.income).toBe(before); // kept with its own edit time
     expect(r.clashes).toEqual([]);
     expect(r.data.clashRecords ?? []).toEqual([]);
-    expect(r.resetElsewhere).toEqual({ at: RESET.toISOString(), kept: false });
+    expect(r.resetElsewhere).toBeUndefined(); // a settings-only device whose one change was kept: nothing cleared, nothing told
+  });
+
+  it("an unchanged setting beside it is reset, and that device is told (R2)", () => {
+    const local = { ...settingsOnly, income: 3500, cycleStartDay: 27 } as LocalFinancials;
+    const synced = { ...settingsOnly, cycleStartDay: 27 } as LocalFinancials;
+    const r = mergeFinancials(local, resetFinancials(synced, RESET), NOW, seenOf(synced));
+    expect(r.data.income).toBe(3500);
+    expect(r.data.cycleStartDay ?? 1).toBe(1);
+    expect(r.resetElsewhere).toEqual({ at: RESET.toISOString(), kept: true });
   });
 
   it("a setting changed here after the reset is kept, and with something cleared the notice is R2", () => {

@@ -12,9 +12,10 @@
 //
 // Settings (income, rate, payday...) reset too (owner, session 11). Since plan
 // H's rule, a device with a record of its last sync takes the reset copy's
-// values for every setting it hasn't changed since. Session 11's item 2: a
-// newer reset takes every setting a device hasn't changed since that reset,
-// record or not (lib/reset-elsewhere.test.ts has the cases).
+// values for every setting it hasn't changed since. Session 12 (owner): a new
+// reset keeps every change a device made since its own last sync, judged by
+// its record, never by an edit time; with no record it's taken whole
+// (lib/reset-keeps-unsynced.test.ts, lib/reset-elsewhere.test.ts).
 import { describe, it, expect } from "vitest";
 import { seenOf } from "./syncSeen";
 import { resetFinancials, DEFAULT_DATA, type LocalFinancials, type StoredTransaction, type PeriodClose } from "./localData";
