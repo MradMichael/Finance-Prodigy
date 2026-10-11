@@ -260,7 +260,9 @@ async function signInFromSync(
   // Plan H 5b: stored, so this is the last sync the next merge compares against.
   await (await import("./syncSeen")).saveSeen(id, pulled.data);
   // DI-16: and its time, for this account (the pull ran before the account existed here).
-  (await import("./syncService")).recordSyncTime(id, pulled.syncedAt);
+  // Session 11, item 5 (owner): storage refusing the time doesn't undo the sign-in: the
+  // data is stored, nothing throws, and the time simply isn't recorded (the next push merges).
+  (await import("./syncService")).recordRestoreStored(id, pulled.syncedAt);
   // Session 7: a joining device takes the copy's clash records as already shown.
   await (await import("./clashNotice")).takeUnseenClashes(id, pulled.data, undefined, { firstSync: true });
 
@@ -526,7 +528,9 @@ async function recoverFromSync(
   // Plan H 5b: stored, so this is the last sync the next merge compares against.
   await (await import("./syncSeen")).saveSeen(id, pulled.data);
   // DI-16: and its time, for this account (the pull ran before the account existed here).
-  (await import("./syncService")).recordSyncTime(id, pulled.syncedAt);
+  // Session 11, item 5 (owner): storage refusing the time doesn't undo the sign-in: the
+  // data is stored, nothing throws, and the time simply isn't recorded (the next push merges).
+  (await import("./syncService")).recordRestoreStored(id, pulled.syncedAt);
   // Session 7: a joining device takes the copy's clash records as already shown.
   await (await import("./clashNotice")).takeUnseenClashes(id, pulled.data, undefined, { firstSync: true });
 
