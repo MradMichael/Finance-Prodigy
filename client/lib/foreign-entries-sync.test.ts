@@ -106,6 +106,18 @@ describe("a converted device fetches a server copy still at v7", () => {
       expect(r.mergedData.transactions.map((t) => [t.id, t.bucket, t.fx?.kind])).toEqual([["s1", "WANTS", "exchange"]]);
       expect((r.mergedData.foreignEntries ?? []).map((e) => e.id)).toEqual(["sp1"]);
       expect(r.clashes).toEqual([]);
+      // The server still holds the v7 shape: the converted copy is pushed to
+      // replace it (found in session 18's live check), so a device still on
+      // slice 1 code stops syncing (slice 0's rule 2) instead of carrying on.
+      expect(r.serverBehind).toBe(true);
     });
   }
+
+  it("a server copy already at v8, the same as this device's: nothing to push", async () => {
+    serverData = migrateFinancials(V7());
+    await saveSeen("u1", serverData); localStorage.setItem("essa_last_sync_u1", "2026-10-10T09:00:00.000Z");
+    const r = await fetchAndMerge("u1@example.com", () => migrateFinancials(V7()));
+    if (!r.ok || r.skipped) throw new Error("expected a merge");
+    expect(r.serverBehind).toBe(false);
+  });
 });
