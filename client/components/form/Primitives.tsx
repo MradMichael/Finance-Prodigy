@@ -307,7 +307,14 @@ export function DateFieldDMY({
   // with no feedback that nothing was actually saved.
   function makeHandler(maxLen: number, maxValue: number, setter: (v: string) => void, next?: React.RefObject<HTMLInputElement>) {
     return (e: React.ChangeEvent<HTMLInputElement>) => {
-      let digits = e.target.value.replace(/\D/g, "").slice(0, maxLen);
+      // Session 15 (owner): a full box that gets another digit starts over
+      // from what was typed, as a native date field's segments do. The boxes
+      // used to carry maxLength, so the browser refused that keystroke before
+      // this handler saw it: typing over a prefilled date (today's, say) did
+      // nothing at all. Anything else (a part-filled box, a paste) is as before.
+      const raw = e.target.value.replace(/\D/g, "");
+      const typed = ((e.nativeEvent as InputEvent).data ?? "").replace(/\D/g, "");
+      let digits = (raw.length > maxLen && typed ? typed : raw).slice(0, maxLen);
       if (maxLen === 2 && digits.length === 2 && parseInt(digits, 10) > maxValue) {
         digits = String(maxValue).padStart(2, "0");
       }
@@ -395,7 +402,6 @@ export function DateFieldDMY({
         onFocus={() => { setFocused(true); setSeg("d"); }}
         onBlur={() => { segLeave("d"); setTimeout(() => { if (![dayRef, monthRef, yearRef].some((r) => r.current === document.activeElement)) setFocused(false); }, 0); }}
         placeholder="DD"
-        maxLength={2}
         style={{ ...segStyle, ...segFocus("d"), width: "1.6em" }}
       />
       <span style={{ color: T.mute }}>/</span>
@@ -409,7 +415,6 @@ export function DateFieldDMY({
         onFocus={() => { setFocused(true); setSeg("m"); }}
         onBlur={() => { segLeave("m"); setTimeout(() => { if (![dayRef, monthRef, yearRef].some((r) => r.current === document.activeElement)) setFocused(false); }, 0); }}
         placeholder="MM"
-        maxLength={2}
         style={{ ...segStyle, ...segFocus("m"), width: "1.6em" }}
       />
       <span style={{ color: T.mute }}>/</span>
@@ -423,7 +428,6 @@ export function DateFieldDMY({
         onFocus={() => { setFocused(true); setSeg("y"); }}
         onBlur={() => { segLeave("y"); setTimeout(() => { if (![dayRef, monthRef, yearRef].some((r) => r.current === document.activeElement)) setFocused(false); }, 0); }}
         placeholder="YYYY"
-        maxLength={4}
         style={{ ...segStyle, ...segFocus("y"), width: "3em" }}
       />
       <button
