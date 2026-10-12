@@ -1,7 +1,7 @@
 // Travel slice 2 (HELD): trips sync like the wishlist. Merged by key with
 // tombstones before a device has a record of a last sync, and under the
 // fingerprint rule after: a one-sided change is taken, a two-sided one keeps
-// the later edit and is named ("the trip": DRAFT noun). A reset clears trips;
+// the later edit and is named ("the trip": approved in session 17). A reset clears trips;
 // a deleted trip stays deleted. Rows keep their tags through a merge.
 // `trips` is now a field this code knows, so it's merged, not just carried
 // over from the server (slice 0's rule 1 is for code that doesn't know it).
@@ -10,7 +10,7 @@ import { DEFAULT_DATA, recordDeletion, resetFinancials, type LocalFinancials, ty
 import { mergeFinancials, unknownFieldsOf } from "./syncMerge";
 import { seenOf } from "./syncSeen";
 import { clashSentence } from "./syncService";
-import type { StoredTrip } from "./trips";
+import { editTrip, type StoredTrip } from "./trips";
 
 const T0 = new Date("2026-11-10T12:00:00.000Z");
 const trip = (id: string, name: string, budgetUSD: number, updatedAt: string): StoredTrip =>
@@ -54,6 +54,21 @@ describe("under the fingerprint rule", () => {
     expect(r.data.trips).toEqual([there]);
     expect(r.clashes.map(clashSentence)).toEqual(['Both devices changed the trip "Lisbon and Porto" — kept the later change.']);
   });
+});
+
+// Session 17, item 2: an edit is an ordinary change under the rule.
+it("an edited trip (dates and budget) is taken from whichever device edited it, and its rows keep their tags", () => {
+  const tagged = { id: "r1", amount: 30, currency: "USD", bucket: "WANTS", description: "Taxi", date: "2026-11-03", tripId: "t1", updatedAt: "2026-11-03T10:00:00.000Z" } as StoredTransaction;
+  const before = d([LISBON], { transactions: [tagged] });
+  const seen = seenOf(before);
+  const r = editTrip(before, "t1", { name: "Lisbon", startDate: "2026-11-01", endDate: "2026-11-12", budgetUSD: 1500 }, new Date("2026-10-13T09:00:00.000Z"));
+  if (!r.ok) throw new Error("refused");
+  for (const [here, there] of [[r.data, before], [before, r.data]]) {
+    const m = mergeFinancials(here, there, T0, seen);
+    expect(m.data.trips).toEqual(r.data.trips);
+    expect(m.data.transactions).toEqual([tagged]);
+    expect(m.clashes).toEqual([]);
+  }
 });
 
 it("a reset clears trips on the other device too", () => {

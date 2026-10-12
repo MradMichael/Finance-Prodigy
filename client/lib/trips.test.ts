@@ -9,7 +9,7 @@
 import { describe, it, expect } from "vitest";
 import { DEFAULT_DATA, softDelete, isEmptyFinancials, type LocalFinancials, type StoredTransaction } from "./localData";
 import { buildExchange, buildPocketSpend } from "./foreignCash";
-import { buildTrip, tripActual, tripCashBought, suggestedTripId, tagRows, deleteTrip, type StoredTrip } from "./trips";
+import { buildTrip, editTrip, tripActual, tripCashBought, suggestedTripId, tagRows, deleteTrip, type StoredTrip } from "./trips";
 
 const RATE = 89_500;
 const LISBON: StoredTrip = { id: "trip-lis", name: "Lisbon", startDate: "2026-11-02", endDate: "2026-11-09", budgetUSD: 1200, categoryBudgetsUSD: { dining: 400, transport: 150 }, createdAt: "2026-10-12T09:00:00.000Z", updatedAt: "2026-10-12T09:00:00.000Z" };
@@ -80,6 +80,42 @@ describe("tagging", () => {
     expect(tagged.find((t) => t.id === "x")).toEqual(other);
     const untagged = tagRows(tagged, pocket.id, undefined, "2026-10-12T11:00:00.000Z");
     expect(untagged.filter((t) => t.tripId).length).toBe(0);
+  });
+});
+
+// Session 17, item 2: a trip's name, dates, budget and category budgets can be
+// edited. Its id and creation time stay, its edit time moves (so the sync
+// merge sees an ordinary change), and the rows aren't touched: every tag stays.
+describe("editing a trip", () => {
+  const p = { name: "Lisbon", startDate: "2026-11-02", endDate: "2026-11-09", budgetUSD: 1200 };
+
+  it("changes its name, dates, budget and category budgets; keeps its id, its creation time and every tag", () => {
+    const d = data([row("taxi", 30, { category: "transport", tripId: "trip-lis" })]);
+    const r = editTrip(d, "trip-lis", { name: " Lisbon and Porto ", startDate: "2026-11-01", endDate: "2026-11-12", budgetUSD: 1500, categoryBudgetsUSD: { dining: 500, lodging: 600 } }, new Date("2026-10-20T08:00:00.000Z"));
+    if (!r.ok) throw new Error("refused");
+    expect(r.data.trips).toEqual([{ id: "trip-lis", name: "Lisbon and Porto", startDate: "2026-11-01", endDate: "2026-11-12", budgetUSD: 1500, categoryBudgetsUSD: { dining: 500, lodging: 600 }, createdAt: LISBON.createdAt, updatedAt: "2026-10-20T08:00:00.000Z" }]);
+    expect(r.data.transactions).toBe(d.transactions); // the rows aren't touched
+  });
+
+  it("removing every category budget leaves none", () => {
+    const r = editTrip(data([]), "trip-lis", p);
+    if (!r.ok) throw new Error("refused");
+    expect(r.data.trips![0]).not.toHaveProperty("categoryBudgetsUSD");
+  });
+
+  it("is refused for the same reasons as a new trip", () => {
+    expect(editTrip(data([]), "trip-lis", { ...p, name: " " })).toEqual({ ok: false, reason: "name" });
+    expect(editTrip(data([]), "trip-lis", { ...p, endDate: "2026-11-01" })).toEqual({ ok: false, reason: "dates" });
+    expect(editTrip(data([]), "trip-lis", { ...p, budgetUSD: -1 })).toEqual({ ok: false, reason: "budget" });
+  });
+
+  it("leaves other trips alone, and doesn't bring back a trip that's gone", () => {
+    const rome: StoredTrip = { ...LISBON, id: "trip-rome", name: "Rome" };
+    const r = editTrip(data([], [LISBON, rome]), "trip-lis", { ...p, budgetUSD: 900 });
+    if (!r.ok) throw new Error("refused");
+    expect(r.data.trips!.find((t) => t.id === "trip-rome")).toEqual(rome);
+    const gone = data([], [rome]);
+    expect(editTrip(gone, "trip-lis", p)).toEqual({ ok: true, data: gone });
   });
 });
 

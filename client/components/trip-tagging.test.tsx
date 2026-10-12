@@ -1,4 +1,4 @@
-// Travel slice 2 (HELD; new wording DRAFT): tagging rows to a trip.
+// Travel slice 2 (HELD; wording approved in session 17): tagging rows to a trip.
 //   - The edit sheet: a Trip choice on any row. An exchange's two rows are
 //     tagged together.
 //   - The foreign-cash forms: a Trip choice that defaults to the trip whose

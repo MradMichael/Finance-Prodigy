@@ -28,7 +28,7 @@ export const NAV: { key: Screen; label: string; icon: string }[] = [
   { key: "statistics",   label: "Statistics",   icon: "▤" },
   { key: "journey",      label: "Journey",      icon: "✦" },
   { key: "currency",     label: "Currency",     icon: "⇄" },
-  { key: "trips",        label: "Trips",        icon: "✈" }, // travel slice 2 (held): DRAFT label
+  { key: "trips",        label: "Trips",        icon: "✈" }, // travel slice 2 (held): label approved in session 17
   { key: "balancecheck", label: "Balance Check", icon: "🔍" },
 ];
 

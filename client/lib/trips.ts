@@ -48,6 +48,23 @@ export function buildTrip(p: { name: string; startDate: string; endDate: string;
   };
 }
 
+/**
+ * A trip edited (session 17): checked as a new trip is. Its id and creation
+ * time stay and its edit time moves, so the sync merge sees an ordinary
+ * change. Rows aren't touched, so every tag stays. A trip that's gone
+ * (deleted on another device) isn't brought back.
+ */
+export function editTrip(data: LocalFinancials, tripId: string, p: Parameters<typeof buildTrip>[0], now: Date = new Date()):
+  { ok: true; data: LocalFinancials } | { ok: false; reason: "name" | "dates" | "budget" } {
+  const old = (data.trips ?? []).find((t) => t.id === tripId);
+  if (!old) return { ok: true, data };
+  const r = buildTrip(p, now);
+  if (!r.ok) return r;
+  const { id: _new, createdAt: _created, ...fields } = r.trip;
+  const trip: StoredTrip = { id: old.id, ...fields, createdAt: old.createdAt };
+  return { ok: true, data: { ...data, trips: (data.trips ?? []).map((t) => (t.id === tripId ? trip : t)) } };
+}
+
 /** The trip whose dates hold `date` (start and end included), for a form's default. */
 export function suggestedTripId(trips: StoredTrip[], date: string): string | undefined {
   return trips.filter((t) => t.startDate <= date && date <= t.endDate).sort((a, b) => b.startDate.localeCompare(a.startDate))[0]?.id;

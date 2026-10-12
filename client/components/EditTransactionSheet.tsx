@@ -330,7 +330,7 @@ export default function EditTransactionSheet({
               <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
             ))}
           </select>
-          {/* Travel slice 2 (held): DRAFT labels, for approval. */}
+          {/* Travel slice 2 (held): labels approved in session 17. */}
           {trips.length > 0 && (
             <select value={tripId} onChange={(e) => setTripId(e.target.value)} aria-label="Trip"
               className="w-full rounded-lg px-2 py-1.5 text-[10px]"
