@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useTheme } from "../../contexts/ThemeContext";
 
 const SERIF: React.CSSProperties = { fontFamily: "Spectral, Georgia, serif" };
-const LAST_UPDATED = "11 October 2026";
+const LAST_UPDATED = "12 October 2026";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   const T = useTheme();

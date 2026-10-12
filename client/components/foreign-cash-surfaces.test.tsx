@@ -1,4 +1,4 @@
-// Travel slice 1 (HELD): foreign cash on the screens that already exist.
+// Travel slice 1: foreign cash on the screens that already exist.
 //   - Net worth: the owner's line, "Foreign cash (at cost): $X, not yet
 //     counted in net worth", on the overview's Net worth panel and on
 //     Journey's, so an exchange never looks like money vanished. Net worth
@@ -15,6 +15,7 @@ import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { ThemeProvider } from "../contexts/ThemeContext";
 import FinancialDashboard from "./FinancialDashboard";
 import JourneyScreen from "./screens/JourneyScreen";
+import CurrencyScreen from "./screens/CurrencyScreen";
 import InputPanel from "./InputPanel";
 import TransactionsScreen from "./screens/TransactionsScreen";
 import EditTransactionSheet from "./EditTransactionSheet";
@@ -37,6 +38,16 @@ describe("net worth", () => {
     render(<ThemeProvider><FinancialDashboard data={computeDashboard(d)} financials={d} onNavigate={vi.fn()} /></ThemeProvider>);
     expect(screen.getByText(LINE)).toBeTruthy();
     expect(computeDashboard(d).netWorth.total).toBe(computeDashboard(fin([])).netWorth.total);
+  });
+
+  it("the currency screen's Cash & assets panel carries it too, on its own line (owner, session 15)", () => {
+    const d = fin(legs());
+    render(<ThemeProvider><CurrencyScreen financials={d} onChange={vi.fn()} /></ThemeProvider>);
+    const panel = screen.getByText("Cash & assets, by currency").parentElement!;
+    expect(panel.textContent).toContain(LINE);
+    cleanup();
+    render(<ThemeProvider><CurrencyScreen financials={fin([])} onChange={vi.fn()} /></ThemeProvider>);
+    expect(screen.getByText("Cash & assets, by currency").parentElement!.textContent).not.toMatch(/Foreign cash \(at cost\)/);
   });
 
   it("Journey's net worth carries it too; with no foreign cash, neither shows a line", () => {

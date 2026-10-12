@@ -117,7 +117,7 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
   // DI-14: a revival at a new generation, so the restore survives a merge
   // with a device that still holds the deleted copy (undeleteTransaction).
   function restoreTransaction(txId: string) {
-    // Travel slice 1 (held): an exchange's two rows come back together.
+    // Travel slice 1: an exchange's two rows come back together.
     onChange(undeleteTransactions(financials, pairedIds(financials.transactions, txId), new Date().toISOString()));
   }
 
@@ -127,7 +127,7 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
   function purgeTransactionPermanently(txId: string) {
     onChange({
       ...financials,
-      // Travel slice 1 (held): an exchange's two rows are removed together.
+      // Travel slice 1: an exchange's two rows are removed together.
       transactions: ((ids) => financials.transactions.map((t) => !ids.has(t.id) ? t : purgeTransaction(t)))(new Set(pairedIds(financials.transactions, txId))),
     });
   }
@@ -602,7 +602,7 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
                         // (Batch C) exists purely to group two currency legs
                         // of one real payment in the UI; this never feeds a
                         // total, only which caption renders on this row.
-                        // Travel slice 1 (held, DRAFT wording): an exchange's rows and a
+                        // Travel slice 1 (wording approved, session 15): an exchange's rows and a
                         // pocket spend say what they are; an exchange isn't a split payment.
                         const exchangeOf = exchangePartnerId(allTx, t) ? (t.fx ?? allTx.find((o) => o.id === exchangePartnerId(allTx, t))?.fx) : undefined;
                         const splitSibling = t.linkedPaymentId && !exchangeOf

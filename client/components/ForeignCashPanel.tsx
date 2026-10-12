@@ -1,7 +1,7 @@
 "use client";
 
-// Travel slice 1 (HELD; every sentence here is a DRAFT for the owner's
-// approval): foreign cash on the currency screen (lib/foreignCash.ts).
+// Travel slice 1 (every sentence here approved by the owner, session 15):
+// foreign cash on the currency screen (lib/foreignCash.ts).
 //   - Record an exchange: two linked rows (the source leg on its pool, the
 //     pocket leg with the amount received). Past dates are allowed: the
 //     owner may have changed money already.

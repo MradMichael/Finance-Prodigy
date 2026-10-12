@@ -43,7 +43,7 @@ export default function EditTransactionSheet({
   const T = useTheme();
   const startDay = cycleStartDayOf(financials);
   const update = (patch: Partial<LocalFinancials>) => onChange({ ...financials, ...patch });
-  // Travel slice 1 (held): an exchange row changes only its description and
+  // Travel slice 1: an exchange row changes only its description and
   // category (its amount, date and pool belong to the pair, and to the
   // pocket); a pocket spend keeps its amount, currency and frozen cost, and
   // stays spending. Enforced when saving, not only on screen.
@@ -250,7 +250,7 @@ export default function EditTransactionSheet({
               )}
             </div>
           </div>
-          {/* Travel slice 1 (held): DRAFT wording, for approval. */}
+          {/* Travel slice 1: wording approved by the owner (session 15). */}
           {fxRole === "exchange" && (
             <p className="text-[10px]" style={{ color: T.mute }}>Part of an exchange: only its description and category can change here. To change an amount or date, delete it and enter it again.</p>
           )}

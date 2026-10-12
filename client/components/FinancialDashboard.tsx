@@ -649,7 +649,7 @@ export default function FinancialDashboard({
                 </div>
               </div>
 
-              {/* travel slice 1 (held): the owner's line. Net worth leaves foreign cash out, as it leaves out tracked balances (DI-06); this says where it is, so an exchange never looks like money vanished. */}
+              {/* travel slice 1: the owner's line. Net worth leaves foreign cash out, as it leaves out tracked balances (DI-06); this says where it is, so an exchange never looks like money vanished. */}
               {financials && foreignCashAtCostUSD(financials) > 0 && (
                 <p className="text-xs mb-3" style={{ color: T.mute }}>{`Foreign cash (at cost): ${money(foreignCashAtCostUSD(financials))}, not yet counted in net worth`}</p>
               )}

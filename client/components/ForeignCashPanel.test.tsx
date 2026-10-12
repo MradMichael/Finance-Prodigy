@@ -1,4 +1,4 @@
-// Travel slice 1 (HELD; new wording DRAFT): the currency screen's foreign cash.
+// Travel slice 1 (wording approved, session 15): the currency screen's foreign cash.
 //   - Record an exchange: the pool it came from, what was paid (USD or LBP),
 //     the currency and amount received, and the date, which can be past. The
 //     rate obtained is shown before saving. Two linked rows are added.

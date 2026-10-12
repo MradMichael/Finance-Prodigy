@@ -1,4 +1,4 @@
-// Travel slice 1 (HELD; owner, session 14; FIX_PLANS.md "TRAVEL / FOREIGN
+// Travel slice 1 (owner, session 14; FIX_PLANS.md "TRAVEL / FOREIGN
 // CASH"): foreign cash without a third currency. The ledger stays in USD and
 // LBP; a foreign amount is an annotation (`fx`) on an ordinary row:
 //   - an exchange is two TRANSFER rows, linked by `linkedPaymentId`: the

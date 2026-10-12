@@ -8,6 +8,7 @@ import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
 import Donut from "../charts/Donut";
 import ForeignCashPanel from "../ForeignCashPanel";
+import { foreignCashAtCostUSD } from "../../lib/foreignCash";
 import {currentCycleKey, isInCycle, periodNoun, cycleLabel, type CycleKey } from "../../lib/period";
 
 /**
@@ -143,7 +144,7 @@ export default function CurrencyScreen({ financials, onChange }: { financials: L
           <RateStaleness updatedAt={financials.lbpRateUpdatedAt} />
         </div>
 
-        {/* Travel slice 1 (held): foreign cash */}
+        {/* Travel slice 1: foreign cash */}
         <ForeignCashPanel financials={financials} onChange={onChange} />
 
         {/* Spend by currency */}
@@ -232,6 +233,10 @@ export default function CurrencyScreen({ financials, onChange }: { financials: L
                 </div>
               </div>
             </div>
+          )}
+          {/* Travel slice 1 (owner, session 15): foreign cash on its own line, at cost, in the overview's words; not in the totals above. */}
+          {foreignCashAtCostUSD(financials) > 0 && (
+            <p className="text-xs mt-3" style={{ color: T.mute }}>{`Foreign cash (at cost): ${money(foreignCashAtCostUSD(financials))}, not yet counted in net worth`}</p>
           )}
         </div>
 

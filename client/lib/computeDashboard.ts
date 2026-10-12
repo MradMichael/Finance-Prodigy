@@ -243,7 +243,7 @@ export function trackedBalanceExpectedAsOf(
   const key = `${tb.paymentMethod}|${tb.paymentMethod === "card" ? (tb.cardId ?? "") : ""}`;
   const relevantTx = activeTransactions(data.transactions ?? []).filter((t) => {
     const tKey = `${t.paymentMethod ?? ""}|${t.paymentMethod === "card" ? (t.cardId ?? "") : ""}`;
-    // Travel slice 1 (held): pocket rows are in no tracked pool, whatever their payment method says.
+    // Travel slice 1: pocket rows are in no tracked pool, whatever their payment method says.
     return !isPocketRow(t) && tKey === key && isAfterBalanceBaseline(t, tb) && t.date <= cutoff;
   });
   return expectedFromRelevantTx(tb, relevantTx, toUSDForMonth, cycleStartDayOf(data));
@@ -262,7 +262,7 @@ export function trackedBalanceExpected(
   const key = `${tb.paymentMethod}|${tb.paymentMethod === "card" ? (tb.cardId ?? "") : ""}`;
   const relevantTx = activeTransactions(data.transactions ?? []).filter((t) => {
     const tKey = `${t.paymentMethod ?? ""}|${t.paymentMethod === "card" ? (t.cardId ?? "") : ""}`;
-    // Travel slice 1 (held): pocket rows are in no tracked pool, whatever their payment method says.
+    // Travel slice 1: pocket rows are in no tracked pool, whatever their payment method says.
     return !isPocketRow(t) && tKey === key && isAfterBalanceBaseline(t, tb);
   });
   return expectedFromRelevantTx(tb, relevantTx, toUSDForMonth, cycleStartDayOf(data));
@@ -1066,7 +1066,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   type Tx = (typeof data.transactions)[number];
   const txByPaymentKey = new Map<string, Tx[]>();
   for (const t of data.transactions) {
-    if (isPocketRow(t)) continue; // travel slice 1 (held): in no tracked pool
+    if (isPocketRow(t)) continue; // travel slice 1: in no tracked pool
     const key = `${t.paymentMethod ?? ""}|${t.paymentMethod === "card" ? (t.cardId ?? "") : ""}`;
     const bucket = txByPaymentKey.get(key);
     if (bucket) bucket.push(t); else txByPaymentKey.set(key, [t]);

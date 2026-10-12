@@ -257,7 +257,7 @@ export interface StoredCard {
 }
 
 /**
- * Travel slice 1 (HELD): a foreign-cash annotation on an ordinary row
+ * Travel slice 1: a foreign-cash annotation on an ordinary row
  * (lib/foreignCash.ts). `amount` is in `code`; `costPerUnitUSD` (a spend's
  * cost, frozen at entry) is USD per 1 unit of `code`.
  */
@@ -539,7 +539,7 @@ export interface StoredTransaction {
   // on load. Once set, restoreTransaction no longer applies -- there's
   // nothing left to restore.
   purgedAt?: string;
-  // Travel slice 1 (HELD): foreign cash (lib/foreignCash.ts). An exchange's
+  // Travel slice 1: foreign cash (lib/foreignCash.ts). An exchange's
   // pocket leg ("in") and a spend from a pocket ("spend"). Dropped by a
   // purge, like every other payload field.
   fx?: ForeignCashNote;

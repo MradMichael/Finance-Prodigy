@@ -523,7 +523,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   // view rather than gone the moment "Delete transaction" is confirmed.
   function softDeleteTransaction(txId: string) {
     const now = new Date().toISOString();
-    const ids = new Set(pairedIds(financials.transactions, txId)); // travel slice 1 (held): an exchange's two rows go together
+    const ids = new Set(pairedIds(financials.transactions, txId)); // travel slice 1: an exchange's two rows go together
     update({
       transactions: financials.transactions.map((t) => !ids.has(t.id) ? t : softDelete(financials, t, now)),
     });
