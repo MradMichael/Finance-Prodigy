@@ -1434,6 +1434,15 @@ export function schemaVersionOf(raw: unknown): number {
 }
 
 /**
+ * Travel slice 0 (owner, session 14): a copy written by NEWER code, which
+ * this code must not treat as current. It isn't stamped with this code's
+ * version (migrateFinancials), merged into, or written over (syncService).
+ */
+export function isFromNewerVersion(raw: unknown): boolean {
+  return schemaVersionOf(raw) > CURRENT_SCHEMA_VERSION;
+}
+
+/**
  * Turns whatever was actually in localStorage (or just pulled from the
  * server) into a complete, current-schema LocalFinancials. Called from
  * exactly two places -- loadData and saveData -- rather than from each
@@ -1481,7 +1490,11 @@ export function migrateFinancials(raw: unknown, migrations: typeof MIGRATIONS = 
     if (data.schemaVersion === step.fromVersion) data = step.migrate(data);
   }
   return {
-    ...data, schemaVersion: CURRENT_SCHEMA_VERSION,
+    // Travel slice 0: a copy from newer code keeps its own version. Stamped
+    // with this one, newer code would take it for an older copy and run its
+    // own steps on it again. No step here ran on it (each needs an exact
+    // older version), and every field is kept.
+    ...data, schemaVersion: rawVersion > CURRENT_SCHEMA_VERSION ? rawVersion : CURRENT_SCHEMA_VERSION,
     // Safety net, not the primary mechanism: addLedgerDerivedFields already
     // resolves this for anything that actually walks through v3->v4. Only
     // matters for a malformed record that somehow claims >= v4 while still
@@ -1631,7 +1644,8 @@ export async function loadData(userId: string): Promise<LocalFinancials> {
     // silently diverged the instant migration ran -- a crash, a closed
     // tab, or a pull from another device before the next edit would read
     // (or push) the stale, unmigrated bytes again.
-    if (schemaVersionOf(parsed) !== CURRENT_SCHEMA_VERSION) {
+    // Only an OLDER copy was migrated; a newer one (travel slice 0) is left as it is.
+    if (schemaVersionOf(parsed) < CURRENT_SCHEMA_VERSION) {
       try {
         await saveData(migrated, userId);
       } catch {

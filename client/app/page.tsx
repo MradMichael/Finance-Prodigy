@@ -199,6 +199,8 @@ export default function Home() {
     if (!syncAllowed(data)) return;
     setSyncStatus("syncing");
     const result = await pushToServer(email, data);
+    // Travel slice 0: a copy from newer code isn't uploaded. Quiet until its message is approved.
+    if (result.newerVersion) { setSyncStatus("idle"); return; }
     // 2.4.38: a conflict isn't a transient failure a retry would fix.
     // Phase 2.7 sub-phase 3: attempt an automatic merge instead of only
     // setting the static indicator -- pull the server's current data,
@@ -209,6 +211,8 @@ export default function Home() {
     // profile page) only if the merge itself can't complete.
     if (result.conflict) {
       const merged = await mergeAndPush(email, data);
+      // Travel slice 0: a backup from newer code is neither merged into nor written over. Quiet.
+      if (!merged.ok && merged.newerVersion) { setSyncStatus("idle"); return; }
       if (!merged.ok) { setSyncStatus("conflict"); return; }
       const userId = sessionRef.current?.userId;
       // DI-15: the sync is recorded only once the merged copy is stored here.
@@ -474,7 +478,8 @@ export default function Home() {
       const r = await fetchAndMerge(s.email, () => (sameAccount() ? financialsRef.current : null));
       if (!sameAccount()) return;
       if (!r.ok) {
-        if (!r.notFound) {
+        // Travel slice 0: a backup from newer code isn't merged; not a failure. Quiet.
+        if (!r.notFound && !r.newerVersion) {
           const failed = failedSyncStatus();
           setSyncStatus((st) => (st === "idle" ? failed : st));
           setTimeout(() => setSyncStatus((st) => (st === failed ? "idle" : st)), 4000);

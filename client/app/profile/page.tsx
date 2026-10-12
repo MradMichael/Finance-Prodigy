@@ -198,7 +198,8 @@ export default function ProfilePage() {
     const result = await mergeAndPush(session.email, local);
     if (!result.ok) {
       setSyncing(false);
-      setSyncMsg("✗ " + result.error);
+      // Travel slice 0: a backup from newer code; nothing merged. Its message waits for approval.
+      setSyncMsg(result.newerVersion ? "" : "✗ " + result.error);
       return;
     }
     try {
@@ -231,7 +232,8 @@ export default function ProfilePage() {
       // Session 8 (owner-approved wording, merged session 9): pushed, but this device couldn't record when.
       setSyncMsg(result.notRecorded ? "✓ Pushed to database. " + PUSH_NOT_RECORDED : "✓ Pushed to database.");
     } else {
-      setSyncMsg("✗ " + result.error);
+      // Travel slice 0: this device's copy came from newer code; not uploaded. Its message waits for approval.
+      setSyncMsg(result.newerVersion ? "" : "✗ " + result.error);
     }
   }
 

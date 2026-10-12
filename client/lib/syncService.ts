@@ -1,8 +1,8 @@
 "use client";
 
 import type { LocalFinancials, StoredTransaction, SettingKey } from "./localData";
-import { isEmptyFinancials, BUDGET_RULES } from "./localData";
-import { mergeFinancials, stableStringify, MERGED_FIELDS, RULE_FIELDS, type MergeFinancialsResult, type MergeClash } from "./syncMerge";
+import { isEmptyFinancials, isFromNewerVersion, BUDGET_RULES } from "./localData";
+import { mergeFinancials, stableStringify, unknownFieldsOf, MERGED_FIELDS, RULE_FIELDS, type MergeFinancialsResult, type MergeClash } from "./syncMerge";
 import { cycleLabelLong, dayLabel } from "./period";
 import { getSyncToken } from "./crypto";
 import { getRecoveryTokenForSync, getSession } from "./auth";
@@ -62,6 +62,10 @@ export interface SyncResult {
   // backup that has data, and kept the backup. Not a failure, so no
   // "Offline" or "Couldn't reach backup".
   declined?: boolean;
+  // Travel slice 0 (owner, session 14): this device holds a copy written by
+  // newer code, so it doesn't upload it. Quiet, like `declined`: its message
+  // waits for the owner's approval.
+  newerVersion?: boolean;
   // Session 8 (merged session 9): the server took the push, but this device couldn't
   // record its time (storage). A success; the caller says storage is the
   // problem. Unrecorded, the next push meets a conflict and merges again,
@@ -82,6 +86,8 @@ export const EMPTY_PUSH_DECLINED = "Not uploaded: your backup on the server has 
  */
 async function emptyOverwriteAllowed(email: string): Promise<boolean> {
   const pulled = await pullFromServer(email);
+  // Travel slice 0: a backup from newer code is never written over by this code.
+  if (pulled.ok && isFromNewerVersion(pulled.data)) return false;
   if (!pulled.ok || isEmptyFinancials(pulled.data)) return true;
   return confirm(EMPTY_OVERWRITE_ASK);
 }
@@ -157,6 +163,8 @@ export async function pushToServer(
 ): Promise<SyncResult> {
   const token = getSyncToken();
   if (!token) return { ok: false, error: "Not signed in. Sign in again to sync." };
+  // Travel slice 0: a copy this device read from newer code isn't this code's to upload.
+  if (isFromNewerVersion(data)) return { ok: false, newerVersion: true };
   if (!allowEmptyOverwrite && isEmptyFinancials(data) && !(await emptyOverwriteAllowed(email))) {
     return { ok: false, declined: true, error: EMPTY_PUSH_DECLINED };
   }
@@ -437,7 +445,9 @@ export interface ReplacedCloseNotice { cycleLabel: string; standingClosedAt: str
 export type MergeAndPushResult =
   // mergedData is on the server, not yet on this device: store it, then recordMergeStored. If the store fails, record nothing.
   | { ok: true; syncedAt: string; addedFromServer: number; conflictsResolved: number; conflicts: StoredTransaction[]; conflictDetails: MergeConflictDetail[]; clashes: MergeClash[]; nonTransactionDivergence: string[]; replacedCloses: ReplacedCloseNotice[]; mergedData: LocalFinancials; firstSync: boolean; /** Item 7: the other device's edits inside a closed cycle. */ closedEdits: ClosedEdit[]; /** Session 10, item 2: another device's reset, when it cleared something here. */ resetElsewhere?: ResetElsewhere }
-  | { ok: false; error: string; conflict?: boolean };
+  | { ok: false; error: string; conflict?: boolean; newerVersion?: undefined }
+  // Travel slice 0: the backup was written by newer code; nothing merged or pushed. Quiet.
+  | { ok: false; newerVersion: true; error?: undefined; conflict?: undefined };
 
 /**
  * Phase 2.7, sub-phase 2 -- wires mergeTransactions (sub-phase 1) into a
@@ -472,6 +482,8 @@ export async function mergeAndPush(email: string, local: LocalFinancials): Promi
   const seen = await lastSeen();
   const pulled = await pullFromServer(email);
   if (!pulled.ok) return { ok: false, error: pulled.error };
+  // Travel slice 0: never merged into, never written over.
+  if (isFromNewerVersion(pulled.data)) return { ok: false, newerVersion: true };
 
   // SYNC-1 step 2: the whole merge, not transactions alone. The wishlist,
   // categories, rules, tracked balances and period closes merge too
@@ -586,7 +598,9 @@ export type FetchAndMergeResult =
       /** Session 10, item 2: another device's reset, when it cleared something here. */
       resetElsewhere?: ResetElsewhere;
     }
-  | { ok: false; error: string; notFound?: true };
+  | { ok: false; error: string; notFound?: true; newerVersion?: undefined }
+  // Travel slice 0: the backup was written by newer code; nothing merged. Quiet, not a failure.
+  | { ok: false; newerVersion: true; error?: undefined; notFound?: undefined };
 
 /** The same records, whatever order the two copies hold them in. */
 function sameRecords(a: LocalFinancials, b: LocalFinancials, fields: readonly (keyof LocalFinancials)[] = MERGED_FIELDS): boolean {
@@ -620,11 +634,14 @@ export async function fetchAndMerge(email: string, currentLocal: () => LocalFina
   const seen = await lastSeen();
   const pulled = await pullFromServer(email, { timeoutMs: FETCH_TIMEOUT_MS });
   if (!pulled.ok) return { ok: false, error: pulled.error, ...(pulled.notFound ? { notFound: true as const } : {}) };
+  if (isFromNewerVersion(pulled.data)) return { ok: false, newerVersion: true };
   const local = currentLocal();
   if (!local) return { ok: true, skipped: true };
   const result = mergeFinancials(local, pulled.data, new Date(), seen);
   // Plan H 5b: under the rule, more fields merge, so more fields can differ.
-  const fields = seen ? [...MERGED_FIELDS, ...RULE_FIELDS] : MERGED_FIELDS;
+  // Travel slice 0: and the fields newer code wrote, so this device stores them.
+  const unknown = Object.keys({ ...unknownFieldsOf(local), ...unknownFieldsOf(pulled.data) }) as (keyof LocalFinancials)[];
+  const fields = [...(seen ? [...MERGED_FIELDS, ...RULE_FIELDS] : MERGED_FIELDS), ...unknown];
   return {
     ok: true,
     mergedData: result.data,
