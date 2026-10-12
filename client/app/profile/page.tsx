@@ -80,7 +80,17 @@ export default function ProfilePage() {
       setBackupOn(syncAllowed(d));
       setResetCounts(countsOf(d));
     });
-  }, [router]);
+  // Mount-only, deliberately NOT keyed on `router` (session 15; the dashboard's
+  // reasoning, app/page.tsx's load effect). `router` is used only to redirect
+  // when there's no session, which ends the effect at once. Keyed on it, the
+  // effect re-ran whenever useRouter() returned a new object: a loadData per
+  // render, its setState causing the next render. next/navigation's router is
+  // stable, but test mocks weren't, and a load still in flight when a test
+  // file's environment was torn down threw an unhandled "window is not
+  // defined" (CI's client UTC leg, session 15). page.load-effect-deps.test.tsx
+  // mocks useRouter hostilely and fails if the dependency comes back.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /** What "Reset all data" is about to erase, named in its confirm. */
   function countsOf(d: LocalFinancials) {
