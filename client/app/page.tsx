@@ -30,7 +30,7 @@ import { computeDashboard } from "../lib/computeDashboard";
 import {currentCycleKey, calendarKeyForDate, type CycleKey, type CycleHistory } from "../lib/period";
 import { getSession, hasValidSession, signOut } from "../lib/auth";
 import type { Session } from "../lib/auth";
-import { pushToServer, pullFromServer, hasAutoPulled, markAutoPulled, mergeAndPush, recordMergeStored, recordRestoreStored, fetchAndMerge, buildMergeNoticeText, checkEmailExists, applyBackupChoice, getLastSyncTime, type BackupChoice } from "../lib/syncService";
+import { pushToServer, pullFromServer, hasAutoPulled, markAutoPulled, mergeAndPush, recordMergeStored, recordRestoreStored, fetchAndMerge, buildMergeNoticeText, checkEmailExists, applyBackupChoice, getLastSyncTime, NEWER_BACKUP_MESSAGE, type BackupChoice } from "../lib/syncService";
 import { saveSeen, loadSeen } from "../lib/syncSeen";
 import { takeUnseenClashes } from "../lib/clashNotice";
 import { useTheme } from "../contexts/ThemeContext";
@@ -190,6 +190,18 @@ export default function Home() {
   useEffect(() => { backupFailedRef.current = backupFailed; }, [backupFailed]);
   const retryTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const retryBackupRef = useRef<() => void>(() => {});
+  // Travel slice 0 (owner-approved message, session 15): the backup, or this
+  // device's copy, was written by newer code. This device stops syncing (no
+  // upload, fetch or retry) until it's reloaded, and says so.
+  const [newerBackup, setNewerBackup] = useState(false);
+  const newerBackupRef = useRef(false);
+  const stopForNewerBackup = useCallback(() => {
+    newerBackupRef.current = true;
+    setNewerBackup(true);
+    setBackupFailed(false);
+    retryTimersRef.current.forEach(clearTimeout); retryTimersRef.current = [];
+    setSyncStatus("idle");
+  }, []);
 
   const autoSync = useCallback(async (data: LocalFinancials, email: string, { isRetry = false }: { isRetry?: boolean } = {}) => {
     // Audit 2.4.153: the gate. Every automatic upload in this file reaches
@@ -197,10 +209,11 @@ export default function Home() {
     // load, the auto-purge write on load, and the conflict merge below -- so
     // one check stops all four. Undecided is paused, not on.
     if (!syncAllowed(data)) return;
+    if (newerBackupRef.current) return; // travel slice 0: stopped until reloaded
     setSyncStatus("syncing");
     const result = await pushToServer(email, data);
-    // Travel slice 0: a copy from newer code isn't uploaded. Quiet until its message is approved.
-    if (result.newerVersion) { setSyncStatus("idle"); return; }
+    // Travel slice 0: a copy from newer code isn't uploaded; this device stops syncing and says so.
+    if (result.newerVersion) { stopForNewerBackup(); return; }
     // 2.4.38: a conflict isn't a transient failure a retry would fix.
     // Phase 2.7 sub-phase 3: attempt an automatic merge instead of only
     // setting the static indicator -- pull the server's current data,
@@ -211,8 +224,8 @@ export default function Home() {
     // profile page) only if the merge itself can't complete.
     if (result.conflict) {
       const merged = await mergeAndPush(email, data);
-      // Travel slice 0: a backup from newer code is neither merged into nor written over. Quiet.
-      if (!merged.ok && merged.newerVersion) { setSyncStatus("idle"); return; }
+      // Travel slice 0: a backup from newer code is neither merged into nor written over; this device stops syncing and says so.
+      if (!merged.ok && merged.newerVersion) { stopForNewerBackup(); return; }
       if (!merged.ok) { setSyncStatus("conflict"); return; }
       const userId = sessionRef.current?.userId;
       // DI-15: the sync is recorded only once the merged copy is stored here.
@@ -277,7 +290,7 @@ export default function Home() {
         return t;
       });
     }
-  }, [persist]);
+  }, [persist, stopForNewerBackup]);
 
   // Retry with the latest data on this device, not the copy that failed.
   useEffect(() => {
@@ -470,6 +483,7 @@ export default function Home() {
     const local = financialsRef.current;
     // 2.4.153's gate: no request at all unless backup is on.
     if (!s || !local || !syncAllowed(local)) return;
+    if (newerBackupRef.current) return; // travel slice 0: stopped until reloaded
     if (fetchingRef.current || Date.now() - lastFetchAtRef.current < FETCH_MIN_INTERVAL_MS) return;
     fetchingRef.current = true;
     lastFetchAtRef.current = Date.now();
@@ -478,8 +492,9 @@ export default function Home() {
       const r = await fetchAndMerge(s.email, () => (sameAccount() ? financialsRef.current : null));
       if (!sameAccount()) return;
       if (!r.ok) {
-        // Travel slice 0: a backup from newer code isn't merged; not a failure. Quiet.
-        if (!r.notFound && !r.newerVersion) {
+        // Travel slice 0: a backup from newer code isn't merged; not a failure. This device stops syncing and says so.
+        if (r.newerVersion) { stopForNewerBackup(); return; }
+        if (!r.notFound) {
           const failed = failedSyncStatus();
           setSyncStatus((st) => (st === "idle" ? failed : st));
           setTimeout(() => setSyncStatus((st) => (st === failed ? "idle" : st)), 4000);
@@ -508,7 +523,7 @@ export default function Home() {
     } finally {
       fetchingRef.current = false;
     }
-  }, [persist, autoSync]);
+  }, [persist, autoSync, stopForNewerBackup]);
 
   // Confirms a recurring item's oldest outstanding cycle (Phase 2.5.3) --
   // the FIFO target nextConfirmTarget resolves, whether that's an overdue
@@ -800,6 +815,11 @@ export default function Home() {
 
         {/* Main content */}
         <div ref={mainScrollRef} style={{ flex: 1, overflowY: "auto" }}>
+          {newerBackup && (
+            <div role="alert" className="mx-4 mt-4 md:mx-10 rounded-2xl px-4 py-3.5" style={{ background: T.panel, border: `1px solid ${T.brass}60` }}>
+              <p className="text-sm" style={{ color: T.text }}>{NEWER_BACKUP_MESSAGE}</p>
+            </div>
+          )}
           {screen === "overview"     && <FinancialDashboard data={dashboardData} financials={financials ?? undefined} onNavigate={setScreen} onConfirmRecurring={handleConfirmRecurringPayment} loggingRecurringIds={loggingRecurringIds} justConfirmedIds={justConfirmedIds} />}
           {screen === "budget"       && <BudgetScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
           {screen === "setup"        && <SetupScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}

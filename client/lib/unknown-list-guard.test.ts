@@ -9,9 +9,8 @@
 //    never edits such a field, so its own copy can only be an older one.
 // 2. A backup from newer code (a higher schemaVersion) must not be treated
 //    as current: never stamped with this code's version, never merged into,
-//    never written over. Until its message is approved, this code just stops
-//    syncing, quietly (nothing can write a higher version before travel's
-//    slice 2).
+//    never written over. This code stops syncing and says so (the owner's
+//    message, session 15: app/page.newer-backup.test.tsx).
 //
 // "Older code" here is this code, meeting fields and versions it doesn't know.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -100,7 +99,7 @@ describe("rule 2, while syncing: a newer backup is never merged into or written 
   afterEach(() => { vi.unstubAllGlobals(); });
   const pushes = () => calls.filter((c) => c.url.includes("/push"));
 
-  it("the fetch: refused, quietly (flagged, not a failure), nothing merged", async () => {
+  it("the fetch: refused (flagged, not a failure), nothing merged", async () => {
     const r = await fetchAndMerge("u1@example.test", () => base());
     expect(r).toMatchObject({ ok: false, newerVersion: true });
     expect(pushes()).toHaveLength(0);
