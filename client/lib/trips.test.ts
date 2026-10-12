@@ -51,10 +51,11 @@ describe("planned against actual, in USD at cost", () => {
     expect(a.byCategoryUSD).toEqual({ dining: 43.48, transport: 30, "": 20 });
   });
 
-  it("leaves out income, deleted rows, rows tagged to another trip, and untagged rows", () => {
+  it("leaves out income, transfers, deleted rows, rows tagged to another trip, and untagged rows", () => {
     const d = data([
       row("in-trip", 50, { tripId: "trip-lis" }),
       row("refund", 25, { bucket: "INCOME", tripId: "trip-lis" }),
+      row("repaid", 40, { bucket: "TRANSFER", tripId: "trip-lis" }), // a reimbursement: a transfer, not spending
       softDelete(data([]), row("deleted", 70, { tripId: "trip-lis" }), "2026-11-04T00:00:00.000Z"),
       row("other-trip", 90, { tripId: "trip-other" }),
       row("untagged", 11),

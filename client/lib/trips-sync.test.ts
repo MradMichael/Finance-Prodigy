@@ -39,6 +39,13 @@ describe("under the fingerprint rule", () => {
     expect(mergeFinancials(d([LISBON]), d([edited]), T0, seen).data.trips).toEqual([edited]);
   });
 
+  it("a change made on one device only is taken even when its clock is behind (the rule, not the edit time)", () => {
+    const seen = seenOf(d([LISBON]));
+    const slowClock = { ...LISBON, budgetUSD: 1500, updatedAt: "2026-10-01T09:00:00.000Z" }; // earlier than the copy it changed
+    expect(mergeFinancials(d([slowClock]), d([LISBON]), T0, seen).data.trips).toEqual([slowClock]);
+    expect(mergeFinancials(d([LISBON]), d([slowClock]), T0, seen).data.trips).toEqual([slowClock]);
+  });
+
   it("both devices changed it: the later edit is kept and named", () => {
     const seen = seenOf(d([LISBON]));
     const here = { ...LISBON, budgetUSD: 1500, updatedAt: "2026-10-13T09:00:00.000Z" };
