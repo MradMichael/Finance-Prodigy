@@ -6,6 +6,7 @@ import {CYCLE_START_DAY, cycleKeyForISO, cycleLabel, cycleBounds, cycleKeyMinus,
 import { stableStringify, tieBreak } from "./canonical";
 import { type CalendarDay, asCalendarDay, storedDay, calendarDayOf, todayCalendarDay, dayStart, occurrenceDay, addDays } from "./calendarDay";
 export type { CycleKey, CalendarKey, CycleHistory, CalendarHistory } from "./period";
+import type { StoredTrip } from "./trips";
 
 export type Currency = "USD" | "LBP";
 export type PaymentMethod = "cash" | "card" | "other";
@@ -543,6 +544,10 @@ export interface StoredTransaction {
   // pocket leg ("in") and a spend from a pocket ("spend"). Dropped by a
   // purge, like every other payload field.
   fx?: ForeignCashNote;
+  // Travel slice 2 (held): the trip this row belongs to (lib/trips.ts). An
+  // exchange's two rows carry it together. A tag whose trip was deleted is
+  // kept, and counts nowhere.
+  tripId?: string;
 }
 
 export interface StoredGoal {
@@ -997,6 +1002,8 @@ export interface LocalFinancials {
    * (lib/clashNotice.ts).
    */
   transactionClashRecords?: ClashRecord[];
+  // Travel slice 2 (held): trips (lib/trips.ts), merged like the wishlist.
+  trips?: StoredTrip[];
 }
 
 /** Keys a restore brought back, per collection, each with its restore generation. */
@@ -1032,6 +1039,7 @@ export interface DeletedKeys {
   recurring?: Tombstone[];
   assets?: Tombstone[];
   cards?: Tombstone[];
+  trips?: Tombstone[];
 }
 
 /** The settings the fingerprint rule merges (plan H 5b), each as one key: the budget split is its rule and custom figures together. */
@@ -1077,7 +1085,7 @@ export function saveCard(
 /** Every collection the deletion registry covers, for code that walks them all. */
 export const DELETED_COLLECTIONS = [
   "wishlist", "customCategories", "categoryRules", "trackedBalances",
-  "transactions", "periodCloses", "goals", "debts", "recurring", "assets", "cards",
+  "transactions", "periodCloses", "goals", "debts", "recurring", "assets", "cards", "trips",
 ] as const satisfies readonly (keyof DeletedKeys)[];
 
 /** A period close's identity: its cycle and the instant it was made. */
@@ -1099,6 +1107,7 @@ export function itemKeysByCollection(d: LocalFinancials): Record<(typeof DELETED
     recurring: (d.recurring ?? []).map((r) => r.id),
     assets: (d.assets ?? []).map((a) => a.id),
     cards: (d.cards ?? []).map((c) => c.id),
+    trips: (d.trips ?? []).map((t) => t.id),
   };
 }
 
@@ -1598,7 +1607,8 @@ export function isEmptyFinancials(data: LocalFinancials): boolean {
     && (data.wishlist ?? []).length === 0
     && (data.customCategories ?? []).length === 0
     && (data.categoryRules ?? []).length === 0
-    && (data.periodCloses ?? []).length === 0;
+    && (data.periodCloses ?? []).length === 0
+    && (data.trips ?? []).length === 0; // travel slice 2: a trip is entered by hand too
 }
 
 /**

@@ -10,6 +10,7 @@ import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY, CurrencyToggle, PM_OPTIONS, CardPicker } from "./form/Primitives";
 import { cycleKeyForISO, currentCycleKey } from "../lib/period";
 import { foreignCashRole, fmtForeign } from "../lib/foreignCash";
+import { tagRows } from "../lib/trips";
 import { fmtCur } from "./screens/shared";
 
 type TxBucket = "NEEDS" | "WANTS" | "SAVINGS" | "INCOME" | "TRANSFER";
@@ -83,6 +84,9 @@ export default function EditTransactionSheet({
   const [date,       setDate]       = useState(transaction.date);
   const [bucket,     setBucket]     = useState<TxBucket>(transaction.bucket);
   const [category,   setCategory]   = useState<string>(transaction.category ?? "");
+  // Travel slice 2 (held): the trip this row belongs to; a tag whose trip is gone shows as none.
+  const trips = financials.trips ?? [];
+  const [tripId,     setTripId]     = useState<string>(trips.some((x) => x.id === transaction.tripId) ? transaction.tripId! : "");
   const [currency,   setCurrency]   = useState<Currency>(transaction.currency ?? "USD");
   const [payMethod,  setPayMethod]  = useState<PaymentMethod>(transaction.paymentMethod ?? "cash");
   const [payNote,    setPayNote]    = useState(transaction.paymentNote ?? "");
@@ -144,13 +148,15 @@ export default function EditTransactionSheet({
     if (!desc.trim() || !date) return;
     const keep = transaction.bucket === "NEEDS" || transaction.bucket === "WANTS" || transaction.bucket === "SAVINGS";
     const spendBucket = keep && (bucket === "NEEDS" || bucket === "WANTS" || bucket === "SAVINGS") ? bucket : transaction.bucket;
-    update({
-      transactions: financials.transactions.map((t) => t.id !== transaction.id ? t : {
-        ...t, description: desc.trim(), category: category || undefined,
-        ...(fxRole === "spend" ? { date, bucket: spendBucket } : {}),
-        updatedAt: new Date().toISOString(),
-      }),
+    const at = new Date().toISOString();
+    const edited = financials.transactions.map((t) => t.id !== transaction.id ? t : {
+      ...t, description: desc.trim(), category: category || undefined,
+      ...(fxRole === "spend" ? { date, bucket: spendBucket } : {}),
+      updatedAt: at,
     });
+    // Travel slice 2 (held): a changed trip goes on both rows of an exchange.
+    const tagChanged = (tripId || undefined) !== (trips.some((x) => x.id === transaction.tripId) ? transaction.tripId : undefined);
+    update({ transactions: tagChanged ? tagRows(edited, transaction.id, tripId || undefined, at) : edited });
     onClose();
   }
 
@@ -188,6 +194,7 @@ export default function EditTransactionSheet({
         paymentMethod: payMethod,
         paymentNote: payMethod === "other" && payNote.trim() ? payNote.trim() : undefined,
         cardId: resolvedCardId, cardLabel: resolvedCardLabel,
+        ...(tripId ? { tripId } : transaction.tripId && !trips.some((x) => x.id === transaction.tripId) ? {} : { tripId: undefined }),
         cycleDate,
         efAmount: efAmountUSD,
         debtId,
@@ -323,6 +330,15 @@ export default function EditTransactionSheet({
               <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
             ))}
           </select>
+          {/* Travel slice 2 (held): DRAFT labels, for approval. */}
+          {trips.length > 0 && (
+            <select value={tripId} onChange={(e) => setTripId(e.target.value)} aria-label="Trip"
+              className="w-full rounded-lg px-2 py-1.5 text-[10px]"
+              style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}>
+              <option value="">No trip</option>
+              {trips.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+            </select>
+          )}
           {!fxRole && (<>
           <CurrencyToggle value={currency} onChange={setCurrency} />
           <div>

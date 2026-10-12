@@ -16,6 +16,7 @@ import { cycleKeyForISO } from "../lib/period";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY, CurrencyToggle, PaymentMethodPicker } from "./form/Primitives";
 import { buildExchange, buildPocketSpend, fmtForeign, isValidForeignCode, pocketState, pockets, priceSpend } from "../lib/foreignCash";
+import { suggestedTripId } from "../lib/trips";
 
 const usd = (n: number, digits = 2) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: digits, maximumFractionDigits: digits }).format(n);
 const num = (s: string) => parseFloat(s.replace(/,/g, ""));
@@ -40,6 +41,10 @@ export default function ForeignCashPanel({ financials, onChange }: { financials:
   const [paidCurrency, setPaidCurrency] = useState<Currency>("USD");
   const [code, setCode] = useState("EUR");
   const [received, setReceived] = useState("");
+  // Travel slice 2 (held): the trip, defaulting to the one whose dates hold the form's date until one is chosen.
+  const trips = financials.trips ?? [];
+  const [exTripPick, setExTripPick] = useState<string | null>(null);
+  const exTrip = exTripPick ?? suggestedTripId(trips, exDate || todayISO()) ?? "";
   const [exError, setExError] = useState("");
   const cards = financials.cards ?? [];
   const toUSD = makeToUSDForMonth(financials);
@@ -65,9 +70,9 @@ export default function ForeignCashPanel({ financials, onChange }: { financials:
       date: exDate || todayISO(), paid: num(paid), paidCurrency,
       from: { paymentMethod: payMethod, ...(card ? { cardId: card.id, cardLabel: card.label } : {}) },
       code: codeUpper, received: num(received), description: `Exchange to ${codeUpper}`,
-    }, lbpRate);
+    }, lbpRate).map((t) => (exTrip ? { ...t, tripId: exTrip } : t));
     onChange({ ...financials, transactions: [...financials.transactions, ...rows] });
-    setPaid(""); setReceived(""); setExError(""); setOpen(null);
+    setPaid(""); setReceived(""); setExError(""); setExTripPick(null); setOpen(null);
   }
 
   // ── spend ──
@@ -79,6 +84,8 @@ export default function ForeignCashPanel({ financials, onChange }: { financials:
   const [spCategory, setSpCategory] = useState("");
   const [spDesc, setSpDesc] = useState("");
   const [spRate, setSpRate] = useState("");
+  const [spTripPick, setSpTripPick] = useState<string | null>(null);
+  const spTrip = spTripPick ?? suggestedTripId(trips, spDate || todayISO()) ?? "";
   const [spError, setSpError] = useState("");
   const price = pocketCode ? priceSpend(financials, pocketCode, spDate || todayISO()) : null;
   const typedRate = num(spRate);
@@ -94,8 +101,9 @@ export default function ForeignCashPanel({ financials, onChange }: { financials:
       date: spDate || todayISO(), code: pocketCode, amount: num(spAmount), bucket: spBucket,
       ...(spCategory ? { category: spCategory } : {}), description: spDesc.trim(), costPerUnitUSD: cost,
     });
+    if (spTrip) row.tripId = spTrip;
     onChange({ ...financials, transactions: [...financials.transactions, row] });
-    setSpAmount(""); setSpDesc(""); setSpRate(""); setSpError(""); setOpen(null);
+    setSpAmount(""); setSpDesc(""); setSpRate(""); setSpError(""); setSpTripPick(null); setOpen(null);
   }
 
   const btn = (active: boolean) => ({ background: active ? T.jade + "22" : T.ink, border: `1px solid ${active ? T.jade : T.line}`, color: active ? T.jade : T.mute });
@@ -158,6 +166,15 @@ export default function ForeignCashPanel({ financials, onChange }: { financials:
               <MoneyInput id="fx-ex-received" value={received} onChange={setReceived} placeholder="0" max={moneyMaxFor("USD", lbpRate)} />
             </div>
           </div>
+          {trips.length > 0 && (
+            <div>
+              <Label htmlFor="fx-ex-trip">Trip</Label>
+              <select id="fx-ex-trip" value={exTrip} onChange={(e) => setExTripPick(e.target.value)} className="w-full rounded-lg px-2 py-1.5 text-sm" style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text }}>
+                <option value="">No trip</option>
+                {trips.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+              </select>
+            </div>
+          )}
           {ratePreview && <p className="text-[11px]" style={{ color: T.text }}>{ratePreview}</p>}
           <div role="status">{exError && <p className="text-[11px]" style={{ color: T.coral }}>{exError}</p>}</div>
           <button type="submit" className="w-full py-2 rounded-xl text-sm font-semibold" style={{ background: T.jade, color: T.ink }}>Save exchange</button>
@@ -193,6 +210,15 @@ export default function ForeignCashPanel({ financials, onChange }: { financials:
                 className="py-1.5 rounded-lg text-[11px] font-medium" style={btn(spBucket === b.value)}>{b.icon} {b.label}</button>
             ))}
           </div>
+          {trips.length > 0 && (
+            <div>
+              <Label htmlFor="fx-sp-trip">Trip</Label>
+              <select id="fx-sp-trip" value={spTrip} onChange={(e) => setSpTripPick(e.target.value)} className="w-full rounded-lg px-2 py-1.5 text-sm" style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text }}>
+                <option value="">No trip</option>
+                {trips.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+              </select>
+            </div>
+          )}
           <select value={spCategory} onChange={(e) => setSpCategory(e.target.value)} aria-label="Category"
             className="w-full rounded-lg px-2 py-1.5 text-[11px]" style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text }}>
             <option value="">No category</option>
