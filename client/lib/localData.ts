@@ -492,7 +492,7 @@ export interface StoredTransaction {
   // Added for the dual-currency-single-transaction backlog item (Batch C,
   // 2026-08-31 design decision) -- groups two transactions created together
   // as one split-currency payment ($10 USD + L£200,000 as one real bill),
-  // purely for DISPLAY: adjacent placement and a "split payment" tag in
+  // purely for DISPLAY: adjacent placement and a "split payment" tag ("transfer" for a transfer's two legs, session 15) in
   // TransactionsScreen. Nothing in computeDashboard.ts or any other
   // derivation may read this field. Every total, category breakdown,
   // search match, and dedup check already treats each leg as its own

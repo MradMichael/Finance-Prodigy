@@ -612,7 +612,10 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
                             {divergence && (
                               <p className="text-[10px]" style={{ color: T.brass }}>{divergence}</p>
                             )}
-                            {splitSibling && (
+                            {/* Session 15 (owner): an ordinary transfer's rows say "⇄ transfer"; a real split payment keeps its caption. */}
+                            {splitSibling && t.bucket === "TRANSFER" && splitSibling.bucket === "TRANSFER" ? (
+                              <p className="text-[10px]" style={{ color: T.jade }}>⇄ transfer</p>
+                            ) : splitSibling && (
                               <p className="text-[10px]" style={{ color: T.jade }}>
                                 ⇄ split payment · also {fmtCur(splitSibling.amount, splitSibling.currency)}
                               </p>
