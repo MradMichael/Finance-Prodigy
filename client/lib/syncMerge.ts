@@ -242,7 +242,7 @@ function applyMergedUndos(side: LocalFinancials, merged: PeriodClose[]): LocalFi
 /** The fields mergeFinancials combines; every other field is this device's copy. */
 export const MERGED_FIELDS = [
   "transactions", "trackedBalances", "wishlist", "customCategories", "categoryRules", "periodCloses", "deletedKeys", "revivedKeys",
-  "clashRecords", "transactionClashRecords", "trips",
+  "clashRecords", "transactionClashRecords", "trips", "foreignEntries",
 ] as const satisfies readonly (keyof LocalFinancials)[];
 
 /**
@@ -305,7 +305,7 @@ function withResetSettings(merged: LocalFinancials, local: LocalFinancials, serv
 /** The kind of this device's record that fingerprints each collection a reset clears (where there is one). */
 const RESET_SEEN_KIND: Partial<Record<(typeof DELETED_COLLECTIONS)[number], SeenKind>> = {
   transactions: "transactions", goals: "goals", debts: "debts", recurring: "recurring", assets: "assets",
-  wishlist: "wishlist", customCategories: "customCategories", categoryRules: "categoryRules", trips: "trips",
+  wishlist: "wishlist", customCategories: "customCategories", categoryRules: "categoryRules", trips: "trips", foreignEntries: "foreignEntries",
 };
 
 /**
@@ -395,7 +395,7 @@ function withoutDeleted(d: LocalFinancials, deleted: DeletedKeys | undefined, re
 
 /** A two-sided change the fingerprint rule settled by edit time (plan H 5b), for the notice to name. */
 export type MergeClash =
-  | { kind: "goal" | "debt" | "recurring" | "asset" | "wishlist" | "trip" | "category" | "rule"; name: string; later: boolean }
+  | { kind: "goal" | "debt" | "recurring" | "asset" | "wishlist" | "trip" | "foreignEntry" | "category" | "rule"; name: string; later: boolean }
   | { kind: "setting"; setting: SettingKey; kept: unknown; other: unknown }
   // Item 7 (owner, session 8): a transaction both devices changed, as a clash
   // record only, so the overridden device is told in the approved transaction
@@ -639,6 +639,9 @@ function mergeUnderRule(local: LocalFinancials, server: LocalFinancials, deleted
   const wishlist = mergeBySeen(live(local.wishlist, (w) => w.id, "wishlist"), live(server.wishlist, (w) => w.id, "wishlist"), (w) => w.id, s("wishlist"), stamp); named("wishlist", wishlist);
   // Travel slice 2 (held): trips, as the wishlist.
   const trips = mergeBySeen(live(local.trips, (t) => t.id, "trips"), live(server.trips, (t) => t.id, "trips"), (t) => t.id, s("trips"), stamp); named("trip", trips);
+  // Foreign cash, model 2 (held): the sheets' entries, as trips; named by their description.
+  const foreignEntries = mergeBySeen(live(local.foreignEntries, (e) => e.id, "foreignEntries"), live(server.foreignEntries, (e) => e.id, "foreignEntries"), (e) => e.id, s("foreignEntries"), stamp);
+  settle(foreignEntries, (c) => ({ kind: "foreignEntry", name: c.winner.description, later: c.later }));
   const categories = mergeBySeen(live(local.customCategories, (c) => c.value, "customCategories"), live(server.customCategories, (c) => c.value, "customCategories"), (c) => c.value, s("customCategories"), stamp);
   settle(categories, (c) => ({ kind: "category", name: c.winner.label, later: c.later }));
   const rules = mergeBySeen(live(local.categoryRules, (r) => r.id, "categoryRules"), live(server.categoryRules, (r) => r.id, "categoryRules"), (r) => r.id, s("categoryRules"), stamp);
@@ -660,6 +663,7 @@ function mergeUnderRule(local: LocalFinancials, server: LocalFinancials, deleted
       goals: goalsOut, debts: debtsOut, recurring: recurring.items, assets: assets.items,
       wishlist: wishlist.items, customCategories: categories.items, categoryRules: rules.items,
       ...(local.trips || server.trips ? { trips: trips.items } : {}),
+      ...(local.foreignEntries || server.foreignEntries ? { foreignEntries: foreignEntries.items } : {}),
       incomeHistory: hist(local.incomeHistory, server.incomeHistory, "incomeHistory"),
       lbpRateHistory: hist(local.lbpRateHistory, server.lbpRateHistory, "lbpRateHistory"),
       budgetRuleHistory: hist(local.budgetRuleHistory, server.budgetRuleHistory, "budgetRuleHistory"),
@@ -695,7 +699,7 @@ const KNOWN_FIELDS = {
   cycleStartDayChangedAt: true, budgetRule: true, budgetCustomNeeds: true, budgetSplitHealedAt: true,
   budgetSplitHealedFrom: true, budgetCustomWants: true, customCategories: true, categoryRules: true, wishlist: true,
   recurringModelNoticeSeen: true, syncChoice: true, periodCloses: true, deletedKeys: true, resetAt: true,
-  revivedKeys: true, clashRecords: true, transactionClashRecords: true, trips: true,
+  revivedKeys: true, clashRecords: true, transactionClashRecords: true, trips: true, foreignEntries: true,
 } as const satisfies Record<keyof LocalFinancials, true>;
 
 /** The top-level fields of a copy that this code doesn't know (travel slice 0). */
@@ -778,6 +782,8 @@ export function mergeFinancials(localIn: LocalFinancials, serverIn: LocalFinanci
     wishlist: mergeByKey(local.wishlist ?? [], server.wishlist ?? [], (w) => w.id, deletedKeys?.wishlist, revivedKeys?.wishlist),
     // Written only when a copy has trips, so a merge of two copies without any adds no empty list (the fetch compares fields).
     ...(local.trips || server.trips ? { trips: mergeByKey(local.trips ?? [], server.trips ?? [], (t) => t.id, deletedKeys?.trips, revivedKeys?.trips) } : {}),
+    // Foreign cash, model 2: likewise for the sheets' entries.
+    ...(local.foreignEntries || server.foreignEntries ? { foreignEntries: mergeByKey(local.foreignEntries ?? [], server.foreignEntries ?? [], (e) => e.id, deletedKeys?.foreignEntries, revivedKeys?.foreignEntries) } : {}),
     customCategories: mergeByKey(local.customCategories ?? [], server.customCategories ?? [], (c) => c.value, deletedKeys?.customCategories, revivedKeys?.customCategories),
     categoryRules: mergeByKey(local.categoryRules ?? [], server.categoryRules ?? [], (r) => r.id, deletedKeys?.categoryRules, revivedKeys?.categoryRules),
     periodCloses: closes,

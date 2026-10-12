@@ -1,22 +1,23 @@
 // Travel slice 2 (HELD; wording approved in session 17): the Trips screen.
 //   - New trip: a name, start and end dates, a budget in USD, and optional
 //     budgets by category. Refused with a reason when it doesn't make sense.
-//   - Each trip: planned against actual in USD at cost (lib/trips.ts), by
-//     category where it has category budgets, its foreign cash bought, and
-//     the rows tagged to it.
+//   - Each trip: planned against actual in USD (lib/trips.ts; model 2: an
+//     exchange counts, a change-back or refund lowers it), by category, the
+//     trip's euro spends in euros by category (DRAFT wording), and the rows
+//     counted.
 //   - Delete trip: gone, with the deletion recorded; its rows keep their tags.
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";
 import TripsScreen from "./TripsScreen";
 import { ThemeProvider } from "../../contexts/ThemeContext";
 import { DEFAULT_DATA, type LocalFinancials, type StoredTransaction } from "../../lib/localData";
-import { buildExchange, buildPocketSpend } from "../../lib/foreignCash";
+import { buildExchange, buildChangeBack, buildForeignEntry } from "../../lib/foreignCash";
 import type { StoredTrip } from "../../lib/trips";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 const LISBON: StoredTrip = { id: "trip-lis", name: "Lisbon", startDate: "2026-11-02", endDate: "2026-11-09", budgetUSD: 1200, categoryBudgetsUSD: { dining: 400 }, createdAt: "2026-10-12T09:00:00.000Z", updatedAt: "2026-10-12T09:00:00.000Z" };
-const fin = (transactions: StoredTransaction[] = [], trips: StoredTrip[] = []) =>
-  ({ ...DEFAULT_DATA, lbpRate: 89_500, lbpRateHistory: [], transactions, trips }) as LocalFinancials;
+const fin = (transactions: StoredTransaction[] = [], trips: StoredTrip[] = [], extra: Partial<LocalFinancials> = {}) =>
+  ({ ...DEFAULT_DATA, lbpRate: 89_500, lbpRateHistory: [], transactions, trips, ...extra }) as LocalFinancials;
 function show(d: LocalFinancials) {
   const onChange = vi.fn();
   render(<ThemeProvider><TripsScreen financials={d} onChange={onChange} /></ThemeProvider>);
@@ -51,18 +52,25 @@ it("refuses a trip that doesn't make sense, and says why", () => {
   expect(onChange).not.toHaveBeenCalled();
 });
 
-it("shows planned against actual in USD at cost, by category, its foreign cash bought, and its rows", () => {
-  const exch = buildExchange({ date: "2026-10-03", paid: 500, paidCurrency: "USD", from: { paymentMethod: "cash" }, code: "EUR", received: 460, description: "Exchange to EUR" }, 89_500);
-  const spend = { ...buildPocketSpend({ date: "2026-11-03", code: "EUR", amount: 40, bucket: "WANTS", category: "dining", description: "Dinner in Lisbon", costPerUnitUSD: 500 / 460 }), tripId: "trip-lis" };
+it("shows planned against actual in USD by category, the euro spends in euros by category, and the rows counted", () => {
+  const exch = { ...buildExchange({ date: "2026-10-03", paid: 500, paidCurrency: "USD", from: { paymentMethod: "cash" }, code: "EUR", received: 460, description: "Exchange to EUR" }, 89_500), tripId: "trip-lis" };
+  const back = { ...buildChangeBack({ date: "2026-11-10", code: "EUR", given: 100, received: 105, receivedCurrency: "USD", to: { paymentMethod: "cash" }, description: "Changed back from EUR" }, 89_500), tripId: "trip-lis" };
   const taxi = { id: "taxi", amount: 30, currency: "USD", bucket: "NEEDS", description: "Airport taxi", date: "2026-11-02", tripId: "trip-lis" } as StoredTransaction;
-  show(fin([...exch.map((t) => ({ ...t, tripId: "trip-lis" })), spend, taxi], [LISBON]));
+  const dinner = buildForeignEntry({ kind: "spend", code: "EUR", amount: 40, date: "2026-11-03", description: "Dinner in Lisbon", category: "dining", tripId: "trip-lis" });
+  show(fin([exch, back, taxi], [LISBON], { foreignEntries: [dinner] }));
   const card = screen.getByRole("region", { name: "Lisbon" });
-  expect(within(card).getByText("Budget $1,200.00 · spent $73.48 · $1,126.52 left")).toBeTruthy();
-  expect(within(card).getByText("Dining out: $43.48 of $400.00")).toBeTruthy();
+  expect(within(card).getByText("Budget $1,200.00 · spent $425.00 · $775.00 left")).toBeTruthy(); // 500 + 30 - 105
+  expect(within(card).getByText("Dining out: $0.00 of $400.00")).toBeTruthy();
+  expect(within(card).getByText("Travel: $395.00")).toBeTruthy();
   expect(within(card).getByText("Uncategorized: $30.00")).toBeTruthy();
-  expect(within(card).getByText("Foreign cash bought for this trip: €460.00 for $500.00")).toBeTruthy();
-  expect(within(card).getByText(/Dinner in Lisbon/)).toBeTruthy();
-  expect(within(card).getByText(/Airport taxi/)).toBeTruthy();
+  expect(within(card).getByText("Spent from EUR cash: €40.00")).toBeTruthy();
+  expect(within(card).getByText("Dining out: €40.00")).toBeTruthy();
+  expect(within(card).queryByText(/Foreign cash bought/)).toBeNull();
+  const rows = within(card).getAllByRole("listitem").map((li) => li.textContent ?? "");
+  expect(rows.find((r) => r.includes("Exchange to EUR"))).toContain("$500.00 (€460.00)");
+  expect(rows.find((r) => r.includes("Changed back from EUR"))).toContain("−$105.00 (€100.00)");
+  expect(rows.some((r) => r.includes("Airport taxi"))).toBe(true);
+  expect(rows.some((r) => r.includes("Dinner in Lisbon"))).toBe(false); // a euro spend is no ledger row
 });
 
 it("over budget says by how much", () => {

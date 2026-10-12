@@ -7,7 +7,6 @@ import type { LocalFinancials, StoredTransaction, StoredGoal, StoredDebt, Stored
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
 import { uid, goalProgress, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, remainingInstallments, toUSD as toUSDShared, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, buildExtraPaymentTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, roundMoney, moneyMaxFor, MONEY_MAX_USD, derivedDebtBalance, activeTransactions, softDelete, DEFAULT_LBP_RATE, cycleStartDayOf, syncAllowed, edited, recordDeletion, saveCard as storeCard } from "../lib/localData";
-import { pairedIds } from "../lib/foreignCash";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker } from "./form/Primitives";
@@ -523,9 +522,8 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   // view rather than gone the moment "Delete transaction" is confirmed.
   function softDeleteTransaction(txId: string) {
     const now = new Date().toISOString();
-    const ids = new Set(pairedIds(financials.transactions, txId)); // travel slice 1: an exchange's two rows go together
     update({
-      transactions: financials.transactions.map((t) => !ids.has(t.id) ? t : softDelete(financials, t, now)),
+      transactions: financials.transactions.map((t) => t.id !== txId ? t : softDelete(financials, t, now)),
     });
     showToast("Deleted — recoverable in Transactions");
   }

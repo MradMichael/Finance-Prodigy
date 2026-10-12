@@ -258,15 +258,36 @@ export interface StoredCard {
 }
 
 /**
- * Travel slice 1: a foreign-cash annotation on an ordinary row
- * (lib/foreignCash.ts). `amount` is in `code`; `costPerUnitUSD` (a spend's
- * cost, frozen at entry) is USD per 1 unit of `code`.
+ * Foreign cash, model 2 (lib/foreignCash.ts): the foreign amount on an
+ * exchange row ("exchange": the euros received for what the row paid) or a
+ * change-back row ("back": the euros given back for what the row received).
+ * `amount` is in `code`. (Slice 1's "in" and "spend" notes exist only in
+ * copies from before v8, and convertForeignCash turns them into these.)
  */
 export interface ForeignCashNote {
   code: string;
   amount: number;
-  kind: "in" | "spend";
-  costPerUnitUSD?: number;
+  kind: "exchange" | "back";
+}
+
+/**
+ * Foreign cash, model 2: an entry on a currency's sheet that isn't a ledger
+ * row, so no budget total, pool, net worth or report reads it. "spend":
+ * cash spent (it was counted when it was bought); "in": cash received from
+ * someone (decision 4: no USD effect until it's changed back). `amount` is
+ * in `code`, positive. Merged like trips (lib/syncMerge.ts).
+ */
+export interface StoredForeignEntry {
+  id: string;
+  kind: "spend" | "in";
+  code: string;
+  amount: number;
+  date: string; // YYYY-MM-DD
+  description: string;
+  category?: string;
+  tripId?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface StoredTransaction {
@@ -540,9 +561,9 @@ export interface StoredTransaction {
   // on load. Once set, restoreTransaction no longer applies -- there's
   // nothing left to restore.
   purgedAt?: string;
-  // Travel slice 1: foreign cash (lib/foreignCash.ts). An exchange's
-  // pocket leg ("in") and a spend from a pocket ("spend"). Dropped by a
-  // purge, like every other payload field.
+  // Foreign cash, model 2 (lib/foreignCash.ts): on an exchange row (the
+  // euros received) or a change-back row (the euros given back). Dropped by
+  // a purge, like every other payload field.
   fx?: ForeignCashNote;
   // Travel slice 2 (held): the trip this row belongs to (lib/trips.ts). An
   // exchange's two rows carry it together. A tag whose trip was deleted is
@@ -1004,6 +1025,9 @@ export interface LocalFinancials {
   transactionClashRecords?: ClashRecord[];
   // Travel slice 2 (held): trips (lib/trips.ts), merged like the wishlist.
   trips?: StoredTrip[];
+  // Foreign cash, model 2 (held): the sheets' entries that aren't ledger
+  // rows (lib/foreignCash.ts), merged like trips.
+  foreignEntries?: StoredForeignEntry[];
 }
 
 /** Keys a restore brought back, per collection, each with its restore generation. */
@@ -1040,6 +1064,7 @@ export interface DeletedKeys {
   assets?: Tombstone[];
   cards?: Tombstone[];
   trips?: Tombstone[];
+  foreignEntries?: Tombstone[];
 }
 
 /** The settings the fingerprint rule merges (plan H 5b), each as one key: the budget split is its rule and custom figures together. */
@@ -1085,7 +1110,7 @@ export function saveCard(
 /** Every collection the deletion registry covers, for code that walks them all. */
 export const DELETED_COLLECTIONS = [
   "wishlist", "customCategories", "categoryRules", "trackedBalances",
-  "transactions", "periodCloses", "goals", "debts", "recurring", "assets", "cards", "trips",
+  "transactions", "periodCloses", "goals", "debts", "recurring", "assets", "cards", "trips", "foreignEntries",
 ] as const satisfies readonly (keyof DeletedKeys)[];
 
 /** A period close's identity: its cycle and the instant it was made. */
@@ -1108,6 +1133,7 @@ export function itemKeysByCollection(d: LocalFinancials): Record<(typeof DELETED
     assets: (d.assets ?? []).map((a) => a.id),
     cards: (d.cards ?? []).map((c) => c.id),
     trips: (d.trips ?? []).map((t) => t.id),
+    foreignEntries: (d.foreignEntries ?? []).map((e) => e.id),
   };
 }
 
@@ -1163,8 +1189,9 @@ export function recordDeletion(
 // adds confirmCutoverDate to recurring items. v4 (Phase 2.6.1) adds
 // emergencyFundOpeningBalance and StoredDebt.openingBalance. v5 (period
 // close Phase 1) adds periodCloses. v6 (SYNC-1 step 2) adds edit times and
-// the deletion registry a sync merge needs.
-export const CURRENT_SCHEMA_VERSION = 7;
+// the deletion registry a sync merge needs. v7 (plan H 5a) adds goal opening
+// amounts. v8 (foreign cash, model 2) converts slice 1's pocket rows.
+export const CURRENT_SCHEMA_VERSION = 8;
 
 // The reference rate a new account starts with, and the fallback used
 // anywhere financials.lbpRate is momentarily absent. Single source of
@@ -1439,6 +1466,70 @@ function addGoalOpenings(d: LocalFinancials): LocalFinancials {
     goals: (d.goals ?? []).map((g) => (g.openingAmount != null ? g : { ...g, openingAmount: roundMoney(g.currentAmount - goalContributions(g, withFrozen)) })),
   };
 }
+/**
+ * v7 -> v8 (foreign cash, model 2; owner, session 18: convert whatever slice 1
+ * rows a copy holds). Slice 1 kept euros in a pocket at cost: an exchange was
+ * two TRANSFER rows (the source leg on its pool, and a pocket leg with
+ * `fx.kind: "in"` and no pool) and a spend was a USD row at its frozen cost
+ * (`fx.kind: "spend"`). Model 2 counts an exchange as spending when it
+ * happens, and keeps euros on a sheet:
+ *   - a pair becomes ONE exchange row in the source leg's place (its id;
+ *     Wants; |paid|; category Travel unless it had one; the pocket leg's euros
+ *     on `fx`; no link; the trip from either leg). The pocket leg goes;
+ *   - a pocket leg with no source leg becomes an exchange row with no pool;
+ *   - a pocket spend becomes a sheet entry with the same id (its USD row
+ *     goes: the exchange counts instead). A deleted one is dropped;
+ *   - deletion state carries over (a deleted pair is one deleted row);
+ *     purged rows hold no `fx` and, like every other row, are untouched.
+ * No pool's balance moves (a -X TRANSFER and a +X WANTS change it alike) and
+ * no close record is touched. Deterministic: no clock, no new ids, so two
+ * devices converting the same copy agree. Non-clobbering: rows already in
+ * the new shape are left alone.
+ */
+function convertForeignCash(d: LocalFinancials): LocalFinancials {
+  type Legacy = Omit<StoredTransaction, "fx"> & { fx?: { code: string; amount: number; kind: string; costPerUnitUSD?: number } };
+  const rows = (d.transactions ?? []) as unknown as Legacy[];
+  if (!rows.some((t) => t.fx?.kind === "in" || t.fx?.kind === "spend")) return { ...d, schemaVersion: 8 };
+  const legFor = new Map<string, Legacy>(); // source leg id -> its pocket leg
+  const folded = new Set<string>();         // pocket legs folded into their source leg
+  for (const leg of rows.filter((t) => t.fx?.kind === "in")) {
+    const source = leg.linkedPaymentId ? rows.find((o) => o.id !== leg.id && o.linkedPaymentId === leg.linkedPaymentId && !o.fx) : undefined;
+    if (source && !legFor.has(source.id)) { legFor.set(source.id, leg); folded.add(leg.id); }
+  }
+  const toExchange = (source: Legacy, leg: Legacy): StoredTransaction => {
+    const { linkedPaymentId: _link, fx: _fx, tripId: _trip, ...rest } = source;
+    const tripId = source.tripId ?? leg.tripId;
+    return {
+      ...rest, amount: Math.abs(source.amount), bucket: "WANTS", category: source.category ?? "travel",
+      fx: { code: leg.fx!.code, amount: leg.fx!.amount, kind: "exchange" },
+      ...(tripId ? { tripId } : {}),
+    };
+  };
+  const transactions: StoredTransaction[] = [];
+  const entries: StoredForeignEntry[] = [];
+  for (const t of rows) {
+    if (folded.has(t.id)) continue;
+    const leg = legFor.get(t.id);
+    if (leg) { transactions.push(toExchange(t, leg)); continue; }
+    if (t.fx?.kind === "in") { transactions.push(toExchange(t, t)); continue; }
+    if (t.fx?.kind === "spend") {
+      if (t.deletedAt == null && t.purgedAt == null) {
+        const createdAt = t.createdAt ?? `${t.date}T00:00:00.000Z`;
+        entries.push({
+          id: t.id, kind: "spend", code: t.fx.code, amount: t.fx.amount, date: t.date, description: t.description,
+          ...(t.category ? { category: t.category } : {}), ...(t.tripId ? { tripId: t.tripId } : {}),
+          createdAt, updatedAt: t.updatedAt ?? createdAt,
+        });
+      }
+      continue;
+    }
+    transactions.push(t as StoredTransaction);
+  }
+  return {
+    ...d, schemaVersion: 8, transactions,
+    ...(entries.length || d.foreignEntries ? { foreignEntries: [...(d.foreignEntries ?? []), ...entries] } : {}),
+  };
+}
 const MIGRATIONS: { fromVersion: number; migrate: (d: LocalFinancials) => LocalFinancials }[] = [
   { fromVersion: 0, migrate: (d) => ({ ...d, schemaVersion: 1 }) },
   { fromVersion: 1, migrate: addCurrencyAndRate },
@@ -1447,6 +1538,7 @@ const MIGRATIONS: { fromVersion: number; migrate: (d: LocalFinancials) => LocalF
   { fromVersion: 4, migrate: addPeriodCloseRecord },
   { fromVersion: 5, migrate: addMergeStamps },
   { fromVersion: 6, migrate: addGoalOpenings },
+  { fromVersion: 7, migrate: convertForeignCash },
 ];
 
 /** Reads the schema version off a raw, not-yet-migrated value -- treats a
@@ -1608,7 +1700,8 @@ export function isEmptyFinancials(data: LocalFinancials): boolean {
     && (data.customCategories ?? []).length === 0
     && (data.categoryRules ?? []).length === 0
     && (data.periodCloses ?? []).length === 0
-    && (data.trips ?? []).length === 0; // travel slice 2: a trip is entered by hand too
+    && (data.trips ?? []).length === 0 // travel slice 2: a trip is entered by hand too
+    && (data.foreignEntries ?? []).length === 0; // model 2: so is a sheet entry
 }
 
 /**

@@ -94,6 +94,22 @@ describe("TEST-03: the export leaves out deleted transactions", () => {
     const exported = JSON.parse(await blob!.text()) as LocalFinancials;
     expect(exported.transactions.map((t) => t.id)).toEqual(["t-active"]);
   });
+
+  // Foreign cash, model 2 (session 18): the export spreads the whole account,
+  // so the sheets' entries travel in it, and an exchange row keeps its euros.
+  it("the file carries foreign cash: an exchange row's euros and the sheets' entries", async () => {
+    let blob: Blob | null = null;
+    vi.spyOn(URL, "createObjectURL").mockImplementation((b) => { blob = b as Blob; return "blob:essa-test"; });
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const dinner = { id: "f1", kind: "spend" as const, code: "EUR", amount: 40, date: "2026-10-05", description: "Dinner", category: "dining", createdAt: "2026-10-05T20:00:00.000Z", updatedAt: "2026-10-05T20:00:00.000Z" };
+    await open({ transactions: [tx("t-ex", { bucket: "WANTS", category: "travel", fx: { code: "EUR", amount: 460, kind: "exchange" } })], foreignEntries: [dinner] });
+    fireEvent.click(screen.getByRole("button", { name: /Download my data/ }));
+    await waitFor(() => expect(blob).not.toBeNull());
+    const exported = JSON.parse(await blob!.text()) as LocalFinancials;
+    expect(exported.transactions[0].fx).toEqual({ code: "EUR", amount: 460, kind: "exchange" });
+    expect(exported.foreignEntries).toEqual([dinner]);
+  });
 });
 
 // PRIV-02's second site (owner-approved wording, session 7): Profile no longer

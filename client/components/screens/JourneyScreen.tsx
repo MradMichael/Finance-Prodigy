@@ -8,7 +8,6 @@ import { projectCompletion } from "../../lib/projections";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money, type Screen } from "./shared";
 import Donut from "../charts/Donut";
-import { foreignCashAtCostUSD } from "../../lib/foreignCash";
 import { cycleKeyForISO, cycleLabel, cycleLabelLong, cycleTickLabel, ymKeyToCycleKey, periodNoun, asCycleKey, asCalendarKey, type CalendarKey } from "../../lib/period";
 
 /** A CALENDAR month -- see FinancialDashboard's copy of this. */
@@ -174,10 +173,6 @@ export default function JourneyScreen({
             <p className="text-xl leading-snug" style={SERIF}>
               Right now your net worth is <span style={{ ...NUMS, color: nwLatest >= 0 ? T.jade : T.coral }}>{money(nwLatest)}</span>. That&apos;s today&apos;s starting line, come back next month to see the first chapter.{/* "month" is correct here and deliberately not the period noun: this sentence is about netWorthHistory, the one CALENDAR-keyed series (2.4.87), whose next point genuinely is a calendar month-end. */}
             </p>
-          )}
-          {/* travel slice 1: the owner's line. Net worth leaves foreign cash out, as it leaves out tracked balances (DI-06); this says where it is, so an exchange never looks like money vanished. */}
-          {foreignCashAtCostUSD(financials) > 0 && (
-            <p className="text-xs mt-3" style={{ color: T.mute }}>{`Foreign cash (at cost): ${money(foreignCashAtCostUSD(financials))}, not yet counted in net worth`}</p>
           )}
         </Beat>
 

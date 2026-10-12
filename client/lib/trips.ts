@@ -1,17 +1,21 @@
 // Travel slice 2 (HELD; owner, session 16; FIX_PLANS.md "Slice 2, trips"):
 // a trip has a name, dates and a budget in USD, optionally per category. Rows
-// are tagged to it by `tripId`; an exchange's two rows are tagged together, as
-// they're deleted together. Planned against actual, in USD at cost: the trip's
-// tagged NEEDS, WANTS and SAVINGS rows, each converted as every spending
-// figure is (toUSDForMonth: a pocket spend is already USD at its frozen cost,
-// a lira row at its period's rate). Exchanges and income aren't spending; a
-// tagged exchange shows as the trip's foreign cash bought. Deleting a trip
-// keeps its tags (owner, approved): a tag with no trip counts nowhere.
-// Units (2.4.138): every `…USD` figure is USD; `amount` in tripCashBought is
-// in its currency `code`.
+// are tagged to it by `tripId`. Deleting a trip keeps its tags (owner,
+// approved): a tag with no trip counts nowhere.
+// Foreign cash, model 2 (session 18): planned against actual, in USD, each
+// row converted as every spending figure is (toUSDForMonth: a lira row at its
+// period's rate):
+//   + the trip's tagged NEEDS, WANTS and SAVINGS rows, an exchange included
+//     (a Wants row for what was paid);
+//   - its tagged INCOME rows (euros changed back, any refund: decision 3);
+//   - its tagged reimbursements (a TRANSFER that gained money and isn't one
+//     leg of a transfer);
+// and nothing for a transfer's legs. Euro spends never reach the USD figure;
+// the card shows them in euros, by category (tripForeignSpends).
+// Units (2.4.138): every `…USD` figure is USD; tripForeignSpends' amounts are
+// in their currency `code`.
 import { activeTransactions, cycleStartDayOf, makeToUSDForMonth, recordDeletion, uid, type LocalFinancials, type StoredTransaction } from "./localData";
 import { cycleKeyForISO } from "./period";
-import { pairedIds } from "./foreignCash";
 
 export interface StoredTrip {
   id: string;
@@ -65,48 +69,50 @@ export function editTrip(data: LocalFinancials, tripId: string, p: Parameters<ty
   return { ok: true, data: { ...data, trips: (data.trips ?? []).map((t) => (t.id === tripId ? trip : t)) } };
 }
 
-/** The trip whose dates hold `date` (start and end included), for a form's default. */
-export function suggestedTripId(trips: StoredTrip[], date: string): string | undefined {
-  return trips.filter((t) => t.startDate <= date && date <= t.endDate).sort((a, b) => b.startDate.localeCompare(a.startDate))[0]?.id;
+/**
+ * The trip whose dates hold `date` (start and end included), for a form's
+ * default. `orNext` (an exchange, decision 10): failing that, the next trip
+ * starting after it, since euros are usually bought before leaving.
+ */
+export function suggestedTripId(trips: StoredTrip[], date: string, { orNext = false }: { orNext?: boolean } = {}): string | undefined {
+  const holding = trips.filter((t) => t.startDate <= date && date <= t.endDate).sort((a, b) => b.startDate.localeCompare(a.startDate))[0];
+  if (holding || !orNext) return holding?.id;
+  return trips.filter((t) => t.startDate > date).sort((a, b) => a.startDate.localeCompare(b.startDate))[0]?.id;
 }
 
-/** The trip's spending in USD at cost, in total and by category ("" for none). */
+/** A reimbursement: a TRANSFER that gained money and isn't one leg of a transfer (no other TRANSFER shares its link). */
+export function isReimbursement(t: StoredTransaction, all: StoredTransaction[]): boolean {
+  if (t.bucket !== "TRANSFER" || !(t.amount > 0)) return false;
+  return !(t.linkedPaymentId && all.some((o) => o.id !== t.id && o.bucket === "TRANSFER" && o.linkedPaymentId === t.linkedPaymentId));
+}
+
+/** The trip's actual in USD, in total and by category ("" for none), and the rows counted. */
 export function tripActual(data: LocalFinancials, trip: StoredTrip): { totalUSD: number; byCategoryUSD: Record<string, number>; rows: StoredTransaction[] } {
   const toUSD = makeToUSDForMonth(data);
   const startDay = cycleStartDayOf(data);
-  const rows = activeTransactions(data.transactions ?? []).filter((t) => t.tripId === trip.id && SPENDING.has(t.bucket));
+  const all = data.transactions ?? [];
+  const sign = (t: StoredTransaction) => (SPENDING.has(t.bucket) ? 1 : t.bucket === "INCOME" || isReimbursement(t, all) ? -1 : 0);
+  const rows = activeTransactions(all).filter((t) => t.tripId === trip.id && sign(t) !== 0);
   const byCategoryUSD: Record<string, number> = {};
   let total = 0;
   for (const t of rows) {
-    const usd = toUSD(t.amount, t.currency, cycleKeyForISO(t.date, startDay));
+    const usd = sign(t) * toUSD(t.amount, t.currency, cycleKeyForISO(t.date, startDay));
     total += usd;
     byCategoryUSD[t.category ?? ""] = round2((byCategoryUSD[t.category ?? ""] ?? 0) + usd);
   }
   return { totalUSD: round2(total), byCategoryUSD, rows };
 }
 
-/** The trip's foreign cash bought: its tagged exchanges' pocket legs, by currency, with their USD cost. */
-export function tripCashBought(data: LocalFinancials, trip: StoredTrip): { code: string; amount: number; costUSD: number }[] {
-  const toUSD = makeToUSDForMonth(data);
-  const startDay = cycleStartDayOf(data);
-  const by = new Map<string, { code: string; amount: number; costUSD: number }>();
-  for (const t of activeTransactions(data.transactions ?? []).filter((x) => x.tripId === trip.id && x.fx?.kind === "in")) {
-    const e = by.get(t.fx!.code) ?? { code: t.fx!.code, amount: 0, costUSD: 0 };
-    e.amount = round2(e.amount + t.fx!.amount);
-    e.costUSD = round2(e.costUSD + toUSD(t.amount, t.currency, cycleKeyForISO(t.date, startDay)));
-    by.set(t.fx!.code, e);
+/** The trip's euro spends (sheet entries tagged to it), by currency: the total and each category ("" for none). For information only. */
+export function tripForeignSpends(data: LocalFinancials, trip: StoredTrip): { code: string; amount: number; byCategory: Record<string, number> }[] {
+  const by = new Map<string, { code: string; amount: number; byCategory: Record<string, number> }>();
+  for (const e of (data.foreignEntries ?? []).filter((x) => x.kind === "spend" && x.tripId === trip.id)) {
+    const s = by.get(e.code) ?? { code: e.code, amount: 0, byCategory: {} };
+    s.amount = round2(s.amount + e.amount);
+    s.byCategory[e.category ?? ""] = round2((s.byCategory[e.category ?? ""] ?? 0) + e.amount);
+    by.set(e.code, s);
   }
   return [...by.values()].sort((a, b) => a.code.localeCompare(b.code));
-}
-
-/** Tags a row to a trip (or clears its tag); an exchange's two rows go together. */
-export function tagRows(transactions: StoredTransaction[], id: string, tripId: string | undefined, at: string): StoredTransaction[] {
-  const ids = new Set(pairedIds(transactions, id));
-  return transactions.map((t) => {
-    if (!ids.has(t.id)) return t;
-    const { tripId: _old, ...rest } = t;
-    return { ...rest, ...(tripId ? { tripId } : {}), updatedAt: at };
-  });
 }
 
 /** Deletes a trip, recording the deletion so other devices drop it too. Its rows keep their tags. */

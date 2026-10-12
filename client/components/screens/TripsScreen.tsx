@@ -2,8 +2,10 @@
 
 // Travel slice 2 (HELD; its wording approved in session 17): trips
 // (lib/trips.ts). A trip has a name, dates and a budget in USD, optionally by
-// category; each shows planned against actual in USD at cost, its foreign cash
-// bought, and the rows tagged to it. Rows are tagged in the edit sheet and the
+// category; each shows planned against actual in USD (foreign cash, model 2:
+// an exchange counts, a change-back or refund lowers it), by category, the
+// trip's euro spends in euros by category (DRAFT wording, for information),
+// and the rows counted. Rows are tagged in the edit sheet and the
 // foreign-cash forms. A trip can be edited (session 17: "Edit trip", "Save
 // changes"), with the same fields and errors as a new one; every tag stays.
 // Deleting a trip keeps its rows' tags (owner, approved).
@@ -14,7 +16,7 @@ import { dayLabel } from "../../lib/period";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF } from "./shared";
 import { Label, FocusInput, MoneyInput, DateFieldDMY } from "../form/Primitives";
-import { buildTrip, deleteTrip, editTrip, tripActual, tripCashBought, type StoredTrip } from "../../lib/trips";
+import { buildTrip, deleteTrip, editTrip, tripActual, tripForeignSpends, type StoredTrip } from "../../lib/trips";
 import { fmtForeign } from "../../lib/foreignCash";
 
 const usd = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
@@ -146,7 +148,7 @@ export default function TripsScreen({ financials, onChange }: { financials: Loca
         {trips.map((trip) => {
           const actual = tripActual(financials, trip);
           const left = trip.budgetUSD - actual.totalUSD;
-          const cash = tripCashBought(financials, trip);
+          const euros = tripForeignSpends(financials, trip);
           const budgeted = trip.categoryBudgetsUSD ?? {};
           const catKeys = [...new Set([...Object.keys(budgeted), ...Object.keys(actual.byCategoryUSD)])];
           return (
@@ -180,15 +182,22 @@ export default function TripsScreen({ financials, onChange }: { financials: Loca
                   ))}
                 </ul>
               )}
-              {cash.map((c) => (
-                <p key={c.code} className="text-[11px] tabular-nums" style={{ color: T.mute }}>{`Foreign cash bought for this trip: ${fmtForeign(c.amount, c.code)} for ${usd(c.costUSD)}`}</p>
+              {euros.map((e) => (
+                <div key={e.code} className="space-y-0.5">
+                  <p className="text-[11px] tabular-nums" style={{ color: T.mute }}>{`Spent from ${e.code} cash: ${fmtForeign(e.amount, e.code)}`}</p>
+                  <ul className="space-y-0.5">
+                    {Object.entries(e.byCategory).map(([k, v]) => (
+                      <li key={k || "_none"} className="text-[11px] tabular-nums" style={{ color: T.mute }}>{`${categoryLabel(k || undefined, financials.customCategories)}: ${fmtForeign(v, e.code)}`}</li>
+                    ))}
+                  </ul>
+                </div>
               ))}
               {actual.rows.length > 0 && (
                 <ul className="space-y-1 pt-2" style={{ borderTop: `1px solid ${T.line}` }}>
                   {[...actual.rows].sort((a, b) => a.date.localeCompare(b.date)).map((t) => (
                     <li key={t.id} className="text-[11px] tabular-nums flex justify-between gap-2" style={{ color: T.text }}>
                       <span>{`${fmtDate(t.date)} · ${t.description}`}</span>
-                      <span>{t.fx?.kind === "spend" ? `${usd(t.amount)} (${fmtForeign(t.fx.amount, t.fx.code)})` : `${t.currency === "LBP" ? `L£${t.amount.toLocaleString("en-US")}` : usd(t.amount)}`}</span>
+                      <span>{`${t.bucket === "INCOME" || t.bucket === "TRANSFER" ? "−" : ""}${t.currency === "LBP" ? `L£${t.amount.toLocaleString("en-US")}` : usd(t.amount)}${t.fx ? ` (${fmtForeign(t.fx.amount, t.fx.code)})` : ""}`}</span>
                     </li>
                   ))}
                 </ul>

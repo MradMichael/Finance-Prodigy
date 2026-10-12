@@ -9,9 +9,7 @@ import {
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY, CurrencyToggle, PM_OPTIONS, CardPicker } from "./form/Primitives";
 import { cycleKeyForISO, currentCycleKey } from "../lib/period";
-import { foreignCashRole, fmtForeign } from "../lib/foreignCash";
-import { tagRows } from "../lib/trips";
-import { fmtCur } from "./screens/shared";
+import { foreignCashRole } from "../lib/foreignCash";
 
 type TxBucket = "NEEDS" | "WANTS" | "SAVINGS" | "INCOME" | "TRANSFER";
 
@@ -44,11 +42,12 @@ export default function EditTransactionSheet({
   const T = useTheme();
   const startDay = cycleStartDayOf(financials);
   const update = (patch: Partial<LocalFinancials>) => onChange({ ...financials, ...patch });
-  // Travel slice 1: an exchange row changes only its description and
-  // category (its amount, date and pool belong to the pair, and to the
-  // pocket); a pocket spend keeps its amount, currency and frozen cost, and
-  // stays spending. Enforced when saving, not only on screen.
-  const fxRole = foreignCashRole(transaction, financials.transactions);
+  // Foreign cash, model 2 (decision 6): an exchange or change-back row edits
+  // like any row, amounts and date included, plus its foreign amount. An
+  // exchange stays spending and a change-back stays income. Enforced when
+  // saving, not only on screen.
+  const fxRole = foreignCashRole(transaction);
+  const [fxAmt, setFxAmt] = useState(transaction.fx ? String(transaction.fx.amount) : "");
   const cards = financials.cards ?? [];
   function saveCard(type: StoredCard["type"], last4: string): StoredCard | null {
     // Plan H 5c: the shared saveCard; the same card typed twice is reused.
@@ -144,24 +143,11 @@ export default function EditTransactionSheet({
     update({ recurring: [...(financials.recurring ?? []), edited(rec)] });
   }
 
-  function saveForeignCash() {
-    if (!desc.trim() || !date) return;
-    const keep = transaction.bucket === "NEEDS" || transaction.bucket === "WANTS" || transaction.bucket === "SAVINGS";
-    const spendBucket = keep && (bucket === "NEEDS" || bucket === "WANTS" || bucket === "SAVINGS") ? bucket : transaction.bucket;
-    const at = new Date().toISOString();
-    const edited = financials.transactions.map((t) => t.id !== transaction.id ? t : {
-      ...t, description: desc.trim(), category: category || undefined,
-      ...(fxRole === "spend" ? { date, bucket: spendBucket } : {}),
-      updatedAt: at,
-    });
-    // Travel slice 2 (held): a changed trip goes on both rows of an exchange.
-    const tagChanged = (tripId || undefined) !== (trips.some((x) => x.id === transaction.tripId) ? transaction.tripId : undefined);
-    update({ transactions: tagChanged ? tagRows(edited, transaction.id, tripId || undefined, at) : edited });
-    onClose();
-  }
+  const isSpending = (b: TxBucket) => b === "NEEDS" || b === "WANTS" || b === "SAVINGS";
+  const fxAmtNum = parseFloat(fxAmt.replace(/,/g, ""));
 
   function save() {
-    if (fxRole) { saveForeignCash(); return; }
+    if (fxRole && !(fxAmtNum > 0)) return;
     const amtNum = parseFloat(amt.replace(/,/g, ""));
     if (!desc.trim() || isNaN(amtNum) || !date) return;
     if (currency === "LBP" && amtNum < 500) { setLbpConfirmAmount(amtNum); return; }
@@ -186,11 +172,15 @@ export default function EditTransactionSheet({
       : roundMoney(0 - (parseFloat(debtAdjustment.replace(/,/g, "")) || 0)); // DI-02: back to the stored sign
     // 2.4.56 -- amtNum is a magnitude; TRANSFER is the one bucket whose
     // stored amount is signed (see retagBucketAmount's own doc comment).
-    const signedAmt = bucket === "TRANSFER" ? (transferGained ? amtNum : -amtNum) : amtNum;
+    if (fxRole && !(fxAmtNum > 0)) return;
+    // Model 2: an exchange stays spending, a change-back stays income.
+    const keptBucket: TxBucket = fxRole === "exchange" ? (isSpending(bucket) ? bucket : transaction.bucket) : fxRole === "back" ? "INCOME" : bucket;
+    const signedAmt = keptBucket === "TRANSFER" ? (transferGained ? amtNum : -amtNum) : amtNum;
     update({
       transactions: financials.transactions.map((t) => t.id !== transaction.id ? t : {
         ...t, amount: signedAmt, description: desc.trim(),
-        date, bucket, category: category || undefined, currency,
+        date, bucket: keptBucket, category: category || undefined, currency,
+        ...(t.fx ? { fx: { ...t.fx, amount: roundMoney(fxAmtNum) } } : {}),
         paymentMethod: payMethod,
         paymentNote: payMethod === "other" && payNote.trim() ? payNote.trim() : undefined,
         cardId: resolvedCardId, cardLabel: resolvedCardLabel,
@@ -231,40 +221,20 @@ export default function EditTransactionSheet({
           )}
           <div className="grid grid-cols-2 gap-2">
             <div>
-              {fxRole ? (
-                <>
-                  <Label>Amount</Label>
-                  <p className="text-sm tabular-nums py-1.5" style={{ color: T.text }}>{fmtCur(Math.abs(transaction.amount), transaction.currency ?? "USD")}</p>
-                </>
-              ) : (
-                <>
-                  <Label htmlFor="edit-tx-amount">Amount</Label>
-                  <MoneyInput id="edit-tx-amount" value={amt} onChange={setAmt} placeholder="0" max={moneyMaxFor(currency, financials.lbpRate ?? DEFAULT_LBP_RATE)} />
-                </>
-              )}
+              <Label htmlFor="edit-tx-amount">Amount</Label>
+              <MoneyInput id="edit-tx-amount" value={amt} onChange={setAmt} placeholder="0" max={moneyMaxFor(currency, financials.lbpRate ?? DEFAULT_LBP_RATE)} />
             </div>
             <div>
-              {fxRole === "exchange" ? (
-                <>
-                  <Label>Date</Label>
-                  <p className="text-sm py-1.5" style={{ color: T.text }}>{fmtDate(transaction.date)}</p>
-                </>
-              ) : (
-                <>
-                  <Label htmlFor="edit-tx-date">Date</Label>
-                  <DateFieldDMY id="edit-tx-date" value={date} onChange={setDate} />
-                </>
-              )}
+              <Label htmlFor="edit-tx-date">Date</Label>
+              <DateFieldDMY id="edit-tx-date" value={date} onChange={setDate} />
             </div>
           </div>
-          {/* Travel slice 1: wording approved by the owner (session 15). */}
-          {fxRole === "exchange" && (
-            <p className="text-[10px]" style={{ color: T.mute }}>Part of an exchange: only its description and category can change here. To change an amount or date, delete it and enter it again.</p>
-          )}
-          {fxRole === "spend" && transaction.fx && (
-            <p className="text-[10px]" style={{ color: T.mute }}>
-              {`Spent from ${transaction.fx.code} cash: ${fmtForeign(transaction.fx.amount, transaction.fx.code)} at $${(transaction.fx.costPerUnitUSD ?? 0).toFixed(4)} per ${fmtForeign(1, transaction.fx.code).replace(/\.00$/, "")}. To change the amount, delete it and enter it again.`}
-            </p>
+          {/* Foreign cash, model 2: the euros (an exchange's, approved label; a change-back's, DRAFT). */}
+          {fxRole && (
+            <div>
+              <Label htmlFor="edit-tx-fx">{fxRole === "exchange" ? "Amount received" : "Amount changed back"}</Label>
+              <MoneyInput id="edit-tx-fx" value={fxAmt} onChange={setFxAmt} placeholder="0" max={moneyMaxFor("USD", financials.lbpRate ?? DEFAULT_LBP_RATE)} />
+            </div>
           )}
           <div>
             <Label htmlFor="edit-tx-desc">Description</Label>
@@ -283,8 +253,8 @@ export default function EditTransactionSheet({
               </div>
             )}
           </div>
-          {fxRole !== "exchange" && <div className="grid grid-cols-2 gap-1.5">
-            {TX_BUCKETS.filter((bkt) => fxRole !== "spend" || bkt.value === "NEEDS" || bkt.value === "WANTS" || bkt.value === "SAVINGS").map((bkt) => (
+          {fxRole !== "back" && <div className="grid grid-cols-2 gap-1.5">
+            {TX_BUCKETS.filter((bkt) => fxRole !== "exchange" || isSpending(bkt.value)).map((bkt) => (
               <button key={bkt.value} onClick={() => selectBucket(bkt.value)}
                 className="py-1.5 rounded-lg text-[10px] font-medium transition-all"
                 style={{ background: bucket === bkt.value ? bkt.color + "22" : T.ink, border: `1px solid ${bucket === bkt.value ? bkt.color : T.line}`, color: bucket === bkt.value ? bkt.color : T.mute }}>
@@ -339,7 +309,7 @@ export default function EditTransactionSheet({
               {trips.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
             </select>
           )}
-          {!fxRole && (<>
+          {(<>
           <CurrencyToggle value={currency} onChange={setCurrency} />
           <div>
             <div className="grid grid-cols-3 gap-1.5 mb-1.5">

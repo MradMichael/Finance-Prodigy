@@ -1,8 +1,8 @@
 // Travel slice 2 (HELD; wording approved in session 17): tagging rows to a trip.
-//   - The edit sheet: a Trip choice on any row. An exchange's two rows are
-//     tagged together.
+//   - The edit sheet: a Trip choice on any row (model 2: an exchange is one row).
 //   - The foreign-cash forms: a Trip choice that defaults to the trip whose
-//     dates hold the form's date; the rows saved carry it (an exchange, both).
+//     dates hold the form's date (an exchange: else the next trip, decision
+//     10); what's saved carries it (an exchange row; a spend's sheet entry).
 //   - The navigation has Trips, and it opens the Trips screen.
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";
@@ -41,19 +41,19 @@ describe("the edit sheet", () => {
     expect(saved2().find((t) => t.id === "d1")!.tripId).toBeUndefined();
   });
 
-  it("tagging either row of an exchange tags both", () => {
-    const [src, pocket] = buildExchange({ date: "2026-10-03", paid: 500, paidCurrency: "USD", from: { paymentMethod: "cash" }, code: "EUR", received: 460, description: "Exchange to EUR" }, 89_500);
-    const saved = open(src, [src, pocket]);
+  it("an exchange is one row: tagging it tags it", () => {
+    const e = buildExchange({ date: "2026-10-03", paid: 500, paidCurrency: "USD", from: { paymentMethod: "cash" }, code: "EUR", received: 460, description: "Exchange to EUR" }, 89_500);
+    const saved = open(e, [e]);
     fireEvent.change(screen.getByLabelText("Trip"), { target: { value: "trip-lis" } });
     fireEvent.click(screen.getByRole("button", { name: /Save/ }));
-    expect(saved().filter((t) => t.tripId === "trip-lis").map((t) => t.id).sort()).toEqual([src.id, pocket.id].sort());
+    expect(saved().map((t) => [t.id, t.tripId])).toEqual([[e.id, "trip-lis"]]);
   });
 });
 
 describe("the foreign-cash forms", () => {
   const setDate = (form: HTMLElement, iso: string) => fireEvent.change(form.querySelector('input[type="date"]')!, { target: { value: iso } });
 
-  it("an exchange's Trip defaults to the trip holding its date, and both rows carry it", () => {
+  it("an exchange's Trip defaults to the trip holding its date, and its row carries it", () => {
     const onChange = vi.fn();
     render(<ThemeProvider><ForeignCashPanel financials={fin()} onChange={onChange} /></ThemeProvider>);
     fireEvent.click(screen.getByRole("button", { name: "Record an exchange" }));
@@ -64,15 +64,23 @@ describe("the foreign-cash forms", () => {
     fireEvent.change(within(form).getByLabelText("Amount received"), { target: { value: "460" } });
     fireEvent.click(within(form).getByRole("button", { name: "Save exchange" }));
     const rows = (onChange.mock.calls.at(-1)![0] as LocalFinancials).transactions;
-    expect(rows.map((t) => t.tripId)).toEqual(["trip-lis", "trip-lis"]);
+    expect(rows.map((t) => t.tripId)).toEqual(["trip-lis"]);
   });
 
-  it("outside any trip's dates: no trip, unless one is chosen", () => {
+  it("an exchange before a trip defaults to that trip (decision 10)", () => {
+    render(<ThemeProvider><ForeignCashPanel financials={fin()} onChange={vi.fn()} /></ThemeProvider>);
+    fireEvent.click(screen.getByRole("button", { name: "Record an exchange" }));
+    const form = screen.getByRole("form", { name: "Record an exchange" });
+    setDate(form, "2026-09-20");
+    expect((within(form).getByLabelText("Trip") as HTMLSelectElement).value).toBe("trip-lis");
+  });
+
+  it("after every trip's dates: no trip, unless one is chosen", () => {
     const onChange = vi.fn();
     render(<ThemeProvider><ForeignCashPanel financials={fin()} onChange={onChange} /></ThemeProvider>);
     fireEvent.click(screen.getByRole("button", { name: "Record an exchange" }));
     const form = screen.getByRole("form", { name: "Record an exchange" });
-    setDate(form, "2026-09-20");
+    setDate(form, "2026-10-20");
     expect((within(form).getByLabelText("Trip") as HTMLSelectElement).value).toBe("");
     fireEvent.change(within(form).getByLabelText("Amount paid"), { target: { value: "100" } });
     fireEvent.change(within(form).getByLabelText("Amount received"), { target: { value: "92" } });
@@ -80,10 +88,10 @@ describe("the foreign-cash forms", () => {
     expect((onChange.mock.calls.at(-1)![0] as LocalFinancials).transactions.every((t) => t.tripId === undefined)).toBe(true);
   });
 
-  it("a spend's Trip defaults the same way and the row carries it", () => {
+  it("a spend's Trip defaults to the trip holding its date and its sheet entry carries it", () => {
     const exch = buildExchange({ date: "2026-10-02", paid: 500, paidCurrency: "USD", from: { paymentMethod: "cash" }, code: "EUR", received: 460, description: "Exchange to EUR" }, 89_500);
     const onChange = vi.fn();
-    render(<ThemeProvider><ForeignCashPanel financials={fin(exch)} onChange={onChange} /></ThemeProvider>);
+    render(<ThemeProvider><ForeignCashPanel financials={fin([exch])} onChange={onChange} /></ThemeProvider>);
     fireEvent.click(screen.getByRole("button", { name: "Spend from foreign cash" }));
     const form = screen.getByRole("form", { name: "Spend from foreign cash" });
     setDate(form, "2026-10-04");
@@ -91,7 +99,7 @@ describe("the foreign-cash forms", () => {
     fireEvent.change(within(form).getByLabelText("Amount"), { target: { value: "40" } });
     fireEvent.change(within(form).getByLabelText("Description"), { target: { value: "Dinner" } });
     fireEvent.click(within(form).getByRole("button", { name: "Save spend" }));
-    expect((onChange.mock.calls.at(-1)![0] as LocalFinancials).transactions.find((t) => t.fx?.kind === "spend")!.tripId).toBe("trip-lis");
+    expect((onChange.mock.calls.at(-1)![0] as LocalFinancials).foreignEntries![0].tripId).toBe("trip-lis");
   });
 });
 
