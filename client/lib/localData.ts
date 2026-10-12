@@ -256,6 +256,18 @@ export interface StoredCard {
   createdAt?: string; // ISO, when it was saved (plan H 5c). Absent on cards saved before: they count as the earliest.
 }
 
+/**
+ * Travel slice 1: a foreign-cash annotation on an ordinary row
+ * (lib/foreignCash.ts). `amount` is in `code`; `costPerUnitUSD` (a spend's
+ * cost, frozen at entry) is USD per 1 unit of `code`.
+ */
+export interface ForeignCashNote {
+  code: string;
+  amount: number;
+  kind: "in" | "spend";
+  costPerUnitUSD?: number;
+}
+
 export interface StoredTransaction {
   id: string;
   amount: number;
@@ -527,6 +539,10 @@ export interface StoredTransaction {
   // on load. Once set, restoreTransaction no longer applies -- there's
   // nothing left to restore.
   purgedAt?: string;
+  // Travel slice 1: foreign cash (lib/foreignCash.ts). An exchange's
+  // pocket leg ("in") and a spend from a pocket ("spend"). Dropped by a
+  // purge, like every other payload field.
+  fx?: ForeignCashNote;
 }
 
 export interface StoredGoal {
@@ -3782,15 +3798,21 @@ export function softDelete(d: Pick<LocalFinancials, "deletedKeys" | "revivedKeys
  * generation) beats the revival in turn.
  */
 export function undeleteTransaction(d: LocalFinancials, id: string, at: string): LocalFinancials {
+  return undeleteTransactions(d, [id], at);
+}
+
+/** Several rows at once, at one restore generation (travel slice 1: an exchange's two rows go back together). */
+export function undeleteTransactions(d: LocalFinancials, ids: string[], at: string): LocalFinancials {
   const gen = restoreGeneration(d) + 1;
+  const which = new Set(ids);
   return {
     ...d,
     transactions: d.transactions.map((t) => {
-      if (t.id !== id) return t;
+      if (!which.has(t.id)) return t;
       const { deletedAt: _deletedAt, deletedGen: _deletedGen, ...rest } = t;
       return { ...rest, updatedAt: at };
     }),
-    revivedKeys: { ...(d.revivedKeys ?? {}), transactions: { ...(d.revivedKeys?.transactions ?? {}), [id]: gen } },
+    revivedKeys: { ...(d.revivedKeys ?? {}), transactions: { ...(d.revivedKeys?.transactions ?? {}), ...Object.fromEntries(ids.map((id) => [id, gen])) } },
   };
 }
 

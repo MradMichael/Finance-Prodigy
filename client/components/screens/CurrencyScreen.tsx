@@ -7,6 +7,8 @@ import { computeHoldingsByCurrency } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
 import Donut from "../charts/Donut";
+import ForeignCashPanel from "../ForeignCashPanel";
+import { foreignCashAtCostUSD } from "../../lib/foreignCash";
 import {currentCycleKey, isInCycle, periodNoun, cycleLabel, type CycleKey } from "../../lib/period";
 
 /**
@@ -142,6 +144,9 @@ export default function CurrencyScreen({ financials, onChange }: { financials: L
           <RateStaleness updatedAt={financials.lbpRateUpdatedAt} />
         </div>
 
+        {/* Travel slice 1: foreign cash */}
+        <ForeignCashPanel financials={financials} onChange={onChange} />
+
         {/* Spend by currency */}
         <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
           <p className="text-xs uppercase tracking-widest mb-4" style={{ color: T.mute }}>This {noun}&apos;s spending, by currency</p>
@@ -228,6 +233,10 @@ export default function CurrencyScreen({ financials, onChange }: { financials: L
                 </div>
               </div>
             </div>
+          )}
+          {/* Travel slice 1 (owner, session 15): foreign cash on its own line, at cost, in the overview's words; not in the totals above. */}
+          {foreignCashAtCostUSD(financials) > 0 && (
+            <p className="text-xs mt-3" style={{ color: T.mute }}>{`Foreign cash (at cost): ${money(foreignCashAtCostUSD(financials))}, not yet counted in net worth`}</p>
           )}
         </div>
 

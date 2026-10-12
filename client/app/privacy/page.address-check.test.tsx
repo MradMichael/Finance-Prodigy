@@ -36,8 +36,8 @@ describe("the plain address check (owner's wording, session 12)", () => {
     expect(text).not.toContain("only checks whether a backup exists for it"); // session 11's draft, replaced
   });
 
-  it("moves the date at the top", () => {
+  it("moves the date at the top (moved again since: travel slice 1, 12 October 2026)", () => {
     render(<ThemeProvider><PrivacyPage /></ThemeProvider>);
-    expect(document.body.textContent).toContain("Last updated: 11 October 2026");
+    expect(document.body.textContent).toContain("Last updated: 12 October 2026");
   });
 });

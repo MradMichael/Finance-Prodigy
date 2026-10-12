@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import type { LocalFinancials, StoredRecurring } from "../../lib/localData";
-import { fmtDate, historizedRecurringContribution, toUSD as toUSDShared, categoryLabel as categoryLabelShared, categoryIcon as categoryIconShared, activeTransactions, cycleMonthDivergence, purgeTransaction, undeleteTransaction, DEFAULT_LBP_RATE, cycleStartDayOf, todayISO } from "../../lib/localData";
+import { fmtDate, historizedRecurringContribution, toUSD as toUSDShared, categoryLabel as categoryLabelShared, categoryIcon as categoryIconShared, activeTransactions, cycleMonthDivergence, purgeTransaction, undeleteTransactions, DEFAULT_LBP_RATE, cycleStartDayOf, todayISO } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money, fmtCur } from "./shared";
 import Donut from "../charts/Donut";
+import { exchangePartnerId, fmtForeign, pairedIds } from "../../lib/foreignCash";
 import {currentCycleKey, cycleKeyForISO, cycleLabel, cycleBounds, cycleKeyMinus, isInCycle, asCycleKey, type CycleKey } from "../../lib/period";
 
 type TrendPeriod = "monthly" | "quarterly" | "yearly";
@@ -116,7 +117,8 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
   // DI-14: a revival at a new generation, so the restore survives a merge
   // with a device that still holds the deleted copy (undeleteTransaction).
   function restoreTransaction(txId: string) {
-    onChange(undeleteTransaction(financials, txId, new Date().toISOString()));
+    // Travel slice 1: an exchange's two rows come back together.
+    onChange(undeleteTransactions(financials, pairedIds(financials.transactions, txId), new Date().toISOString()));
   }
 
   // Scrubs the payload, keeps the row -- see purgeTransaction's own doc
@@ -125,7 +127,8 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
   function purgeTransactionPermanently(txId: string) {
     onChange({
       ...financials,
-      transactions: financials.transactions.map((t) => t.id !== txId ? t : purgeTransaction(t)),
+      // Travel slice 1: an exchange's two rows are removed together.
+      transactions: ((ids) => financials.transactions.map((t) => !ids.has(t.id) ? t : purgeTransaction(t)))(new Set(pairedIds(financials.transactions, txId))),
     });
   }
   const recurring = financials.recurring ?? [];
@@ -599,7 +602,10 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
                         // (Batch C) exists purely to group two currency legs
                         // of one real payment in the UI; this never feeds a
                         // total, only which caption renders on this row.
-                        const splitSibling = t.linkedPaymentId
+                        // Travel slice 1 (wording approved, session 15): an exchange's rows and a
+                        // pocket spend say what they are; an exchange isn't a split payment.
+                        const exchangeOf = exchangePartnerId(allTx, t) ? (t.fx ?? allTx.find((o) => o.id === exchangePartnerId(allTx, t))?.fx) : undefined;
+                        const splitSibling = t.linkedPaymentId && !exchangeOf
                           ? allTx.find((o) => o.id !== t.id && o.linkedPaymentId === t.linkedPaymentId)
                           : undefined;
                         return (
@@ -619,6 +625,14 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
                               <p className="text-[10px]" style={{ color: T.jade }}>
                                 ⇄ split payment · also {fmtCur(splitSibling.amount, splitSibling.currency)}
                               </p>
+                            )}
+                            {exchangeOf && (
+                              <p className="text-[10px]" style={{ color: T.jade }}>
+                                {t.fx?.kind === "in" ? `⇄ exchange · ${fmtForeign(t.fx.amount, t.fx.code)} received` : `⇄ exchange to ${exchangeOf.code}`}
+                              </p>
+                            )}
+                            {t.fx?.kind === "spend" && (
+                              <p className="text-[10px]" style={{ color: T.jade }}>{`${fmtForeign(t.fx.amount, t.fx.code)} from ${t.fx.code} cash`}</p>
                             )}
                           </>
                         );
