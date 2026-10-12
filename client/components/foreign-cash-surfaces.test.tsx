@@ -97,7 +97,7 @@ describe("the transaction list", () => {
     expect(screen.getByText("⇄ exchange to EUR")).toBeTruthy();
     expect(screen.getByText("€40.00 from EUR cash")).toBeTruthy();
     expect(screen.queryByText(/split payment/)).toBeNull();
-    expect(screen.queryByText("⇄ transfer")).toBeNull(); // both legs are TRANSFERs, but an exchange keeps its own caption (session 15)
+    expect(screen.queryByText(/⇄ transfer/)).toBeNull(); // both legs are TRANSFERs, but an exchange keeps its own caption (session 15)
   });
 });
 
