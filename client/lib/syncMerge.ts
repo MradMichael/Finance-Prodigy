@@ -677,6 +677,29 @@ function mergeUnderRule(local: LocalFinancials, server: LocalFinancials, deleted
  * Absent (null or undefined: no sync recorded since the update), the merge is
  * exactly what it was before.
  */
+/**
+ * Every top-level field this code knows. Travel slice 0 (owner, session 14):
+ * a field missing here was written by newer code. This code never edits
+ * one, so its own copy can only be an older one, or none: the merged copy
+ * takes the server's. `satisfies` makes a new field fail to compile until
+ * it's listed here.
+ */
+const KNOWN_FIELDS = {
+  schemaVersion: true, userName: true, income: true, lbpRate: true, emergencyFundTargetMonths: true,
+  emergencyFundBalance: true, emergencyFundOpeningBalance: true, transactions: true, goals: true, debts: true,
+  recurring: true, cards: true, assets: true, trackedBalances: true, netWorthHistory: true, incomeHistory: true,
+  lbpRateHistory: true, budgetRuleHistory: true, lbpRateUpdatedAt: true, settingsUpdatedAt: true, cycleStartDay: true,
+  cycleStartDayChangedAt: true, budgetRule: true, budgetCustomNeeds: true, budgetSplitHealedAt: true,
+  budgetSplitHealedFrom: true, budgetCustomWants: true, customCategories: true, categoryRules: true, wishlist: true,
+  recurringModelNoticeSeen: true, syncChoice: true, periodCloses: true, deletedKeys: true, resetAt: true,
+  revivedKeys: true, clashRecords: true, transactionClashRecords: true,
+} as const satisfies Record<keyof LocalFinancials, true>;
+
+/** The top-level fields of a copy that this code doesn't know (travel slice 0). */
+export function unknownFieldsOf(d: LocalFinancials): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(d).filter(([k]) => !(k in KNOWN_FIELDS)));
+}
+
 export function mergeFinancials(localIn: LocalFinancials, serverIn: LocalFinancials, now: Date = new Date(), seen?: SeenMap | null): MergeFinancialsResult {
   const at = now.toISOString();
   const deletedKeys = mergeDeletedKeys(localIn.deletedKeys, serverIn.deletedKeys);
@@ -745,6 +768,8 @@ export function mergeFinancials(localIn: LocalFinancials, serverIn: LocalFinanci
   const resetAt = serverIn.resetAt ?? localIn.resetAt;
   const merged: LocalFinancials = {
     ...local,
+    // Travel slice 0: what newer code wrote, kept rather than dropped.
+    ...unknownFieldsOf(serverIn),
     transactions: transactions.transactions,
     trackedBalances: mergeTrackedBalances(localU.trackedBalances ?? [], serverU.trackedBalances ?? [], deletedKeys?.trackedBalances ?? [], revivedKeys?.trackedBalances),
     wishlist: mergeByKey(local.wishlist ?? [], server.wishlist ?? [], (w) => w.id, deletedKeys?.wishlist, revivedKeys?.wishlist),
