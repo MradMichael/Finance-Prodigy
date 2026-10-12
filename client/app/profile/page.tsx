@@ -11,7 +11,7 @@ import type { Session } from "../../lib/auth";
 import { loadData, saveData, activeTransactions, syncAllowed, resetFinancials, saveFailureKind, SAVE_FAILURE_REASON, exportFileName } from "../../lib/localData";
 import { computeDashboard } from "../../lib/computeDashboard";
 import { buildReportHtml } from "../../lib/printReport";
-import { pushToServer, pullFromServer, getLastSyncTime, confirmOverwriteIfNeeded, mergeAndPush, recordMergeStored, recordRestoreStored, buildMergeNoticeText, applyBackupChoice, type BackupChoice } from "../../lib/syncService";
+import { pushToServer, pullFromServer, getLastSyncTime, confirmOverwriteIfNeeded, mergeAndPush, recordMergeStored, recordRestoreStored, buildMergeNoticeText, applyBackupChoice, NEWER_BACKUP_MESSAGE, type BackupChoice } from "../../lib/syncService";
 import { PUSH_NOT_RECORDED, RESTORE_NOT_RECORDED_NOTICE } from "../../lib/storageNotices";
 import { saveSeen, loadSeen } from "../../lib/syncSeen";
 import { takeUnseenClashes } from "../../lib/clashNotice";
@@ -198,8 +198,8 @@ export default function ProfilePage() {
     const result = await mergeAndPush(session.email, local);
     if (!result.ok) {
       setSyncing(false);
-      // Travel slice 0: a backup from newer code; nothing merged. Its message waits for approval.
-      setSyncMsg(result.newerVersion ? "" : "✗ " + result.error);
+      // Travel slice 0: a backup from newer code; nothing merged (the owner's message, session 15).
+      setSyncMsg(result.newerVersion ? NEWER_BACKUP_MESSAGE : "✗ " + result.error);
       return;
     }
     try {
@@ -232,8 +232,8 @@ export default function ProfilePage() {
       // Session 8 (owner-approved wording, merged session 9): pushed, but this device couldn't record when.
       setSyncMsg(result.notRecorded ? "✓ Pushed to database. " + PUSH_NOT_RECORDED : "✓ Pushed to database.");
     } else {
-      // Travel slice 0: this device's copy came from newer code; not uploaded. Its message waits for approval.
-      setSyncMsg(result.newerVersion ? "" : "✗ " + result.error);
+      // Travel slice 0: this device's copy came from newer code; not uploaded (the owner's message, session 15).
+      setSyncMsg(result.newerVersion ? NEWER_BACKUP_MESSAGE : "✗ " + result.error);
     }
   }
 

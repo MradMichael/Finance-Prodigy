@@ -63,8 +63,8 @@ export interface SyncResult {
   // "Offline" or "Couldn't reach backup".
   declined?: boolean;
   // Travel slice 0 (owner, session 14): this device holds a copy written by
-  // newer code, so it doesn't upload it. Quiet, like `declined`: its message
-  // waits for the owner's approval.
+  // newer code, so it doesn't upload it. Not a failure: the caller stops
+  // syncing and shows NEWER_BACKUP_MESSAGE (owner-approved, session 15).
   newerVersion?: boolean;
   // Session 8 (merged session 9): the server took the push, but this device couldn't
   // record its time (storage). A success; the caller says storage is the
@@ -76,6 +76,9 @@ export interface SyncResult {
 /** COPY-11, owner-approved wording (session 3): the ask before an empty account replaces a backup that has data. */
 export const EMPTY_OVERWRITE_ASK = "Your backup on our server has data, but this device has none. Replace the backup with this empty copy? Cancel keeps the backup as it is.";
 /** COPY-11, owner-approved wording (session 3): what Profile says when that ask was declined. */
+/** Travel slice 0 (owner-approved, session 15): this device met a backup, or holds a copy, written by newer code, and has stopped syncing. */
+export const NEWER_BACKUP_MESSAGE = "Your backup was saved by a newer version of ESSA, so this device has stopped syncing. Reload ESSA to update it. Until then, changes stay on this device.";
+
 export const EMPTY_PUSH_DECLINED = "Not uploaded: your backup on the server has data and this device has none, so the backup was kept.";
 
 /**
@@ -446,7 +449,7 @@ export type MergeAndPushResult =
   // mergedData is on the server, not yet on this device: store it, then recordMergeStored. If the store fails, record nothing.
   | { ok: true; syncedAt: string; addedFromServer: number; conflictsResolved: number; conflicts: StoredTransaction[]; conflictDetails: MergeConflictDetail[]; clashes: MergeClash[]; nonTransactionDivergence: string[]; replacedCloses: ReplacedCloseNotice[]; mergedData: LocalFinancials; firstSync: boolean; /** Item 7: the other device's edits inside a closed cycle. */ closedEdits: ClosedEdit[]; /** Session 10, item 2: another device's reset, when it cleared something here. */ resetElsewhere?: ResetElsewhere }
   | { ok: false; error: string; conflict?: boolean; newerVersion?: undefined }
-  // Travel slice 0: the backup was written by newer code; nothing merged or pushed. Quiet.
+  // Travel slice 0: the backup was written by newer code; nothing merged or pushed. The caller shows NEWER_BACKUP_MESSAGE.
   | { ok: false; newerVersion: true; error?: undefined; conflict?: undefined };
 
 /**
@@ -599,7 +602,7 @@ export type FetchAndMergeResult =
       resetElsewhere?: ResetElsewhere;
     }
   | { ok: false; error: string; notFound?: true; newerVersion?: undefined }
-  // Travel slice 0: the backup was written by newer code; nothing merged. Quiet, not a failure.
+  // Travel slice 0: the backup was written by newer code; nothing merged. Not a failure: the caller shows NEWER_BACKUP_MESSAGE.
   | { ok: false; newerVersion: true; error?: undefined; notFound?: undefined };
 
 /** The same records, whatever order the two copies hold them in. */
