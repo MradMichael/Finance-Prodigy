@@ -1,7 +1,7 @@
 "use client";
 
 import type { LocalFinancials, StoredTransaction, SettingKey } from "./localData";
-import { isEmptyFinancials, isFromNewerVersion, BUDGET_RULES } from "./localData";
+import { isEmptyFinancials, isFromNewerVersion, migrateIfOlder, BUDGET_RULES } from "./localData";
 import { mergeFinancials, stableStringify, unknownFieldsOf, MERGED_FIELDS, RULE_FIELDS, type MergeFinancialsResult, type MergeClash } from "./syncMerge";
 import { cycleLabelLong, dayLabel } from "./period";
 import { getSyncToken } from "./crypto";
@@ -487,11 +487,13 @@ export async function mergeAndPush(email: string, local: LocalFinancials): Promi
   if (!pulled.ok) return { ok: false, error: pulled.error };
   // Travel slice 0: never merged into, never written over.
   if (isFromNewerVersion(pulled.data)) return { ok: false, newerVersion: true };
+  // Session 18: an older copy is brought up to this version before it's merged.
+  const server = migrateIfOlder(pulled.data);
 
   // SYNC-1 step 2: the whole merge, not transactions alone. The wishlist,
   // categories, rules, tracked balances and period closes merge too
   // (lib/syncMerge.ts); everything else keeps this device's copy, as before.
-  const result = mergeFinancials(local, pulled.data, new Date(), seen);
+  const result = mergeFinancials(local, server, new Date(), seen);
   const merged = result.transactions;
   const mergedData: LocalFinancials = result.data;
   const { conflictDetails, replacedCloses } = describeMerge(result);
@@ -509,7 +511,7 @@ export async function mergeAndPush(email: string, local: LocalFinancials): Promi
     conflicts: merged.conflicts,
     conflictDetails,
     clashes: result.clashes,
-    nonTransactionDivergence: seen ? [] : detectNonTransactionDivergence(local, pulled.data),
+    nonTransactionDivergence: seen ? [] : detectNonTransactionDivergence(local, server),
     replacedCloses,
     mergedData,
     firstSync: !seen,
@@ -638,22 +640,26 @@ export async function fetchAndMerge(email: string, currentLocal: () => LocalFina
   const pulled = await pullFromServer(email, { timeoutMs: FETCH_TIMEOUT_MS });
   if (!pulled.ok) return { ok: false, error: pulled.error, ...(pulled.notFound ? { notFound: true as const } : {}) };
   if (isFromNewerVersion(pulled.data)) return { ok: false, newerVersion: true };
+  // Session 18: an older copy is brought up to this version before it's
+  // merged, and it's the migrated copy the record of the last sync is taken
+  // from, so the next merge doesn't read the migration as the server's change.
+  const server = migrateIfOlder(pulled.data);
   const local = currentLocal();
   if (!local) return { ok: true, skipped: true };
-  const result = mergeFinancials(local, pulled.data, new Date(), seen);
+  const result = mergeFinancials(local, server, new Date(), seen);
   // Plan H 5b: under the rule, more fields merge, so more fields can differ.
   // Travel slice 0: and the fields newer code wrote, so this device stores them.
-  const unknown = Object.keys({ ...unknownFieldsOf(local), ...unknownFieldsOf(pulled.data) }) as (keyof LocalFinancials)[];
+  const unknown = Object.keys({ ...unknownFieldsOf(local), ...unknownFieldsOf(server) }) as (keyof LocalFinancials)[];
   const fields = [...(seen ? [...MERGED_FIELDS, ...RULE_FIELDS] : MERGED_FIELDS), ...unknown];
   return {
     ok: true,
     mergedData: result.data,
-    serverCopy: pulled.data,
+    serverCopy: server,
     localChanged: !sameRecords(result.data, local, fields),
-    serverBehind: !sameRecords(result.data, pulled.data, fields),
+    serverBehind: !sameRecords(result.data, server, fields),
     addedFromServer: result.transactions.addedFromServer,
     clashes: result.clashes,
-    nonTransactionDivergence: seen ? [] : detectNonTransactionDivergence(local, pulled.data),
+    nonTransactionDivergence: seen ? [] : detectNonTransactionDivergence(local, server),
     firstSync: !seen,
     closedEdits: result.closedEdits,
     resetElsewhere: result.resetElsewhere,

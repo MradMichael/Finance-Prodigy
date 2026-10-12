@@ -1459,6 +1459,18 @@ export function isFromNewerVersion(raw: unknown): boolean {
 }
 
 /**
+ * Session 18: a server copy pulled for a MERGE, brought up to this code's
+ * version first when it's older. Merged raw, what came from an older copy kept
+ * its old shape for good: the merged copy carries this device's version, so no
+ * later load migrates it (a v6 goal never got its openingAmount). A copy at
+ * this version is returned exactly as it arrived; a newer one is refused
+ * before it gets here (isFromNewerVersion).
+ */
+export function migrateIfOlder(raw: LocalFinancials): LocalFinancials {
+  return schemaVersionOf(raw) < CURRENT_SCHEMA_VERSION ? migrateFinancials(raw) : raw;
+}
+
+/**
  * Turns whatever was actually in localStorage (or just pulled from the
  * server) into a complete, current-schema LocalFinancials. Called from
  * exactly two places -- loadData and saveData -- rather than from each
