@@ -658,7 +658,8 @@ function mergeUnderRule(local: LocalFinancials, server: LocalFinancials, deleted
       // its stale time would ride along on the merged copy and win the next clash.
       settingsUpdatedAt: Object.keys(settings.settingsUpdatedAt).length ? settings.settingsUpdatedAt : undefined,
       goals: goalsOut, debts: debtsOut, recurring: recurring.items, assets: assets.items,
-      wishlist: wishlist.items, customCategories: categories.items, categoryRules: rules.items, trips: trips.items,
+      wishlist: wishlist.items, customCategories: categories.items, categoryRules: rules.items,
+      ...(local.trips || server.trips ? { trips: trips.items } : {}),
       incomeHistory: hist(local.incomeHistory, server.incomeHistory, "incomeHistory"),
       lbpRateHistory: hist(local.lbpRateHistory, server.lbpRateHistory, "lbpRateHistory"),
       budgetRuleHistory: hist(local.budgetRuleHistory, server.budgetRuleHistory, "budgetRuleHistory"),
@@ -775,7 +776,8 @@ export function mergeFinancials(localIn: LocalFinancials, serverIn: LocalFinanci
     transactions: transactions.transactions,
     trackedBalances: mergeTrackedBalances(localU.trackedBalances ?? [], serverU.trackedBalances ?? [], deletedKeys?.trackedBalances ?? [], revivedKeys?.trackedBalances),
     wishlist: mergeByKey(local.wishlist ?? [], server.wishlist ?? [], (w) => w.id, deletedKeys?.wishlist, revivedKeys?.wishlist),
-    trips: mergeByKey(local.trips ?? [], server.trips ?? [], (t) => t.id, deletedKeys?.trips, revivedKeys?.trips),
+    // Written only when a copy has trips, so a merge of two copies without any adds no empty list (the fetch compares fields).
+    ...(local.trips || server.trips ? { trips: mergeByKey(local.trips ?? [], server.trips ?? [], (t) => t.id, deletedKeys?.trips, revivedKeys?.trips) } : {}),
     customCategories: mergeByKey(local.customCategories ?? [], server.customCategories ?? [], (c) => c.value, deletedKeys?.customCategories, revivedKeys?.customCategories),
     categoryRules: mergeByKey(local.categoryRules ?? [], server.categoryRules ?? [], (r) => r.id, deletedKeys?.categoryRules, revivedKeys?.categoryRules),
     periodCloses: closes,
