@@ -7,6 +7,7 @@ import { computeHoldingsByCurrency } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
 import Donut from "../charts/Donut";
+import ForeignCashPanel from "../ForeignCashPanel";
 import {currentCycleKey, isInCycle, periodNoun, cycleLabel, type CycleKey } from "../../lib/period";
 
 /**
@@ -141,6 +142,9 @@ export default function CurrencyScreen({ financials, onChange }: { financials: L
           </p>
           <RateStaleness updatedAt={financials.lbpRateUpdatedAt} />
         </div>
+
+        {/* Travel slice 1 (held): foreign cash */}
+        <ForeignCashPanel financials={financials} onChange={onChange} />
 
         {/* Spend by currency */}
         <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>

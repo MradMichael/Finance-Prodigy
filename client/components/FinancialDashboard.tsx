@@ -27,6 +27,7 @@ import { getLastSyncTime, serverCopyExists } from "../lib/syncService";
 import { getSession } from "../lib/auth";
 import { periodTotals, bucketDisplayState, type DashboardPayload } from "../lib/computeDashboard";
 import OnboardingChecklist from "./OnboardingChecklist";
+import { foreignCashAtCostUSD } from "../lib/foreignCash";
 import { fmtCur, type Screen } from "./screens/shared";
 import {currentCycleKey, cycleKeyForISO, cycleLabel, cycleLabelLong, cycleTickLabel, ymKeyToCycleKey, cycleBounds, periodNoun, asCalendarKey, asCycleKey, type CycleKey, type CalendarKey } from "../lib/period";
 const SERIF: React.CSSProperties = { fontFamily: "Georgia, 'Times New Roman', serif" };
@@ -648,6 +649,10 @@ export default function FinancialDashboard({
                 </div>
               </div>
 
+              {/* travel slice 1 (held): the owner's line. Net worth leaves foreign cash out, as it leaves out tracked balances (DI-06); this says where it is, so an exchange never looks like money vanished. */}
+              {financials && foreignCashAtCostUSD(financials) > 0 && (
+                <p className="text-xs mb-3" style={{ color: T.mute }}>{`Foreign cash (at cost): ${money(foreignCashAtCostUSD(financials))}, not yet counted in net worth`}</p>
+              )}
               {netWorthTrend.length >= 2 && startDay > 1 && (
                 <p className="text-[10px] mb-1" style={{ color: T.mute }}>
                   Calendar month-ends &mdash; net worth is a snapshot of a moment, so it is dated by the calendar, not by your {periodNoun(startDay)}.

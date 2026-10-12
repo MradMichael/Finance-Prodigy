@@ -9,6 +9,8 @@ import {
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY, CurrencyToggle, PM_OPTIONS, CardPicker } from "./form/Primitives";
 import { cycleKeyForISO, currentCycleKey } from "../lib/period";
+import { foreignCashRole, fmtForeign } from "../lib/foreignCash";
+import { fmtCur } from "./screens/shared";
 
 type TxBucket = "NEEDS" | "WANTS" | "SAVINGS" | "INCOME" | "TRANSFER";
 
@@ -41,6 +43,11 @@ export default function EditTransactionSheet({
   const T = useTheme();
   const startDay = cycleStartDayOf(financials);
   const update = (patch: Partial<LocalFinancials>) => onChange({ ...financials, ...patch });
+  // Travel slice 1 (held): an exchange row changes only its description and
+  // category (its amount, date and pool belong to the pair, and to the
+  // pocket); a pocket spend keeps its amount, currency and frozen cost, and
+  // stays spending. Enforced when saving, not only on screen.
+  const fxRole = foreignCashRole(transaction, financials.transactions);
   const cards = financials.cards ?? [];
   function saveCard(type: StoredCard["type"], last4: string): StoredCard | null {
     // Plan H 5c: the shared saveCard; the same card typed twice is reused.
@@ -133,7 +140,22 @@ export default function EditTransactionSheet({
     update({ recurring: [...(financials.recurring ?? []), edited(rec)] });
   }
 
+  function saveForeignCash() {
+    if (!desc.trim() || !date) return;
+    const keep = transaction.bucket === "NEEDS" || transaction.bucket === "WANTS" || transaction.bucket === "SAVINGS";
+    const spendBucket = keep && (bucket === "NEEDS" || bucket === "WANTS" || bucket === "SAVINGS") ? bucket : transaction.bucket;
+    update({
+      transactions: financials.transactions.map((t) => t.id !== transaction.id ? t : {
+        ...t, description: desc.trim(), category: category || undefined,
+        ...(fxRole === "spend" ? { date, bucket: spendBucket } : {}),
+        updatedAt: new Date().toISOString(),
+      }),
+    });
+    onClose();
+  }
+
   function save() {
+    if (fxRole) { saveForeignCash(); return; }
     const amtNum = parseFloat(amt.replace(/,/g, ""));
     if (!desc.trim() || isNaN(amtNum) || !date) return;
     if (currency === "LBP" && amtNum < 500) { setLbpConfirmAmount(amtNum); return; }
@@ -202,14 +224,41 @@ export default function EditTransactionSheet({
           )}
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <Label htmlFor="edit-tx-amount">Amount</Label>
-              <MoneyInput id="edit-tx-amount" value={amt} onChange={setAmt} placeholder="0" max={moneyMaxFor(currency, financials.lbpRate ?? DEFAULT_LBP_RATE)} />
+              {fxRole ? (
+                <>
+                  <Label>Amount</Label>
+                  <p className="text-sm tabular-nums py-1.5" style={{ color: T.text }}>{fmtCur(Math.abs(transaction.amount), transaction.currency ?? "USD")}</p>
+                </>
+              ) : (
+                <>
+                  <Label htmlFor="edit-tx-amount">Amount</Label>
+                  <MoneyInput id="edit-tx-amount" value={amt} onChange={setAmt} placeholder="0" max={moneyMaxFor(currency, financials.lbpRate ?? DEFAULT_LBP_RATE)} />
+                </>
+              )}
             </div>
             <div>
-              <Label htmlFor="edit-tx-date">Date</Label>
-              <DateFieldDMY id="edit-tx-date" value={date} onChange={setDate} />
+              {fxRole === "exchange" ? (
+                <>
+                  <Label>Date</Label>
+                  <p className="text-sm py-1.5" style={{ color: T.text }}>{fmtDate(transaction.date)}</p>
+                </>
+              ) : (
+                <>
+                  <Label htmlFor="edit-tx-date">Date</Label>
+                  <DateFieldDMY id="edit-tx-date" value={date} onChange={setDate} />
+                </>
+              )}
             </div>
           </div>
+          {/* Travel slice 1 (held): DRAFT wording, for approval. */}
+          {fxRole === "exchange" && (
+            <p className="text-[10px]" style={{ color: T.mute }}>Part of an exchange: only its description and category can change here. To change an amount or date, delete it and enter it again.</p>
+          )}
+          {fxRole === "spend" && transaction.fx && (
+            <p className="text-[10px]" style={{ color: T.mute }}>
+              {`Spent from ${transaction.fx.code} cash: ${fmtForeign(transaction.fx.amount, transaction.fx.code)} at $${(transaction.fx.costPerUnitUSD ?? 0).toFixed(4)} per ${fmtForeign(1, transaction.fx.code).replace(/\.00$/, "")}. To change the amount, delete it and enter it again.`}
+            </p>
+          )}
           <div>
             <Label htmlFor="edit-tx-desc">Description</Label>
             <FocusInput id="edit-tx-desc" value={desc} onChange={(e) => setDesc(e.target.value)} />
@@ -227,16 +276,16 @@ export default function EditTransactionSheet({
               </div>
             )}
           </div>
-          <div className="grid grid-cols-2 gap-1.5">
-            {TX_BUCKETS.map((bkt) => (
+          {fxRole !== "exchange" && <div className="grid grid-cols-2 gap-1.5">
+            {TX_BUCKETS.filter((bkt) => fxRole !== "spend" || bkt.value === "NEEDS" || bkt.value === "WANTS" || bkt.value === "SAVINGS").map((bkt) => (
               <button key={bkt.value} onClick={() => selectBucket(bkt.value)}
                 className="py-1.5 rounded-lg text-[10px] font-medium transition-all"
                 style={{ background: bucket === bkt.value ? bkt.color + "22" : T.ink, border: `1px solid ${bucket === bkt.value ? bkt.color : T.line}`, color: bucket === bkt.value ? bkt.color : T.mute }}>
                 {bkt.icon} {bkt.label}
               </button>
             ))}
-          </div>
-          {bucket === "TRANSFER" && (
+          </div>}
+          {bucket === "TRANSFER" && !fxRole && (
             <div className="space-y-1.5">
               {/* 2.4.56 -- amt above is always a magnitude; direction is this
                   explicit toggle, never a typed sign (MoneyInput strips any
@@ -274,6 +323,7 @@ export default function EditTransactionSheet({
               <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
             ))}
           </select>
+          {!fxRole && (<>
           <CurrencyToggle value={currency} onChange={setCurrency} />
           <div>
             <div className="grid grid-cols-3 gap-1.5 mb-1.5">
@@ -353,6 +403,7 @@ export default function EditTransactionSheet({
               <button type="button" onClick={() => setDebtAdjustment("0")} className="text-[10px] font-medium px-2.5 py-1.5 rounded-lg transition-all hover:opacity-80" style={{ color: T.jade, border: `1px solid ${T.jade}40` }}>+ Add debt correction</button>
             )
           )}
+          </>)}
         </div>
 
         <div className="flex gap-2 mt-5">
