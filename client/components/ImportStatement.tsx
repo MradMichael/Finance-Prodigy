@@ -15,6 +15,7 @@ import {
 } from "../lib/statementImport/neoBankAudiParser";
 import { guessBucket } from "../lib/statementImport/categorize";
 import CategoryOptions from "./form/CategoryOptions";
+import { suggestedTripId } from "../lib/trips";
 
 type Step = "pick" | "parsing" | "error" | "card" | "review";
 
@@ -27,6 +28,8 @@ interface ReviewRow {
   bucket: Bucket;
   category: string;
   isDuplicate: boolean;
+  /** Session 22, item 1b: the row's Trip as picked; null follows its date (a trip holding it, else none). */
+  tripPick: string | null;
 }
 
 const BUCKET_OPTIONS: { value: Bucket; label: string }[] = [
@@ -140,6 +143,7 @@ export default function ImportStatement({
         // the starting point (still editable per row before committing).
         category: matchCategoryRule(t.description, financials.categoryRules) ?? "",
         isDuplicate,
+        tripPick: null,
       };
     });
   }
@@ -151,6 +155,8 @@ export default function ImportStatement({
   // The single source of truth for "will this row actually be imported" —
   // used for both the displayed count and commit()'s own filter, so the
   // button's promised count and what actually gets saved can never diverge.
+  const tripOf = (r: ReviewRow) => r.tripPick ?? suggestedTripId(financials.trips ?? [], r.date) ?? "";
+
   function isRowValid(r: ReviewRow): boolean {
     const amt = parseFloat(r.amount);
     return !isNaN(amt) && amt > 0;
@@ -187,6 +193,7 @@ export default function ImportStatement({
         cardLabel: card.label,
         createdAt: importedAt, updatedAt: importedAt,
         ...(r.category ? { category: r.category } : {}),
+        ...(tripOf(r) ? { tripId: tripOf(r) } : {}),
       }));
 
     if (newTransactions.length === 0) return;
@@ -406,6 +413,13 @@ export default function ImportStatement({
                           <CategoryOptions customCategories={financials.customCategories} />
                         </select>
                       </div>
+                      {(financials.trips ?? []).length > 0 && (
+                        <select value={tripOf(r)} onChange={(e) => updateRow(r.key, { tripPick: e.target.value })} aria-label="Trip"
+                          className="w-full rounded-xl px-3 py-2 text-sm" style={{ background: T.panel, border: `1px solid ${T.line}`, color: T.text }}>
+                          <option value="">No trip</option>
+                          {[...(financials.trips ?? [])].sort((a, b) => b.startDate.localeCompare(a.startDate)).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                        </select>
+                      )}
                     </div>
                   </div>
                 </div>
