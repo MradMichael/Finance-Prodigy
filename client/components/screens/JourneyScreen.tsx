@@ -1,5 +1,6 @@
 "use client";
 
+import { spendingEffect, spentByBucket } from "../../lib/spending";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import type { LocalFinancials } from "../../lib/localData";
 import { DEFAULT_LBP_RATE, activeTransactions, toUSD as toUSDShared, cycleStartDayOf } from "../../lib/localData";
@@ -72,6 +73,7 @@ export default function JourneyScreen({
   // category-shift arc and the "transactions logged" milestone count below.
   const activeTx = activeTransactions(financials.transactions);
   const byMonth: Record<string, { needs: number; wants: number; savings: number }> = {};
+  const rowsByMonth: Record<string, typeof activeTx> = {};
   for (const t of activeTx) {
     // This arc is specifically about the Needs/Wants/Savings spend mix --
     // one-off INCOME transactions aren't spend, and the old catch-all
@@ -79,12 +81,12 @@ export default function JourneyScreen({
     // them as extra savings. TRANSFER (2.4.55) gets the same exclusion, for
     // the same reason -- it isn't a savings contribution just because it
     // isn't NEEDS/WANTS, and its amount can be negative (an incoming leg).
-    if (t.bucket === "INCOME" || t.bucket === "TRANSFER") continue;
+    // Session 19: the shared spending rule (lib/spending.ts): a change-back nets against Wants; income, transfers and other reimbursements stay out.
+    if (!spendingEffect(t)) continue;
     const k = cycleKeyForISO(t.date, startDay);
-    const b = byMonth[k] ?? (byMonth[k] = { needs: 0, wants: 0, savings: 0 });
-    const usd = toUSD(t.amount, t.currency);
-    if (t.bucket === "NEEDS") b.needs += usd; else if (t.bucket === "WANTS") b.wants += usd; else b.savings += usd;
+    (rowsByMonth[k] ?? (rowsByMonth[k] = [])).push(t);
   }
+  for (const [k, rows] of Object.entries(rowsByMonth)) byMonth[k] = spentByBucket(rows, (t) => toUSD(t.amount, t.currency));
   const txMonths = Object.keys(byMonth).sort();
   const pctOf = (b: { needs: number; wants: number; savings: number }) => {
     const total = b.needs + b.wants + b.savings;

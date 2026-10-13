@@ -44,8 +44,9 @@ export default function EditTransactionSheet({
   const update = (patch: Partial<LocalFinancials>) => onChange({ ...financials, ...patch });
   // Foreign cash, model 2 (decision 6): an exchange or change-back row edits
   // like any row, amounts and date included, plus its foreign amount. An
-  // exchange stays spending and a change-back stays income. Enforced when
-  // saving, not only on screen.
+  // exchange stays spending; a change-back stays a TRANSFER that gained what
+  // it received (session 19: reimbursement-shaped, not income), with no
+  // direction to choose. Enforced when saving, not only on screen.
   const fxRole = foreignCashRole(transaction);
   const [fxAmt, setFxAmt] = useState(transaction.fx ? String(transaction.fx.amount) : "");
   const cards = financials.cards ?? [];
@@ -173,9 +174,9 @@ export default function EditTransactionSheet({
     // 2.4.56 -- amtNum is a magnitude; TRANSFER is the one bucket whose
     // stored amount is signed (see retagBucketAmount's own doc comment).
     if (fxRole && !(fxAmtNum > 0)) return;
-    // Model 2: an exchange stays spending, a change-back stays income.
-    const keptBucket: TxBucket = fxRole === "exchange" ? (isSpending(bucket) ? bucket : transaction.bucket) : fxRole === "back" ? "INCOME" : bucket;
-    const signedAmt = keptBucket === "TRANSFER" ? (transferGained ? amtNum : -amtNum) : amtNum;
+    // Model 2: an exchange stays spending; a change-back stays a TRANSFER that gained (session 19).
+    const keptBucket: TxBucket = fxRole === "exchange" ? (isSpending(bucket) ? bucket : transaction.bucket) : fxRole === "back" ? "TRANSFER" : bucket;
+    const signedAmt = keptBucket === "TRANSFER" ? (transferGained || fxRole === "back" ? amtNum : -amtNum) : amtNum;
     update({
       transactions: financials.transactions.map((t) => t.id !== transaction.id ? t : {
         ...t, amount: signedAmt, description: desc.trim(),

@@ -4,8 +4,11 @@
 //   - an exchange is ONE expense row: what was paid, Wants, category Travel,
 //     on the pool the money left, with `fx: { kind: "exchange" }` naming the
 //     euros received. It counts as spending when it happens;
-//   - changing euros back is ONE income row on the pool the money went to,
-//     with `fx: { kind: "back" }` naming the euros given back;
+//   - changing euros back is ONE reimbursement-shaped row (session 19: not
+//     income): a TRANSFER that gained what was received, on the pool it went
+//     to, category Travel, `fx: { kind: "back" }` naming the euros given back.
+//     It nets against Wants in its own month (lib/spending.ts) and lowers the
+//     trip it's tagged to; income and the budget targets don't move;
 //   - euros are kept on a sheet, one per currency code, derived: exchange rows
 //     in, change-back rows out, and the entries that aren't ledger rows
 //     (`foreignEntries`: spends out, cash received in). A spend touches no
@@ -41,14 +44,14 @@ export function buildExchange(
   };
 }
 
-/** Euros changed back: one income row (category Travel) for what was received, naming the euros given back. */
+/** Euros changed back: one reimbursement-shaped row (a TRANSFER that gained what was received; category Travel), naming the euros given back. */
 export function buildChangeBack(
   p: { date: string; code: string; given: number; received: number; receivedCurrency: Currency; to: Pool; description: string; tripId?: string },
   lbpRate: number,
 ): StoredTransaction {
   const now = new Date().toISOString();
   return {
-    id: uid(), amount: p.received, currency: p.receivedCurrency, bucket: "INCOME", category: "travel",
+    id: uid(), amount: p.received, currency: p.receivedCurrency, bucket: "TRANSFER", category: "travel",
     description: p.description, date: p.date || todayISO(), ...poolOf(p.to),
     createdAt: now, updatedAt: now, ...withRate(p.receivedCurrency, lbpRate),
     fx: { code: p.code, amount: p.given, kind: "back" },
@@ -67,6 +70,31 @@ export function buildForeignEntry(
     ...(p.category ? { category: p.category } : {}), ...(p.tripId ? { tripId: p.tripId } : {}),
     createdAt: at, updatedAt: at,
   };
+}
+
+/**
+ * A sheet entry edited (session 19): its description, category, trip, amount
+ * and date, checked as a row is (a positive amount and a description). Its
+ * id, kind, code and creation time stay; its edit time moves, so the sync
+ * merge sees an ordinary change. The balance is derived, so it recalculates.
+ * An entry that's gone (deleted on another device) isn't brought back.
+ */
+export function editForeignEntry(
+  data: LocalFinancials, id: string,
+  p: { amount: number; description: string; date: string; category?: string; tripId?: string },
+  now: Date = new Date(),
+): { ok: true; data: LocalFinancials } | { ok: false; reason: "entry" } {
+  const old = (data.foreignEntries ?? []).find((e) => e.id === id);
+  if (!old) return { ok: true, data };
+  const description = p.description.trim();
+  if (!(p.amount > 0) || !description || !p.date) return { ok: false, reason: "entry" };
+  const { category: _c, tripId: _t, ...kept } = old;
+  const entry: StoredForeignEntry = {
+    ...kept, amount: round2(p.amount), description, date: p.date,
+    ...(p.category ? { category: p.category } : {}), ...(p.tripId ? { tripId: p.tripId } : {}),
+    updatedAt: now.toISOString(),
+  };
+  return { ok: true, data: { ...data, foreignEntries: (data.foreignEntries ?? []).map((e) => (e.id === id ? entry : e)) } };
 }
 
 /** One line of a sheet. `delta` and `balance` are in the sheet's currency. */

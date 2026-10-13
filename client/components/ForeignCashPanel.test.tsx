@@ -7,7 +7,8 @@
 //   - Each sheet: its balance, and its lines with a running balance.
 //   - Spend from it: a sheet entry (amount, description, category, date,
 //     trip); no budget bucket, no cost. Not counted in the budget.
-//   - Change back: ONE income row on the pool the money went to.
+//   - Change back: ONE reimbursement-shaped row (a TRANSFER that gained) on
+//     the pool the money went to; it nets against Wants (session 19).
 //   - Cash received (decision 4): a sheet entry in, no USD effect.
 //   - A sheet entry can be deleted (decision 7: re-entered to undo).
 import { it, expect, vi, afterEach } from "vitest";
@@ -95,7 +96,7 @@ it("a spend beyond what the sheet held on that date is allowed, with the warning
   expect(within(form).getByText("That's €40.00 more than this cash held on that date.")).toBeTruthy();
 });
 
-it("changing back: one income row on the pool it went to; the sheet drops", () => {
+it("changing back: one reimbursement-shaped row (a TRANSFER that gained) on the pool it went to; the sheet drops", () => {
   const { written } = show(base([EXCH]));
   fireEvent.click(screen.getByRole("button", { name: "Change back" }));
   const form = screen.getByRole("form", { name: "Change back" });
@@ -105,7 +106,7 @@ it("changing back: one income row on the pool it went to; the sheet drops", () =
   fireEvent.click(within(form).getByRole("button", { name: /Cash/ }));
   fireEvent.click(within(form).getByRole("button", { name: "Save change-back" }));
   const back = written().transactions.find((t) => t.fx?.kind === "back")!;
-  expect(back).toMatchObject({ amount: 105, currency: "USD", bucket: "INCOME", category: "travel", paymentMethod: "cash", date: "2026-10-21", description: "Changed back from EUR", fx: { code: "EUR", amount: 100, kind: "back" } });
+  expect(back).toMatchObject({ amount: 105, currency: "USD", bucket: "TRANSFER", category: "travel", paymentMethod: "cash", date: "2026-10-21", description: "Changed back from EUR", fx: { code: "EUR", amount: 100, kind: "back" } });
 });
 
 it("changing back refuses amounts that aren't positive", () => {
@@ -139,6 +140,39 @@ it("deleting a sheet entry asks, then removes it and records the deletion; an ex
   expect(window.confirm).toHaveBeenCalledWith("Delete this entry? To undo, enter it again.");
   expect(written().foreignEntries).toEqual([]);
   expect(written().deletedKeys?.foreignEntries?.map((t) => t.key)).toEqual([DINNER.id]);
+});
+
+// Session 19, item 3: a sheet entry is edited like any row. Its ✎ ("Edit
+// entry") opens its form, filled in; "Save changes" saves; the balance
+// recalculates. Fields, errors and buttons reuse approved labels. Exchange
+// and change-back lines are ledger rows, edited in the transaction list.
+it("editing an entry: ✎ opens it filled in; its trip and amount change; the balance recalculates", () => {
+  const { written } = show(base([EXCH], { foreignEntries: [DINNER], trips: [LISBON] }));
+  const s = screen.getByRole("region", { name: "EUR cash" });
+  const [exLine, dinnerLine] = within(s).getAllByRole("listitem");
+  expect(within(exLine).queryByRole("button", { name: "Edit entry" })).toBeNull();
+  fireEvent.click(within(dinnerLine).getByRole("button", { name: "Edit entry" }));
+  const form = screen.getByRole("form", { name: "Edit entry" });
+  expect((within(form).getByLabelText("Amount") as HTMLInputElement).value).toBe("40");
+  expect((within(form).getByLabelText("Description") as HTMLInputElement).value).toBe("Dinner");
+  expect((within(form).getByLabelText("Category") as HTMLSelectElement).value).toBe("dining");
+  expect((within(form).getByLabelText("Trip") as HTMLSelectElement).value).toBe("");
+  fireEvent.change(within(form).getByLabelText("Amount"), { target: { value: "55" } });
+  fireEvent.change(within(form).getByLabelText("Trip"), { target: { value: "trip-lis" } });
+  setDate(form, "2026-10-06");
+  fireEvent.click(within(form).getByRole("button", { name: "Save changes" }));
+  expect(written().foreignEntries).toEqual([expect.objectContaining({ id: DINNER.id, amount: 55, date: "2026-10-06", tripId: "trip-lis", description: "Dinner", category: "dining" })]);
+  expect(screen.queryByRole("form", { name: "Edit entry" })).toBeNull();
+});
+
+it("an edit that doesn't make sense is refused with the approved reason, and saves nothing", () => {
+  const { onChange } = show(base([EXCH], { foreignEntries: [DINNER] }));
+  fireEvent.click(within(within(screen.getByRole("region", { name: "EUR cash" })).getAllByRole("listitem")[1]).getByRole("button", { name: "Edit entry" }));
+  const form = screen.getByRole("form", { name: "Edit entry" });
+  fireEvent.change(within(form).getByLabelText("Description"), { target: { value: " " } });
+  fireEvent.click(within(form).getByRole("button", { name: "Save changes" }));
+  expect(within(form).getByText("Enter the amount and a description.")).toBeTruthy();
+  expect(onChange).not.toHaveBeenCalled();
 });
 
 it("with no foreign cash: no sheet, and only the forms that start one", () => {

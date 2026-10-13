@@ -9,12 +9,14 @@
 //     running balance in that currency.
 //   - A euro spend touches no budget total, no pool and not net worth: it
 //     was counted at the exchange.
-//   - Changing euros back is ONE income row on the pool it went to, with
-//     `fx: { kind: "back" }`.
+//   - Changing euros back is ONE reimbursement-shaped row (session 19: not
+//     income): a TRANSFER on the pool it went to, category Travel, with
+//     `fx: { kind: "back" }`. It nets against Wants in its own month
+//     (lib/spending.ts) and lowers the trip; income and targets don't move.
 import { describe, it, expect } from "vitest";
 import { DEFAULT_DATA, softDelete, type LocalFinancials, type StoredTransaction } from "./localData";
 import { computeDashboard, periodTotals, trackedBalanceExpected } from "./computeDashboard";
-import { isValidForeignCode, buildExchange, buildChangeBack, buildForeignEntry, sheet, sheetCodes, foreignCashRole } from "./foreignCash";
+import { isValidForeignCode, buildExchange, buildChangeBack, buildForeignEntry, editForeignEntry, sheet, sheetCodes, foreignCashRole } from "./foreignCash";
 
 const RATE = 89_500;
 const data = (transactions: StoredTransaction[] = [], extra: Partial<LocalFinancials> = {}) =>
@@ -62,14 +64,17 @@ describe("an exchange", () => {
 describe("changing euros back", () => {
   const back = () => buildChangeBack({ date: "2026-10-21", code: "EUR", given: 100, received: 105, receivedCurrency: "USD", to: CASH, description: "Changed back from EUR" }, RATE);
 
-  it("is one income row, category Travel, on the pool it went to, naming the euros given back", () => {
-    expect(back()).toMatchObject({ amount: 105, currency: "USD", bucket: "INCOME", category: "travel", paymentMethod: "cash", date: "2026-10-21", fx: { code: "EUR", amount: 100, kind: "back" } });
+  it("is one reimbursement-shaped row: a TRANSFER that gained what was received, category Travel, on the pool it went to, naming the euros given back", () => {
+    expect(back()).toMatchObject({ amount: 105, currency: "USD", bucket: "TRANSFER", category: "travel", paymentMethod: "cash", date: "2026-10-21", fx: { code: "EUR", amount: 100, kind: "back" } });
   });
 
-  it("is income in its cycle, and its pool rises by what was received", () => {
-    const before = data([], { trackedBalances: [TB] });
-    const after = data([back()], { trackedBalances: [TB] });
-    expect(periodTotals(after, ym, OCT31).income - periodTotals(before, ym, OCT31).income).toBe(105);
+  it("€100 changed back for $105: Wants spent falls by $105 in its month; income and the budget targets don't move; the pool rises by $105", () => {
+    const ex = exchange("2026-10-03", 500, 460);
+    const before = data([ex], { trackedBalances: [TB], income: 3000 });
+    const after = data([ex, back()], { trackedBalances: [TB], income: 3000 });
+    expect(periodTotals(after, ym, OCT31).wants - periodTotals(before, ym, OCT31).wants).toBe(-105);
+    expect(periodTotals(after, ym, OCT31).income).toBe(periodTotals(before, ym, OCT31).income);
+    expect(computeDashboard(after).budgetTargets).toEqual(computeDashboard(before).budgetTargets);
     expect(trackedBalanceExpected(TB, after) - trackedBalanceExpected(TB, before)).toBe(105);
   });
 });
@@ -111,6 +116,44 @@ describe("the sheet", () => {
     const gbp = buildForeignEntry({ kind: "in", code: "GBP", amount: 50, date: "2026-10-01", description: "Left over" }, at("2026-10-01T09:00:00.000Z"));
     expect(sheetCodes(data([ex1], { foreignEntries: [gbp] }))).toEqual(["EUR", "GBP"]);
     expect(sheetCodes(data([]))).toEqual([]);
+  });
+});
+
+// Session 19, item 3: a sheet entry is editable like any row: its description,
+// category, trip, amount and date. Its id, kind, code and creation time stay;
+// its edit time moves (an ordinary change to the sync merge); the balance is
+// derived, so it recalculates. Refused like a row: no positive amount, or no
+// description. An entry that's gone isn't brought back.
+describe("editing a sheet entry", () => {
+  const ex1 = { ...exchange("2026-10-03", 500, 460), createdAt: "2026-10-03T09:00:00.000Z" };
+  const dinner = buildForeignEntry({ kind: "spend", code: "EUR", amount: 40, date: "2026-10-05", description: "Dinner", category: "dining", tripId: "trip-lis" }, at("2026-10-05T20:00:00.000Z"));
+  const p = { amount: 40, description: "Dinner", date: "2026-10-05" };
+
+  it("changes its description, category, trip, amount and date; keeps its id, kind, code and creation time; the balance recalculates", () => {
+    const d = data([ex1], { foreignEntries: [dinner] });
+    const r = editForeignEntry(d, dinner.id, { amount: 55, description: " Dinner at Ramiro ", date: "2026-10-06", category: "travel", tripId: "trip-rome" }, at("2026-10-07T09:00:00.000Z"));
+    if (!r.ok) throw new Error("refused");
+    expect(r.data.foreignEntries).toEqual([{ ...dinner, amount: 55, description: "Dinner at Ramiro", date: "2026-10-06", category: "travel", tripId: "trip-rome", updatedAt: "2026-10-07T09:00:00.000Z" }]);
+    expect(sheet(r.data, "EUR").balance).toBe(405);
+    expect(r.data.transactions).toBe(d.transactions);
+  });
+
+  it("clearing its category or trip removes them", () => {
+    const r = editForeignEntry(data([], { foreignEntries: [dinner] }), dinner.id, p);
+    if (!r.ok) throw new Error("refused");
+    expect(r.data.foreignEntries![0]).not.toHaveProperty("category");
+    expect(r.data.foreignEntries![0]).not.toHaveProperty("tripId");
+  });
+
+  it("is refused like any row: an amount that isn't positive, or no description", () => {
+    const d = data([], { foreignEntries: [dinner] });
+    expect(editForeignEntry(d, dinner.id, { ...p, amount: 0 })).toEqual({ ok: false, reason: "entry" });
+    expect(editForeignEntry(d, dinner.id, { ...p, description: "  " })).toEqual({ ok: false, reason: "entry" });
+  });
+
+  it("an entry that's gone isn't brought back", () => {
+    const d = data([], { foreignEntries: [] });
+    expect(editForeignEntry(d, dinner.id, p)).toEqual({ ok: true, data: d });
   });
 });
 

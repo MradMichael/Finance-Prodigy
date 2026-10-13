@@ -7,7 +7,8 @@
 //   - The transaction list says what an exchange or a change-back row is.
 //   - The edit sheet: an exchange or change-back row edits like any row
 //     (decision 6: amounts and date too), and its euros; an exchange stays
-//     spending and a change-back stays income.
+//     spending and a change-back stays a change-back (a TRANSFER that gained;
+//     session 19), with no direction to choose.
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { ThemeProvider } from "../contexts/ThemeContext";
@@ -104,14 +105,14 @@ describe("the edit sheet", () => {
     expect(saved()).toMatchObject({ amount: 520, date: "2026-10-04", bucket: "WANTS", category: "travel", paymentMethod: "cash", fx: { code: "EUR", amount: 470, kind: "exchange" } });
   });
 
-  it("a change-back row: its amounts can change and it stays income", () => {
+  it("a change-back row: its amounts can change; it stays a TRANSFER that gained, with no bucket or direction to choose", () => {
     const b = back();
     const { saved } = open(b);
-    expect(screen.queryByRole("button", { name: /Needs|Wants|Savings|Transfer/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Needs|Wants|Savings|Income|Transfer|Pool gained|Pool lost/ })).toBeNull();
     fireEvent.change(screen.getByLabelText("Amount changed back"), { target: { value: "90" } });
     fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "95" } });
     fireEvent.click(screen.getByRole("button", { name: /Save/ }));
-    expect(saved()).toMatchObject({ amount: 95, bucket: "INCOME", fx: { code: "EUR", amount: 90, kind: "back" } });
+    expect(saved()).toMatchObject({ amount: 95, bucket: "TRANSFER", fx: { code: "EUR", amount: 90, kind: "back" } });
   });
 
   it("euros that aren't positive aren't saved", () => {

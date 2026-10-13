@@ -12,7 +12,11 @@
 //     (decision 7); exchange and change-back lines are ledger rows, deleted
 //     from the transaction list.
 //   - Spend from foreign cash: a sheet entry; not counted in the budget.
-//   - Change back: ONE income row on the pool the money went to.
+//   - Change back: ONE reimbursement-shaped row (a TRANSFER that gained) on
+//     the pool the money went to; it nets against Wants (session 19).
+//   - A sheet entry is edited like any row (session 19): its ✎ ("Edit
+//     entry") opens its form, filled in; "Save changes" saves it (approved
+//     labels reused). The balance is derived, so it recalculates.
 //   - Cash received (decision 4): a sheet entry in, with no USD effect.
 import { useState } from "react";
 import type { Currency, LocalFinancials, PaymentMethod, StoredCard } from "../lib/localData";
@@ -20,7 +24,7 @@ import { allCategories, cycleStartDayOf, fmtDate, makeToUSDForMonth, moneyMaxFor
 import { cycleKeyForISO } from "../lib/period";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY, CurrencyToggle, PaymentMethodPicker } from "./form/Primitives";
-import { buildChangeBack, buildExchange, buildForeignEntry, fmtForeign, isValidForeignCode, sheet, sheetCodes } from "../lib/foreignCash";
+import { buildChangeBack, buildExchange, buildForeignEntry, editForeignEntry, fmtForeign, isValidForeignCode, sheet, sheetCodes } from "../lib/foreignCash";
 import { suggestedTripId } from "../lib/trips";
 
 const usd = (n: number, digits = 2) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: digits, maximumFractionDigits: digits }).format(n);
@@ -163,6 +167,33 @@ export default function ForeignCashPanel({ financials, onChange }: { financials:
     setInAmount(""); setInDesc(""); setInError(""); setOpen(null);
   }
 
+  // ── editing a sheet entry ──
+  const [editing, setEditing] = useState<string | null>(null);
+  const [edAmount, setEdAmount] = useState("");
+  const [edDesc, setEdDesc] = useState("");
+  const [edDate, setEdDate] = useState("");
+  const [edCategory, setEdCategory] = useState("");
+  const [edTrip, setEdTrip] = useState("");
+  const [edError, setEdError] = useState("");
+
+  function toggleEdit(id: string) {
+    if (editing === id) { setEditing(null); return; }
+    const e = (financials.foreignEntries ?? []).find((x) => x.id === id);
+    if (!e) return;
+    setEditing(id); setEdAmount(String(e.amount)); setEdDesc(e.description); setEdDate(e.date);
+    setEdCategory(e.category ?? ""); setEdTrip(e.tripId ?? ""); setEdError("");
+  }
+
+  function saveEdit(id: string) {
+    const r = editForeignEntry(financials, id, {
+      amount: num(edAmount), description: edDesc, date: edDate,
+      ...(edCategory ? { category: edCategory } : {}), ...(edTrip ? { tripId: edTrip } : {}),
+    });
+    if (!r.ok) { setEdError("Enter the amount and a description."); return; }
+    onChange(r.data);
+    setEditing(null);
+  }
+
   function removeEntry(id: string) {
     if (!confirm("Delete this entry? To undo, enter it again.")) return;
     onChange({ ...financials, foreignEntries: (financials.foreignEntries ?? []).filter((e) => e.id !== id), deletedKeys: recordDeletion(financials, "foreignEntries", id, new Date()) });
@@ -193,12 +224,42 @@ export default function ForeignCashPanel({ financials, onChange }: { financials:
                     <span style={{ color: l.delta < 0 ? T.text : T.jade }}>{signed(l.delta, c)}</span>
                     <span>{fmtForeign(l.balance, c)}</span>
                     {(l.source === "spend" || l.source === "in") && (
-                      <button type="button" onClick={() => removeEntry(l.id)} className="underline" style={{ color: T.coral }}>Delete</button>
+                      <>
+                        <button type="button" onClick={() => toggleEdit(l.id)} aria-label="Edit entry" aria-expanded={editing === l.id}
+                          className="text-[10px] px-1.5 py-0.5 rounded" style={{ color: T.brass, border: `1px solid ${T.brass}40` }}>✎</button>
+                        <button type="button" onClick={() => removeEntry(l.id)} className="underline" style={{ color: T.coral }}>Delete</button>
+                      </>
                     )}
                   </span>
                 </li>
               ))}
             </ul>
+            {editing && s.lines.some((l) => l.id === editing) && (
+              <form aria-label="Edit entry" className="space-y-2.5 pt-2" style={{ borderTop: `1px solid ${T.line}` }} onSubmit={(e) => { e.preventDefault(); saveEdit(editing); }}>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label htmlFor="fx-ed-amount">Amount</Label>
+                    <MoneyInput id="fx-ed-amount" value={edAmount} onChange={setEdAmount} placeholder="0" max={moneyMaxFor("USD", lbpRate)} />
+                  </div>
+                  <div>
+                    <Label htmlFor="fx-ed-date">Date</Label>
+                    <DateFieldDMY id="fx-ed-date" value={edDate} onChange={setEdDate} />
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="fx-ed-desc">Description</Label>
+                  <FocusInput id="fx-ed-desc" value={edDesc} onChange={(e) => setEdDesc(e.target.value)} />
+                </div>
+                <select value={edCategory} onChange={(e) => setEdCategory(e.target.value)} aria-label="Category"
+                  className="w-full rounded-lg px-2 py-1.5 text-[11px]" style={field}>
+                  <option value="">No category</option>
+                  {allCategories(financials.customCategories).map((cat) => <option key={cat.value} value={cat.value}>{cat.icon} {cat.label}</option>)}
+                </select>
+                {tripSelect("fx-ed-trip", edTrip, setEdTrip)}
+                <div role="status">{edError && <p className="text-[11px]" style={{ color: T.coral }}>{edError}</p>}</div>
+                <button type="submit" className="w-full py-2 rounded-xl text-sm font-semibold" style={{ background: T.jade, color: T.ink }}>Save changes</button>
+              </form>
+            )}
           </section>
         );
       })}

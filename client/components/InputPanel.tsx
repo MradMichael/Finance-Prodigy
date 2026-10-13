@@ -1,5 +1,6 @@
 "use client";
 
+import { spentByBucket, totalSpent } from "../lib/spending";
 import { useState, useRef } from "react";
 import { useDialogFocus } from "./useDialogFocus";
 import { useScrollFocus } from "./useScrollFocus";
@@ -556,11 +557,13 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   const recurRowsThisMonth = recs
     .map((r) => ({ r, usd: toUSD(historizedRecurringContribution(r, prefix, now, startDay), r.currency) }))
     .filter(({ usd }) => usd > 0);
-  const needsOut = monthTx.filter((t) => t.bucket === "NEEDS").reduce((s, t)   => s + toUSD(t.amount, t.currency), 0)
+  // Session 19: the shared spending rule (lib/spending.ts): a change-back nets against Wants; income, transfers and other reimbursements stay out.
+  const monthSpent = spentByBucket(monthTx, (t) => toUSD(t.amount, t.currency));
+  const needsOut = monthSpent.needs
                  + recs.filter((r) => r.bucket === "NEEDS").reduce((s, r)   => s + toUSD(historizedRecurringContribution(r, prefix, now, startDay), r.currency), 0);
-  const wantsOut = monthTx.filter((t) => t.bucket === "WANTS").reduce((s, t)   => s + toUSD(t.amount, t.currency), 0)
+  const wantsOut = monthSpent.wants
                  + recs.filter((r) => r.bucket === "WANTS").reduce((s, r)   => s + toUSD(historizedRecurringContribution(r, prefix, now, startDay), r.currency), 0);
-  const savOut   = monthTx.filter((t) => t.bucket === "SAVINGS").reduce((s, t) => s + toUSD(t.amount, t.currency), 0)
+  const savOut   = monthSpent.savings
                  + recs.filter((r) => r.bucket === "SAVINGS").reduce((s, r) => s + toUSD(historizedRecurringContribution(r, prefix, now, startDay), r.currency), 0);
   const totalOut = needsOut + wantsOut + savOut;
   const fmt      = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
@@ -1156,7 +1159,8 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                   // totals for anyone who ever logged a gift/reimbursement.
                   // TRANSFER (2.4.55) excluded too -- not spend, and its
                   // amount can be negative (an incoming leg).
-                  const total = txs.filter((t) => t.bucket !== "INCOME" && t.bucket !== "TRANSFER").reduce((s, t) => s + toUSD(t.amount, t.currency), 0);
+                  // Session 19: the shared spending rule (lib/spending.ts): a change-back nets against Wants; income, transfers and other reimbursements stay out.
+                  const total = totalSpent(txs, (t) => toUSD(t.amount, t.currency));
                   return (
                     <div key={ym}>
                       <div className="flex justify-between items-center mb-2">

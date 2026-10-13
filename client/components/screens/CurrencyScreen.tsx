@@ -1,5 +1,6 @@
 "use client";
 
+import { totalSpent } from "../../lib/spending";
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
 import { historizedRecurringContribution, toUSD as toUSDShared, moneyEquals, activeTransactions, LBP_RATE_STALE_DAYS, DEFAULT_LBP_RATE, cycleStartDayOf, calendarDaysSince, settingsEdited } from "../../lib/localData";
@@ -77,10 +78,11 @@ export default function CurrencyScreen({ financials, onChange }: { financials: L
   const noun = periodNoun(startDay);
   // TRANSFER (2.4.55) excluded too -- not spend, and its amount can be
   // negative (an incoming leg), which would corrupt this currency total.
-  const monthTx = activeTransactions(financials.transactions).filter((t) => isInCycle(t.date, currentYm, startDay) && t.bucket !== "INCOME" && t.bucket !== "TRANSFER");
-  const spendUSD = monthTx.filter((t) => (t.currency ?? "USD") === "USD").reduce((s, t) => s + t.amount, 0)
+  // Session 19: the shared spending rule (lib/spending.ts): a change-back nets against Wants; income, transfers and other reimbursements stay out. Each currency in its own units.
+  const monthTx = activeTransactions(financials.transactions).filter((t) => isInCycle(t.date, currentYm, startDay));
+  const spendUSD = totalSpent(monthTx.filter((t) => (t.currency ?? "USD") === "USD"), (t) => t.amount)
     + (financials.recurring ?? []).filter((r) => (r.currency ?? "USD") === "USD").reduce((s, r) => s + historizedRecurringContribution(r, currentYm, new Date(), startDay), 0);
-  const spendLBP = monthTx.filter((t) => t.currency === "LBP").reduce((s, t) => s + t.amount, 0)
+  const spendLBP = totalSpent(monthTx.filter((t) => t.currency === "LBP"), (t) => t.amount)
     + (financials.recurring ?? []).filter((r) => r.currency === "LBP").reduce((s, r) => s + historizedRecurringContribution(r, currentYm, new Date(), startDay), 0);
   const spendTotalUSD = toUSD(spendUSD, "USD") + toUSD(spendLBP, "LBP");
 

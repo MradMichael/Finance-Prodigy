@@ -12,6 +12,7 @@ import { DEFAULT_DATA, migrateFinancials, recordDeletion, resetFinancials, type 
 import { mergeFinancials, unknownFieldsOf } from "./syncMerge";
 import { saveSeen, seenOf } from "./syncSeen";
 import { clashSentence, fetchAndMerge } from "./syncService";
+import { editForeignEntry } from "./foreignCash";
 import { activateSessionKey } from "./crypto";
 
 const T0 = new Date("2026-11-10T12:00:00.000Z");
@@ -57,6 +58,19 @@ describe("under the fingerprint rule", () => {
     const here = d([], { deletedKeys: recordDeletion(d([DINNER]), "foreignEntries", "f1", new Date("2026-10-20T00:00:00.000Z")) });
     expect(mergeFinancials(here, d([DINNER]), T0, seen).data.foreignEntries ?? []).toEqual([]);
   });
+});
+
+// Session 19, item 3: an edit is an ordinary change under the rule.
+it("an entry edited (its trip and amount) is taken from whichever device edited it, with nothing named", () => {
+  const before = d([DINNER]);
+  const seen = seenOf(before);
+  const r = editForeignEntry(before, "f1", { amount: 45, description: "Dinner", date: "2026-10-05", category: "dining", tripId: "trip-lis" }, new Date("2026-10-13T09:00:00.000Z"));
+  if (!r.ok) throw new Error("refused");
+  for (const [here, there] of [[r.data, before], [before, r.data]]) {
+    const m = mergeFinancials(here, there, T0, seen);
+    expect(m.data.foreignEntries).toEqual(r.data.foreignEntries);
+    expect(m.clashes).toEqual([]);
+  }
 });
 
 it("a reset clears the entries on the other device too", () => {

@@ -1,3 +1,4 @@
+import { spentByBucket, spendingEffect, totalSpent } from "./spending";
 import type { LocalFinancials, BudgetRuleKey, StoredDebt, StoredTransaction, StoredRecurring, TrackedBalance, Currency, PeriodCloseAcknowledgement } from "./localData";
 import { goalProgress, acknowledgementFor, historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, LBP_RATE_STALE_DAYS, cycleStartDayOf, valueForMonth, makeToUSDForMonth, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, DEFAULT_LBP_RATE, derivedEfBalance, derivedDebtBalance, activeTransactions, parseLocalDate, isRecurringActive, isAfterBalanceBaseline, calendarDaysSince } from "./localData";
 import { cycleKeyForISO, currentCycleKey, calendarKeyForDate, isInCycle, cycleProgress, cycleBounds, cycleKeyMinus, periodNoun, cycleLabel, type CycleKey, type CalendarKey, type CalendarHistory } from "./period";
@@ -290,10 +291,11 @@ export function periodTotals(
   const startDay = cycleStartDayOf(data);
   const toUSDForMonth = makeToUSDForMonth(data);
   const tx = activeTransactions(data.transactions ?? []).filter((t) => isInCycle(t.date, ym, startDay));
-  const txSum = (bucket: string) => tx.filter((t) => t.bucket === bucket).reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, ym), 0);
+  // Session 19: the shared spending rule (lib/spending.ts): a change-back nets against Wants; income, transfers and other reimbursements stay out.
+  const spent = spentByBucket(tx, (t) => toUSDForMonth(t.amount, t.currency, ym));
   const salary = valueForMonth(data.incomeHistory, ym, data.income);
   const txIncome = tx.filter((t) => t.bucket === "INCOME").reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, ym), 0);
-  const out = { income: salary + txIncome, needs: txSum("NEEDS"), wants: txSum("WANTS"), savings: txSum("SAVINGS") };
+  const out = { income: salary + txIncome, needs: spent.needs, wants: spent.wants, savings: spent.savings };
   for (const r of data.recurring ?? []) {
     const usd = toUSDForMonth(historizedRecurringContribution(r, ym, recurAsOf, startDay), r.currency, ym);
     if (r.bucket === "NEEDS") out.needs += usd;
@@ -455,9 +457,11 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   const recurWants   = activeRecurring.filter((r) => r.bucket === "WANTS").reduce((s, r)   => s + toUSD(historizedRecurringContribution(r, prefix, now, startDay), r.currency), 0);
   const recurSavings = activeRecurring.filter((r) => r.bucket === "SAVINGS").reduce((s, r) => s + toUSD(historizedRecurringContribution(r, prefix, now, startDay), r.currency), 0);
 
-  const needsSpend  = monthTx.filter((t) => t.bucket === "NEEDS").reduce((s, t) => s + toUSD(t.amount, t.currency), 0)   + recurNeeds;
-  const wantsSpend  = monthTx.filter((t) => t.bucket === "WANTS").reduce((s, t) => s + toUSD(t.amount, t.currency), 0)   + recurWants;
-  const savingsContrib = monthTx.filter((t) => t.bucket === "SAVINGS").reduce((s, t) => s + toUSD(t.amount, t.currency), 0) + recurSavings;
+  // Session 19: the shared spending rule (lib/spending.ts): a change-back nets against Wants; income, transfers and other reimbursements stay out.
+  const monthSpent = spentByBucket(monthTx, (t) => toUSD(t.amount, t.currency));
+  const needsSpend  = monthSpent.needs   + recurNeeds;
+  const wantsSpend  = monthSpent.wants   + recurWants;
+  const savingsContrib = monthSpent.savings + recurSavings;
   const totalSpend  = needsSpend + wantsSpend + savingsContrib;
   // One-off INCOME transactions this month (a gift, a reimbursement) — real
   // money on top of the fixed Setup salary, so it belongs in `income`
@@ -803,7 +807,8 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     // outgoing leg (real money, but not spend) and its incoming leg (a
     // negative amount, which would make the chart's own "spend" line
     // absurdly negative).
-    const txSpend = tx.filter((t) => t.bucket !== "INCOME" && t.bucket !== "TRANSFER").reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, mo), 0);
+    // Session 19: the shared spending rule (lib/spending.ts): a change-back nets against Wants; income, transfers and other reimbursements stay out.
+    const txSpend = totalSpent(tx, (t) => toUSDForMonth(t.amount, t.currency, mo));
     // Recurring payments (rent, subscriptions, etc.) don't create a
     // transaction row each month, so counting only logged transactions
     // understated every month's real spend — evaluate each recurring
@@ -858,10 +863,12 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
         // dangerous: it isn't a savings contribution just because it isn't
         // NEEDS/WANTS, and its amount can be negative (an incoming leg),
         // which would otherwise corrupt spend.savings with a negative term.
-        if (t.bucket === "INCOME" || t.bucket === "TRANSFER") continue;
-        const amt = toUSDForMonth(t.amount, t.currency, ym);
-        if (t.bucket === "NEEDS") spend.needs += amt;
-        else if (t.bucket === "WANTS") spend.wants += amt;
+        // Session 19: the shared spending rule (lib/spending.ts): a change-back nets against Wants; income, transfers and other reimbursements stay out.
+        const e = spendingEffect(t);
+        if (!e) continue;
+        const amt = e.sign * toUSDForMonth(t.amount, t.currency, ym);
+        if (e.bucket === "NEEDS") spend.needs += amt;
+        else if (e.bucket === "WANTS") spend.wants += amt;
         else spend.savings += amt;
       }
       // Recurring bills don't create a transaction row, so a past month's
