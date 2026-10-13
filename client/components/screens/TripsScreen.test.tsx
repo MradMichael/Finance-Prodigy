@@ -3,7 +3,7 @@
 //     budgets by category. Refused with a reason when it doesn't make sense.
 //   - Each trip: planned against actual in USD (lib/trips.ts; model 2: an
 //     exchange counts, a change-back or refund lowers it), by category, the
-//     trip's euro spends in euros by category (DRAFT wording), and the rows
+//     trip's euro spends in euros by category (approved, session 19), and the rows
 //     counted.
 //   - Delete trip: gone, with the deletion recorded; its rows keep their tags.
 import { describe, it, expect, vi, afterEach } from "vitest";

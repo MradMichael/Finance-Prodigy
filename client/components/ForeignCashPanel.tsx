@@ -1,8 +1,8 @@
 "use client";
 
 // Foreign cash, model 2 (session 18, held). Slice 1's approved sentences are
-// kept where they still apply; every new one here is a DRAFT for the owner's
-// approval. The currency screen's foreign cash, as a sheet per currency
+// kept where they still apply; every new one here was approved by the owner
+// in session 19. The currency screen's foreign cash, as a sheet per currency
 // (lib/foreignCash.ts):
 //   - Record an exchange: ONE Wants/Travel row for what was paid, naming the
 //     euros received. Past dates allowed. Its trip defaults to the one whose

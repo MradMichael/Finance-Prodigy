@@ -1,7 +1,7 @@
 // Foreign cash, model 2: the sheet's entries (`foreignEntries`) sync as trips
 // do. Merged by key with tombstones before a device has a record of a last
 // sync, and under the fingerprint rule after; a two-sided edit keeps the later
-// one and is named ("the foreign cash entry": DRAFT noun). A reset clears
+// one and is named ("the foreign cash entry": approved, session 19). A reset clears
 // them; a deleted one stays deleted. The list is written only when a copy has
 // one. And the upgrade: a converted (v8) device merging a server copy still at
 // v7 converts that copy first (session 18, item 1), so no pocket leg comes

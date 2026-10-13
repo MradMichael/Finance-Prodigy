@@ -1,4 +1,4 @@
-// Foreign cash, model 2 (session 18, held; new wording DRAFT): the currency
+// Foreign cash, model 2 (session 18; wording approved in session 19): the currency
 // screen's foreign cash, as a sheet per currency.
 //   - Record an exchange: the pool it came from, what was paid (USD or LBP),
 //     the currency and amount received, the date (past allowed), the trip

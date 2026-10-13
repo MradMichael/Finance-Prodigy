@@ -4,7 +4,7 @@
 // (lib/trips.ts). A trip has a name, dates and a budget in USD, optionally by
 // category; each shows planned against actual in USD (foreign cash, model 2:
 // an exchange counts, a change-back or refund lowers it), by category, the
-// trip's euro spends in euros by category (DRAFT wording, for information),
+// trip's euro spends in euros by category (approved, session 19; for information),
 // and the rows counted. Rows are tagged in the edit sheet and the
 // foreign-cash forms. A trip can be edited (session 17: "Edit trip", "Save
 // changes"), with the same fields and errors as a new one; every tag stays.

@@ -230,7 +230,7 @@ export default function EditTransactionSheet({
               <DateFieldDMY id="edit-tx-date" value={date} onChange={setDate} />
             </div>
           </div>
-          {/* Foreign cash, model 2: the euros (an exchange's, approved label; a change-back's, DRAFT). */}
+          {/* Foreign cash, model 2: the euros (labels approved, session 19). */}
           {fxRole && (
             <div>
               <Label htmlFor="edit-tx-fx">{fxRole === "exchange" ? "Amount received" : "Amount changed back"}</Label>

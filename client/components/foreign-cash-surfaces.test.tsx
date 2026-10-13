@@ -1,4 +1,4 @@
-// Foreign cash, model 2 (session 18, held; new wording DRAFT) on the screens
+// Foreign cash, model 2 (session 18; wording approved in session 19) on the screens
 // that already exist.
 //   - Net worth: slice 1's "Foreign cash (at cost): $X, not yet counted in
 //     net worth" line is gone from the overview, Journey and the currency

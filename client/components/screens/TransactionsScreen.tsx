@@ -626,7 +626,7 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
                               </p>
                             )}
                             {/* Foreign cash, model 2: an exchange row (approved caption, session 15) and a
-                                change-back row (DRAFT) say what they are. */}
+                                change-back row (approved, session 19) say what they are. */}
                             {t.fx?.kind === "exchange" && (
                               <p className="text-[10px]" style={{ color: T.jade }}>{`⇄ exchange · ${fmtForeign(t.fx.amount, t.fx.code)} received`}</p>
                             )}
