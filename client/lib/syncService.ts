@@ -829,6 +829,8 @@ function settingValueText(setting: SettingKey, v: unknown): string {
 const CLASH_NOUNS = {
   goal: "the goal", debt: "the debt", recurring: "the recurring payment", asset: "the asset",
   wishlist: "the wishlist item", category: "the category", rule: "the category rule",
+  trip: "the trip", // travel slice 2 (held): approved in session 17
+  foreignEntry: "the foreign cash entry", // foreign cash, model 2: approved in session 19
 } as const;
 
 /**

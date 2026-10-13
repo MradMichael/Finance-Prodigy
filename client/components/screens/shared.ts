@@ -11,7 +11,7 @@ import type { Currency } from "../../lib/localData";
 // believes it's online -- is "unreachable", "Couldn't reach backup".
 export type SyncStatus = "idle" | "syncing" | "synced" | "offline" | "unreachable" | "conflict";
 
-export type Screen = "overview" | "budget" | "setup" | "finances" | "transactions" | "categories" | "goals" | "debts" | "recurring" | "projections" | "journey" | "currency" | "balancecheck" | "wishlist" | "statistics";
+export type Screen = "overview" | "budget" | "setup" | "finances" | "transactions" | "categories" | "goals" | "debts" | "recurring" | "projections" | "journey" | "currency" | "trips" | "balancecheck" | "wishlist" | "statistics";
 
 export const NAV: { key: Screen; label: string; icon: string }[] = [
   { key: "overview",     label: "Overview",     icon: "◉" },
@@ -28,6 +28,7 @@ export const NAV: { key: Screen; label: string; icon: string }[] = [
   { key: "statistics",   label: "Statistics",   icon: "▤" },
   { key: "journey",      label: "Journey",      icon: "✦" },
   { key: "currency",     label: "Currency",     icon: "⇄" },
+  { key: "trips",        label: "Trips",        icon: "✈" }, // travel slice 2 (held): label approved in session 17
   { key: "balancecheck", label: "Balance Check", icon: "🔍" },
 ];
 

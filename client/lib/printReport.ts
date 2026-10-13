@@ -1,3 +1,4 @@
+import { totalSpent } from "./spending";
 import type { LocalFinancials } from "./localData";
 import { cycleStartDayOf, BUDGET_RULES, nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, toUSD as toUSDShared, categoryLabel, derivedDebtBalance, activeTransactions, DEFAULT_LBP_RATE, makeToUSDForMonth } from "./localData";
 import {cycleKeyForISO, currentCycleKey, cycleLabelLong, periodNoun } from "./period";
@@ -78,7 +79,8 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
   // TRANSFER (2.4.55) excluded for the same reason -- it isn't spend, and its
   // amount can be negative (an incoming leg), which would otherwise corrupt
   // this total rather than just under/over-counting it.
-  const ledgerTotal = ledgerTx.filter((t) => t.bucket !== "INCOME" && t.bucket !== "TRANSFER").reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, cycleKeyForISO(t.date, startDay)), 0);
+  // Session 19: the shared spending rule (lib/spending.ts): a change-back nets against Wants; income, transfers and other reimbursements stay out.
+  const ledgerTotal = totalSpent(ledgerTx, (t) => toUSDForMonth(t.amount, t.currency, cycleKeyForISO(t.date, startDay)));
   const ledgerRows = ledgerTx.map((t) => `
     <tr>
       <td>${day(t.date)}</td>

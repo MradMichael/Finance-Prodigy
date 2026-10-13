@@ -1,5 +1,6 @@
 "use client";
 
+import { spentByCategory } from "../../lib/spending";
 import { useState } from "react";
 import type { LocalFinancials, CategoryRule } from "../../lib/localData";
 import { CATEGORIES, allCategories, categoryLabel, categoryIcon, matchCategoryRule, historizedRecurringContribution, toUSD as toUSDShared, uid, moneyEquals, activeTransactions, DEFAULT_LBP_RATE, cycleStartDayOf, recordDeletion, edited } from "../../lib/localData";
@@ -127,10 +128,8 @@ export default function CategoriesScreen({
   const txInScope = scope === "month" ? activeTx.filter((t) => isInCycle(t.date, currentYm, startDay)) : activeTx;
   const totals = new Map<string, number>();
   const bump = (key: string, amt: number) => totals.set(key, (totals.get(key) ?? 0) + amt);
-  for (const t of txInScope) {
-    if (t.bucket === "INCOME") continue;
-    bump(t.category ?? "uncategorized", toUSD(t.amount, t.currency));
-  }
+  // Session 19: the shared spending rule (lib/spending.ts): a change-back nets against Wants; income, transfers and other reimbursements stay out.
+  for (const [key, amt] of spentByCategory(txInScope, (t) => toUSD(t.amount, t.currency))) bump(key, amt);
   if (scope === "month") {
     for (const r of financials.recurring ?? []) {
       const amt = toUSD(historizedRecurringContribution(r, currentYm, new Date(), startDay), r.currency);

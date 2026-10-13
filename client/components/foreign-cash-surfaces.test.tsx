@@ -1,15 +1,14 @@
-// Travel slice 1: foreign cash on the screens that already exist.
-//   - Net worth: the owner's line, "Foreign cash (at cost): $X, not yet
-//     counted in net worth", on the overview's Net worth panel and on
-//     Journey's, so an exchange never looks like money vanished. Net worth
-//     itself leaves foreign cash out, as it leaves out tracked balances
-//     (DI-06): counting it would make an exchange look like money appeared.
-//   - Delete on My Finances deletes an exchange's two rows together.
-//   - Recently deleted restores, and removes, an exchange's two rows together.
-//   - The transaction list says what an exchange row or a pocket spend is.
-//   - The edit sheet keeps what would break them: an exchange row changes
-//     only its description and category; a spend can't change its amount,
-//     currency or payment method, nor become income or a transfer.
+// Foreign cash, model 2 (session 18; wording approved in session 19) on the screens
+// that already exist.
+//   - Net worth: slice 1's "Foreign cash (at cost): $X, not yet counted in
+//     net worth" line is gone from the overview, Journey and the currency
+//     screen's Cash & assets panel: euros were spent at the exchange.
+//   - An exchange is one row: deleted, restored and removed alone.
+//   - The transaction list says what an exchange or a change-back row is.
+//   - The edit sheet: an exchange or change-back row edits like any row
+//     (decision 6: amounts and date too), and its euros; an exchange stays
+//     spending and a change-back stays a change-back (a TRANSFER that gained;
+//     session 19), with no direction to choose.
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { ThemeProvider } from "../contexts/ThemeContext";
@@ -21,113 +20,106 @@ import TransactionsScreen from "./screens/TransactionsScreen";
 import EditTransactionSheet from "./EditTransactionSheet";
 import { computeDashboard } from "../lib/computeDashboard";
 import { DEFAULT_DATA, todayISO, softDelete, type LocalFinancials, type StoredTransaction } from "../lib/localData";
-import { buildExchange, buildPocketSpend } from "../lib/foreignCash";
+import { buildExchange, buildChangeBack, buildForeignEntry } from "../lib/foreignCash";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }) }));
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
-const LINE = "Foreign cash (at cost): $500, not yet counted in net worth";
 const day = todayISO();
-const legs = () => buildExchange({ date: day, paid: 500, paidCurrency: "USD", from: { paymentMethod: "cash" }, code: "EUR", received: 460, description: "Exchange to EUR" }, 89_500);
+const exch = () => buildExchange({ date: day, paid: 500, paidCurrency: "USD", from: { paymentMethod: "cash" }, code: "EUR", received: 460, description: "Exchange to EUR" }, 89_500);
+const back = () => buildChangeBack({ date: day, code: "EUR", given: 100, received: 105, receivedCurrency: "USD", to: { paymentMethod: "cash" }, description: "Changed back from EUR" }, 89_500);
 const fin = (transactions: StoredTransaction[], extra: Partial<LocalFinancials> = {}) =>
   ({ ...DEFAULT_DATA, income: 3000, lbpRate: 89_500, transactions, ...extra }) as LocalFinancials;
+const withEuros = () => fin([exch()], { foreignEntries: [buildForeignEntry({ kind: "spend", code: "EUR", amount: 40, date: day, description: "Dinner" })] });
 
-describe("net worth", () => {
-  it("the overview's Net worth panel carries the line, and net worth itself doesn't count it", () => {
-    const d = fin(legs());
+describe("net worth: no 'not yet counted' line anywhere", () => {
+  it("the overview", () => {
+    const d = withEuros();
     render(<ThemeProvider><FinancialDashboard data={computeDashboard(d)} financials={d} onNavigate={vi.fn()} /></ThemeProvider>);
-    expect(screen.getByText(LINE)).toBeTruthy();
-    expect(computeDashboard(d).netWorth.total).toBe(computeDashboard(fin([])).netWorth.total);
+    expect(screen.queryByText(/not yet counted in net worth|Foreign cash \(at cost\)/)).toBeNull();
   });
 
-  it("the currency screen's Cash & assets panel carries it too, on its own line (owner, session 15)", () => {
-    const d = fin(legs());
-    render(<ThemeProvider><CurrencyScreen financials={d} onChange={vi.fn()} /></ThemeProvider>);
-    const panel = screen.getByText("Cash & assets, by currency").parentElement!;
-    expect(panel.textContent).toContain(LINE);
-    cleanup();
-    render(<ThemeProvider><CurrencyScreen financials={fin([])} onChange={vi.fn()} /></ThemeProvider>);
-    expect(screen.getByText("Cash & assets, by currency").parentElement!.textContent).not.toMatch(/Foreign cash \(at cost\)/);
+  it("the currency screen's Cash & assets panel", () => {
+    render(<ThemeProvider><CurrencyScreen financials={withEuros()} onChange={vi.fn()} /></ThemeProvider>);
+    expect(screen.getByText("Cash & assets, by currency").parentElement!.textContent).not.toMatch(/not yet counted in net worth|Foreign cash \(at cost\)/);
   });
 
-  it("Journey's net worth carries it too; with no foreign cash, neither shows a line", () => {
-    const d = fin(legs());
+  it("Journey", () => {
+    const d = withEuros();
     render(<ThemeProvider><JourneyScreen financials={d} dashData={computeDashboard(d)} onNavigate={vi.fn()} /></ThemeProvider>);
-    expect(screen.getByText(LINE)).toBeTruthy();
-    cleanup();
-    const none = fin([]);
-    render(<ThemeProvider><FinancialDashboard data={computeDashboard(none)} financials={none} onNavigate={vi.fn()} /></ThemeProvider>);
-    expect(screen.queryByText(/Foreign cash \(at cost\)/)).toBeNull();
+    expect(screen.queryByText(/not yet counted in net worth|Foreign cash \(at cost\)/)).toBeNull();
   });
 });
 
-describe("an exchange's two rows go together", () => {
-  it("Delete on My Finances deletes both", () => {
+describe("an exchange is one row", () => {
+  it("Delete on My Finances deletes just it", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
-    const [src, pocket] = legs();
-    const d = fin([src, pocket]);
+    const e = exch();
+    const other = { id: "o1", amount: 12, currency: "USD", bucket: "WANTS", description: "Coffee", date: day } as StoredTransaction;
+    const d = fin([e, other]);
     const onChange = vi.fn();
     render(<InputPanel financials={d} dashData={computeDashboard(d)} onChange={onChange} onEdit={vi.fn()} onPay={vi.fn()} />);
-    fireEvent.click(screen.getAllByRole("button", { name: "Delete transaction" })[0]);
+    const buttons = screen.getAllByRole("button", { name: "Delete transaction" });
+    fireEvent.click(buttons[0]);
     const written = (onChange.mock.calls.at(-1)![0] as LocalFinancials).transactions;
-    expect(written.filter((t) => t.deletedAt).map((t) => t.id).sort()).toEqual([src.id, pocket.id].sort());
+    expect(written.filter((t) => t.deletedAt)).toHaveLength(1);
   });
 
-  it("Recently deleted restores both, and removes both", () => {
+  it("Recently deleted restores it, and removes it", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
-    const [src, pocket] = legs();
-    const at = "2026-10-05T09:00:00.000Z";
-    const d = fin([softDelete(fin([]), src, at), softDelete(fin([]), pocket, at)]);
+    const d = fin([softDelete(fin([]), exch(), "2026-10-05T09:00:00.000Z")]);
     const onChange = vi.fn();
     render(<TransactionsScreen financials={d} onChange={onChange} onEdit={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /Recently deleted/ }));
-    fireEvent.click(screen.getAllByRole("button", { name: "Restore" })[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Restore" }));
     expect((onChange.mock.calls.at(-1)![0] as LocalFinancials).transactions.every((t) => !t.deletedAt)).toBe(true);
-    fireEvent.click(screen.getAllByRole("button", { name: "Delete permanently" })[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Delete permanently" }));
     expect((onChange.mock.calls.at(-1)![0] as LocalFinancials).transactions.every((t) => t.purgedAt)).toBe(true);
   });
 });
 
-describe("the transaction list", () => {
-  it("says what an exchange row and a pocket spend are", () => {
-    const [src, pocket] = legs();
-    const s = buildPocketSpend({ date: day, code: "EUR", amount: 40, bucket: "WANTS", description: "Dinner", costPerUnitUSD: 500 / 460 });
-    render(<TransactionsScreen financials={fin([src, pocket, s])} onChange={vi.fn()} onEdit={vi.fn()} />);
-    expect(screen.getByText("⇄ exchange · €460.00 received")).toBeTruthy();
-    expect(screen.getByText("⇄ exchange to EUR")).toBeTruthy();
-    expect(screen.getByText("€40.00 from EUR cash")).toBeTruthy();
-    expect(screen.queryByText(/split payment/)).toBeNull();
-    expect(screen.queryByText(/⇄ transfer/)).toBeNull(); // both legs are TRANSFERs, but an exchange keeps its own caption (session 15)
-  });
+it("the transaction list says what an exchange row and a change-back row are", () => {
+  render(<TransactionsScreen financials={fin([exch(), back()])} onChange={vi.fn()} onEdit={vi.fn()} />);
+  expect(screen.getByText("⇄ exchange · €460.00 received")).toBeTruthy();
+  expect(screen.getByText("⇄ changed back · €100.00")).toBeTruthy();
+  expect(screen.queryByText(/split payment|⇄ transfer/)).toBeNull();
 });
 
 describe("the edit sheet", () => {
-  const open = (t: StoredTransaction, all: StoredTransaction[]) => {
+  const open = (t: StoredTransaction) => {
     const onChange = vi.fn();
-    render(<ThemeProvider><EditTransactionSheet transaction={t} financials={fin(all)} onChange={onChange} onClose={vi.fn()} /></ThemeProvider>);
+    render(<ThemeProvider><EditTransactionSheet transaction={t} financials={fin([t])} onChange={onChange} onClose={vi.fn()} /></ThemeProvider>);
     return { onChange, saved: () => (onChange.mock.calls.at(-1)![0] as LocalFinancials).transactions.find((x) => x.id === t.id)! };
   };
 
-  it("an exchange row: only description and category change; amount, date, bucket and payment method are kept", () => {
-    const [src, pocket] = legs();
-    const { saved } = open(src, [src, pocket]);
-    expect(screen.getByText("Part of an exchange: only its description and category can change here. To change an amount or date, delete it and enter it again.")).toBeTruthy();
-    expect(screen.queryByLabelText("Amount")).toBeNull();
-    fireEvent.change(screen.getByLabelText("Description"), { target: { value: "Euros for Lisbon" } });
-    fireEvent.click(screen.getByRole("button", { name: /Save/ }));
-    expect(saved()).toEqual({ ...src, description: "Euros for Lisbon", category: undefined, updatedAt: saved().updatedAt });
-  });
-
-  it("a pocket spend: its amount, currency and payment method are kept, and it can't become income or a transfer", () => {
-    const s = buildPocketSpend({ date: day, code: "EUR", amount: 40, bucket: "WANTS", description: "Dinner", costPerUnitUSD: 500 / 460 });
-    const { saved } = open(s, [s]);
-    expect(screen.getByText("Spent from EUR cash: €40.00 at $1.0870 per €1. To change the amount, delete it and enter it again.")).toBeTruthy();
+  it("an exchange row: its amount, date and euros can change; it stays spending; slice 1's sentences are gone", () => {
+    const e = exch();
+    const { saved } = open(e);
+    expect(screen.queryByText(/Part of an exchange|Spent from EUR cash/)).toBeNull();
     expect(screen.queryByRole("button", { name: /Income/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /Transfer/ })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /Needs/ }));
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "520" } });
+    fireEvent.change(screen.getByLabelText("Amount received"), { target: { value: "470" } });
+    fireEvent.change(screen.getByRole("dialog").querySelector('input[type="date"]')!, { target: { value: "2026-10-04" } });
     fireEvent.click(screen.getByRole("button", { name: /Save/ }));
-    const out = saved();
-    expect(out).toMatchObject({ amount: s.amount, currency: "USD", bucket: "NEEDS", fx: s.fx });
-    expect(out.paymentMethod).toBeUndefined();
+    expect(saved()).toMatchObject({ amount: 520, date: "2026-10-04", bucket: "WANTS", category: "travel", paymentMethod: "cash", fx: { code: "EUR", amount: 470, kind: "exchange" } });
+  });
+
+  it("a change-back row: its amounts can change; it stays a TRANSFER that gained, with no bucket or direction to choose", () => {
+    const b = back();
+    const { saved } = open(b);
+    expect(screen.queryByRole("button", { name: /Needs|Wants|Savings|Income|Transfer|Pool gained|Pool lost/ })).toBeNull();
+    fireEvent.change(screen.getByLabelText("Amount changed back"), { target: { value: "90" } });
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "95" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save/ }));
+    expect(saved()).toMatchObject({ amount: 95, bucket: "TRANSFER", fx: { code: "EUR", amount: 90, kind: "back" } });
+  });
+
+  it("euros that aren't positive aren't saved", () => {
+    const e = exch();
+    const { onChange } = open(e);
+    fireEvent.change(screen.getByLabelText("Amount received"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save/ }));
+    expect(onChange).not.toHaveBeenCalled();
   });
 });

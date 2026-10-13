@@ -19,6 +19,10 @@ export const SEEN_KINDS = [
   "settings", "incomeHistory", "lbpRateHistory", "budgetRuleHistory", "netWorthHistory",
   // Item 7 (owner, session 8): every transaction, by id.
   "transactions",
+  // Travel slice 2 (held): trips, by id, like the wishlist.
+  "trips",
+  // Foreign cash, model 2 (held): the sheets' entries, by id, like trips.
+  "foreignEntries",
 ] as const;
 export type SeenKind = (typeof SEEN_KINDS)[number];
 
@@ -85,6 +89,8 @@ export function keyedRecords(d: LocalFinancials, kind: SeenKind): Map<string, un
     case "recurring": return byId(d.recurring);
     case "assets": return byId(d.assets);
     case "wishlist": return byId(d.wishlist);
+    case "trips": return byId(d.trips);
+    case "foreignEntries": return byId(d.foreignEntries);
     case "categoryRules": return byId(d.categoryRules);
     case "customCategories": return new Map((d.customCategories ?? []).map((c) => [c.value, c as unknown]));
     case "settings": return new Map(SETTING_KEYS.map((k) => [k, settingValue(d, k) as unknown]));

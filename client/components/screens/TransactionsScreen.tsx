@@ -1,12 +1,13 @@
 "use client";
 
+import { spentByBucket, spentByCategory, spendingEffect, totalSpent } from "../../lib/spending";
 import { useState } from "react";
 import type { LocalFinancials, StoredRecurring } from "../../lib/localData";
-import { fmtDate, historizedRecurringContribution, toUSD as toUSDShared, categoryLabel as categoryLabelShared, categoryIcon as categoryIconShared, activeTransactions, cycleMonthDivergence, purgeTransaction, undeleteTransactions, DEFAULT_LBP_RATE, cycleStartDayOf, todayISO } from "../../lib/localData";
+import { fmtDate, historizedRecurringContribution, toUSD as toUSDShared, categoryLabel as categoryLabelShared, categoryIcon as categoryIconShared, activeTransactions, cycleMonthDivergence, purgeTransaction, undeleteTransaction, DEFAULT_LBP_RATE, cycleStartDayOf, todayISO } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money, fmtCur } from "./shared";
 import Donut from "../charts/Donut";
-import { exchangePartnerId, fmtForeign, pairedIds } from "../../lib/foreignCash";
+import { fmtForeign } from "../../lib/foreignCash";
 import {currentCycleKey, cycleKeyForISO, cycleLabel, cycleBounds, cycleKeyMinus, isInCycle, asCycleKey, type CycleKey } from "../../lib/period";
 
 type TrendPeriod = "monthly" | "quarterly" | "yearly";
@@ -117,8 +118,7 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
   // DI-14: a revival at a new generation, so the restore survives a merge
   // with a device that still holds the deleted copy (undeleteTransaction).
   function restoreTransaction(txId: string) {
-    // Travel slice 1: an exchange's two rows come back together.
-    onChange(undeleteTransactions(financials, pairedIds(financials.transactions, txId), new Date().toISOString()));
+    onChange(undeleteTransaction(financials, txId, new Date().toISOString()));
   }
 
   // Scrubs the payload, keeps the row -- see purgeTransaction's own doc
@@ -127,8 +127,7 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
   function purgeTransactionPermanently(txId: string) {
     onChange({
       ...financials,
-      // Travel slice 1: an exchange's two rows are removed together.
-      transactions: ((ids) => financials.transactions.map((t) => !ids.has(t.id) ? t : purgeTransaction(t)))(new Set(pairedIds(financials.transactions, txId))),
+      transactions: financials.transactions.map((t) => t.id !== txId ? t : purgeTransaction(t)),
     });
   }
   const recurring = financials.recurring ?? [];
@@ -224,8 +223,10 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
   // Same totals the bucket-summary cards use (logged transactions in the
   // current filter + that filter's recurring contribution), reshaped for
   // the donut below so the chart and the cards never disagree.
+  // Session 19: the shared spending rule (lib/spending.ts): a change-back nets against Wants; income, transfers and other reimbursements stay out.
+  const filteredSpent = spentByBucket(filtered, (t) => toUSD(t.amount, t.currency));
   const bucketBreakdown = (["NEEDS", "WANTS", "SAVINGS"] as const).map((b) => {
-    const txSum = filtered.filter((t) => t.bucket === b).reduce((s, t) => s + toUSD(t.amount, t.currency), 0);
+    const txSum = b === "NEEDS" ? filteredSpent.needs : b === "WANTS" ? filteredSpent.wants : filteredSpent.savings;
     const recurSum = b === "NEEDS" ? recurForFilter.needs : b === "WANTS" ? recurForFilter.wants : recurForFilter.savings;
     return { bucket: b, value: txSum + recurSum };
   });
@@ -240,10 +241,8 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
   const categoryBreakdown = (() => {
     const totals = new Map<string, number>();
     const bump = (key: string, amt: number) => totals.set(key, (totals.get(key) ?? 0) + amt);
-    for (const t of filtered) {
-      if (t.bucket === "INCOME") continue;
-      bump(t.category ?? "uncategorized", toUSD(t.amount, t.currency));
-    }
+    // Session 19: the shared spending rule (lib/spending.ts): a change-back nets against Wants; income, transfers and other reimbursements stay out.
+    for (const [key, amt] of spentByCategory(filtered, (t) => toUSD(t.amount, t.currency))) bump(key, amt);
     if (filter !== "all") {
       // Same anchor defect as recurringForMonth above (2.4.93). This site was
       // missed by the sweep that fixed :139/:195 and by the one that found
@@ -270,19 +269,18 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
   const trendCap = trendPeriod === "yearly" ? 5 : 6;
   const trendData = (() => {
     const byPeriod: Record<string, BucketTotals> = {};
+    const rowsByPeriod: Record<string, typeof allTx> = {};
     for (const t of allTx) {
       // Trends are specifically the Needs/Wants/Savings spend mix -- INCOME
       // transactions aren't spend, and the old catch-all would have
       // miscounted them as extra savings. TRANSFER (2.4.55) excluded too --
       // not spend, and its amount can be negative (an incoming leg).
-      if (t.bucket === "INCOME" || t.bucket === "TRANSFER") continue;
+      // Session 19: the shared spending rule (lib/spending.ts): a change-back nets against Wants; income, transfers and other reimbursements stay out.
+      if (!spendingEffect(t)) continue;
       const k = periodKey(t.date, trendPeriod, startDay);
-      const b = byPeriod[k] ?? (byPeriod[k] = { needs: 0, wants: 0, savings: 0 });
-      const usd = toUSD(t.amount, t.currency);
-      if (t.bucket === "NEEDS") b.needs += usd;
-      else if (t.bucket === "WANTS") b.wants += usd;
-      else b.savings += usd;
+      (rowsByPeriod[k] ?? (rowsByPeriod[k] = [])).push(t);
     }
+    for (const [k, rows] of Object.entries(rowsByPeriod)) byPeriod[k] = spentByBucket(rows, (t) => toUSD(t.amount, t.currency));
     // Always include the current period even with zero logged transactions
     // so far, otherwise a period with only recurring bills and nothing
     // manually logged yet would silently vanish from the trend entirely.
@@ -580,7 +578,8 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
           // that means "spend" (bucket-summary cards, the donut, trends).
           // TRANSFER (2.4.55) excluded too -- not spend, and its amount can
           // be negative (an incoming leg).
-          const moTotal = txs.filter((t) => t.bucket !== "INCOME" && t.bucket !== "TRANSFER").reduce((s, t) => s + toUSD(t.amount, t.currency), 0) + recurRows.reduce((s, rr) => s + rr.usd, 0);
+          // Session 19: the shared spending rule (lib/spending.ts): a change-back nets against Wants; income, transfers and other reimbursements stay out.
+          const moTotal = totalSpent(txs, (t) => toUSD(t.amount, t.currency)) + recurRows.reduce((s, rr) => s + rr.usd, 0);
           return (
             <div key={mo}>
               <div className="flex justify-between items-baseline mb-2 px-1">
@@ -602,10 +601,7 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
                         // (Batch C) exists purely to group two currency legs
                         // of one real payment in the UI; this never feeds a
                         // total, only which caption renders on this row.
-                        // Travel slice 1 (wording approved, session 15): an exchange's rows and a
-                        // pocket spend say what they are; an exchange isn't a split payment.
-                        const exchangeOf = exchangePartnerId(allTx, t) ? (t.fx ?? allTx.find((o) => o.id === exchangePartnerId(allTx, t))?.fx) : undefined;
-                        const splitSibling = t.linkedPaymentId && !exchangeOf
+                        const splitSibling = t.linkedPaymentId
                           ? allTx.find((o) => o.id !== t.id && o.linkedPaymentId === t.linkedPaymentId)
                           : undefined;
                         return (
@@ -629,13 +625,13 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
                                 ⇄ split payment · also {fmtCur(splitSibling.amount, splitSibling.currency)}
                               </p>
                             )}
-                            {exchangeOf && (
-                              <p className="text-[10px]" style={{ color: T.jade }}>
-                                {t.fx?.kind === "in" ? `⇄ exchange · ${fmtForeign(t.fx.amount, t.fx.code)} received` : `⇄ exchange to ${exchangeOf.code}`}
-                              </p>
+                            {/* Foreign cash, model 2: an exchange row (approved caption, session 15) and a
+                                change-back row (approved, session 19) say what they are. */}
+                            {t.fx?.kind === "exchange" && (
+                              <p className="text-[10px]" style={{ color: T.jade }}>{`⇄ exchange · ${fmtForeign(t.fx.amount, t.fx.code)} received`}</p>
                             )}
-                            {t.fx?.kind === "spend" && (
-                              <p className="text-[10px]" style={{ color: T.jade }}>{`${fmtForeign(t.fx.amount, t.fx.code)} from ${t.fx.code} cash`}</p>
+                            {t.fx?.kind === "back" && (
+                              <p className="text-[10px]" style={{ color: T.jade }}>{`⇄ changed back · ${fmtForeign(t.fx.amount, t.fx.code)}`}</p>
                             )}
                           </>
                         );

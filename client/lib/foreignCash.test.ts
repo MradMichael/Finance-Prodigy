@@ -1,38 +1,33 @@
-// Travel slice 1 (owner, session 14, with the plan's recommendations
-// approved; FIX_PLANS.md "TRAVEL / FOREIGN CASH"). Foreign cash without a
-// third currency: the ledger stays in USD and LBP, and a foreign amount is
-// an annotation (`fx`) on an ordinary row.
-//   - An exchange is two TRANSFER rows, linked: the source leg on the pool
-//     the money left, in the currency paid; the pocket leg mirroring it,
-//     with `fx: { kind: "in" }` and no payment method. Past dates allowed.
-//   - A pocket (one per currency code) is derived from its rows: a balance in
-//     that currency and a USD cost basis.
-//   - A spend from it is an ordinary USD row at a cost frozen at entry: the
-//     pocket's moving average on the spend's date (itself excluded). Short of
-//     euros: the latest exchange's rate on or before that date, else none
-//     (the form asks). It counts in the monthly budget at that cost.
-//   - Pocket rows are never part of a tracked pool, whatever their payment
-//     method says; an exchange's source leg is, like any transfer.
-//   - An exchange's two rows are deleted, restored and removed together.
+// Foreign cash, model 2 (owner, session 17's plan; session 18 build, held;
+// FIX_PLANS.md "FOREIGN CASH, MODEL 2"). It replaces slice 1's pocket at cost.
+//   - An exchange is ONE expense row: what was paid, Wants, category Travel,
+//     on the pool the money left, with `fx: { kind: "exchange" }` naming the
+//     euros received. It counts as spending when it happens.
+//   - Euros live on a sheet, one per currency code, derived: exchanges in;
+//     spends out (a new list, `foreignEntries`, never in the ledger); euros
+//     changed back out; cash received from someone in (decision 4). A
+//     running balance in that currency.
+//   - A euro spend touches no budget total, no pool and not net worth: it
+//     was counted at the exchange.
+//   - Changing euros back is ONE reimbursement-shaped row (session 19: not
+//     income): a TRANSFER on the pool it went to, category Travel, with
+//     `fx: { kind: "back" }`. It nets against Wants in its own month
+//     (lib/spending.ts) and lowers the trip; income and targets don't move.
 import { describe, it, expect } from "vitest";
-import { DEFAULT_DATA, activeTransactions, softDelete, undeleteTransactions, type LocalFinancials, type StoredTransaction } from "./localData";
-import { periodTotals, trackedBalanceExpected } from "./computeDashboard";
-import {
-  isValidForeignCode, isPocketRow, pocketState, pockets, priceSpend, buildExchange, buildPocketSpend,
-  exchangePartnerId, pairedIds, foreignCashRole, foreignCashAtCostUSD,
-} from "./foreignCash";
+import { DEFAULT_DATA, softDelete, type LocalFinancials, type StoredTransaction } from "./localData";
+import { computeDashboard, periodTotals, trackedBalanceExpected } from "./computeDashboard";
+import { isValidForeignCode, buildExchange, buildChangeBack, buildForeignEntry, editForeignEntry, sheet, sheetCodes, foreignCashRole } from "./foreignCash";
 
 const RATE = 89_500;
 const data = (transactions: StoredTransaction[] = [], extra: Partial<LocalFinancials> = {}) =>
   ({ ...DEFAULT_DATA, lbpRate: RATE, lbpRateHistory: [], transactions, ...extra }) as LocalFinancials;
 const CASH = { paymentMethod: "cash" as const };
-const ex = (date: string, paid: number, received: number, paidCurrency: "USD" | "LBP" = "USD") =>
+const TB = { id: "cash", name: "Cash", paymentMethod: "cash" as const, startingBalance: 1000, startingDate: "2026-09-01", currency: "USD" as const };
+const ym = "2026-10" as never;
+const OCT31 = new Date("2026-10-31");
+const exchange = (date: string, paid: number, received: number, paidCurrency: "USD" | "LBP" = "USD") =>
   buildExchange({ date, paid, paidCurrency, from: CASH, code: "EUR", received, description: "Exchange to EUR" }, RATE);
-const spend = (d: LocalFinancials, date: string, amount: number, bucket: "NEEDS" | "WANTS" | "SAVINGS" = "WANTS") => {
-  const price = priceSpend(d, "EUR", date);
-  if (!price) throw new Error("no price");
-  return buildPocketSpend({ date, code: "EUR", amount, bucket, description: "Dinner", costPerUnitUSD: price.costPerUnitUSD });
-};
+const at = (iso: string) => new Date(iso);
 
 describe("the currency code", () => {
   it("three capitals, never USD or LBP", () => {
@@ -42,142 +37,141 @@ describe("the currency code", () => {
 });
 
 describe("an exchange", () => {
-  it("is two linked TRANSFER rows: the source leg on its pool, the pocket leg with the euros and no payment method", () => {
-    const [src, pocket] = ex("2026-10-02", 500, 460);
-    expect(src).toMatchObject({ amount: -500, currency: "USD", bucket: "TRANSFER", paymentMethod: "cash", date: "2026-10-02" });
-    expect(src.fx).toBeUndefined();
-    expect(pocket).toMatchObject({ amount: 500, currency: "USD", bucket: "TRANSFER", date: "2026-10-02", fx: { code: "EUR", amount: 460, kind: "in" } });
-    expect(pocket.paymentMethod).toBeUndefined();
-    expect(src.linkedPaymentId).toBeTruthy();
-    expect(pocket.linkedPaymentId).toBe(src.linkedPaymentId);
+  it("is one Wants row, category Travel, on the pool the money left, naming the euros received", () => {
+    const row = exchange("2026-10-03", 500, 460);
+    expect(row).toMatchObject({ amount: 500, currency: "USD", bucket: "WANTS", category: "travel", paymentMethod: "cash", date: "2026-10-03", description: "Exchange to EUR", fx: { code: "EUR", amount: 460, kind: "exchange" } });
+    expect(row.linkedPaymentId).toBeUndefined();
+    expect(row.fx).not.toHaveProperty("costPerUnitUSD");
   });
 
-  it("the source pool's expected balance falls by the amount paid; no budget total moves", () => {
-    const tb = { id: "cash", name: "Cash", paymentMethod: "cash" as const, startingBalance: 1000, startingDate: "2026-09-01", currency: "USD" as const };
-    const before = data([], { trackedBalances: [tb] });
-    const after = data(ex("2026-10-02", 500, 460), { trackedBalances: [tb] });
-    expect(trackedBalanceExpected(tb, before) - trackedBalanceExpected(tb, after)).toBe(500);
-    const ym = "2026-10" as never;
-    expect(periodTotals(after, ym, new Date("2026-10-31"))).toEqual(periodTotals(before, ym, new Date("2026-10-31")));
+  it("carries its trip when one is given", () => {
+    expect(buildExchange({ date: "2026-10-03", paid: 500, paidCurrency: "USD", from: CASH, code: "EUR", received: 460, description: "Exchange to EUR", tripId: "trip-lis" }, RATE).tripId).toBe("trip-lis");
   });
 
-  it("from LBP: the pocket leg mirrors the lira paid, and its basis comes through the cycle's rate", () => {
-    const d = data(ex("2026-10-02", 44_750_000, 460, "LBP"));
-    expect(pocketState(d, "EUR")).toMatchObject({ balance: 460, basisUSD: 500 });
+  it("counts as Wants spending in its cycle at the amount paid, and its pool falls by it", () => {
+    const before = data([], { trackedBalances: [TB] });
+    const after = data([exchange("2026-10-03", 500, 460)], { trackedBalances: [TB] });
+    expect(periodTotals(after, ym, OCT31).wants - periodTotals(before, ym, OCT31).wants).toBe(500);
+    expect(trackedBalanceExpected(TB, before) - trackedBalanceExpected(TB, after)).toBe(500);
+  });
+
+  it("paid in lira: it counts at the period's rate", () => {
+    const d = data([exchange("2026-10-03", 44_750_000, 460, "LBP")]);
+    expect(periodTotals(d, ym, OCT31).wants).toBeCloseTo(500, 2);
   });
 });
 
-describe("the pocket", () => {
-  it("balance and basis after one exchange, and the moving average after two at different rates", () => {
-    const one = data(ex("2026-10-02", 500, 460));
-    expect(pocketState(one, "EUR")).toEqual({ code: "EUR", balance: 460, basisUSD: 500, averageCostUSD: 500 / 460 });
-    const two = data([...ex("2026-10-02", 500, 460), ...ex("2026-10-05", 300, 270)]);
-    expect(pocketState(two, "EUR")).toMatchObject({ balance: 730, basisUSD: 800 });
-    expect(pocketState(two, "EUR").averageCostUSD).toBeCloseTo(800 / 730, 10);
+describe("changing euros back", () => {
+  const back = () => buildChangeBack({ date: "2026-10-21", code: "EUR", given: 100, received: 105, receivedCurrency: "USD", to: CASH, description: "Changed back from EUR" }, RATE);
+
+  it("is one reimbursement-shaped row: a TRANSFER that gained what was received, category Travel, on the pool it went to, naming the euros given back", () => {
+    expect(back()).toMatchObject({ amount: 105, currency: "USD", bucket: "TRANSFER", category: "travel", paymentMethod: "cash", date: "2026-10-21", fx: { code: "EUR", amount: 100, kind: "back" } });
   });
 
-  it("a spend is priced at the average on its date and frozen: $500 for €460, then €40 costs $43.48", () => {
-    const d = data(ex("2026-10-02", 500, 460));
-    const s = spend(d, "2026-10-03", 40);
-    expect(s).toMatchObject({ amount: 43.48, currency: "USD", bucket: "WANTS", fx: { code: "EUR", amount: 40, kind: "spend" } });
-    expect(s.paymentMethod).toBeUndefined();
-    expect(pocketState(data([...d.transactions, s]), "EUR")).toMatchObject({ balance: 420, basisUSD: 456.52 });
-  });
-
-  it("after two exchanges at different rates, a spend is priced at the average, not the latest rate", () => {
-    const d = data([...ex("2026-10-02", 500, 460), ...ex("2026-10-05", 300, 270)]);
-    const s = spend(d, "2026-10-06", 100);
-    expect(s.fx!.costPerUnitUSD).toBeCloseTo(800 / 730, 10);
-    expect(s.amount).toBe(109.59);
-  });
-
-  it("an exchange backdated before a spend doesn't re-price it; the remaining basis takes the difference", () => {
-    const d = data(ex("2026-10-02", 500, 460));
-    const s = spend(d, "2026-10-03", 40);
-    const later = data([...d.transactions, s, ...ex("2026-10-01", 100, 80)]);
-    expect(later.transactions.find((t) => t.id === s.id)!.amount).toBe(43.48);
-    expect(pocketState(later, "EUR")).toMatchObject({ balance: 500, basisUSD: 556.52 });
-  });
-
-  it("conservation, to the cent: basis in = spends at cost + remaining basis, through deletes and restores", () => {
-    let d = data(ex("2026-10-02", 500, 460));
-    const s1 = spend(d, "2026-10-03", 40); d = data([...d.transactions, s1]);
-    const s2 = spend(d, "2026-10-04", 33.3); d = data([...d.transactions, s2]);
-    const check = (x: LocalFinancials) => {
-      const spent = activeTransactions(x.transactions).filter((t) => t.fx?.kind === "spend").reduce((a, t) => a + t.amount, 0);
-      expect(Math.round((spent + pocketState(x, "EUR").basisUSD) * 100) / 100).toBe(500);
-    };
-    check(d);
-    const deleted = data(d.transactions.map((t) => (t.id === s1.id ? softDelete(d, t, "2026-10-05T00:00:00.000Z") : t)));
-    check(deleted);
-    expect(pocketState(deleted, "EUR").balance).toBe(426.7);
-    check(undeleteTransactions(deleted, [s1.id], "2026-10-06T00:00:00.000Z"));
-  });
-
-  it("short of euros: the latest exchange's rate on or before the date; with none, no price (the form asks)", () => {
-    const d = data([...ex("2026-10-02", 500, 460), buildPocketSpend({ date: "2026-10-03", code: "EUR", amount: 460, bucket: "WANTS", description: "All of it", costPerUnitUSD: 500 / 460 })]);
-    expect(priceSpend(d, "EUR", "2026-10-04")).toEqual({ costPerUnitUSD: 500 / 460, source: "lastExchange" });
-    expect(priceSpend(data(), "EUR", "2026-10-04")).toBeNull();
-    expect(priceSpend(data(ex("2026-10-10", 500, 460)), "EUR", "2026-10-04")).toBeNull();
-  });
-
-  it("pockets lists each currency held; the foreign cash at cost sums those with a balance", () => {
-    const d = data([...ex("2026-10-02", 500, 460), ...buildExchange({ date: "2026-10-02", paid: 130, paidCurrency: "USD", from: CASH, code: "GBP", received: 100, description: "Exchange to GBP" }, RATE)]);
-    expect(pockets(d).map((p) => p.code)).toEqual(["EUR", "GBP"]);
-    expect(foreignCashAtCostUSD(d)).toBe(630);
-    expect(foreignCashAtCostUSD(data())).toBe(0);
+  it("€100 changed back for $105: Wants spent falls by $105 in its month; income and the budget targets don't move; the pool rises by $105", () => {
+    const ex = exchange("2026-10-03", 500, 460);
+    const before = data([ex], { trackedBalances: [TB], income: 3000 });
+    const after = data([ex, back()], { trackedBalances: [TB], income: 3000 });
+    expect(periodTotals(after, ym, OCT31).wants - periodTotals(before, ym, OCT31).wants).toBe(-105);
+    expect(periodTotals(after, ym, OCT31).income).toBe(periodTotals(before, ym, OCT31).income);
+    expect(computeDashboard(after).budgetTargets).toEqual(computeDashboard(before).budgetTargets);
+    expect(trackedBalanceExpected(TB, after) - trackedBalanceExpected(TB, before)).toBe(105);
   });
 });
 
-describe("the budget", () => {
-  it("a spend counts in its bucket at its frozen USD cost", () => {
-    const d0 = data(ex("2026-10-02", 500, 460));
-    const d = data([...d0.transactions, spend(d0, "2026-10-03", 40, "WANTS")]);
-    const ym = "2026-10" as never;
-    expect(periodTotals(d, ym, new Date("2026-10-31")).wants - periodTotals(d0, ym, new Date("2026-10-31")).wants).toBeCloseTo(43.48, 2);
+describe("the sheet", () => {
+  const ex1 = { ...exchange("2026-10-03", 500, 460), createdAt: "2026-10-03T09:00:00.000Z" };
+  const dinner = buildForeignEntry({ kind: "spend", code: "EUR", amount: 40, date: "2026-10-05", description: "Dinner", category: "dining", tripId: "trip-lis" }, at("2026-10-05T20:00:00.000Z"));
+  const gift = buildForeignEntry({ kind: "in", code: "EUR", amount: 20, date: "2026-10-06", description: "Ana paid me back" }, at("2026-10-06T10:00:00.000Z"));
+  const back = { ...buildChangeBack({ date: "2026-10-21", code: "EUR", given: 100, received: 105, receivedCurrency: "USD", to: CASH, description: "Changed back from EUR" }, RATE), createdAt: "2026-10-21T09:00:00.000Z" };
+
+  it("a sheet entry has its own id, kind, code, amount, date, description, category and trip, and when it was made", () => {
+    expect(dinner).toEqual({ id: expect.any(String), kind: "spend", code: "EUR", amount: 40, date: "2026-10-05", description: "Dinner", category: "dining", tripId: "trip-lis", createdAt: "2026-10-05T20:00:00.000Z", updatedAt: "2026-10-05T20:00:00.000Z" });
+  });
+
+  it("lists exchanges in, spends out, cash received in and euros changed back out, by date, with a running balance", () => {
+    const s = sheet(data([back, ex1], { foreignEntries: [gift, dinner] }), "EUR");
+    expect(s.lines.map((l) => [l.source, l.date, l.delta, l.balance])).toEqual([
+      ["exchange", "2026-10-03", 460, 460],
+      ["spend", "2026-10-05", -40, 420],
+      ["in", "2026-10-06", 20, 440],
+      ["back", "2026-10-21", -100, 340],
+    ]);
+    expect(s.balance).toBe(340);
+    expect(s.lines[1]).toMatchObject({ id: dinner.id, description: "Dinner", category: "dining", tripId: "trip-lis" });
+  });
+
+  it("a deleted exchange or change-back leaves the sheet; a balance can go below zero", () => {
+    const d = data([softDelete(data([]), ex1, "2026-10-07T00:00:00.000Z")], { foreignEntries: [dinner] });
+    expect(sheet(d, "EUR").balance).toBe(-40);
+  });
+
+  it("through a date, one entry left out: the balance held then (for the form's warning)", () => {
+    const d = data([ex1], { foreignEntries: [dinner] });
+    expect(sheet(d, "EUR", { through: "2026-10-04" }).balance).toBe(460);
+    expect(sheet(d, "EUR", { excludeId: dinner.id }).balance).toBe(460);
+  });
+
+  it("one sheet per currency code, in order", () => {
+    const gbp = buildForeignEntry({ kind: "in", code: "GBP", amount: 50, date: "2026-10-01", description: "Left over" }, at("2026-10-01T09:00:00.000Z"));
+    expect(sheetCodes(data([ex1], { foreignEntries: [gbp] }))).toEqual(["EUR", "GBP"]);
+    expect(sheetCodes(data([]))).toEqual([]);
   });
 });
 
-describe("tracked pools", () => {
-  it("pocket rows are in no pool, even with a payment method set; the source leg is in its pool", () => {
-    const tb = { id: "cash", name: "Cash", paymentMethod: "cash" as const, startingBalance: 1000, startingDate: "2026-09-01", currency: "USD" as const };
-    const [src, pocket] = ex("2026-10-02", 500, 460);
-    const s = buildPocketSpend({ date: "2026-10-03", code: "EUR", amount: 40, bucket: "WANTS", description: "Dinner", costPerUnitUSD: 500 / 460 });
-    const labelled = [src, { ...pocket, paymentMethod: "cash" as const }, { ...s, paymentMethod: "cash" as const }];
-    expect(trackedBalanceExpected(tb, data(labelled, { trackedBalances: [tb] }))).toBe(500);
-    expect(isPocketRow(src)).toBe(false);
-    expect(isPocketRow(pocket) && isPocketRow(s)).toBe(true);
+// Session 19, item 3: a sheet entry is editable like any row: its description,
+// category, trip, amount and date. Its id, kind, code and creation time stay;
+// its edit time moves (an ordinary change to the sync merge); the balance is
+// derived, so it recalculates. Refused like a row: no positive amount, or no
+// description. An entry that's gone isn't brought back.
+describe("editing a sheet entry", () => {
+  const ex1 = { ...exchange("2026-10-03", 500, 460), createdAt: "2026-10-03T09:00:00.000Z" };
+  const dinner = buildForeignEntry({ kind: "spend", code: "EUR", amount: 40, date: "2026-10-05", description: "Dinner", category: "dining", tripId: "trip-lis" }, at("2026-10-05T20:00:00.000Z"));
+  const p = { amount: 40, description: "Dinner", date: "2026-10-05" };
+
+  it("changes its description, category, trip, amount and date; keeps its id, kind, code and creation time; the balance recalculates", () => {
+    const d = data([ex1], { foreignEntries: [dinner] });
+    const r = editForeignEntry(d, dinner.id, { amount: 55, description: " Dinner at Ramiro ", date: "2026-10-06", category: "travel", tripId: "trip-rome" }, at("2026-10-07T09:00:00.000Z"));
+    if (!r.ok) throw new Error("refused");
+    expect(r.data.foreignEntries).toEqual([{ ...dinner, amount: 55, description: "Dinner at Ramiro", date: "2026-10-06", category: "travel", tripId: "trip-rome", updatedAt: "2026-10-07T09:00:00.000Z" }]);
+    expect(sheet(r.data, "EUR").balance).toBe(405);
+    expect(r.data.transactions).toBe(d.transactions);
+  });
+
+  it("clearing its category or trip removes them", () => {
+    const r = editForeignEntry(data([], { foreignEntries: [dinner] }), dinner.id, p);
+    if (!r.ok) throw new Error("refused");
+    expect(r.data.foreignEntries![0]).not.toHaveProperty("category");
+    expect(r.data.foreignEntries![0]).not.toHaveProperty("tripId");
+  });
+
+  it("is refused like any row: an amount that isn't positive, or no description", () => {
+    const d = data([], { foreignEntries: [dinner] });
+    expect(editForeignEntry(d, dinner.id, { ...p, amount: 0 })).toEqual({ ok: false, reason: "entry" });
+    expect(editForeignEntry(d, dinner.id, { ...p, description: "  " })).toEqual({ ok: false, reason: "entry" });
+  });
+
+  it("an entry that's gone isn't brought back", () => {
+    const d = data([], { foreignEntries: [] });
+    expect(editForeignEntry(d, dinner.id, p)).toEqual({ ok: true, data: d });
   });
 });
 
-describe("an exchange's two rows go together", () => {
-  it("each leg names the other; a spend and an ordinary transfer have no partner", () => {
-    const [src, pocket] = ex("2026-10-02", 500, 460);
-    const all = [src, pocket];
-    expect(exchangePartnerId(all, src)).toBe(pocket.id);
-    expect(exchangePartnerId(all, pocket)).toBe(src.id);
-    expect(pairedIds(all, src.id).sort()).toEqual([src.id, pocket.id].sort());
-    const s = buildPocketSpend({ date: "2026-10-03", code: "EUR", amount: 40, bucket: "WANTS", description: "Dinner", costPerUnitUSD: 1.1 });
-    const transferA = { ...src, id: "a", linkedPaymentId: "L", fx: undefined };
-    const transferB = { ...src, id: "b", linkedPaymentId: "L", amount: 500, fx: undefined };
-    expect(pairedIds([...all, s, transferA, transferB], s.id)).toEqual([s.id]);
-    expect(pairedIds([transferA, transferB], "a")).toEqual(["a"]);
+describe("euro spends touch no budget total, no pool and not net worth", () => {
+  it("adding sheet entries changes none of them", () => {
+    const base = data([exchange("2026-10-03", 500, 460)], { trackedBalances: [TB] });
+    const withSpends = { ...base, foreignEntries: [
+      buildForeignEntry({ kind: "spend", code: "EUR", amount: 40, date: "2026-10-05", description: "Dinner", category: "dining" }, at("2026-10-05T20:00:00.000Z")),
+      buildForeignEntry({ kind: "in", code: "EUR", amount: 20, date: "2026-10-06", description: "Ana paid me back" }, at("2026-10-06T10:00:00.000Z")),
+    ] } as LocalFinancials;
+    expect(periodTotals(withSpends, ym, OCT31)).toEqual(periodTotals(base, ym, OCT31));
+    expect(trackedBalanceExpected(TB, withSpends)).toBe(trackedBalanceExpected(TB, base));
+    expect(computeDashboard(withSpends).netWorth).toEqual(computeDashboard(base).netWorth);
   });
+});
 
-  it("roles: an exchange leg, a spend, or none", () => {
-    const [src, pocket] = ex("2026-10-02", 500, 460);
-    const s = buildPocketSpend({ date: "2026-10-03", code: "EUR", amount: 40, bucket: "WANTS", description: "Dinner", costPerUnitUSD: 1.1 });
-    const all = [src, pocket, s];
-    expect([foreignCashRole(src, all), foreignCashRole(pocket, all), foreignCashRole(s, all)]).toEqual(["exchange", "exchange", "spend"]);
-    expect(foreignCashRole({ ...src, id: "x", linkedPaymentId: undefined }, all)).toBeNull();
-  });
-
-  it("restoring several rows uses one restore generation", () => {
-    const [src, pocket] = ex("2026-10-02", 500, 460);
-    let d = data([src, pocket]);
-    d = data(d.transactions.map((t) => softDelete(d, t, "2026-10-05T00:00:00.000Z")));
-    const r = undeleteTransactions(d, [src.id, pocket.id], "2026-10-06T00:00:00.000Z");
-    expect(activeTransactions(r.transactions)).toHaveLength(2);
-    expect(r.revivedKeys?.transactions?.[src.id]).toBe(r.revivedKeys?.transactions?.[pocket.id]);
-  });
+it("what a row is to foreign cash: an exchange, a change-back, or neither", () => {
+  expect(foreignCashRole(exchange("2026-10-03", 500, 460))).toBe("exchange");
+  expect(foreignCashRole(buildChangeBack({ date: "2026-10-21", code: "EUR", given: 100, received: 105, receivedCurrency: "USD", to: CASH, description: "Changed back from EUR" }, RATE))).toBe("back");
+  expect(foreignCashRole({ id: "x", amount: 5, currency: "USD", bucket: "WANTS", description: "x", date: "2026-10-03" } as StoredTransaction)).toBeNull();
 });
