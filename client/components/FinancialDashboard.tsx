@@ -491,6 +491,11 @@ export default function FinancialDashboard({
           </Panel>
 
           <Panel title={`Budget · ${budgetLabel}`}>
+            {/* ERR-07 (session 21): these targets are income x the rule's
+                percentage, so with no income all three are $0 and each bar read
+                "target rolled to $0" -- rollover wording for an absent income.
+                The Budget screen's own sentence for this case instead. */}
+            {month.income > 0 ? (
             <div className="space-y-5">
               {/* 2.4.70: income * pct for this month, no rollover applied, so
                   each dollar figure reconciles against the percentage in its own
@@ -501,6 +506,11 @@ export default function FinancialDashboard({
               <BucketRow noun={noun} label={`Wants · ${budgetPct.wants}%`}   actual={month.wantsSpend}    target={data.budgetTargets.wants}   color={T.brass} bucket="WANTS" />
               <BucketRow noun={noun} label={`Savings · ${budgetPct.savings}%`} actual={month.savingsContrib} target={data.budgetTargets.savings} color={T.jade}  bucket="SAVINGS" />
             </div>
+            ) : (
+              <p className="text-sm" style={{ color: T.mute }}>
+                Set your monthly income in <strong style={{ color: T.text }}>Setup</strong> to see how your spending compares to this budget.
+              </p>
+            )}
 
             {/* Pace warnings — Copilot-style "on track to exceed" heads-up */}
             {budgetPace.filter((p) => p.status !== "ok").length > 0 && (
