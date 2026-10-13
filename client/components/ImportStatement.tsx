@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { useDialogFocus } from "./useDialogFocus";
 import { useScrollFocus } from "./useScrollFocus";
 import type { LocalFinancials, StoredCard, StoredTransaction, TrackedBalance } from "../lib/localData";
-import { uid, todayISO, allCategories, matchCategoryRule, activeTransactions, reanchorTrackedBalance, MONEY_MAX_USD, saveCard as storeCard, lbpRateOf } from "../lib/localData";
+import { uid, todayISO, matchCategoryRule, activeTransactions, reanchorTrackedBalance, MONEY_MAX_USD, saveCard as storeCard, lbpRateOf } from "../lib/localData";
 import { trackedBalanceExpected } from "../lib/computeDashboard";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, DateFieldDMY } from "./form/Primitives";
@@ -14,6 +14,7 @@ import {
   type ParsedTransaction, type Bucket,
 } from "../lib/statementImport/neoBankAudiParser";
 import { guessBucket } from "../lib/statementImport/categorize";
+import CategoryOptions from "./form/CategoryOptions";
 
 type Step = "pick" | "parsing" | "error" | "card" | "review";
 
@@ -402,9 +403,7 @@ export default function ImportStatement({
                           style={{ background: T.panel, border: `1px solid ${T.line}`, color: T.text }}
                         >
                           <option value="">No category</option>
-                          {allCategories(financials.customCategories).map((c) => (
-                            <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
-                          ))}
+                          <CategoryOptions customCategories={financials.customCategories} />
                         </select>
                       </div>
                     </div>

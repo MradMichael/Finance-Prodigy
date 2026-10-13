@@ -9,6 +9,7 @@ import { SERIF, money } from "./shared";
 import { Label, FocusInput, PrimaryBtn } from "../form/Primitives";
 import Donut from "../charts/Donut";
 import {currentCycleKey, isInCycle, periodNoun } from "../../lib/period";
+import CategoryOptions from "../form/CategoryOptions";
 
 function slugify(name: string): string {
   return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "category";
@@ -270,9 +271,7 @@ export default function CategoriesScreen({
                 style={{ background: T.panelSoft, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
               >
                 <option value="">Choose…</option>
-                {allCategories(customCategories).map((c) => (
-                  <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
-                ))}
+                <CategoryOptions customCategories={customCategories} />
               </select>
             </div>
           </div>

@@ -796,7 +796,19 @@ export const CATEGORIES = [
   { value: "education",    label: "Education",         icon: "📚" },
   { value: "gifts",        label: "Gifts & donations", icon: "🎁" },
   { value: "other",        label: "Other",             icon: "📦" },
+  // Session 22, item 1a (owner; HELD): travel categories, built in (not seeded into anyone's data), shown in
+  // every picker grouped as "Travel" (components/form/CategoryOptions). "travel" above stays the exchange row's.
+  { value: "travel-flights",         label: "Flights",           icon: "🛫" },
+  { value: "travel-accommodation",   label: "Accommodation",     icon: "🏨" },
+  { value: "travel-local-transport", label: "Local transport",   icon: "🚕" },
+  { value: "travel-food",            label: "Food & dining",     icon: "🍝" },
+  { value: "travel-activities",      label: "Activities",        icon: "🎟️" },
+  { value: "travel-shopping",        label: "Shopping",          icon: "🏪" },
+  { value: "travel-insurance-visas", label: "Insurance & visas", icon: "🛂" },
+  { value: "travel-other",           label: "Other travel",      icon: "🌍" },
 ] as const;
+/** The travel categories, in picker order (session 22, item 1a). */
+export const TRAVEL_CATEGORY_KEYS = ["travel-flights", "travel-accommodation", "travel-local-transport", "travel-food", "travel-activities", "travel-shopping", "travel-insurance-visas", "travel-other"] as const;
 export type CategoryKey = (typeof CATEGORIES)[number]["value"];
 export const CATEGORY_LABEL: Record<CategoryKey, string> = Object.fromEntries(
   CATEGORIES.map((c) => [c.value, c.label]),

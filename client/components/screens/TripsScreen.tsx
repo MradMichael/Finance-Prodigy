@@ -13,7 +13,7 @@
 // forms, its trip preset (session 20, item 1; approved labels only).
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
-import { allCategories, categoryLabel, fmtDate, MONEY_MAX_USD } from "../../lib/localData";
+import { categoryLabel, fmtDate, MONEY_MAX_USD } from "../../lib/localData";
 import { dayLabel } from "../../lib/period";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF } from "./shared";
@@ -21,6 +21,7 @@ import { Label, FocusInput, MoneyInput, DateFieldDMY } from "../form/Primitives"
 import { buildTrip, deleteTrip, editTrip, tripActual, tripForeignSpends, type StoredTrip } from "../../lib/trips";
 import { fmtForeign, sheet, sheetCodes } from "../../lib/foreignCash";
 import { ExchangeForm, SpendForm } from "../ForeignCashForms";
+import CategoryOptions from "../form/CategoryOptions";
 
 const usd = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 const num = (s: string) => parseFloat(s.replace(/,/g, ""));
@@ -50,7 +51,6 @@ function TripFields({ idPrefix, testIdPrefix, draft, onDraft, financials }: {
 }) {
   const T = useTheme();
   const field = { background: T.ink, border: `1px solid ${T.line}`, color: T.text };
-  const categories = allCategories(financials.customCategories);
   const setRow = (i: number, patch: Partial<Draft["catRows"][number]>) => onDraft({ ...draft, catRows: draft.catRows.map((x, j) => (j === i ? { ...x, ...patch } : x)) });
   return (
     <>
@@ -79,7 +79,7 @@ function TripFields({ idPrefix, testIdPrefix, draft, onDraft, financials }: {
             <select id={`${idPrefix}-cat-${i}`} value={r.category} onChange={(e) => setRow(i, { category: e.target.value })}
               className="w-full rounded-lg px-2 py-1.5 text-sm" style={field}>
               <option value="">Choose a category</option>
-              {categories.map((c) => <option key={c.value} value={c.value}>{c.icon} {c.label}</option>)}
+              <CategoryOptions customCategories={financials.customCategories} />
             </select>
           </div>
           <div>

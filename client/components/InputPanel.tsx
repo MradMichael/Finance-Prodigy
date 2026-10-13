@@ -7,7 +7,7 @@ import { useScrollFocus } from "./useScrollFocus";
 import type { LocalFinancials, StoredTransaction, StoredGoal, StoredDebt, StoredRecurring, StoredCard, RecurringFrequency, Currency, PaymentMethod, BudgetRuleKey } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, goalProgress, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, remainingInstallments, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, buildExtraPaymentTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, roundMoney, moneyMaxFor, MONEY_MAX_USD, derivedDebtBalance, activeTransactions, softDelete, cycleStartDayOf, syncAllowed, edited, recordDeletion, saveCard as storeCard, makeToUSDOn, rateOn, lbpRateOf, makeToUSDLive } from "../lib/localData";
+import { uid, goalProgress, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, remainingInstallments, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, buildExtraPaymentTx, categoryLabel, categoryIcon, matchCategoryRule, roundMoney, moneyMaxFor, MONEY_MAX_USD, derivedDebtBalance, activeTransactions, softDelete, cycleStartDayOf, syncAllowed, edited, recordDeletion, saveCard as storeCard, makeToUSDOn, rateOn, lbpRateOf, makeToUSDLive } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker } from "./form/Primitives";
@@ -15,6 +15,7 @@ import { fmtCur, money } from "./screens/shared";
 import ImportStatement from "./ImportStatement";
 import {currentCycleKey, cycleKeyForISO, isInCycle, periodNoun, cycleLabel, type CycleKey } from "../lib/period";
 import { calendarDayOf } from "../lib/calendarDay";
+import CategoryOptions from "./form/CategoryOptions";
 
 type Bucket = "NEEDS" | "WANTS" | "SAVINGS";
 // Transactions (not recurring items) can also be logged as one-off INCOME --
@@ -738,9 +739,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
               style={{ background: T.panelSoft, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
             >
               <option value="">No category</option>
-              {allCategories(financials.customCategories).map((c) => (
-                <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
-              ))}
+              <CategoryOptions customCategories={financials.customCategories} />
             </select>
           </div>
 
@@ -1718,9 +1717,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                       style={{ background: T.panelSoft, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
                     >
                       <option value="">No category</option>
-                      {allCategories(financials.customCategories).map((c) => (
-                        <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
-                      ))}
+                      <CategoryOptions customCategories={financials.customCategories} />
                     </select>
                   </div>
 

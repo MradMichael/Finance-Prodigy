@@ -13,11 +13,12 @@
 // "fx-ex" and "fx-sp"; a trip card passes its own).
 import { useState } from "react";
 import type { Currency, LocalFinancials, PaymentMethod, StoredCard } from "../lib/localData";
-import { allCategories, makeToUSDOn, moneyMaxFor, todayISO, saveCard as storeCard, lbpRateOf } from "../lib/localData";
+import { makeToUSDOn, moneyMaxFor, todayISO, saveCard as storeCard, lbpRateOf } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY, CurrencyToggle, PaymentMethodPicker } from "./form/Primitives";
 import { buildExchange, buildForeignEntry, fmtForeign, isValidForeignCode, sheet, sheetCodes } from "../lib/foreignCash";
 import { suggestedTripId } from "../lib/trips";
+import CategoryOptions from "./form/CategoryOptions";
 
 const usd = (n: number, digits = 2) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: digits, maximumFractionDigits: digits }).format(n);
 const num = (s: string) => parseFloat(s.replace(/,/g, ""));
@@ -183,7 +184,7 @@ export function SpendForm({ financials, onChange, onDone, presetTripId, idPrefix
       <select value={spCategory} onChange={(e) => setSpCategory(e.target.value)} aria-label="Category"
         className="w-full rounded-lg px-2 py-1.5 text-[11px]" style={field}>
         <option value="">No category</option>
-        {allCategories(financials.customCategories).map((c) => <option key={c.value} value={c.value}>{c.icon} {c.label}</option>)}
+        <CategoryOptions customCategories={financials.customCategories} />
       </select>
       <TripSelect id={`${idPrefix}-trip`} value={spTrip} onPick={setTripPick} financials={financials} />
       <p className="text-[11px]" style={{ color: T.mute }}>Not counted in your budget: the exchange already was.</p>
