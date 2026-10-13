@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useId } from "react";
 import type { Session } from "../../lib/auth";
 import { useTheme } from "../../contexts/ThemeContext";
 import { Signet } from "../EssaBrand";
@@ -11,6 +11,9 @@ export default function TopBar({ session, onProfile, onSignOut, syncStatus }: { 
   const T        = useTheme();
   const [menu, setMenu] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const triggerId = useId();
+  const menuId = useId();
   const initials = session.name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
 
   // Every dismissal path (Escape, outside click, choosing an item) should
@@ -19,6 +22,21 @@ export default function TopBar({ session, onProfile, onSignOut, syncStatus }: { 
   function closeMenu() {
     setMenu(false);
     triggerRef.current?.focus();
+  }
+
+  // A11Y-02 (session 21): the menu-button pattern. Opening lands on the first
+  // item; the arrow keys, Home and End move between items (wrapping); Escape
+  // closes and returns to the button (above); leaving the menu by Tab, or any
+  // other way, closes it, so it's never left open behind focus.
+  const items = () => [...(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
+  useEffect(() => { if (menu) items()[0]?.focus(); }, [menu]);
+  function onMenuKeyDown(e: React.KeyboardEvent) {
+    const list = items();
+    const i = list.indexOf(document.activeElement as HTMLElement);
+    const to = e.key === "ArrowDown" ? i + 1 : e.key === "ArrowUp" ? i - 1 : e.key === "Home" ? 0 : e.key === "End" ? list.length - 1 : null;
+    if (to === null) return;
+    e.preventDefault();
+    list[(to + list.length) % list.length]?.focus();
   }
 
   return (
@@ -34,8 +52,10 @@ export default function TopBar({ session, onProfile, onSignOut, syncStatus }: { 
         <button
           ref={triggerRef}
           onClick={() => setMenu((v) => !v)}
-          aria-haspopup="true"
+          id={triggerId}
+          aria-haspopup="menu"
           aria-expanded={menu}
+          aria-controls={menu ? menuId : undefined}
           aria-label="Account menu"
           className="flex items-center gap-2 rounded-xl px-2.5 py-1.5"
           style={{ background: T.panelSoft }}
@@ -66,14 +86,23 @@ export default function TopBar({ session, onProfile, onSignOut, syncStatus }: { 
                   {syncStatusLongLabel(syncStatus)}
                 </p>
               )}
-              <button onClick={() => { closeMenu(); onProfile(); }}
-                className="w-full text-left px-4 py-2.5 text-sm hover:opacity-80 flex gap-2" style={{ color: T.text }}>
-                <span>⚙</span> Settings
-              </button>
-              <button onClick={() => { closeMenu(); onSignOut(); }}
-                className="w-full text-left px-4 py-2.5 text-sm hover:opacity-80 flex gap-2" style={{ color: T.coral }}>
-                <span>→</span> Sign out
-              </button>
+              <div
+                ref={menuRef}
+                id={menuId}
+                role="menu"
+                aria-labelledby={triggerId}
+                onKeyDown={onMenuKeyDown}
+                onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setMenu(false); }}
+              >
+                <button role="menuitem" tabIndex={-1} onClick={() => { closeMenu(); onProfile(); }}
+                  className="w-full text-left px-4 py-2.5 text-sm hover:opacity-80 flex gap-2" style={{ color: T.text }}>
+                  <span>⚙</span> Settings
+                </button>
+                <button role="menuitem" tabIndex={-1} onClick={() => { closeMenu(); onSignOut(); }}
+                  className="w-full text-left px-4 py-2.5 text-sm hover:opacity-80 flex gap-2" style={{ color: T.coral }}>
+                  <span>→</span> Sign out
+                </button>
+              </div>
             </div>
           </>
         )}
