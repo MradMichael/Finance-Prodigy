@@ -162,7 +162,7 @@ export function SpendForm({ financials, onChange, onDone, presetTripId, idPrefix
   if (!spendCode) return null;
   return (
     <form aria-label="Spend from foreign cash" className="space-y-2.5" onSubmit={(e) => { e.preventDefault(); save(); }}>
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <div>
           <Label htmlFor={`${idPrefix}-code`}>Currency</Label>
           <select id={`${idPrefix}-code`} value={spendCode} onChange={(e) => setSpCode(e.target.value)} className="w-full rounded-lg px-2 py-1.5 text-sm" style={field}>

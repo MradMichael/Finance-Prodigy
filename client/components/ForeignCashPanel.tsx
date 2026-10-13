@@ -171,7 +171,7 @@ export default function ForeignCashPanel({ financials, onChange }: { financials:
             </ul>
             {editing && s.lines.some((l) => l.id === editing) && (
               <form aria-label="Edit entry" className="space-y-2.5 pt-2" style={{ borderTop: `1px solid ${T.line}` }} onSubmit={(e) => { e.preventDefault(); saveEdit(editing); }}>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div>
                     <Label htmlFor="fx-ed-amount">Amount</Label>
                     <MoneyInput id="fx-ed-amount" value={edAmount} onChange={setEdAmount} placeholder="0" max={moneyMaxFor("USD", lbpRate)} />
@@ -216,7 +216,7 @@ export default function ForeignCashPanel({ financials, onChange }: { financials:
 
       {open === "back" && backCode && (
         <form aria-label="Change back" className="space-y-2.5" onSubmit={(e) => { e.preventDefault(); saveChangeBack(); }}>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {codeSelect("fx-cb-code", backCode, setCbCode)}
             <div>
               <Label htmlFor="fx-cb-date">Date</Label>
@@ -245,7 +245,7 @@ export default function ForeignCashPanel({ financials, onChange }: { financials:
 
       {open === "in" && (
         <form aria-label="Cash received" className="space-y-2.5" onSubmit={(e) => { e.preventDefault(); saveReceived(); }}>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div>
               <Label htmlFor="fx-in-code">Currency</Label>
               <FocusInput id="fx-in-code" value={inCodeShown} onChange={(e) => setInCode(e.target.value)} maxLength={3} autoComplete="off" />

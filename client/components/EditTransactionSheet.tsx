@@ -220,7 +220,7 @@ export default function EditTransactionSheet({
           {divergence && (
             <p className="text-[10px]" style={{ color: T.brass }}>⚠ {divergence}</p>
           )}
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-2">
             <div>
               <Label htmlFor="edit-tx-amount">Amount</Label>
               <MoneyInput id="edit-tx-amount" value={amt} onChange={setAmt} placeholder="0" max={moneyMaxFor(currency, financials.lbpRate ?? DEFAULT_LBP_RATE)} />

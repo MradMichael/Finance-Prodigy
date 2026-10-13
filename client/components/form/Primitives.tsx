@@ -346,9 +346,14 @@ export function DateFieldDMY({
     (y.length === 4 ? yearRef : m.length === 2 ? monthRef : dayRef).current?.focus();
   }
 
+  // Session 20, item 2: each box fits its placeholder in the app's UI fonts
+  // ("M" runs to about 0.9em: "MM" was clipped to "MN" at 1.6em), with no
+  // padding to eat into that, and never shrinks in a narrow row.
   const segStyle: React.CSSProperties = {
     background: "transparent",
     border: "none",
+    padding: 0,
+    flexShrink: 0,
     color: T.text,
     outline: "none",
     textAlign: "center",
@@ -402,7 +407,7 @@ export function DateFieldDMY({
         onFocus={() => { setFocused(true); setSeg("d"); }}
         onBlur={() => { segLeave("d"); setTimeout(() => { if (![dayRef, monthRef, yearRef].some((r) => r.current === document.activeElement)) setFocused(false); }, 0); }}
         placeholder="DD"
-        style={{ ...segStyle, ...segFocus("d"), width: "1.6em" }}
+        style={{ ...segStyle, ...segFocus("d"), width: "2em" }}
       />
       <span style={{ color: T.mute }}>/</span>
       <input
@@ -415,7 +420,7 @@ export function DateFieldDMY({
         onFocus={() => { setFocused(true); setSeg("m"); }}
         onBlur={() => { segLeave("m"); setTimeout(() => { if (![dayRef, monthRef, yearRef].some((r) => r.current === document.activeElement)) setFocused(false); }, 0); }}
         placeholder="MM"
-        style={{ ...segStyle, ...segFocus("m"), width: "1.6em" }}
+        style={{ ...segStyle, ...segFocus("m"), width: "2em" }}
       />
       <span style={{ color: T.mute }}>/</span>
       <input
