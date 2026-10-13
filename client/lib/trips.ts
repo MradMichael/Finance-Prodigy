@@ -14,7 +14,8 @@
 // the card shows them in euros, by category (tripForeignSpends).
 // Units (2.4.138): every `…USD` figure is USD; tripForeignSpends' amounts are
 // in their currency `code`.
-import { activeTransactions, makeToUSDOn, recordDeletion, uid, type LocalFinancials, type StoredTransaction } from "./localData";
+import { activeTransactions, cycleStartDayOf, edited, makeToUSDForMonth, makeToUSDOn, recordDeletion, uid, TRAVEL_CATEGORY_KEYS, type LocalFinancials, type StoredTransaction } from "./localData";
+import { cycleKeyForISO } from "./period";
 
 export interface StoredTrip {
   id: string;
@@ -116,4 +117,86 @@ export function tripForeignSpends(data: LocalFinancials, trip: StoredTrip): { co
 /** Deletes a trip, recording the deletion so other devices drop it too. Its rows keep their tags. */
 export function deleteTrip(data: LocalFinancials, tripId: string, now: Date = new Date()): LocalFinancials {
   return { ...data, trips: (data.trips ?? []).filter((t) => t.id !== tripId), deletedKeys: recordDeletion(data, "trips", tripId, now) };
+}
+
+// ── Session 22, items 1c and 1d (owner; HELD) ──────────────────────────────
+
+/**
+ * The spends dated inside the trip (start and end included) that carry no
+ * trip tag, or a tag to a trip that's gone (it counts nowhere): NEEDS, WANTS
+ * or SAVINGS rows, never income, a transfer or an exchange. Oldest first.
+ */
+export function untaggedDuringTrip(data: LocalFinancials, trip: StoredTrip): StoredTransaction[] {
+  const trips = new Set((data.trips ?? []).map((t) => t.id));
+  return activeTransactions(data.transactions ?? [])
+    .filter((t) => SPENDING.has(t.bucket) && t.fx?.kind !== "exchange" && !(t.tripId && trips.has(t.tripId)) && t.date >= trip.startDate && t.date <= trip.endDate)
+    .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+}
+
+/** One row tagged to a trip: the person's edit to it, stamped (plan H 5b), so a merge keeps it. */
+export function tagToTrip(data: LocalFinancials, transactionId: string, tripId: string, now: Date = new Date()): LocalFinancials {
+  return { ...data, transactions: (data.transactions ?? []).map((t) => (t.id === transactionId ? edited({ ...t, tripId }, now.toISOString()) : t)) };
+}
+
+/** The trip's average exchange cost per currency: dollars paid over units received, across its tagged exchanges. */
+export function tripExchangeCost(data: LocalFinancials, trip: StoredTrip): Record<string, number> {
+  const toUSD = makeToUSDForMonth(data);
+  const startDay = cycleStartDayOf(data);
+  const paid: Record<string, number> = {}, got: Record<string, number> = {};
+  for (const t of activeTransactions(data.transactions ?? []).filter((x) => x.tripId === trip.id && x.fx?.kind === "exchange")) {
+    const code = t.fx!.code;
+    paid[code] = (paid[code] ?? 0) + toUSD(t.amount, t.currency, cycleKeyForISO(t.date, startDay));
+    got[code] = (got[code] ?? 0) + t.fx!.amount;
+  }
+  return Object.fromEntries(Object.keys(paid).filter((c) => got[c] > 0).map((c) => [c, paid[c] / got[c]]));
+}
+
+export interface TripCategoryRow {
+  key: string; // a category key; "" for none
+  /** Dollars counted: the trip's tagged USD and LBP spends in this category, at their rate, net of its refunds. */
+  countedUSD: number;
+  /** Cash spent in another currency, shown, never added; approxUSD at the trip's exchange cost (null with no exchange in that currency). */
+  fromCash: { code: string; amount: number; approxUSD: number | null }[];
+  budgetUSD?: number;
+  /** What the budget is compared against: counted dollars plus the cash at ≈ its exchange cost. Never part of the trip total. */
+  comparedUSD: number;
+}
+
+/**
+ * The trip by category: one row per category with money or a budget, travel
+ * categories first in the pickers' order, then the others. The exchanges and
+ * change-backs (the money moving) count in the total and in no row. The
+ * total is tripActual's, unchanged: exchanges + tagged spends − tagged
+ * refunds and change-backs.
+ */
+export function tripCategoryView(data: LocalFinancials, trip: StoredTrip): { rows: TripCategoryRow[]; exchangesUSD: number; totalUSD: number } {
+  const actual = tripActual(data, trip);
+  const toUSD = makeToUSDForMonth(data);
+  const startDay = cycleStartDayOf(data);
+  const sign = (t: StoredTransaction) => (SPENDING.has(t.bucket) ? 1 : -1);
+  const counted: Record<string, number> = {};
+  let exchanges = 0;
+  for (const t of actual.rows) {
+    const usd = sign(t) * toUSD(t.amount, t.currency, cycleKeyForISO(t.date, startDay));
+    if (t.fx?.kind === "exchange" || t.fx?.kind === "back") exchanges += usd;
+    else counted[t.category ?? ""] = (counted[t.category ?? ""] ?? 0) + usd;
+  }
+  const cost = tripExchangeCost(data, trip);
+  const cash: Record<string, { code: string; amount: number }[]> = {};
+  for (const e of tripForeignSpends(data, trip)) for (const [k, v] of Object.entries(e.byCategory)) (cash[k] ??= []).push({ code: e.code, amount: v });
+  const budgets = trip.categoryBudgetsUSD ?? {};
+  const seen = [...Object.keys(counted), ...Object.keys(cash), ...Object.keys(budgets)];
+  const travel = TRAVEL_CATEGORY_KEYS.filter((k) => seen.includes(k));
+  const others = [...new Set(seen.filter((k) => !(TRAVEL_CATEGORY_KEYS as readonly string[]).includes(k) && k !== ""))];
+  const keys = [...travel, ...others, ...(seen.includes("") ? [""] : [])];
+  const rows = keys.map((key): TripCategoryRow => {
+    const fromCash = (cash[key] ?? []).map((c) => ({ ...c, approxUSD: cost[c.code] !== undefined ? round2(c.amount * cost[c.code]) : null }));
+    const countedUSD = round2(counted[key] ?? 0);
+    return {
+      key, countedUSD, fromCash,
+      ...(budgets[key] !== undefined ? { budgetUSD: budgets[key] } : {}),
+      comparedUSD: round2(countedUSD + fromCash.reduce((s2, c) => s2 + (c.approxUSD ?? 0), 0)),
+    };
+  });
+  return { rows, exchangesUSD: round2(exchanges), totalUSD: actual.totalUSD };
 }
