@@ -8,7 +8,9 @@
 // and the rows counted. Rows are tagged in the edit sheet and the
 // foreign-cash forms. A trip can be edited (session 17: "Edit trip", "Save
 // changes"), with the same fields and errors as a new one; every tag stays.
-// Deleting a trip keeps its rows' tags (owner, approved).
+// Deleting a trip keeps its rows' tags (owner, approved). Each card also
+// shows each sheet's balance and opens the Currency screen's own foreign-cash
+// forms, its trip preset (session 20, item 1; approved labels only).
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
 import { allCategories, categoryLabel, fmtDate, MONEY_MAX_USD } from "../../lib/localData";
@@ -17,7 +19,8 @@ import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF } from "./shared";
 import { Label, FocusInput, MoneyInput, DateFieldDMY } from "../form/Primitives";
 import { buildTrip, deleteTrip, editTrip, tripActual, tripForeignSpends, type StoredTrip } from "../../lib/trips";
-import { fmtForeign } from "../../lib/foreignCash";
+import { fmtForeign, sheet, sheetCodes } from "../../lib/foreignCash";
+import { ExchangeForm, SpendForm } from "../ForeignCashForms";
 
 const usd = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 const num = (s: string) => parseFloat(s.replace(/,/g, ""));
@@ -102,6 +105,13 @@ export default function TripsScreen({ financials, onChange }: { financials: Loca
   const [editing, setEditing] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<Draft>(EMPTY);
   const [editError, setEditError] = useState("");
+  // Session 20, item 1: one card's foreign-cash form open at a time (the
+  // Currency screen's own form components, with this card's trip preset).
+  const [fxOpen, setFxOpen] = useState<{ tripId: string; form: "exchange" | "spend" } | null>(null);
+  const codes = sheetCodes(financials);
+  const toggleFx = (tripId: string, form: "exchange" | "spend") =>
+    setFxOpen(fxOpen?.tripId === tripId && fxOpen.form === form ? null : { tripId, form });
+  const fxBtn = (active: boolean) => ({ background: active ? T.jade + "22" : T.ink, border: `1px solid ${active ? T.jade : T.line}`, color: active ? T.jade : T.mute });
 
   function save() {
     const r = buildTrip(paramsOf(draft));
@@ -192,6 +202,24 @@ export default function TripsScreen({ financials, onChange }: { financials: Loca
                   </ul>
                 </div>
               ))}
+              {/* Session 20, item 1: what's left, in view while spending (the sheet's approved heading). */}
+              {codes.map((c) => (
+                <p key={c} className="text-[11px] tabular-nums" style={{ color: T.text }}>{`${c} cash · balance ${fmtForeign(sheet(financials, c).balance, c)}`}</p>
+              ))}
+              <div className="flex flex-wrap gap-2">
+                {codes.length > 0 && (
+                  <button type="button" onClick={() => toggleFx(trip.id, "spend")} aria-expanded={fxOpen?.tripId === trip.id && fxOpen.form === "spend"}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={fxBtn(fxOpen?.tripId === trip.id && fxOpen.form === "spend")}>Spend from foreign cash</button>
+                )}
+                <button type="button" onClick={() => toggleFx(trip.id, "exchange")} aria-expanded={fxOpen?.tripId === trip.id && fxOpen.form === "exchange"}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={fxBtn(fxOpen?.tripId === trip.id && fxOpen.form === "exchange")}>Record an exchange</button>
+              </div>
+              {fxOpen?.tripId === trip.id && fxOpen.form === "spend" && (
+                <SpendForm financials={financials} onChange={onChange} onDone={() => setFxOpen(null)} presetTripId={trip.id} idPrefix={`trip-${trip.id}-sp`} />
+              )}
+              {fxOpen?.tripId === trip.id && fxOpen.form === "exchange" && (
+                <ExchangeForm financials={financials} onChange={onChange} onDone={() => setFxOpen(null)} presetTripId={trip.id} idPrefix={`trip-${trip.id}-ex`} />
+              )}
               {actual.rows.length > 0 && (
                 <ul className="space-y-1 pt-2" style={{ borderTop: `1px solid ${T.line}` }}>
                   {[...actual.rows].sort((a, b) => a.date.localeCompare(b.date)).map((t) => (
