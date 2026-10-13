@@ -18,6 +18,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setThemeState(getStoredTheme());
   }, []);
 
+  // A11Y-01 (session 22, found live): the page takes the theme's text colour, so text with none of its own
+  // (every screen's heading) doesn't fall back to the browser's black, unreadable on the dark themes.
+  useEffect(() => {
+    document.body.style.color = THEMES[theme].text;
+  }, [theme]);
+
   function setTheme(k: ThemeKey) {
     setStoredTheme(k);
     setThemeState(k);
