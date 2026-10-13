@@ -1,7 +1,7 @@
 import { spentByBucket, spendingEffect, totalSpent } from "./spending";
 import type { LocalFinancials, BudgetRuleKey, StoredDebt, StoredTransaction, StoredRecurring, TrackedBalance, Currency, PeriodCloseAcknowledgement } from "./localData";
-import { goalProgress, acknowledgementFor, historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, LBP_RATE_STALE_DAYS, cycleStartDayOf, valueForMonth, makeToUSDForMonth, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, DEFAULT_LBP_RATE, derivedEfBalance, derivedDebtBalance, activeTransactions, parseLocalDate, isRecurringActive, isAfterBalanceBaseline, calendarDaysSince } from "./localData";
-import { cycleKeyForISO, currentCycleKey, calendarKeyForDate, isInCycle, cycleProgress, cycleBounds, cycleKeyMinus, periodNoun, cycleLabel, type CycleKey, type CalendarKey, type CalendarHistory } from "./period";
+import { goalProgress, acknowledgementFor, historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, LBP_RATE_STALE_DAYS, cycleStartDayOf, valueForMonth, makeToUSDForMonth, makeToUSDOn, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, DEFAULT_LBP_RATE, derivedEfBalance, derivedDebtBalance, activeTransactions, parseLocalDate, isRecurringActive, isAfterBalanceBaseline, calendarDaysSince } from "./localData";
+import { currentCycleKey, calendarKeyForDate, isInCycle, cycleProgress, cycleBounds, cycleKeyMinus, periodNoun, cycleLabel, type CycleKey, type CalendarKey, type CalendarHistory } from "./period";
 import { simulateDebtPayoff, type DebtInput } from "./debtEngine";
 import { calendarDayOf, dayStart } from "./calendarDay";
 
@@ -183,8 +183,8 @@ function historizedRecurAsOf(r: StoredRecurring, cycleStart: Date, cycleEnd: Dat
 function expectedFromRelevantTx(
   tb: Pick<TrackedBalance, "startingBalance" | "startingDate" | "currency">,
   relevantTx: StoredTransaction[],
-  toUSDForMonth: (amount: number, currency: string | undefined, ym: CycleKey) => number,
-  startDay: number,
+  // Plan J (held): each row and the starting balance at the rate in effect on its own day.
+  toUSDOn: (amount: number, currency: string | undefined, day: string) => number,
 ): number {
   // INCOME transactions received on this same payment method put money IN,
   // so they subtract from "spent" (raising the expected balance) instead
@@ -197,8 +197,8 @@ function expectedFromRelevantTx(
   // shortcut a first draft of this used -- that version's polarity was the
   // opposite of efAmount's, undocumented drift a future reader would have
   // had no way to catch from the code alone.
-  const spentOf = relevantTx.reduce((s, t) => s + (t.bucket === "INCOME" || t.bucket === "TRANSFER" ? -1 : 1) * toUSDForMonth(t.amount, t.currency, cycleKeyForISO(t.date, startDay)), 0);
-  const startingUSD = toUSDForMonth(tb.startingBalance, tb.currency, cycleKeyForISO(tb.startingDate, startDay));
+  const spentOf = relevantTx.reduce((s, t) => s + (t.bucket === "INCOME" || t.bucket === "TRANSFER" ? -1 : 1) * toUSDOn(t.amount, t.currency, t.date), 0);
+  const startingUSD = toUSDOn(tb.startingBalance, tb.currency, tb.startingDate);
   return Math.round((startingUSD - spentOf) * 100) / 100;
 }
 
@@ -240,13 +240,12 @@ export function trackedBalanceExpectedAsOf(
   asOfInstant: string,
 ): number {
   const cutoff = localDayOfInstant(asOfInstant);
-  const toUSDForMonth = makeToUSDForMonth(data);
   const key = `${tb.paymentMethod}|${tb.paymentMethod === "card" ? (tb.cardId ?? "") : ""}`;
   const relevantTx = activeTransactions(data.transactions ?? []).filter((t) => {
     const tKey = `${t.paymentMethod ?? ""}|${t.paymentMethod === "card" ? (t.cardId ?? "") : ""}`;
     return tKey === key && isAfterBalanceBaseline(t, tb) && t.date <= cutoff;
   });
-  return expectedFromRelevantTx(tb, relevantTx, toUSDForMonth, cycleStartDayOf(data));
+  return expectedFromRelevantTx(tb, relevantTx, makeToUSDOn(data));
 }
 
 /** An ISO instant's LOCAL calendar day. Transaction dates are local. */
@@ -258,13 +257,12 @@ export function trackedBalanceExpected(
   tb: Pick<TrackedBalance, "paymentMethod" | "cardId" | "startingBalance" | "startingDate" | "startingAt" | "currency">,
   data: LocalFinancials,
 ): number {
-  const toUSDForMonth = makeToUSDForMonth(data);
   const key = `${tb.paymentMethod}|${tb.paymentMethod === "card" ? (tb.cardId ?? "") : ""}`;
   const relevantTx = activeTransactions(data.transactions ?? []).filter((t) => {
     const tKey = `${t.paymentMethod ?? ""}|${t.paymentMethod === "card" ? (t.cardId ?? "") : ""}`;
     return tKey === key && isAfterBalanceBaseline(t, tb);
   });
-  return expectedFromRelevantTx(tb, relevantTx, toUSDForMonth, cycleStartDayOf(data));
+  return expectedFromRelevantTx(tb, relevantTx, makeToUSDOn(data));
 }
 
 /**
@@ -293,9 +291,10 @@ export function periodTotals(
   const toUSDForMonth = makeToUSDForMonth(data);
   const tx = activeTransactions(data.transactions ?? []).filter((t) => isInCycle(t.date, ym, startDay));
   // Session 19: the shared spending rule (lib/spending.ts): a change-back nets against Wants; income, transfers and other reimbursements stay out.
-  const spent = spentByBucket(tx, (t) => toUSDForMonth(t.amount, t.currency, ym));
+  const toUSDOn = makeToUSDOn(data); // plan J (held): what each row cost, on its own day
+  const spent = spentByBucket(tx, (t) => toUSDOn(t.amount, t.currency, t.date));
   const salary = valueForMonth(data.incomeHistory, ym, data.income);
-  const txIncome = tx.filter((t) => t.bucket === "INCOME").reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, ym), 0);
+  const txIncome = tx.filter((t) => t.bucket === "INCOME").reduce((s, t) => s + toUSDOn(t.amount, t.currency, t.date), 0);
   const out = { income: salary + txIncome, needs: spent.needs, wants: spent.wants, savings: spent.savings };
   for (const r of data.recurring ?? []) {
     const usd = toUSDForMonth(historizedRecurringContribution(r, ym, recurAsOf, startDay), r.currency, ym);
@@ -431,6 +430,9 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   // display sites (e.g. sixMonthTrend) use this directly; only the one
   // division site (the savings-streak check) needs the floored version.
   const toUSDForMonth = makeToUSDForMonth(data);
+  // Plan J (held): every transaction at the rate in effect on its own day, this cycle's included (2.4.90's
+  // residual: a rate edit no longer re-prices what's already entered). Recurring items keep their cycle's rate.
+  const toUSDOn = makeToUSDOn(data);
   // Base salary for that month plus any one-off INCOME transactions logged
   // in it (a gift, a reimbursement) -- both are real money that month, so
   // "effective income" for every downstream ratio/target/trend should
@@ -443,7 +445,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     // not stop a cycle key being used as a calendar prefix. Identical at
     // startDay 1; one period out at any other value.
     .filter((t) => isInCycle(t.date, ym, startDay) && t.bucket === "INCOME")
-    .reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, ym), 0);
+    .reduce((s, t) => s + toUSDOn(t.amount, t.currency, t.date), 0);
   const incomeForMonth = (ym: CycleKey) => valueForMonth(data.incomeHistory, ym, data.income) + incomeTxForMonth(ym);
   const incomeForMonthSafe = (ym: CycleKey) => Math.max(incomeForMonth(ym), 1);
 
@@ -459,7 +461,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   const recurSavings = activeRecurring.filter((r) => r.bucket === "SAVINGS").reduce((s, r) => s + toUSD(historizedRecurringContribution(r, prefix, now, startDay), r.currency), 0);
 
   // Session 19: the shared spending rule (lib/spending.ts): a change-back nets against Wants; income, transfers and other reimbursements stay out.
-  const monthSpent = spentByBucket(monthTx, (t) => toUSD(t.amount, t.currency));
+  const monthSpent = spentByBucket(monthTx, (t) => toUSDOn(t.amount, t.currency, t.date));
   const needsSpend  = monthSpent.needs   + recurNeeds;
   const wantsSpend  = monthSpent.wants   + recurWants;
   const savingsContrib = monthSpent.savings + recurSavings;
@@ -467,7 +469,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   // One-off INCOME transactions this month (a gift, a reimbursement) — real
   // money on top of the fixed Setup salary, so it belongs in `income`
   // itself rather than a side figure only some callers remember to add.
-  const incomeTx = monthTx.filter((t) => t.bucket === "INCOME").reduce((s, t) => s + toUSD(t.amount, t.currency), 0);
+  const incomeTx = monthTx.filter((t) => t.bucket === "INCOME").reduce((s, t) => s + toUSDOn(t.amount, t.currency, t.date), 0);
   // `income` stays the RAW stored value (+ any logged income transactions)
   // everywhere it's displayed or used as a multiplier (month.income,
   // netCashFlow, budget targets) so a fresh $0-income account reads as $0,
@@ -809,7 +811,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     // negative amount, which would make the chart's own "spend" line
     // absurdly negative).
     // Session 19: the shared spending rule (lib/spending.ts): a change-back nets against Wants; income, transfers and other reimbursements stay out.
-    const txSpend = totalSpent(tx, (t) => toUSDForMonth(t.amount, t.currency, mo));
+    const txSpend = totalSpent(tx, (t) => toUSDOn(t.amount, t.currency, t.date));
     // Recurring payments (rent, subscriptions, etc.) don't create a
     // transaction row each month, so counting only logged transactions
     // understated every month's real spend — evaluate each recurring
@@ -828,7 +830,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     // formula as Overview/Budget's month.savingsRatePct instead of
     // approximating it via leftover cash flow, which disagreed once spend
     // was fully allocated across all three buckets.
-    const txSavings = tx.filter((t) => t.bucket === "SAVINGS").reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, mo), 0);
+    const txSavings = tx.filter((t) => t.bucket === "SAVINGS").reduce((s, t) => s + toUSDOn(t.amount, t.currency, t.date), 0);
     const recurSavings = activeRecurring.filter((r) => r.bucket === "SAVINGS").reduce((s, r) => s + toUSDForMonth(historizedRecurringContribution(r, mo, recurAsOf(r), startDay), r.currency, mo), 0);
     const savingsContrib = txSavings + recurSavings;
     // Raw (unfloored) income for display, same reasoning as the current-
@@ -867,7 +869,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
         // Session 19: the shared spending rule (lib/spending.ts): a change-back nets against Wants; income, transfers and other reimbursements stay out.
         const e = spendingEffect(t);
         if (!e) continue;
-        const amt = e.sign * toUSDForMonth(t.amount, t.currency, ym);
+        const amt = e.sign * toUSDOn(t.amount, t.currency, t.date);
         if (e.bucket === "NEEDS") spend.needs += amt;
         else if (e.bucket === "WANTS") spend.wants += amt;
         else spend.savings += amt;
@@ -993,7 +995,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
       const ym = cycleKeyMinus(currentCycle, i);
       const { start: cycStart, end: cycEnd } = cycleBounds(ym, startDay);
       const tx = data.transactions.filter((t) => isInCycle(t.date, ym, startDay));
-      let monthSavings = tx.filter((t) => t.bucket === "SAVINGS").reduce((s, t) => s + toUSDForMonth(t.amount, t.currency, ym), 0);
+      let monthSavings = tx.filter((t) => t.bucket === "SAVINGS").reduce((s, t) => s + toUSDOn(t.amount, t.currency, t.date), 0);
       // Recurring bills don't create a transaction row, so a past month's
       // real savings contribution was understated (sometimes all the way to
       // "treat this as a blank month and end the streak" below) whenever
@@ -1078,9 +1080,10 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   const balanceChecks: DashboardPayload["balanceChecks"] = data.trackedBalances.map((tb) => {
     const key = `${tb.paymentMethod}|${tb.paymentMethod === "card" ? (tb.cardId ?? "") : ""}`;
     const relevantTx = (txByPaymentKey.get(key) ?? []).filter((t) => isAfterBalanceBaseline(t, tb));
-    const expected = expectedFromRelevantTx(tb, relevantTx, toUSDForMonth, startDay);
+    const expected = expectedFromRelevantTx(tb, relevantTx, toUSDOn);
     const actual = tb.actualBalance != null
-      ? toUSDForMonth(tb.actualBalance, tb.currency, cycleKeyForISO(tb.actualBalanceDate ?? tb.startingDate, startDay))
+      // CUR-04 (plan J): at the rate on the check's own day, which a later edit can't move; it was the cycle's.
+      ? toUSDOn(tb.actualBalance, tb.currency, localDayOfInstant(tb.actualBalanceDate ?? tb.startingDate))
       : null;
     // A transaction logged AFTER the last actual check-in moves `expected`
     // forward without touching `actual` (a fixed snapshot from whenever the

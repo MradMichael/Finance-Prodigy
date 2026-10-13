@@ -254,6 +254,7 @@ export const RULE_FIELDS = [
   "income", "lbpRate", "lbpRateUpdatedAt", "budgetRule", "budgetCustomNeeds", "budgetCustomWants", "budgetSplitHealedAt", "budgetSplitHealedFrom",
   "cycleStartDay", "cycleStartDayChangedAt", "emergencyFundTargetMonths",
   "incomeHistory", "lbpRateHistory", "budgetRuleHistory", "netWorthHistory",
+  "lbpRateLog", // plan J (held)
 ] as const satisfies readonly (keyof LocalFinancials)[];
 
 export interface MergeFinancialsResult {
@@ -666,6 +667,9 @@ function mergeUnderRule(local: LocalFinancials, server: LocalFinancials, deleted
       ...(local.foreignEntries || server.foreignEntries ? { foreignEntries: foreignEntries.items } : {}),
       incomeHistory: hist(local.incomeHistory, server.incomeHistory, "incomeHistory"),
       lbpRateHistory: hist(local.lbpRateHistory, server.lbpRateHistory, "lbpRateHistory"),
+      // Plan J (held): the rate log merges by its day under the fingerprint rule, a two-sided clash on one day
+      // to the later edit (`at`). Written only when a copy has a log, as trips are.
+      ...(local.lbpRateLog || server.lbpRateLog ? { lbpRateLog: mergeBySeen(local.lbpRateLog ?? [], server.lbpRateLog ?? [], (e) => e.from, s("lbpRateLog"), at).items.sort((a, b) => a.from.localeCompare(b.from)) } : {}),
       budgetRuleHistory: hist(local.budgetRuleHistory, server.budgetRuleHistory, "budgetRuleHistory"),
       netWorthHistory: hist(local.netWorthHistory, server.netWorthHistory, "netWorthHistory"),
     } as Partial<LocalFinancials>,
@@ -700,6 +704,7 @@ const KNOWN_FIELDS = {
   budgetSplitHealedFrom: true, budgetCustomWants: true, customCategories: true, categoryRules: true, wishlist: true,
   recurringModelNoticeSeen: true, syncChoice: true, periodCloses: true, deletedKeys: true, resetAt: true,
   revivedKeys: true, clashRecords: true, transactionClashRecords: true, trips: true, foreignEntries: true,
+  lbpRateLog: true,
 } as const satisfies Record<keyof LocalFinancials, true>;
 
 /** The top-level fields of a copy that this code doesn't know (travel slice 0). */

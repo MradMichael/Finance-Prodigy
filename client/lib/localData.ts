@@ -912,6 +912,13 @@ export interface LocalFinancials {
   incomeHistory?: CycleHistory;
   /** Same idea as incomeHistory, for `lbpRate` — LBP is volatile enough that using today's rate to re-convert a past month's LBP transactions silently rewrites history every time the rate is updated. */
   lbpRateHistory?: CycleHistory;
+  /**
+   * Plan J (session 22; HELD): the rate as edited, dated by the local day of the edit. Appended at the edit, a
+   * second edit the same day replacing that day's entry; never rewritten otherwise. rateOn reads it. `at` is
+   * the edit's instant, for a two-sided clash in a merge. lbpRateHistory above is still written (each cycle's
+   * last value), so older readers read what they did.
+   */
+  lbpRateLog?: { from: string; value: number; at?: string }[];
   /** Same idea as incomeHistory/lbpRateHistory, for the resolved budget-rule percentages — otherwise switching budget rules silently rewrites what every past month "should have saved" (budgetRollover) and which past months count toward a savings streak. */
   budgetRuleHistory?: CycleHistory<{ needs: number; wants: number; savings: number }>;
   /** ISO timestamp of the last time `lbpRate` was actually edited — powers the staleness indicator in SetupScreen (day-level precision; lbpRateHistory above only tracks month granularity). Absent on accounts predating this field, or if the rate has never been edited since. */
@@ -1191,7 +1198,7 @@ export function recordDeletion(
 // close Phase 1) adds periodCloses. v6 (SYNC-1 step 2) adds edit times and
 // the deletion registry a sync merge needs. v7 (plan H 5a) adds goal opening
 // amounts. v8 (foreign cash, model 2) converts slice 1's pocket rows.
-export const CURRENT_SCHEMA_VERSION = 8;
+export const CURRENT_SCHEMA_VERSION = 9;
 
 // The reference rate a new account starts with, and the fallback used
 // anywhere financials.lbpRate is momentarily absent. Single source of
@@ -1530,6 +1537,19 @@ function convertForeignCash(d: LocalFinancials): LocalFinancials {
     ...(entries.length || d.foreignEntries ? { foreignEntries: [...(d.foreignEntries ?? []), ...entries] } : {}),
   };
 }
+/**
+ * Plan J, v8 → v9 (session 22; HELD): the rate log, from the cycle history. Each cycle's entry becomes
+ * `{ from: that cycle's first day, value }`, under the payday at migration (2.4.102: a cycle written under
+ * an earlier payday is read under this one, as the history already is). A copy that has a log keeps it.
+ * Additive: the history stays, so a price read before the log's first day is exactly today's.
+ */
+function addRateLog(d: LocalFinancials): LocalFinancials {
+  if (d.lbpRateLog) return { ...d, schemaVersion: 9 };
+  const startDay = cycleStartDayOf(d);
+  const lbpRateLog = [...(d.lbpRateHistory ?? [])].sort((a, b) => a.ym.localeCompare(b.ym)).map((h) => ({ from: isoLocalDay(cycleBounds(h.ym, startDay).start), value: h.value }));
+  return { ...d, schemaVersion: 9, lbpRateLog };
+}
+
 const MIGRATIONS: { fromVersion: number; migrate: (d: LocalFinancials) => LocalFinancials }[] = [
   { fromVersion: 0, migrate: (d) => ({ ...d, schemaVersion: 1 }) },
   { fromVersion: 1, migrate: addCurrencyAndRate },
@@ -1539,6 +1559,7 @@ const MIGRATIONS: { fromVersion: number; migrate: (d: LocalFinancials) => LocalF
   { fromVersion: 5, migrate: addMergeStamps },
   { fromVersion: 6, migrate: addGoalOpenings },
   { fromVersion: 7, migrate: convertForeignCash },
+  { fromVersion: 8, migrate: addRateLog },
 ];
 
 /** Reads the schema version off a raw, not-yet-migrated value -- treats a
@@ -2516,6 +2537,41 @@ export function toUSD(amount: number, currency: Currency | undefined, lbpRate: n
  */
 export function rateOrDefault(rate: number | null | undefined): number {
   return typeof rate === "number" && rate > 0 ? rate : DEFAULT_LBP_RATE;
+}
+
+/** CODE-05 (plan J): the account's live rate, guarded. The one place that reads `lbpRate` for a figure; it was `?? DEFAULT_LBP_RATE` in 49 places. */
+export function lbpRateOf(d: { lbpRate?: number | null }): number {
+  return rateOrDefault(d.lbpRate);
+}
+
+/**
+ * Plan J (session 22; HELD): the rate in effect on a local day (YYYY-MM-DD, or an instant: its first ten
+ * characters). The latest log entry on or before it. Before the log's first entry, or with no log, exactly
+ * today's path: the cycle history, then the live rate. Every flow (what a transaction cost) reads this, the
+ * current cycle included, so a rate edit never re-prices what's already entered; held values read the live rate.
+ */
+export function rateOn(d: LocalFinancials, day: string): number {
+  const on = day.slice(0, 10);
+  let best: { from: string; value: number } | null = null;
+  for (const e of d.lbpRateLog ?? []) if (e.from <= on && (best === null || e.from > best.from)) best = e;
+  if (best) return rateOrDefault(best.value);
+  return rateForMonth(d.lbpRateHistory, cycleKeyForISO(on, cycleStartDayOf(d)), lbpRateOf(d));
+}
+
+/** Plan J: an amount in USD at the rate in effect on its own day (`toUSD`'s guards, `rateOn`'s rate). */
+export function makeToUSDOn(d: LocalFinancials): (amount: number, currency: string | undefined, day: string) => number {
+  return (amount, currency, day) => (currency === "LBP" ? amount / rateOn(d, day) : amount);
+}
+
+/**
+ * Plan J (session 22; HELD): a rate edit. The live rate and its edit time as before, and an entry in the log
+ * dated the edit's local day; a second edit the same day replaces that day's entry only.
+ */
+export function recordRateEdit(d: LocalFinancials, value: number, now: Date = new Date()): LocalFinancials {
+  const at = now.toISOString();
+  const from = isoLocalDay(now);
+  const lbpRateLog = [...(d.lbpRateLog ?? []).filter((e) => e.from !== from), { from, value, at }].sort((a, b) => a.from.localeCompare(b.from));
+  return { ...d, lbpRate: value, lbpRateUpdatedAt: at, lbpRateLog, ...settingsEdited(d, ["lbpRate"], at) };
 }
 
 /**
