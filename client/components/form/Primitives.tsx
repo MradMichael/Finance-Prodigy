@@ -244,12 +244,16 @@ export function CurrencyToggle({ value, onChange }: { value: Currency; onChange:
  * short enough that the cursor position is never ambiguous.
  */
 export function DateFieldDMY({
-  value, onChange, style, id,
+  value, onChange, style, id, allowEmpty = false,
 }: {
   value: string; // YYYY-MM-DD, or "" for empty
   onChange: (iso: string) => void;
   style?: React.CSSProperties;
   id?: string; // applied to the day segment — the field's first tab stop — so a paired <label htmlFor> at least lands somewhere in the group
+  // Session 21: for a field where blank is a real choice (Profile's report
+  // range: blank is all time). Once every box is empty it reports "". Without
+  // it, clearing the boxes keeps the last whole date, as before.
+  allowEmpty?: boolean;
 }) {
   const T = useTheme();
   const [focused, setFocused] = useState(false);
@@ -319,9 +323,9 @@ export function DateFieldDMY({
         digits = String(maxValue).padStart(2, "0");
       }
       setter(digits);
-      if (setter === setDay) commit(digits, month, year);
-      else if (setter === setMonth) commit(day, digits, year);
-      else commit(day, month, digits);
+      const [d, m, y] = setter === setDay ? [digits, month, year] : setter === setMonth ? [day, digits, year] : [day, month, digits];
+      if (allowEmpty && !d && !m && !y) onChange("");
+      else commit(d, m, y);
 
       const noSecondDigitPossible = maxLen === 2 && digits.length === 1 && parseInt(digits, 10) > Math.floor(maxValue / 10);
       if (next && (digits.length === maxLen || noSecondDigitPossible)) next.current?.focus();
@@ -331,8 +335,11 @@ export function DateFieldDMY({
   function handleBackspace(e: React.KeyboardEvent<HTMLInputElement>, current: string, prev?: React.RefObject<HTMLInputElement>, prevValue?: string, prevSetter?: (v: string) => void) {
     if (e.key === "Backspace" && current === "" && prev && prevSetter && prevValue !== undefined) {
       e.preventDefault();
-      prevSetter(prevValue.slice(0, -1));
+      const shortened = prevValue.slice(0, -1);
+      prevSetter(shortened);
       prev.current?.focus();
+      // Only the month's and the year's boxes get here, each already empty.
+      if (allowEmpty && !year && !(prevSetter === setDay ? shortened : day) && !(prevSetter === setMonth ? shortened : month)) onChange("");
     }
   }
 
