@@ -53,8 +53,9 @@ export default function Field({
             type="button"
             onClick={() => setRevealed((v) => !v)}
             aria-label={revealed ? "Hide password" : "Show password"}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-semibold uppercase tracking-wide hover:opacity-70 transition-opacity"
-            style={{ color: T.mute }}
+            // A11Y-06 (session 22, WCAG 2.2 AA 2.5.8): at least 24 by 24, padded, still inside the field's 52px.
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] font-semibold uppercase tracking-wide hover:opacity-70 transition-opacity inline-flex items-center justify-center rounded-md"
+            style={{ color: T.mute, minWidth: 24, minHeight: 24, padding: "4px 6px" }}
           >
             {revealed ? "Hide" : "Show"}
           </button>

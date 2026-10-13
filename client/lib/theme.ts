@@ -33,20 +33,23 @@ function build(c: Base): ThemeColors {
   };
 }
 
+// A11Y-01 (session 22; WCAG 2.2 AA, the owner's target): every text colour reaches 4.5:1 on each surface,
+// as a button behind the ink label, and on its own tint as the chips use it (theme.contrast.test.ts). The
+// failing tokens moved in lightness only, hue and saturation kept, by the least that passes.
 export const THEMES: Record<ThemeKey, ThemeColors & { name: string; desc: string }> = {
   ledger: {
     name: "Ledger", desc: "Forest green, the classic",
     ...build({
       ink: "#0B1F1E", panel: "#11302C", panelSoft: "#16403A", line: "#1E4A43",
       text: "#EAF2EF", mute: "#8FAFA7",
-      brass: "#E3B341", jade: "#4FD1A5", coral: "#F08A7E", sky: "#7FB8D8",
+      brass: "#E8C165", jade: "#65D7B0", coral: "#F2998E", sky: "#7FB8D8",
     }),
   },
   midnight: {
     name: "Midnight", desc: "Navy blue, Wall Street",
     ...build({
       ink: "#070B1E", panel: "#0C1230", panelSoft: "#111840", line: "#192450",
-      text: "#E4E8F8", mute: "#7080B0",
+      text: "#E4E8F8", mute: "#7383B2",
       brass: "#F0C040", jade: "#58AEFF", coral: "#FF7070", sky: "#80C8FF",
     }),
   },
@@ -54,8 +57,8 @@ export const THEMES: Record<ThemeKey, ThemeColors & { name: string; desc: string
     name: "Obsidian", desc: "Warm black, premium",
     ...build({
       ink: "#13110F", panel: "#1C1A17", panelSoft: "#242220", line: "#323028",
-      text: "#F0EDE8", mute: "#90887E",
-      brass: "#FFB820", jade: "#2DCA6A", coral: "#FF4848", sky: "#50C8FF",
+      text: "#F0EDE8", mute: "#91897F",
+      brass: "#FFB820", jade: "#2DCA6A", coral: "#FF5A5A", sky: "#50C8FF",
     }),
   },
   aurora: {
@@ -63,23 +66,23 @@ export const THEMES: Record<ThemeKey, ThemeColors & { name: string; desc: string
     ...build({
       ink: "#0C0818", panel: "#130F28", panelSoft: "#1A1534", line: "#261F48",
       text: "#F2EEFF", mute: "#8878C0",
-      brass: "#F5C040", jade: "#B060FF", coral: "#FF4488", sky: "#60C8FF",
+      brass: "#F5C040", jade: "#BA74FF", coral: "#FF4488", sky: "#60C8FF",
     }),
   },
   ember: {
     name: "Ember", desc: "Flame orange, bold",
     ...build({
       ink: "#180A00", panel: "#221200", panelSoft: "#2C1800", line: "#3C2400",
-      text: "#FFF4EC", mute: "#A07050",
-      brass: "#FFCC20", jade: "#FF7820", coral: "#FF3838", sky: "#FFA860",
+      text: "#FFF4EC", mute: "#AC7A59",
+      brass: "#FFCC20", jade: "#FF7820", coral: "#FF4C4C", sky: "#FFA860",
     }),
   },
   ivory: {
     name: "Ivory", desc: "Clean white, light mode",
     ...build({
       ink: "#F5F1EB", panel: "#EDE8E1", panelSoft: "#E3DDD6", line: "#CDC7BF",
-      text: "#1A1510", mute: "#7A7068",
-      brass: "#996600", jade: "#007848", coral: "#CC2828", sky: "#2268A0",
+      text: "#1A1510", mute: "#686059",
+      brass: "#6B4700", jade: "#005C37", coral: "#AA2121", sky: "#21659C",
     }),
   },
 };

@@ -24,14 +24,10 @@ import { THEMES, type ThemeKey } from "../../lib/theme";
 import Field from "../../components/form/Field";
 import { DateFieldDMY } from "../../components/form/Primitives";
 
-const THEME_SWATCHES: { key: ThemeKey; accent: string; bg: string }[] = [
-  { key: "ledger",   accent: "#4FD1A5", bg: "#11302C" },
-  { key: "midnight", accent: "#58AEFF", bg: "#0C1230" },
-  { key: "obsidian", accent: "#2DCA6A", bg: "#1C1A17" },
-  { key: "aurora",   accent: "#B060FF", bg: "#130F28" },
-  { key: "ember",    accent: "#FF7820", bg: "#221200" },
-  { key: "ivory",    accent: "#007848", bg: "#EDE8E1" },
-];
+// Each theme's own accent and panel, from lib/theme.ts (they were copied here by hand, and drift when
+// a theme changes: A11Y-01, session 22).
+const THEME_SWATCHES: { key: ThemeKey; accent: string; bg: string }[] = (["ledger", "midnight", "obsidian", "aurora", "ember", "ivory"] as ThemeKey[])
+  .map((key) => ({ key, accent: THEMES[key].jade, bg: THEMES[key].panel }));
 
 export default function ProfilePage() {
   const router  = useRouter();
