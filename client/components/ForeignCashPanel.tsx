@@ -4,14 +4,12 @@
 // kept where they still apply; every new one here was approved by the owner
 // in session 19. The currency screen's foreign cash, as a sheet per currency
 // (lib/foreignCash.ts):
-//   - Record an exchange: ONE Wants/Travel row for what was paid, naming the
-//     euros received. Past dates allowed. Its trip defaults to the one whose
-//     dates hold the date, else the next trip (decision 10).
+//   - Record an exchange, Spend from foreign cash: the shared form components
+//     (./ForeignCashForms; session 20: each trip card opens the same ones).
 //   - Each sheet: its balance, and its lines with a running balance. A sheet
 //     entry (a spend, cash received) can be deleted: re-entered to undo
 //     (decision 7); exchange and change-back lines are ledger rows, deleted
 //     from the transaction list.
-//   - Spend from foreign cash: a sheet entry; not counted in the budget.
 //   - Change back: ONE reimbursement-shaped row (a TRANSFER that gained) on
 //     the pool the money went to; it nets against Wants (session 19).
 //   - A sheet entry is edited like any row (session 19): its ✎ ("Edit
@@ -20,14 +18,13 @@
 //   - Cash received (decision 4): a sheet entry in, with no USD effect.
 import { useState } from "react";
 import type { Currency, LocalFinancials, PaymentMethod, StoredCard } from "../lib/localData";
-import { allCategories, cycleStartDayOf, fmtDate, makeToUSDForMonth, moneyMaxFor, recordDeletion, todayISO, DEFAULT_LBP_RATE, saveCard as storeCard } from "../lib/localData";
-import { cycleKeyForISO } from "../lib/period";
+import { allCategories, fmtDate, moneyMaxFor, recordDeletion, todayISO, DEFAULT_LBP_RATE, saveCard as storeCard } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY, CurrencyToggle, PaymentMethodPicker } from "./form/Primitives";
-import { buildChangeBack, buildExchange, buildForeignEntry, editForeignEntry, fmtForeign, isValidForeignCode, sheet, sheetCodes } from "../lib/foreignCash";
+import { buildChangeBack, buildForeignEntry, editForeignEntry, fmtForeign, isValidForeignCode, sheet, sheetCodes } from "../lib/foreignCash";
 import { suggestedTripId } from "../lib/trips";
+import { ExchangeForm, SpendForm, TripSelect } from "./ForeignCashForms";
 
-const usd = (n: number, digits = 2) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: digits, maximumFractionDigits: digits }).format(n);
 const num = (s: string) => parseFloat(s.replace(/,/g, ""));
 const signed = (n: number, code: string) => `${n < 0 ? "−" : "+"}${fmtForeign(Math.abs(n), code)}`;
 
@@ -37,8 +34,6 @@ export default function ForeignCashPanel({ financials, onChange }: { financials:
   const codes = sheetCodes(financials);
   const trips = financials.trips ?? [];
   const cards = financials.cards ?? [];
-  const toUSD = makeToUSDForMonth(financials);
-  const startDay = cycleStartDayOf(financials);
   const [open, setOpen] = useState<"exchange" | "spend" | "back" | "in" | null>(null);
   const field = { background: T.ink, border: `1px solid ${T.line}`, color: T.text };
 
@@ -52,15 +47,6 @@ export default function ForeignCashPanel({ financials, onChange }: { financials:
     const card = method === "card" && cardId ? cards.find((c) => c.id === cardId) : undefined;
     return { paymentMethod: method, ...(card ? { cardId: card.id, cardLabel: card.label } : {}) };
   };
-  const tripSelect = (id: string, value: string, onPick: (v: string) => void) => trips.length > 0 && (
-    <div>
-      <Label htmlFor={id}>Trip</Label>
-      <select id={id} value={value} onChange={(e) => onPick(e.target.value)} className="w-full rounded-lg px-2 py-1.5 text-sm" style={field}>
-        <option value="">No trip</option>
-        {trips.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-      </select>
-    </div>
-  );
   const codeSelect = (id: string, value: string, onPick: (v: string) => void) => (
     <div>
       <Label htmlFor={id}>Currency</Label>
@@ -73,57 +59,6 @@ export default function ForeignCashPanel({ financials, onChange }: { financials:
     const after = code && amount > 0 ? sheet(financials, code, { through: date || todayISO() }).balance - amount : 0;
     return after < 0 ? <p className="text-[11px]" style={{ color: T.brass }}>{`That's ${fmtForeign(-after, code)} more than this cash held on that date.`}</p> : null;
   };
-
-  // ── exchange ──
-  const [exDate, setExDate] = useState(todayISO());
-  const [payMethod, setPayMethod] = useState<PaymentMethod>("cash");
-  const [cardId, setCardId] = useState<string | null>(null);
-  const [payNote, setPayNote] = useState("");
-  const [paid, setPaid] = useState("");
-  const [paidCurrency, setPaidCurrency] = useState<Currency>("USD");
-  const [code, setCode] = useState("EUR");
-  const [received, setReceived] = useState("");
-  const [exTripPick, setExTripPick] = useState<string | null>(null);
-  const exTrip = exTripPick ?? suggestedTripId(trips, exDate || todayISO(), { orNext: true }) ?? "";
-  const [exError, setExError] = useState("");
-  const codeUpper = code.trim().toUpperCase();
-  const paidUSD = num(paid) > 0 ? toUSD(num(paid), paidCurrency, cycleKeyForISO(exDate || todayISO(), startDay)) : NaN;
-  const ratePreview = paidUSD > 0 && num(received) > 0 && isValidForeignCode(codeUpper)
-    ? `You got ${fmtForeign(num(received) / paidUSD, codeUpper)} per $1 (${usd(paidUSD / num(received), 4)} per ${fmtForeign(1, codeUpper).replace(/\.00$/, "")})${paidCurrency === "LBP" ? ", at this period's L£ rate" : ""}.`
-    : "";
-
-  function saveExchange() {
-    if (!isValidForeignCode(codeUpper)) { setExError("Use a three-letter currency code other than USD or LBP, like EUR."); return; }
-    if (!(num(paid) > 0) || !(num(received) > 0)) { setExError("Enter both amounts."); return; }
-    const row = buildExchange({
-      date: exDate || todayISO(), paid: num(paid), paidCurrency, from: poolFrom(payMethod, cardId),
-      code: codeUpper, received: num(received), description: `Exchange to ${codeUpper}`, ...(exTrip ? { tripId: exTrip } : {}),
-    }, lbpRate);
-    onChange({ ...financials, transactions: [...financials.transactions, row] });
-    setPaid(""); setReceived(""); setExError(""); setExTripPick(null); setOpen(null);
-  }
-
-  // ── spend ──
-  const [spCode, setSpCode] = useState("");
-  const spendCode = spCode || codes[0] || "";
-  const [spDate, setSpDate] = useState(todayISO());
-  const [spAmount, setSpAmount] = useState("");
-  const [spCategory, setSpCategory] = useState("");
-  const [spDesc, setSpDesc] = useState("");
-  const [spTripPick, setSpTripPick] = useState<string | null>(null);
-  const spTrip = spTripPick ?? suggestedTripId(trips, spDate || todayISO()) ?? "";
-  const [spError, setSpError] = useState("");
-
-  function saveSpend() {
-    if (!spendCode) return;
-    if (!(num(spAmount) > 0) || !spDesc.trim()) { setSpError("Enter the amount and a description."); return; }
-    const entry = buildForeignEntry({
-      kind: "spend", code: spendCode, amount: num(spAmount), date: spDate || todayISO(), description: spDesc.trim(),
-      ...(spCategory ? { category: spCategory } : {}), ...(spTrip ? { tripId: spTrip } : {}),
-    });
-    onChange({ ...financials, foreignEntries: [...(financials.foreignEntries ?? []), entry] });
-    setSpAmount(""); setSpDesc(""); setSpError(""); setSpTripPick(null); setOpen(null);
-  }
 
   // ── change back ──
   const [cbCode, setCbCode] = useState("");
@@ -255,7 +190,7 @@ export default function ForeignCashPanel({ financials, onChange }: { financials:
                   <option value="">No category</option>
                   {allCategories(financials.customCategories).map((cat) => <option key={cat.value} value={cat.value}>{cat.icon} {cat.label}</option>)}
                 </select>
-                {tripSelect("fx-ed-trip", edTrip, setEdTrip)}
+                <TripSelect id="fx-ed-trip" value={edTrip} onPick={setEdTrip} financials={financials} />
                 <div role="status">{edError && <p className="text-[11px]" style={{ color: T.coral }}>{edError}</p>}</div>
                 <button type="submit" className="w-full py-2 rounded-xl text-sm font-semibold" style={{ background: T.jade, color: T.ink }}>Save changes</button>
               </form>
@@ -275,68 +210,9 @@ export default function ForeignCashPanel({ financials, onChange }: { financials:
         <button type="button" onClick={() => toggle("in")} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={btn(open === "in")}>Cash received</button>
       </div>
 
-      {open === "exchange" && (
-        <form aria-label="Record an exchange" className="space-y-2.5" onSubmit={(e) => { e.preventDefault(); saveExchange(); }}>
-          <div>
-            <Label htmlFor="fx-ex-date">Date</Label>
-            <DateFieldDMY id="fx-ex-date" value={exDate} onChange={setExDate} />
-          </div>
-          <PaymentMethodPicker value={payMethod} onChange={setPayMethod} cardId={cardId} onCardIdChange={setCardId}
-            otherNote={payNote} onOtherNoteChange={setPayNote} cards={cards} onSaveCard={saveCard} />
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <Label htmlFor="fx-ex-paid">Amount paid</Label>
-              <MoneyInput id="fx-ex-paid" value={paid} onChange={setPaid} placeholder="0" max={moneyMaxFor(paidCurrency, lbpRate)} />
-            </div>
-            <div className="flex items-end"><CurrencyToggle value={paidCurrency} onChange={setPaidCurrency} /></div>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <Label htmlFor="fx-ex-code">Currency received</Label>
-              <FocusInput id="fx-ex-code" value={code} onChange={(e) => setCode(e.target.value)} maxLength={3} autoComplete="off" />
-            </div>
-            <div>
-              <Label htmlFor="fx-ex-received">Amount received</Label>
-              <MoneyInput id="fx-ex-received" value={received} onChange={setReceived} placeholder="0" max={moneyMaxFor("USD", lbpRate)} />
-            </div>
-          </div>
-          {tripSelect("fx-ex-trip", exTrip, setExTripPick)}
-          {ratePreview && <p className="text-[11px]" style={{ color: T.text }}>{ratePreview}</p>}
-          {paidUSD > 0 && <p className="text-[11px]" style={{ color: T.text }}>{`Counts as Travel spending of ${usd(paidUSD)}.`}</p>}
-          <div role="status">{exError && <p className="text-[11px]" style={{ color: T.coral }}>{exError}</p>}</div>
-          <button type="submit" className="w-full py-2 rounded-xl text-sm font-semibold" style={{ background: T.jade, color: T.ink }}>Save exchange</button>
-        </form>
-      )}
+      {open === "exchange" && <ExchangeForm financials={financials} onChange={onChange} onDone={() => setOpen(null)} />}
 
-      {open === "spend" && spendCode && (
-        <form aria-label="Spend from foreign cash" className="space-y-2.5" onSubmit={(e) => { e.preventDefault(); saveSpend(); }}>
-          <div className="grid grid-cols-2 gap-2">
-            {codeSelect("fx-sp-code", spendCode, setSpCode)}
-            <div>
-              <Label htmlFor="fx-sp-date">Date</Label>
-              <DateFieldDMY id="fx-sp-date" value={spDate} onChange={setSpDate} />
-            </div>
-          </div>
-          <div>
-            <Label htmlFor="fx-sp-amount">Amount</Label>
-            <MoneyInput id="fx-sp-amount" value={spAmount} onChange={setSpAmount} placeholder="0" max={moneyMaxFor("USD", lbpRate)} />
-          </div>
-          <div>
-            <Label htmlFor="fx-sp-desc">Description</Label>
-            <FocusInput id="fx-sp-desc" value={spDesc} onChange={(e) => setSpDesc(e.target.value)} />
-          </div>
-          <select value={spCategory} onChange={(e) => setSpCategory(e.target.value)} aria-label="Category"
-            className="w-full rounded-lg px-2 py-1.5 text-[11px]" style={field}>
-            <option value="">No category</option>
-            {allCategories(financials.customCategories).map((c) => <option key={c.value} value={c.value}>{c.icon} {c.label}</option>)}
-          </select>
-          {tripSelect("fx-sp-trip", spTrip, setSpTripPick)}
-          <p className="text-[11px]" style={{ color: T.mute }}>Not counted in your budget: the exchange already was.</p>
-          {shortBy(spendCode, spDate, num(spAmount))}
-          <div role="status">{spError && <p className="text-[11px]" style={{ color: T.coral }}>{spError}</p>}</div>
-          <button type="submit" className="w-full py-2 rounded-xl text-sm font-semibold" style={{ background: T.jade, color: T.ink }}>Save spend</button>
-        </form>
-      )}
+      {open === "spend" && <SpendForm financials={financials} onChange={onChange} onDone={() => setOpen(null)} />}
 
       {open === "back" && backCode && (
         <form aria-label="Change back" className="space-y-2.5" onSubmit={(e) => { e.preventDefault(); saveChangeBack(); }}>
@@ -360,7 +236,7 @@ export default function ForeignCashPanel({ financials, onChange }: { financials:
           </div>
           <PaymentMethodPicker value={cbMethod} onChange={setCbMethod} cardId={cbCardId} onCardIdChange={setCbCardId}
             otherNote={cbNote} onOtherNoteChange={setCbNote} cards={cards} onSaveCard={saveCard} />
-          {tripSelect("fx-cb-trip", cbTrip, setCbTripPick)}
+          <TripSelect id="fx-cb-trip" value={cbTrip} onPick={setCbTripPick} financials={financials} />
           {shortBy(backCode, cbDate, num(given))}
           <div role="status">{cbError && <p className="text-[11px]" style={{ color: T.coral }}>{cbError}</p>}</div>
           <button type="submit" className="w-full py-2 rounded-xl text-sm font-semibold" style={{ background: T.jade, color: T.ink }}>Save change-back</button>
