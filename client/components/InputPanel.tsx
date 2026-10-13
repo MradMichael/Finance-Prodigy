@@ -648,7 +648,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
         {/* Log an entry */}
         <Section title="Log an entry" icon="📝" defaultOpen>
           {!txSplitMode ? (
-            <div className="grid grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <div>
                 <Label htmlFor="tx-amount">Amount</Label>
                 <MoneyInput
@@ -1363,7 +1363,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                 <MoneyInput id="new-goal-saved" value={gCurrent} onChange={setGCurrent} placeholder="0" max={moneyMaxFor(gCurrency, lbpRate)} />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div>
                 <Label htmlFor="new-goal-date">Target date</Label>
                 <DateFieldDMY id="new-goal-date" value={gDate} onChange={setGDate} />
@@ -1870,7 +1870,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                 <MoneyInput id="new-debt-min" value={dMin} onChange={setDMin} placeholder="25" max={moneyMaxFor(dCurrency, lbpRate)} />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div>
                 <Label htmlFor="new-debt-opened">Opened date (optional: when this debt started)</Label>
                 <DateFieldDMY id="new-debt-opened" value={dOpenedDate} onChange={setDOpenedDate} />

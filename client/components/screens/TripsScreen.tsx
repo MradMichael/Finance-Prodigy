@@ -58,7 +58,7 @@ function TripFields({ idPrefix, testIdPrefix, draft, onDraft, financials }: {
         <Label htmlFor={`${idPrefix}-name`}>Name</Label>
         <FocusInput id={`${idPrefix}-name`} value={draft.name} onChange={(e) => onDraft({ ...draft, name: e.target.value })} />
       </div>
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <div data-testid={`${testIdPrefix}-start`}>
           <Label htmlFor={`${idPrefix}-start-day`}>Starts</Label>
           <DateFieldDMY id={`${idPrefix}-start-day`} value={draft.start} onChange={(v) => onDraft({ ...draft, start: v })} />
