@@ -1,7 +1,7 @@
 "use client";
 
 import type { LocalFinancials, StoredTransaction, SettingKey } from "./localData";
-import { isEmptyFinancials, isFromNewerVersion, migrateIfOlder, BUDGET_RULES } from "./localData";
+import { isEmptyFinancials, isFromNewerVersion, migrateIfOlder, schemaVersionOf, CURRENT_SCHEMA_VERSION, BUDGET_RULES } from "./localData";
 import { mergeFinancials, stableStringify, unknownFieldsOf, MERGED_FIELDS, RULE_FIELDS, type MergeFinancialsResult, type MergeClash } from "./syncMerge";
 import { cycleLabelLong, dayLabel } from "./period";
 import { getSyncToken } from "./crypto";
@@ -656,7 +656,11 @@ export async function fetchAndMerge(email: string, currentLocal: () => LocalFina
     mergedData: result.data,
     serverCopy: server,
     localChanged: !sameRecords(result.data, local, fields),
-    serverBehind: !sameRecords(result.data, server, fields),
+    // Session 18 (found in the live check): a copy older than this code is behind
+    // by its shape alone, so the merged copy is pushed to replace it; a device
+    // still on older code then stops syncing (slice 0's rule 2) instead of
+    // carrying on against the old copy.
+    serverBehind: schemaVersionOf(pulled.data) < CURRENT_SCHEMA_VERSION || !sameRecords(result.data, server, fields),
     addedFromServer: result.transactions.addedFromServer,
     clashes: result.clashes,
     nonTransactionDivergence: seen ? [] : detectNonTransactionDivergence(local, server),

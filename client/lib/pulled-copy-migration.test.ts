@@ -11,6 +11,12 @@
 // Now an OLDER copy is migrated before it's merged, and it's also what the
 // record of the last sync is taken from (`serverCopy`). A copy at this code's
 // version is merged exactly as it arrives; a newer one is still refused.
+//
+// Session 19, item 1 (found in session 18's live check): the fetch compared the
+// merged copy with the MIGRATED server copy, so a server copy that differed only
+// by being older wasn't behind, and nothing was pushed: the backup kept its old
+// shape, and a device on older code carried on against it. An older copy is
+// now behind by its shape alone; a copy at this version that matches isn't.
 import { it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("./auth", () => ({ getRecoveryTokenForSync: vi.fn(async () => undefined), getSession: () => ({ userId: "u1", email: "u1@example.com", name: "U One" }) }));
 import { fetchAndMerge, mergeAndPush } from "./syncService";
@@ -57,6 +63,17 @@ it("fetch: an older copy's goal arrives migrated, so a contribution made afterwa
   // merge doesn't read the migration as a change made on the other device.
   expect(r.serverCopy.goals[0].openingAmount).toBe(500);
   expect(r.serverCopy.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+  // The server still holds the older shape: the merged copy is pushed to replace it.
+  expect(r.serverBehind).toBe(true);
+});
+
+it("fetch: a copy at this version, the same as this device's, isn't behind", async () => {
+  const current = { ...DEFAULT_DATA, ...on, income: 3150.75 } as LocalFinancials;
+  serverData = current;
+  await saveSeen("u1", current);
+  const r = await fetchAndMerge("u1@example.com", () => ({ ...current }));
+  if (!r.ok || r.skipped) throw new Error("expected a merge");
+  expect(r.serverBehind).toBe(false);
 });
 
 it("merge and push: the same, and the copy pushed back carries it", async () => {
