@@ -744,7 +744,8 @@ export default function ProfilePage() {
                 <p className="text-[11px] mb-1.5" style={{ color: T.mute }}>
                   Include transactions from this date range (leave blank for all time):
                 </p>
-                <div className="flex items-center gap-2">
+                {/* Session 20, item 2: wraps on a narrow screen (at 390px the second input was cut off). */}
+                <div className="flex flex-wrap items-center gap-2">
                   <input
                     type="date"
                     value={pdfDateFrom}
