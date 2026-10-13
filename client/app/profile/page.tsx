@@ -22,6 +22,7 @@ import { isAnalyticsOptedIn, setAnalyticsOptIn } from "../../lib/analytics";
 import { useTheme, useThemeControl } from "../../contexts/ThemeContext";
 import { THEMES, type ThemeKey } from "../../lib/theme";
 import Field from "../../components/form/Field";
+import { DateFieldDMY } from "../../components/form/Primitives";
 
 const THEME_SWATCHES: { key: ThemeKey; accent: string; bg: string }[] = [
   { key: "ledger",   accent: "#4FD1A5", bg: "#11302C" },
@@ -744,23 +745,13 @@ export default function ProfilePage() {
                 <p className="text-[11px] mb-1.5" style={{ color: T.mute }}>
                   Include transactions from this date range (leave blank for all time):
                 </p>
-                {/* Session 20, item 2: wraps on a narrow screen (at 390px the second input was cut off). */}
+                {/* Session 20, item 2: wraps on a narrow screen (at 390px the second field was cut off).
+                    Session 21, item 2: the app's own date field (DD / MM / YYYY), not the browser's (mm/dd/yyyy
+                    in a US-English browser); each only as wide as its boxes, and blank still means all time. */}
                 <div className="flex flex-wrap items-center gap-2">
-                  <input
-                    type="date"
-                    value={pdfDateFrom}
-                    onChange={(e) => setPdfDateFrom(e.target.value)}
-                    className="rounded-lg px-2.5 py-1.5 text-xs"
-                    style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, colorScheme: "dark" }}
-                  />
+                  <DateFieldDMY value={pdfDateFrom} onChange={setPdfDateFrom} allowEmpty style={{ width: "auto" }} />
                   <span className="text-xs" style={{ color: T.mute }}>to</span>
-                  <input
-                    type="date"
-                    value={pdfDateTo}
-                    onChange={(e) => setPdfDateTo(e.target.value)}
-                    className="rounded-lg px-2.5 py-1.5 text-xs"
-                    style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, colorScheme: "dark" }}
-                  />
+                  <DateFieldDMY value={pdfDateTo} onChange={setPdfDateTo} allowEmpty style={{ width: "auto" }} />
                 </div>
               </div>
             )}
