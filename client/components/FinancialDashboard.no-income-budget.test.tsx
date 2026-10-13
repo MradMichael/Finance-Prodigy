@@ -46,3 +46,19 @@ it("with no salary but income logged this month, the bars show: their targets ar
   expect(sentence()).toBeNull();
   expect(screen.getByText(/^Needs · \d+%$/)).toBeTruthy();
 });
+
+// Session 22, item 5c (owner): at desktop width the panel sat in a three-column
+// row and stretched to its tallest neighbour, leaving the sentence above a
+// large empty box. With no income it now takes its own height; with income
+// the three panels stay the same height, as before.
+const budgetPanel = () => screen.getByText(/^Budget · /).closest("section") as HTMLElement;
+
+it("with no income the panel takes its own height, rather than stretching to its neighbours", () => {
+  show({ ...DEFAULT_DATA, income: 0 } as LocalFinancials);
+  expect(budgetPanel().classList.contains("self-start")).toBe(true);
+});
+
+it("with income the three panels in the row stay the same height, as before", () => {
+  show({ ...DEFAULT_DATA, income: 3000 } as LocalFinancials);
+  expect(budgetPanel().classList.contains("self-start")).toBe(false);
+});

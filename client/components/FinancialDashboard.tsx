@@ -490,7 +490,10 @@ export default function FinancialDashboard({
             </div>
           </Panel>
 
-          <Panel title={`Budget · ${budgetLabel}`}>
+          {/* Session 22, item 5c: with no income the panel holds one sentence, so it takes its own
+              height instead of stretching to its row's tallest neighbour (a large empty box at desktop
+              width). With income the three panels stay the same height, as before. */}
+          <Panel title={`Budget · ${budgetLabel}`} className={month.income > 0 ? "" : "self-start"}>
             {/* ERR-07 (session 21): these targets are income x the rule's
                 percentage, so with no income all three are $0 and each bar read
                 "target rolled to $0" -- rollover wording for an absent income.
