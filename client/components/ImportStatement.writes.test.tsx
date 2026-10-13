@@ -10,7 +10,7 @@ import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/re
 import ImportStatement from "./ImportStatement";
 import { ThemeProvider } from "../contexts/ThemeContext";
 import { DEFAULT_DATA, type LocalFinancials, type StoredCard, type StoredTransaction, type TrackedBalance } from "../lib/localData";
-import { parseNeoStatement } from "../lib/statementImport/neoBankAudiParser";
+import { parseNeoStatement, type ParseResult } from "../lib/statementImport/neoBankAudiParser";
 
 vi.mock("../lib/statementImport/pdfText", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/statementImport/pdfText")>()),
@@ -30,9 +30,10 @@ const ROWS = [
   { date: "2026-10-05", description: "Spinneys Achrafieh", amount: 120 },
 ];
 function statement(closingBalance: number | null = null, closingBalanceDate: string | null = null) {
-  vi.mocked(parseNeoStatement).mockReturnValue({
-    transactions: ROWS, closingBalance, closingBalanceDate, unmatchedRefunds: [], skippedTransferCount: 0, unparsedAmountCount: 0, noRowsFound: false,
-  } as ReturnType<typeof parseNeoStatement>);
+  const result: ParseResult = {
+    transactions: ROWS, openingBalance: null, closingBalance, closingBalanceDate, unmatchedRefunds: [], skippedTransferCount: 0, unparsedAmountCount: 0, noRowsFound: false,
+  };
+  vi.mocked(parseNeoStatement).mockReturnValue(result);
 }
 async function importInto(d: LocalFinancials, count: number) {
   const onImport = vi.fn<(p: Partial<LocalFinancials>) => void>();
@@ -75,7 +76,7 @@ it("the closing balance becomes a new card's Balance Check, in dollars, as of th
 
 it("or re-anchors the card's own dollar Balance Check to it", async () => {
   statement(800, "2026-10-07");
-  const tb = { id: "tb1", label: "NEO USD", paymentMethod: "card", cardId: "c-neo", currency: "USD", startingBalance: 1000, startingDate: "2026-09-01", createdAt: "2026-09-01T00:00:00.000Z" } as TrackedBalance;
+  const tb: TrackedBalance = { id: "tb1", name: "NEO USD", paymentMethod: "card", cardId: "c-neo", currency: "USD", startingBalance: 1000, startingDate: "2026-09-01" };
   const patch = await importInto(base({ trackedBalances: [tb] }), 2);
   expect(patch.trackedBalances).toHaveLength(1);
   expect(patch.trackedBalances![0]).toMatchObject({ id: "tb1", actualBalance: 800, startingBalance: 800 });
