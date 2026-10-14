@@ -28,11 +28,14 @@ it("a new category is keyed by its name's slug, with the emoji given", () => {
   expect(last().customCategories).toEqual([expect.objectContaining({ value: "pet-care", label: "Pet care", icon: "🐾" })]);
 });
 
-it("a name already taken gets the next free key, and a blank emoji falls back to the tag", () => {
+// Session 22 (owner): a name another category already has is refused now
+// (CategoriesScreen.unique-labels), so the colliding key comes from a
+// different name with the same slug.
+it("a name whose key is taken gets the next free key, and a blank emoji falls back to the tag", () => {
   const { last } = show({ customCategories: [{ value: "pet-care", label: "Pet care", icon: "🐾" }] });
-  type("Emoji", " "); type("Name", "Pet Care");
+  type("Emoji", " "); type("Name", "Pet-care");
   fireEvent.click(screen.getByRole("button", { name: "+ Add category" }));
-  expect(last().customCategories?.[1]).toMatchObject({ value: "pet-care-2", label: "Pet Care", icon: "🏷️" });
+  expect(last().customCategories?.[1]).toMatchObject({ value: "pet-care-2", label: "Pet-care", icon: "🏷️" });
 });
 
 it("a rename changes the label and emoji, never the key", () => {

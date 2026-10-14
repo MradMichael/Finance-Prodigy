@@ -15,7 +15,7 @@ afterEach(cleanup);
 
 const TRAVEL = [
   ["travel-flights", "Flights"], ["travel-accommodation", "Accommodation"], ["travel-local-transport", "Local transport"],
-  ["travel-food", "Food & dining"], ["travel-activities", "Activities"], ["travel-shopping", "Shopping"],
+  ["travel-food", "Food & dining"], ["travel-activities", "Activities"], ["travel-shopping", "Souvenirs & shopping"],
   ["travel-insurance-visas", "Insurance & visas"], ["travel-other", "Other travel"],
 ];
 

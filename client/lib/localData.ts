@@ -803,7 +803,7 @@ export const CATEGORIES = [
   { value: "travel-local-transport", label: "Local transport",   icon: "🚕" },
   { value: "travel-food",            label: "Food & dining",     icon: "🍝" },
   { value: "travel-activities",      label: "Activities",        icon: "🎟️" },
-  { value: "travel-shopping",        label: "Shopping",          icon: "🏪" },
+  { value: "travel-shopping",        label: "Souvenirs & shopping", icon: "🏪" }, // owner's wording, session 22: not "Shopping", which the ordinary one is
   { value: "travel-insurance-visas", label: "Insurance & visas", icon: "🛂" },
   { value: "travel-other",           label: "Other travel",      icon: "🌍" },
 ] as const;
@@ -834,9 +834,18 @@ export function allCategories(customCategories?: CustomCategory[]): readonly { v
  * "uncategorized" is the synthetic grouping key TransactionsScreen/
  * CategoriesScreen use for spend with no category set, not a real value.
  */
+// Session 22 (owner): no two categories in a picker may share a label. A custom category
+// from before that rule can still carry a built-in's label; its stored data stays as it
+// is, and on screen it reads "Shopping (custom)" (owner's wording). Labels compared
+// ignoring case and surrounding spaces.
+const BUILT_IN_LABELS = new Set(CATEGORIES.map((c) => c.label.trim().toLowerCase()));
 export function categoryLabel(key: string | undefined, customCategories?: CustomCategory[]): string {
   if (!key || key === "uncategorized") return "Uncategorized";
-  return (CATEGORY_LABEL as Record<string, string>)[key] ?? customCategories?.find((c) => c.value === key)?.label ?? key;
+  const builtIn = (CATEGORY_LABEL as Record<string, string>)[key];
+  if (builtIn !== undefined) return builtIn;
+  const custom = customCategories?.find((c) => c.value === key)?.label;
+  if (custom === undefined) return key;
+  return BUILT_IN_LABELS.has(custom.trim().toLowerCase()) ? `${custom.trim()} (custom)` : custom;
 }
 export function categoryIcon(key: string | undefined, customCategories?: CustomCategory[]): string {
   if (!key || key === "uncategorized") return "❔";

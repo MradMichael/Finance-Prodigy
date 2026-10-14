@@ -1,6 +1,6 @@
 "use client";
 
-import { allCategories, TRAVEL_CATEGORY_KEYS, type CustomCategory } from "../../lib/localData";
+import { allCategories, categoryLabel, TRAVEL_CATEGORY_KEYS, type CustomCategory } from "../../lib/localData";
 
 /**
  * Session 22, item 1a (owner; HELD): the options every category picker shows.
@@ -11,7 +11,7 @@ import { allCategories, TRAVEL_CATEGORY_KEYS, type CustomCategory } from "../../
 export default function CategoryOptions({ customCategories }: { customCategories?: CustomCategory[] }) {
   const all = allCategories(customCategories);
   const travel = new Set<string>(TRAVEL_CATEGORY_KEYS);
-  const option = (c: { value: string; label: string; icon: string }) => <option key={c.value} value={c.value}>{c.icon} {c.label}</option>;
+  const option = (c: { value: string; label: string; icon: string }) => <option key={c.value} value={c.value}>{c.icon} {categoryLabel(c.value, customCategories)}</option>; // "(custom)" on a clash (owner, session 22)
   return (
     <>
       {all.filter((c) => !travel.has(c.value)).map(option)}
