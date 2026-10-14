@@ -308,7 +308,7 @@ export default function AboutPage() {
           <p className="text-[11px]" style={{ color: T.mute }}>
             ESSA, built with Next.js, Tailwind, and Recharts.
           </p>
-          <p className="text-[10px] mt-1" style={{ color: T.mute + "80" }}>
+          <p className="text-[10px] mt-1" style={{ color: T.mute }}>{/* A11Y-01: was T.mute at 50%, 2.2:1 */}
             Your data never leaves your device without your permission.
           </p>
           <p className="text-[10px] mt-3">
