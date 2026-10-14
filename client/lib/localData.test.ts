@@ -1430,7 +1430,7 @@ describe("category helpers", () => {
     const combined = allCategories(custom);
     expect(combined).toHaveLength(CATEGORIES.length + 1);
     expect(combined.at(-1)).toEqual(custom[0]);
-    expect(CATEGORIES).toHaveLength(14); // unchanged by the call above
+    expect(CATEGORIES).toHaveLength(22); // unchanged by the call above (14, plus the 8 travel categories, session 22)
   });
 
   it("categoryLabel/categoryIcon resolve built-in keys the same as the static Records", () => {
