@@ -33,7 +33,7 @@ it("by category: dollars counted, the euros beside them, and each budget against
   const { card } = show();
   expect(within(card).getByText("By category")).toBeTruthy();
   expect(within(card).getByText("Accommodation: $300.00 of $400.00")).toBeTruthy();
-  expect(within(card).getByText("Food & dining: $0.00 counted · €40.00 spent from cash (≈ $46.00 from cash) · ≈ $46.00 of $100.00")).toBeTruthy();
+  expect(within(card).getByText("Food & dining: €40.00 from cash (≈ $46.00) · ≈ $46.00 of $100.00")).toBeTruthy(); // owner-approved form (session 23)
   expect(within(card).getByText("Exchanges: $460.04, counted in the total, not by category")).toBeTruthy();
 });
 

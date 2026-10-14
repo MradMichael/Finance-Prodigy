@@ -14,8 +14,7 @@
 // the card shows them in euros, by category (tripForeignSpends).
 // Units (2.4.138): every `…USD` figure is USD; tripForeignSpends' amounts are
 // in their currency `code`.
-import { activeTransactions, cycleStartDayOf, edited, makeToUSDForMonth, makeToUSDOn, recordDeletion, uid, TRAVEL_CATEGORY_KEYS, type LocalFinancials, type StoredTransaction } from "./localData";
-import { cycleKeyForISO } from "./period";
+import { activeTransactions, edited, makeToUSDOn, recordDeletion, uid, TRAVEL_CATEGORY_KEYS, type LocalFinancials, type StoredTransaction } from "./localData";
 
 export interface StoredTrip {
   id: string;
@@ -140,12 +139,11 @@ export function tagToTrip(data: LocalFinancials, transactionId: string, tripId: 
 
 /** The trip's average exchange cost per currency: dollars paid over units received, across its tagged exchanges. */
 export function tripExchangeCost(data: LocalFinancials, trip: StoredTrip): Record<string, number> {
-  const toUSD = makeToUSDForMonth(data);
-  const startDay = cycleStartDayOf(data);
+  const toUSD = makeToUSDOn(data); // each exchange at its own day's rate (plan J; owner, session 23)
   const paid: Record<string, number> = {}, got: Record<string, number> = {};
   for (const t of activeTransactions(data.transactions ?? []).filter((x) => x.tripId === trip.id && x.fx?.kind === "exchange")) {
     const code = t.fx!.code;
-    paid[code] = (paid[code] ?? 0) + toUSD(t.amount, t.currency, cycleKeyForISO(t.date, startDay));
+    paid[code] = (paid[code] ?? 0) + toUSD(t.amount, t.currency, t.date);
     got[code] = (got[code] ?? 0) + t.fx!.amount;
   }
   return Object.fromEntries(Object.keys(paid).filter((c) => got[c] > 0).map((c) => [c, paid[c] / got[c]]));
@@ -171,13 +169,12 @@ export interface TripCategoryRow {
  */
 export function tripCategoryView(data: LocalFinancials, trip: StoredTrip): { rows: TripCategoryRow[]; exchangesUSD: number; totalUSD: number } {
   const actual = tripActual(data, trip);
-  const toUSD = makeToUSDForMonth(data);
-  const startDay = cycleStartDayOf(data);
+  const toUSD = makeToUSDOn(data); // as tripActual counts them (plan J; owner, session 23)
   const sign = (t: StoredTransaction) => (SPENDING.has(t.bucket) ? 1 : -1);
   const counted: Record<string, number> = {};
   let exchanges = 0;
   for (const t of actual.rows) {
-    const usd = sign(t) * toUSD(t.amount, t.currency, cycleKeyForISO(t.date, startDay));
+    const usd = sign(t) * toUSD(t.amount, t.currency, t.date);
     if (t.fx?.kind === "exchange" || t.fx?.kind === "back") exchanges += usd;
     else counted[t.category ?? ""] = (counted[t.category ?? ""] ?? 0) + usd;
   }

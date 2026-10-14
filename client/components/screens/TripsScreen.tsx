@@ -30,9 +30,12 @@ const num = (s: string) => parseFloat(s.replace(/,/g, ""));
 function categoryLine(label: string, r: TripCategoryRow): string {
   const of = r.budgetUSD !== undefined ? ` of ${usd(r.budgetUSD)}` : "";
   if (r.fromCash.length === 0) return `${label}: ${usd(r.countedUSD)}${of}`;
-  const cash = r.fromCash.map((c) => `${fmtForeign(c.amount, c.code)} spent from cash${c.approxUSD !== null ? ` (≈ ${usd(c.approxUSD)} from cash)` : ""}`).join(" · ");
+  // The owner's wording (session 23): "Food & dining: $15.00 + €40.00 from cash (≈ $46.00) · ≈ $61.00 of $100.00";
+  // the dollars only when there are some; " of $X" only with a category budget.
+  const cash = r.fromCash.map((c) => `${fmtForeign(c.amount, c.code)} from cash${c.approxUSD !== null ? ` (≈ ${usd(c.approxUSD)})` : ""}`).join(" + ");
+  const spent = r.countedUSD !== 0 ? `${usd(r.countedUSD)} + ${cash}` : cash;
   const approx = r.fromCash.some((c) => c.approxUSD !== null) ? "≈ " : "";
-  return `${label}: ${usd(r.countedUSD)} counted · ${cash}${of ? ` · ${approx}${usd(r.comparedUSD)}${of}` : ""}`;
+  return `${label}: ${spent}${of ? ` · ${approx}${usd(r.comparedUSD)}${of}` : ""}`;
 }
 const dayOf = (iso: string) => dayLabel(new Date(`${iso}T12:00:00`));
 const REASONS = {

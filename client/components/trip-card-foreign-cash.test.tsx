@@ -54,7 +54,7 @@ it("spending from the card: Trip preset; the balance drops; Spent from EUR cash 
   fireEvent.click(within(form).getByRole("button", { name: "Save spend" }));
   expect(within(rome()).getByText("EUR cash · balance €420.00")).toBeTruthy();
   expect(within(rome()).getByText("Spent from EUR cash: €40.00")).toBeTruthy();
-  expect(within(rome()).getByText(/^Dining out: \$0\.00 counted · €40\.00 spent from cash/)).toBeTruthy(); // session 22, item 1d: in the category view
+  expect(within(rome()).getByText(/^Dining out: €40\.00 from cash/)).toBeTruthy(); // session 22, item 1d: in the category view (the approved form, session 23)
   expect(within(rome()).queryByRole("form", { name: "Spend from foreign cash" })).toBeNull();
   expect(latest.foreignEntries).toEqual([expect.objectContaining({ kind: "spend", amount: 40, tripId: "trip-rome" })]);
   expect(periodTotals(latest, ym, new Date()).wants).toBe(before.wants);
