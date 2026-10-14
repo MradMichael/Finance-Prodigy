@@ -2576,7 +2576,15 @@ export function makeToUSDOn(d: LocalFinancials): (amount: number, currency: stri
 export function recordRateEdit(d: LocalFinancials, value: number, now: Date = new Date()): LocalFinancials {
   const at = now.toISOString();
   const from = isoLocalDay(now);
-  const lbpRateLog = [...(d.lbpRateLog ?? []).filter((e) => e.from !== from), { from, value, at }].sort((a, b) => a.from.localeCompare(b.from));
+  // Found before the live check (session 22): with nothing in the log before today (a new account carries
+  // no log), an earlier day this cycle fell back to the cycle's history entry, which the load-time snapshot
+  // rewrites to the live rate after every change, so this edit would reprice it. The rate in effect
+  // (read before the edit) is recorded first, from the cycle's first day. Past cycles keep their own entries.
+  const startDay = cycleStartDayOf(d);
+  const cycleStart = isoLocalDay(cycleBounds(cycleKeyForISO(from, startDay), startDay).start);
+  const covered = (d.lbpRateLog ?? []).some((e) => e.from < from);
+  const inEffect = covered || cycleStart >= from ? [] : [{ from: cycleStart, value: rateOn(d, isoLocalDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1))), at }];
+  const lbpRateLog = [...inEffect, ...(d.lbpRateLog ?? []).filter((e) => e.from !== from), { from, value, at }].sort((a, b) => a.from.localeCompare(b.from));
   return { ...d, lbpRate: value, lbpRateUpdatedAt: at, lbpRateLog, ...settingsEdited(d, ["lbpRate"], at) };
 }
 
