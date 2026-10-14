@@ -246,7 +246,7 @@ export default function CurrencyScreen({ financials, onChange }: { financials: L
             </p>
             <div className="flex items-center justify-between gap-3 mb-2">
               <span className="text-xs" style={{ color: T.mute }}>Hypothetical rate</span>
-              <span className="text-sm font-semibold tabular-nums" style={{ color: T.brass }}>L£ {stressRate.toLocaleString()} / $1</span>
+              <span className="text-sm font-semibold tabular-nums" style={{ color: T.brass }}>L£ {stressRate.toLocaleString("en-US")} / $1</span>
             </div>
             <input
               type="range" min={lbpRate} max={lbpRate * 3} step={500}
@@ -289,7 +289,7 @@ export default function CurrencyScreen({ financials, onChange }: { financials: L
                   <div key={entry.ym} className="flex items-center justify-between text-xs">
                     <span style={{ color: T.mute }}>{monthLabel(entry.ym)}</span>
                     <span className="tabular-nums">
-                      <span style={{ color: T.text }}>L£ {entry.value.toLocaleString()}</span>
+                      <span style={{ color: T.text }}>L£ {entry.value.toLocaleString("en-US")}</span>
                       {pctChange != null && Math.abs(pctChange) >= 0.05 && (
                         // Coral = the LBP weakened (more L£ per $1, a rate increase);
                         // jade = it strengthened -- matches this app's own convention

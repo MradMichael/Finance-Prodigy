@@ -193,7 +193,7 @@ export default function SetupScreen({
                 {incomeHistoryDisplay.map((h) => (
                   <div key={h.ym} className="flex justify-between text-xs">
                     <span style={{ color: T.mute }}>{h.label}</span>
-                    <span className="tabular-nums" style={{ color: T.text }}>${h.value.toLocaleString()}</span>
+                    <span className="tabular-nums" style={{ color: T.text }}>${h.value.toLocaleString("en-US")}</span>
                   </div>
                 ))}
               </div>
@@ -298,7 +298,7 @@ export default function SetupScreen({
             <div className="rounded-xl px-4 py-3 flex items-center justify-between" style={{ background: T.ink }}>
               <span className="text-xs" style={{ color: T.mute }}>Target amount</span>
               <span className="text-sm font-medium tabular-nums" style={{ color: T.jade }}>
-                ${efTarget.toLocaleString()}
+                ${efTarget.toLocaleString("en-US")}
               </span>
             </div>
           )}

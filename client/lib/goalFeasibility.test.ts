@@ -304,7 +304,7 @@ describe("fastestGoalCompletion — applying surplus capacity instead of discard
 
     const fastest = fastestGoalCompletion(goals, 5000, asOf);
     expect(fastest.goals[0].monthsToComplete).toBe(1);
-    expect(fastest.goals[0].dateDisplay).toBe("15-02-2026");
+    expect(fastest.goals[0].dateDisplay).toBe("15/02/2026");
     expect(fastest.allCompleteMonths).toBe(1);
   });
 
@@ -389,9 +389,9 @@ describe("fastestGoalCompletion — applying surplus capacity instead of discard
         shortfallUSD: 50,
       },
       goals: [
-        { id: "a", name: "Soonest",  status: "achievable",                 remainingUSD: 600,  requiredMonthlyRateUSD: 100, allocatedMonthlyRateUSD: 100, projectedMonths: 6,  projectedDateDisplay: "15-07-2026", shortfallMonthlyRateUSD: 0 },
-        { id: "b", name: "Middle",   status: "achievable",                 remainingUSD: 1000, requiredMonthlyRateUSD: 100, allocatedMonthlyRateUSD: 100, projectedMonths: 10, projectedDateDisplay: "15-11-2026", shortfallMonthlyRateUSD: 0 },
-        { id: "c", name: "Furthest", status: "achievable_with_adjustment", remainingUSD: 1500, requiredMonthlyRateUSD: 100, allocatedMonthlyRateUSD: 50,  projectedMonths: 30, projectedDateDisplay: "15-07-2028", shortfallMonthlyRateUSD: 50 },
+        { id: "a", name: "Soonest",  status: "achievable",                 remainingUSD: 600,  requiredMonthlyRateUSD: 100, allocatedMonthlyRateUSD: 100, projectedMonths: 6,  projectedDateDisplay: "15/07/2026", shortfallMonthlyRateUSD: 0 },
+        { id: "b", name: "Middle",   status: "achievable",                 remainingUSD: 1000, requiredMonthlyRateUSD: 100, allocatedMonthlyRateUSD: 100, projectedMonths: 10, projectedDateDisplay: "15/11/2026", shortfallMonthlyRateUSD: 0 },
+        { id: "c", name: "Furthest", status: "achievable_with_adjustment", remainingUSD: 1500, requiredMonthlyRateUSD: 100, allocatedMonthlyRateUSD: 50,  projectedMonths: 30, projectedDateDisplay: "15/07/2028", shortfallMonthlyRateUSD: 50 },
       ],
     });
   });

@@ -80,15 +80,15 @@ function renderProjections(overrides: Partial<LocalFinancials> = {}) {
 describe("shared projection anchor — zero-diff regression", () => {
   it("the safety-net pair renders the same two dates and month counts as before", () => {
     renderProjections();
-    expect(readPaceRow("At recommended pace")).toEqual(["At recommended pace", "13-05-2027", "8 months away"]);
-    expect(readInYourPlan(0)).toEqual(["In your plan", "13-05-2027", "8 months away"]);
+    expect(readPaceRow("At recommended pace")).toEqual(["At recommended pace", "13/05/2027", "8 months away"]);
+    expect(readInYourPlan(0)).toEqual(["In your plan", "13/05/2027", "8 months away"]);
   });
 
   it("the debt pair renders the same two dates and month counts as before", () => {
     renderProjections();
-    expect(readPaceRow("Your current plan")).toEqual(["Your current plan", "13-12-2026", "3 months away"]);
+    expect(readPaceRow("Your current plan")).toEqual(["Your current plan", "13/12/2026", "3 months away"]);
     // COPY-01 (2026-10-07): counted from today, like its date (8 + 4).
-    expect(readInYourPlan(1)).toEqual(["In your plan", "13-09-2027", "12 months away"]);
+    expect(readInYourPlan(1)).toEqual(["In your plan", "13/09/2027", "12 months away"]);
   });
 
   it("EVERY date rendered anywhere on the screen is unchanged, in order", () => {
@@ -96,25 +96,25 @@ describe("shared projection anchor — zero-diff regression", () => {
     // Includes the stability headline and the goal's own target date, which
     // is not anchor-derived and must also hold still.
     renderProjections();
-    const all = (document.body.textContent ?? "").match(/\d{2}-\d{2}-\d{4}/g);
+    const all = (document.body.textContent ?? "").match(/\d{2}\/\d{2}\/\d{4}/g);
     expect(all).toEqual([
-      "13-06-2028", // stability headline
-      "13-05-2027", // timeline chip: safety net
-      "13-09-2027", // timeline chip: debt
-      "13-06-2028", // timeline chip: goals
-      "13-05-2027", // safety net — at recommended pace
-      "13-05-2027", // safety net — in your plan
-      "13-12-2026", // debt — your current plan
-      "13-09-2027", // debt — in your plan
-      "01-06-2028", // the goal's own target date (not anchor-derived)
-      "13-06-2028", // goals — in your plan
+      "13/06/2028", // stability headline
+      "13/05/2027", // timeline chip: safety net
+      "13/09/2027", // timeline chip: debt
+      "13/06/2028", // timeline chip: goals
+      "13/05/2027", // safety net — at recommended pace
+      "13/05/2027", // safety net — in your plan
+      "13/12/2026", // debt — your current plan
+      "13/09/2027", // debt — in your plan
+      "01/06/2028", // the goal's own target date (not anchor-derived)
+      "13/06/2028", // goals — in your plan
     ]);
   });
 
   it("Journey's safety-net date is unchanged too — the other site that omitted the argument", () => {
     const data = makeData();
     render(<JourneyScreen financials={data} dashData={computeDashboard(data)} onNavigate={vi.fn()} />);
-    expect(document.body.textContent).toContain("13-05-2027");
+    expect(document.body.textContent).toContain("13/05/2027");
   });
 });
 
@@ -155,7 +155,7 @@ describe("pair-agreement locks (2.4.81) — every column derives from the one an
 
   it("the stability headline is the anchor advanced by the full plan length", () => {
     const dash = renderProjections();
-    const all = (document.body.textContent ?? "").match(/\d{2}-\d{2}-\d{4}/g)!;
+    const all = (document.body.textContent ?? "").match(/\d{2}\/\d{2}\/\d{4}/g)!;
     expect(all[0]).toBe(fromAnchor(dash, 21)); // 8 EF + 4 debt + 9 goals
   });
 });

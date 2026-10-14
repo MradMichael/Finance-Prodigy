@@ -415,7 +415,7 @@ export default function EditTransactionSheet({
           >
             <p className="text-[10px] uppercase tracking-widest font-semibold mb-2" style={{ color: T.brass }}>Double-check this amount</p>
             <p className="text-sm mb-5" style={{ color: T.text }}>
-              <strong>{lbpConfirmAmount.toLocaleString()} LBP</strong> is unusually low for a real purchase — most things this cheap are actually meant to be USD. Did you mean to log this in USD instead?
+              <strong>{lbpConfirmAmount.toLocaleString("en-US")} LBP</strong> is unusually low for a real purchase — most things this cheap are actually meant to be USD. Did you mean to log this in USD instead?
             </p>
             <div className="flex flex-col gap-2">
               <button
@@ -430,7 +430,7 @@ export default function EditTransactionSheet({
                 className="w-full py-2.5 rounded-xl text-sm hover:opacity-90"
                 style={{ background: T.panelSoft, color: T.mute, border: `1px solid ${T.line}` }}
               >
-                No, save it as {lbpConfirmAmount.toLocaleString()} LBP
+                No, save it as {lbpConfirmAmount.toLocaleString("en-US")} LBP
               </button>
             </div>
           </div>

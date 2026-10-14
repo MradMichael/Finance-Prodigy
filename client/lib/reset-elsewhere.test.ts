@@ -156,13 +156,13 @@ describe("settings, everywhere (owner, session 11)", () => {
 
 describe("the notice (owner-approved, session 11)", () => {
   it("R1 and R2, verbatim", () => {
-    expect(RESET_ELSEWHERE_SENTENCE({ at: RESET.toISOString(), kept: false })).toBe("Your other device reset all data on 9 Oct 2026. This device now matches it.");
-    expect(RESET_ELSEWHERE_SENTENCE({ at: RESET.toISOString(), kept: true })).toBe("Your other device reset all data on 9 Oct 2026. This device now matches it, except for changes made here that hadn't been backed up yet.");
+    expect(RESET_ELSEWHERE_SENTENCE({ at: RESET.toISOString(), kept: false })).toBe("Your other device reset all data on 09/10/2026. This device now matches it.");
+    expect(RESET_ELSEWHERE_SENTENCE({ at: RESET.toISOString(), kept: true })).toBe("Your other device reset all data on 09/10/2026. This device now matches it, except for changes made here that hadn't been backed up yet.");
   });
 
   it("first, before what else the merge did", () => {
     const { text } = buildMergeNoticeText(1, [], [], [], [], [], { at: RESET.toISOString(), kept: true });
-    expect(text).toBe("Your other device reset all data on 9 Oct 2026. This device now matches it, except for changes made here that hadn't been backed up yet. Merged with your other device — 1 new transaction added.");
+    expect(text).toBe("Your other device reset all data on 09/10/2026. This device now matches it, except for changes made here that hadn't been backed up yet. Merged with your other device — 1 new transaction added.");
   });
 
   it("absent, the notice is what it was", () => {

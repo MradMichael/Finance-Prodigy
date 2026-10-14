@@ -21,8 +21,8 @@ const tx = (id: string, amount = 46.8): StoredTransaction => ({ id, amount, curr
 const goal = (name: string) => ({ id: "g1", name, emoji: "💻", targetAmount: 1200, currentAmount: 300, currency: "USD", targetDate: "2027-03-01", createdAt: "2026-05-01T09:00:00.000Z" });
 /** What both devices last synced. */
 const synced = { ...DEFAULT_DATA, ...ON, income: 3000, transactions: [tx("t-kept"), tx("t-edited")], goals: [goal("Laptop")] } as unknown as LocalFinancials;
-const R2 = "Your other device reset all data on 9 Oct 2026. This device now matches it, except for changes made here that hadn't been backed up yet.";
-const R1 = "Your other device reset all data on 9 Oct 2026. This device now matches it.";
+const R2 = "Your other device reset all data on 09/10/2026. This device now matches it, except for changes made here that hadn't been backed up yet.";
+const R1 = "Your other device reset all data on 09/10/2026. This device now matches it.";
 
 describe("the owner's case: B changes income, unsynced; A resets; B syncs", () => {
   const b = { ...synced, income: 4000 } as LocalFinancials;           // B's change, not yet backed up

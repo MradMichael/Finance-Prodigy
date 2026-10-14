@@ -42,5 +42,5 @@ it("labels each payment with its own day, in every time zone", () => {
   render(<StatisticsScreen financials={data} dashData={computeDashboard(data)} />);
   const card = screen.getByText("Planned payments, next 30 days").closest("div.rounded-2xl")!;
   const row = Array.from(card.querySelectorAll("div.space-y-2 > div")).map((r) => r.textContent ?? "").find((t) => t.includes("Rent"))!;
-  expect(row).toContain("01 Sep");
+  expect(row).toContain("01/09/2026"); // Q26 (owner, session 22): DD/MM/YYYY; it was "01 Sep"
 });

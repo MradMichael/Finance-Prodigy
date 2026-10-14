@@ -162,14 +162,14 @@ exports[`period primitive — zero-diff gate > the entire computeDashboard paylo
   "debt": {
     "comparison": {
       "avalanche": {
-        "debtFreeDateDisplay": "13-12-2026",
+        "debtFreeDateDisplay": "13/12/2026",
         "feasible": true,
         "months": 3,
         "totalInterest": 58.66,
       },
       "avalancheSavesVsSnowball": 0,
       "snowball": {
-        "debtFreeDateDisplay": "13-12-2026",
+        "debtFreeDateDisplay": "13/12/2026",
         "feasible": true,
         "months": 3,
         "totalInterest": 58.66,
@@ -177,7 +177,7 @@ exports[`period primitive — zero-diff gate > the entire computeDashboard paylo
     },
     "count": 1,
     "plan": {
-      "debtFreeDateDisplay": "13-12-2026",
+      "debtFreeDateDisplay": "13/12/2026",
       "feasible": true,
       "monthlyCommitment": 723,
       "months": 3,
@@ -216,7 +216,7 @@ exports[`period primitive — zero-diff gate > the entire computeDashboard paylo
         "paceRatio": 0.24,
         "pctComplete": 13,
         "requiredMonthly": 318,
-        "targetDateDisplay": "01-08-2027",
+        "targetDateDisplay": "01/08/2027",
       },
       "targetAmount": 4000,
       "type": "SAVINGS",
@@ -234,7 +234,7 @@ exports[`period primitive — zero-diff gate > the entire computeDashboard paylo
         "paceRatio": 0.24,
         "pctComplete": 0,
         "requiredMonthly": 300,
-        "targetDateDisplay": "01-02-2027",
+        "targetDateDisplay": "01/02/2027",
       },
       "targetAmount": 1500,
       "type": "SAVINGS",
@@ -489,14 +489,14 @@ exports[`period primitive — zero-diff gate > the entire computeDashboard paylo
   "debt": {
     "comparison": {
       "avalanche": {
-        "debtFreeDateDisplay": "13-12-2026",
+        "debtFreeDateDisplay": "13/12/2026",
         "feasible": true,
         "months": 3,
         "totalInterest": 58.66,
       },
       "avalancheSavesVsSnowball": 0,
       "snowball": {
-        "debtFreeDateDisplay": "13-12-2026",
+        "debtFreeDateDisplay": "13/12/2026",
         "feasible": true,
         "months": 3,
         "totalInterest": 58.66,
@@ -504,7 +504,7 @@ exports[`period primitive — zero-diff gate > the entire computeDashboard paylo
     },
     "count": 1,
     "plan": {
-      "debtFreeDateDisplay": "13-12-2026",
+      "debtFreeDateDisplay": "13/12/2026",
       "feasible": true,
       "monthlyCommitment": 723,
       "months": 3,
@@ -543,7 +543,7 @@ exports[`period primitive — zero-diff gate > the entire computeDashboard paylo
         "paceRatio": 0.24,
         "pctComplete": 13,
         "requiredMonthly": 318,
-        "targetDateDisplay": "01-08-2027",
+        "targetDateDisplay": "01/08/2027",
       },
       "targetAmount": 4000,
       "type": "SAVINGS",
@@ -561,7 +561,7 @@ exports[`period primitive — zero-diff gate > the entire computeDashboard paylo
         "paceRatio": 0.24,
         "pctComplete": 0,
         "requiredMonthly": 300,
-        "targetDateDisplay": "01-02-2027",
+        "targetDateDisplay": "01/02/2027",
       },
       "targetAmount": 1500,
       "type": "SAVINGS",
@@ -816,14 +816,14 @@ exports[`period primitive — zero-diff gate > the entire computeDashboard paylo
   "debt": {
     "comparison": {
       "avalanche": {
-        "debtFreeDateDisplay": "13-12-2026",
+        "debtFreeDateDisplay": "13/12/2026",
         "feasible": true,
         "months": 3,
         "totalInterest": 58.66,
       },
       "avalancheSavesVsSnowball": 0,
       "snowball": {
-        "debtFreeDateDisplay": "13-12-2026",
+        "debtFreeDateDisplay": "13/12/2026",
         "feasible": true,
         "months": 3,
         "totalInterest": 58.66,
@@ -831,7 +831,7 @@ exports[`period primitive — zero-diff gate > the entire computeDashboard paylo
     },
     "count": 1,
     "plan": {
-      "debtFreeDateDisplay": "13-12-2026",
+      "debtFreeDateDisplay": "13/12/2026",
       "feasible": true,
       "monthlyCommitment": 723,
       "months": 3,
@@ -870,7 +870,7 @@ exports[`period primitive — zero-diff gate > the entire computeDashboard paylo
         "paceRatio": 0.24,
         "pctComplete": 13,
         "requiredMonthly": 318,
-        "targetDateDisplay": "01-08-2027",
+        "targetDateDisplay": "01/08/2027",
       },
       "targetAmount": 4000,
       "type": "SAVINGS",
@@ -888,7 +888,7 @@ exports[`period primitive — zero-diff gate > the entire computeDashboard paylo
         "paceRatio": 0.24,
         "pctComplete": 0,
         "requiredMonthly": 300,
-        "targetDateDisplay": "01-02-2027",
+        "targetDateDisplay": "01/02/2027",
       },
       "targetAmount": 1500,
       "type": "SAVINGS",

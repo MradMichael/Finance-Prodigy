@@ -877,9 +877,7 @@ export function collapsedConflictLine(conflicts: readonly { kind: string; name: 
 
 /**
  * When a close was made, as the notice says it: "27 Sep 2026, 11:00", local
- * time. Months are spelled as in the cycle label beside it; the runtime's
- * en-GB says "Sept" on current ICU, which would put two spellings in one
- * sentence.
+ * time. The day reads DD/MM/YYYY, as every date does (Q26, session 22).
  */
 export function closeMomentLabel(iso: string): string {
   const d = new Date(iso);

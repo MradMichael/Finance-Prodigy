@@ -11,7 +11,7 @@ import { uid, goalProgress, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker } from "./form/Primitives";
-import { fmtCur } from "./screens/shared";
+import { fmtCur, money } from "./screens/shared";
 import ImportStatement from "./ImportStatement";
 import {currentCycleKey, cycleKeyForISO, isInCycle, periodNoun, cycleLabel, type CycleKey } from "../lib/period";
 import { calendarDayOf } from "../lib/calendarDay";
@@ -566,7 +566,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   const savOut   = monthSpent.savings
                  + recs.filter((r) => r.bucket === "SAVINGS").reduce((s, r) => s + toUSD(historizedRecurringContribution(r, prefix, now, startDay), r.currency), 0);
   const totalOut = needsOut + wantsOut + savOut;
-  const fmt      = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+  const fmt      = (n: number) => money(n); // CODE-01: "-$105", not "$-105"
 
   return (
     <>
@@ -766,17 +766,17 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                 {/* Target hint */}
                 <div className="rounded-xl px-3 py-2.5 flex items-center justify-between" style={{ background: T.jade + "14", border: `1px solid ${T.jade}30` }}>
                   <span className="text-[11px]" style={{ color: T.mute }}>
-                    Monthly savings target ({savPct}% of ${financials.income.toLocaleString()})
+                    Monthly savings target ({savPct}% of ${financials.income.toLocaleString("en-US")})
                   </span>
                   <span className="text-sm font-semibold tabular-nums" style={{ color: T.jade }}>
-                    ${targetAmt.toLocaleString()}
+                    ${targetAmt.toLocaleString("en-US")}
                   </span>
                 </div>
                 {/* So far this month */}
                 <div className="rounded-xl px-3 py-2 flex items-center justify-between" style={{ background: T.panelSoft }}>
                   <span className="text-[11px]" style={{ color: T.mute }}>Saved so far this {noun}</span>
                   <span className="text-xs font-medium tabular-nums" style={{ color: savOut >= targetAmt ? T.jade : T.brass }}>
-                    ${Math.round(savOut).toLocaleString()} / ${targetAmt.toLocaleString()}
+                    ${Math.round(savOut).toLocaleString("en-US")} / ${targetAmt.toLocaleString("en-US")}
                   </span>
                 </div>
                 {/* EF toggle */}
@@ -795,7 +795,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                           Also add to Safety net
                         </p>
                         <p className="text-[10px]" style={{ color: T.mute }}>
-                          EF: ${efBalance.toLocaleString()} of ${efTarget.toLocaleString()} · ${efRemaining.toLocaleString()} remaining
+                          EF: ${efBalance.toLocaleString("en-US")} of ${efTarget.toLocaleString("en-US")} · ${efRemaining.toLocaleString("en-US")} remaining
                         </p>
                       </div>
                       <span className="text-base ml-2">{txAddToEF ? "✓" : "○"}</span>
@@ -835,7 +835,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                     Pay this from Safety net
                   </p>
                   <p className="text-[10px]" style={{ color: T.mute }}>
-                    EF balance: ${dashData.emergencyFund.balance.toLocaleString()} · reduces it by this amount
+                    EF balance: ${dashData.emergencyFund.balance.toLocaleString("en-US")} · reduces it by this amount
                   </p>
                 </div>
                 <span className="text-base ml-2">{txFromEF ? "✓" : "○"}</span>
@@ -1440,7 +1440,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                                   <span className="ml-1.5 text-[9px] uppercase tracking-wider px-1 rounded" style={{ background: cur === "LBP" ? T.brass + "22" : T.jade + "15", color: cur === "LBP" ? T.brass : T.jade }}>{cur}</span>
                                 </p>
                                 <p className="text-[10px] mt-0.5 tabular-nums" style={{ color: T.mute }}>
-                                  {sym}{r.amount.toLocaleString()} · {FREQ_LABELS[r.frequency]}
+                                  {sym}{r.amount.toLocaleString("en-US")} · {FREQ_LABELS[r.frequency]}
                                   <span style={{ color: b.color }}> · {b.label}</span>
                                 </p>
                                 {r.createdAt && (
@@ -1449,8 +1449,8 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                                 {r.totalAmount ? (
                                   <div className="mt-1.5">
                                     <div className="flex justify-between text-[9px] mb-0.5" style={{ color: T.mute }}>
-                                      <span>{sym}{(paid ?? 0).toLocaleString()} paid</span>
-                                      <span>{sym}{r.totalAmount.toLocaleString()} total</span>
+                                      <span>{sym}{(paid ?? 0).toLocaleString("en-US")} paid</span>
+                                      <span>{sym}{r.totalAmount.toLocaleString("en-US")} total</span>
                                     </div>
                                     <div className="h-1 rounded-full overflow-hidden" style={{ background: T.line }}>
                                       <div className="h-full rounded-full transition-all" style={{ width: `${pct ?? 0}%`, background: ended ? T.mute : b.color }} />
@@ -1895,7 +1895,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                   <div>
                     <p className="text-sm font-medium" style={{ color: T.text }}>{a.name}</p>
                     <p className="text-xs tabular-nums" style={{ color: T.jade }}>
-                      {a.currency === "LBP" ? "L£" : "$"}{a.value.toLocaleString()}
+                      {a.currency === "LBP" ? "L£" : "$"}{a.value.toLocaleString("en-US")}
                     </p>
                   </div>
                   <button
@@ -2049,7 +2049,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
         >
           <p className="text-[10px] uppercase tracking-widest font-semibold mb-2" style={{ color: T.brass }}>Double-check this amount</p>
           <p className="text-sm mb-5" style={{ color: T.text }}>
-            <strong>{lbpConfirm.amount.toLocaleString()} LBP</strong> is unusually low for a real purchase — most things this cheap are actually meant to be USD. Did you mean to log this in USD instead?
+            <strong>{lbpConfirm.amount.toLocaleString("en-US")} LBP</strong> is unusually low for a real purchase — most things this cheap are actually meant to be USD. Did you mean to log this in USD instead?
           </p>
           <div className="flex flex-col gap-2">
             <button
@@ -2064,7 +2064,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
               className="w-full py-2.5 rounded-xl text-sm hover:opacity-90"
               style={{ background: T.panelSoft, color: T.mute, border: `1px solid ${T.line}` }}
             >
-              No, save it as {lbpConfirm.amount.toLocaleString()} LBP
+              No, save it as {lbpConfirm.amount.toLocaleString("en-US")} LBP
             </button>
           </div>
         </div>
