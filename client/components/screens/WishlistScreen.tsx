@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, WishlistItem, Currency, StoredGoal } from "../../lib/localData";
-import { uid, toUSD as toUSDShared, withRate, moneyMaxFor, DEFAULT_LBP_RATE, recordDeletion, isoLocalDay, edited } from "../../lib/localData";
+import { uid, withRate, moneyMaxFor, recordDeletion, isoLocalDay, edited, lbpRateOf, makeToUSDLive } from "../../lib/localData";
 import { addMonths } from "../../lib/debtEngine";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
@@ -29,8 +29,8 @@ export default function WishlistScreen({
   const [priority, setPriority] = useState<WishlistItem["priority"]>("medium");
   const [savedGoalIds, setSavedGoalIds] = useState<Record<string, boolean>>({});
 
-  const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
-  const toUSD = (n: number, cur?: string) => toUSDShared(n, cur as Currency | undefined, lbpRate);
+  const lbpRate = lbpRateOf(financials);
+  const toUSD = makeToUSDLive(financials);
   const wishlist = financials.wishlist ?? [];
 
   const priorityRank: Record<WishlistItem["priority"], number> = { high: 0, medium: 1, low: 2 };

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, PaymentMethod, StoredCard } from "../../lib/localData";
-import { todayISO, applyGoalContribution, toUSD as toUSDShared, activeTransactions, DEFAULT_LBP_RATE, cycleStartDayOf, edited, saveCard as storeCard } from "../../lib/localData";
+import { todayISO, applyGoalContribution, toUSD as toUSDShared, activeTransactions, cycleStartDayOf, edited, saveCard as storeCard, lbpRateOf } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
@@ -39,7 +39,7 @@ export default function GoalsScreen({
   // field was missing here.
   const [payDate,      setPayDate]      = useState(todayISO());
 
-  const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
+  const lbpRate = lbpRateOf(financials);
   const startDay = cycleStartDayOf(financials);
   const prefix = currentCycleKey(new Date(), startDay);
   const noun = periodNoun(startDay);

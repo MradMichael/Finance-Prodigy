@@ -3,7 +3,7 @@
 import { spentByBucket, spentByCategory, spendingEffect, totalSpent } from "../../lib/spending";
 import { useState } from "react";
 import type { LocalFinancials, StoredRecurring } from "../../lib/localData";
-import { fmtDate, historizedRecurringContribution, toUSD as toUSDShared, categoryLabel as categoryLabelShared, categoryIcon as categoryIconShared, activeTransactions, cycleMonthDivergence, purgeTransaction, undeleteTransaction, DEFAULT_LBP_RATE, cycleStartDayOf, todayISO } from "../../lib/localData";
+import { fmtDate, historizedRecurringContribution, categoryLabel as categoryLabelShared, categoryIcon as categoryIconShared, activeTransactions, cycleMonthDivergence, purgeTransaction, undeleteTransaction, cycleStartDayOf, todayISO, makeToUSDOn, makeToUSDLive } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money, fmtCur } from "./shared";
 import Donut from "../charts/Donut";
@@ -98,8 +98,9 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
   // looking at this screen, not just someone who already knows it exists.
   const [showDeleted, setShowDeleted] = useState(false);
 
-  const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
-  const toUSD   = (n: number, cur?: string) => toUSDShared(n, cur as "USD" | "LBP" | undefined, lbpRate);
+  const toUSD   = makeToUSDLive(financials);
+  // Plan J (held): each row at the rate in effect on its own day, as the dashboard prices it; this screen used today's rate for every row, past ones too.
+  const toUSDOn = makeToUSDOn(financials);
 
   // Every normal read on this screen (totals, search, trends, the month
   // list) is meant to see only active transactions -- a soft-deleted one
@@ -163,7 +164,7 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
     return (
       t.description.toLowerCase().includes(q)
       || String(t.amount).includes(q)
-      || toUSD(t.amount, t.currency).toFixed(2).includes(q)
+      || toUSDOn(t.amount, t.currency, t.date).toFixed(2).includes(q)
       || t.bucket.toLowerCase().includes(q)
       || (t.cardLabel ?? "").toLowerCase().includes(q)
       || (t.paymentNote ?? "").toLowerCase().includes(q)
@@ -224,7 +225,7 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
   // current filter + that filter's recurring contribution), reshaped for
   // the donut below so the chart and the cards never disagree.
   // Session 19: the shared spending rule (lib/spending.ts): a change-back nets against Wants; income, transfers and other reimbursements stay out.
-  const filteredSpent = spentByBucket(filtered, (t) => toUSD(t.amount, t.currency));
+  const filteredSpent = spentByBucket(filtered, (t) => toUSDOn(t.amount, t.currency, t.date));
   const bucketBreakdown = (["NEEDS", "WANTS", "SAVINGS"] as const).map((b) => {
     const txSum = b === "NEEDS" ? filteredSpent.needs : b === "WANTS" ? filteredSpent.wants : filteredSpent.savings;
     const recurSum = b === "NEEDS" ? recurForFilter.needs : b === "WANTS" ? recurForFilter.wants : recurForFilter.savings;
@@ -242,7 +243,7 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
     const totals = new Map<string, number>();
     const bump = (key: string, amt: number) => totals.set(key, (totals.get(key) ?? 0) + amt);
     // Session 19: the shared spending rule (lib/spending.ts): a change-back nets against Wants; income, transfers and other reimbursements stay out.
-    for (const [key, amt] of spentByCategory(filtered, (t) => toUSD(t.amount, t.currency))) bump(key, amt);
+    for (const [key, amt] of spentByCategory(filtered, (t) => toUSDOn(t.amount, t.currency, t.date))) bump(key, amt);
     if (filter !== "all") {
       // Same anchor defect as recurringForMonth above (2.4.93). This site was
       // missed by the sweep that fixed :139/:195 and by the one that found
@@ -280,7 +281,7 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
       const k = periodKey(t.date, trendPeriod, startDay);
       (rowsByPeriod[k] ?? (rowsByPeriod[k] = [])).push(t);
     }
-    for (const [k, rows] of Object.entries(rowsByPeriod)) byPeriod[k] = spentByBucket(rows, (t) => toUSD(t.amount, t.currency));
+    for (const [k, rows] of Object.entries(rowsByPeriod)) byPeriod[k] = spentByBucket(rows, (t) => toUSDOn(t.amount, t.currency, t.date));
     // Always include the current period even with zero logged transactions
     // so far, otherwise a period with only recurring bills and nothing
     // manually logged yet would silently vanish from the trend entirely.
@@ -412,7 +413,7 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
                     </p>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <p className="text-sm font-medium tabular-nums" style={{ color: BC[t.bucket] }}>{money(toUSD(t.amount, t.currency), 2)}</p>
+                    <p className="text-sm font-medium tabular-nums" style={{ color: BC[t.bucket] }}>{money(toUSDOn(t.amount, t.currency, t.date), 2)}</p>
                   </div>
                   <button
                     onClick={() => restoreTransaction(t.id)}
@@ -579,7 +580,7 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
           // TRANSFER (2.4.55) excluded too -- not spend, and its amount can
           // be negative (an incoming leg).
           // Session 19: the shared spending rule (lib/spending.ts): a change-back nets against Wants; income, transfers and other reimbursements stay out.
-          const moTotal = totalSpent(txs, (t) => toUSD(t.amount, t.currency)) + recurRows.reduce((s, rr) => s + rr.usd, 0);
+          const moTotal = totalSpent(txs, (t) => toUSDOn(t.amount, t.currency, t.date)) + recurRows.reduce((s, rr) => s + rr.usd, 0);
           return (
             <div key={mo}>
               <div className="flex justify-between items-baseline mb-2 px-1">
@@ -655,7 +656,7 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
                       style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
                     >✎</button>
                     <div className="text-right flex-shrink-0">
-                      <p className="text-sm font-medium tabular-nums" style={{ color: BC[t.bucket] }}>{money(toUSD(t.amount, t.currency), 2)}</p>
+                      <p className="text-sm font-medium tabular-nums" style={{ color: BC[t.bucket] }}>{money(toUSDOn(t.amount, t.currency, t.date), 2)}</p>
                       {t.currency === "LBP" && (
                         <p className="text-[10px]" style={{ color: T.mute }}>{fmtCur(t.amount, t.currency)}</p>
                       )}

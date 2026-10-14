@@ -3,11 +3,10 @@
 import { useState } from "react";
 import type { LocalFinancials, TrackedBalance, PaymentMethod, StoredCard, Currency, StoredDebt } from "../../lib/localData";
 import {
-  uid, todayISO, fmtDate, fmtLocalDay, withRate, reanchorTrackedBalance, moneyMaxFor, DEFAULT_LBP_RATE,
+  uid, todayISO, fmtDate, fmtLocalDay, withRate, reanchorTrackedBalance, moneyMaxFor,
   buildPeriodClose, cycleStartDayOf, unclosedCycles, isCycleClosedBySpan,
   closeMovesBaselineBackwards, canReopen, reopenCycle, planReopen, activeCloseForCycle, rateForMonth,
-  derivedEfBalance, derivedDebtBalance, planEfClose, planDebtClose, recordDeletion, closeHistoryFor, saveCard as storeCard,
-} from "../../lib/localData";
+  derivedEfBalance, derivedDebtBalance, planEfClose, planDebtClose, recordDeletion, closeHistoryFor, saveCard as storeCard, rateOn, isoLocalDay, lbpRateOf } from "../../lib/localData";
 import { balanceCheckReconciliation, trackedBalanceExpectedAsOf, type computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import CloseCycleModal, { type CloseRow, type AdjustmentRow } from "../CloseCycleModal";
@@ -41,7 +40,7 @@ export default function BalanceCheckScreen({
   onChange: (updated: LocalFinancials) => void;
 }) {
   const T = useTheme();
-  const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
+  const lbpRate = lbpRateOf(financials);
   const cards = financials.cards ?? [];
   const tracked = financials.trackedBalances ?? [];
   const update = (patch: Partial<LocalFinancials>) => onChange({ ...financials, ...patch });
@@ -405,6 +404,10 @@ export default function BalanceCheckScreen({
                 const { residual, explainedByActivity, netActivitySinceCheck } = balanceCheckReconciliation(gap, b.changeSinceCheck);
                 const residualStillOpen = Math.abs(residual) >= 1;
                 const expectedAsOfCheck = Math.round((b.expected - b.changeSinceCheck) * 100) / 100;
+                // J3 (plan J, held): a lira balance reads in lira, at the rate on its check's own day.
+                const checkRate = b.currency === "LBP" && b.actualDate ? rateOn(financials, isoLocalDay(new Date(b.actualDate))) : null;
+                const shown = (usd: number) => (checkRate ? fmtCur(Math.round(usd * checkRate), "LBP") : money(usd));
+                const saidNative = (financials.trackedBalances ?? []).find((t) => t.id === b.id)?.actualBalance;
                 const hasActivitySince = Math.abs(netActivitySinceCheck) >= 0.01;
                 return (
                   <div key={b.id} className="rounded-2xl px-5 py-4" style={{ background: T.panel, border: `1px solid ${mismatch ? accent + "40" : T.line}` }}>
@@ -416,16 +419,16 @@ export default function BalanceCheckScreen({
                     </div>
                     <div className="flex items-baseline justify-between text-xs" style={{ color: T.mute }}>
                       <span>Expected at check-in</span>
-                      <span style={{ ...NUMS, color: T.text }}>{money(expectedAsOfCheck)}</span>
+                      <span style={{ ...NUMS, color: T.text }}>{shown(expectedAsOfCheck)}</span>
                     </div>
                     <div className="flex items-baseline justify-between text-xs mt-1" style={{ color: T.mute }}>
                       <span>You said you had</span>
-                      <span style={{ ...NUMS, color: T.text }}>{money(b.actual ?? 0)}</span>
+                      <span style={{ ...NUMS, color: T.text }}>{checkRate && saidNative != null ? fmtCur(saidNative, "LBP") : money(b.actual ?? 0)}</span>
                     </div>
                     {mismatch && (
                       <div className="flex items-baseline justify-between text-xs mt-1" style={{ color: T.mute }}>
                         <span>Difference</span>
-                        <span style={{ ...NUMS, color: accent }}>{money(gap)}</span>
+                        <span style={{ ...NUMS, color: accent }}>{shown(gap)}</span>
                       </div>
                     )}
                     {ack && (

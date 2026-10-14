@@ -7,7 +7,7 @@ import { useScrollFocus } from "./useScrollFocus";
 import type { LocalFinancials, StoredTransaction, StoredGoal, StoredDebt, StoredRecurring, StoredCard, RecurringFrequency, Currency, PaymentMethod, BudgetRuleKey } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, goalProgress, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, remainingInstallments, toUSD as toUSDShared, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, buildExtraPaymentTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, roundMoney, moneyMaxFor, MONEY_MAX_USD, derivedDebtBalance, activeTransactions, softDelete, DEFAULT_LBP_RATE, cycleStartDayOf, syncAllowed, edited, recordDeletion, saveCard as storeCard } from "../lib/localData";
+import { uid, goalProgress, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, remainingInstallments, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, buildExtraPaymentTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, roundMoney, moneyMaxFor, MONEY_MAX_USD, derivedDebtBalance, activeTransactions, softDelete, cycleStartDayOf, syncAllowed, edited, recordDeletion, saveCard as storeCard, makeToUSDOn, rateOn, lbpRateOf, makeToUSDLive } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker } from "./form/Primitives";
@@ -284,7 +284,8 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     // "$300 of this $325 came from EF," 2.4.27's exact case). Entered in the
     // transaction's own currency like txAmt itself, converted the same way.
     const efAmtRaw = txEfAmt.trim() ? parseFloat(txEfAmt.replace(/,/g, "")) : amt;
-    const efAmtUSD = txCurrency === "LBP" ? efAmtRaw / (financials.lbpRate ?? DEFAULT_LBP_RATE) : efAmtRaw;
+    // Plan J: a backdated entry's draw at its own day's rate, as every figure prices it.
+    const efAmtUSD = txCurrency === "LBP" ? efAmtRaw / rateOn(financials, txDate) : efAmtRaw;
     const now = new Date().toISOString();
     const tx: StoredTransaction = {
       id: uid(), amount: amt, currency: txCurrency, bucket: txBucket,
@@ -292,7 +293,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
       date: txDate,
       paymentMethod: txPayMethod,
       createdAt: now, updatedAt: now,
-      ...withRate(txCurrency, financials.lbpRate ?? DEFAULT_LBP_RATE),
+      ...withRate(txCurrency, lbpRateOf(financials)),
       ...(autoCategory ? { category: autoCategory } : {}),
       ...(txPayMethod === "other" && txPayNote.trim() ? { paymentNote: txPayNote.trim() } : {}),
       ...(cardId ? { cardId, cardLabel } : {}),
@@ -330,7 +331,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     const legUSD: StoredTransaction = { id: uid(), amount: amtUSDLeg, currency: "USD", ...shared };
     const legLBP: StoredTransaction = {
       id: uid(), amount: amtLBPLeg, currency: "LBP", ...shared,
-      ...withRate("LBP", financials.lbpRate ?? DEFAULT_LBP_RATE),
+      ...withRate("LBP", lbpRateOf(financials)),
     };
     update({ transactions: [legUSD, legLBP, ...financials.transactions], ...(withNewCard ? { cards: withNewCard } : {}) });
     setTxSplitUSD(""); setTxSplitLBP(""); setTxSplitMode(false); setTxDesc(""); setTxPayNote(""); setTxCategory("");
@@ -349,7 +350,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
       // changing it later would silently reinterpret them. See
       // buildGoalContributionTx in localData.ts.
       currency: gCurrency,
-      ...withRate(gCurrency, financials.lbpRate ?? DEFAULT_LBP_RATE),
+      ...withRate(gCurrency, lbpRateOf(financials)),
       targetDate: gDate,
       createdAt: new Date().toISOString(),
     };
@@ -367,7 +368,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
       minPayment: parseFloat(dMin.replace(/,/g, "")) || 0,
       // Same reasoning as addGoal's currency field -- see its comment.
       currency: dCurrency,
-      ...withRate(dCurrency, financials.lbpRate ?? DEFAULT_LBP_RATE),
+      ...withRate(dCurrency, lbpRateOf(financials)),
       createdAt: new Date().toISOString(),
       ...(dOpenedDate ? { openedDate: dOpenedDate } : {}),
       // Phase 2.6.1 -- a brand-new debt has no history yet, so its own
@@ -384,7 +385,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
       id: uid(), name: aName.trim(),
       value: parseFloat(aValue.replace(/,/g, "")),
       currency: aCurrency,
-      ...withRate(aCurrency, financials.lbpRate ?? DEFAULT_LBP_RATE),
+      ...withRate(aCurrency, lbpRateOf(financials)),
       createdAt: new Date().toISOString(),
     };
     update({ assets: [...(financials.assets ?? []), edited(asset)] });
@@ -437,7 +438,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
         ? { cardId: trToCardId, cardLabel: cards.find((c) => c.id === trToCardId)?.label }
         : {}),
     };
-    const [outgoing, incoming] = buildTransferTx(amt, trCurrency, source, dest, financials.lbpRate ?? DEFAULT_LBP_RATE, {
+    const [outgoing, incoming] = buildTransferTx(amt, trCurrency, source, dest, lbpRateOf(financials), {
       date: trDate || todayISO(),
     });
     update({ transactions: [incoming, outgoing, ...financials.transactions] });
@@ -481,7 +482,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     // "what happens when you contribute to a goal," not two independently
     // maintained copies (2334ea9 already proved that split lets a real bug
     // land on only one side).
-    const result = applyGoalContribution(financials.goals, goalId, amt, financials.lbpRate ?? DEFAULT_LBP_RATE, {
+    const result = applyGoalContribution(financials.goals, goalId, amt, lbpRateOf(financials), {
       paymentMethod: contributeMethod, cardId, cardLabel,
       paymentNote: contributeMethod === "other" && contributeOtherNote.trim() ? contributeOtherNote.trim() : undefined,
       date: contributeDate || todayISO(),
@@ -497,7 +498,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   function logExtraPayment(rec: StoredRecurring) {
     const amt = parseFloat(extraRecAmt.replace(/,/g, ""));
     if (!amt || amt <= 0) return;
-    const tx = buildExtraPaymentTx(rec, amt, financials.lbpRate ?? DEFAULT_LBP_RATE);
+    const tx = buildExtraPaymentTx(rec, amt, lbpRateOf(financials));
     update({ transactions: [tx, ...financials.transactions] });
     setExtraRecId(null); setExtraRecAmt("");
   }
@@ -546,8 +547,10 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   const now      = new Date();
   // The recurring engine takes calendar days: today, on this device.
   const today    = calendarDayOf(now);
-  const lbpRate  = financials.lbpRate ?? DEFAULT_LBP_RATE;
-  const toUSD    = (amt: number, cur?: Currency) => toUSDShared(amt, cur, lbpRate);
+  const lbpRate  = lbpRateOf(financials);
+  const toUSD    = makeToUSDLive(financials);
+  // Plan J (held): each row at the rate in effect on its own day, as the dashboard prices it; this screen used today's rate for every row, past ones too.
+  const toUSDOn  = makeToUSDOn(financials);
   const recs     = financials.recurring ?? [];
   // Recurring bills already fed the Needs/Wants/Savings totals just below
   // (and the Transactions screen's own list), but never appeared as rows in
@@ -558,7 +561,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     .map((r) => ({ r, usd: toUSD(historizedRecurringContribution(r, prefix, now, startDay), r.currency) }))
     .filter(({ usd }) => usd > 0);
   // Session 19: the shared spending rule (lib/spending.ts): a change-back nets against Wants; income, transfers and other reimbursements stay out.
-  const monthSpent = spentByBucket(monthTx, (t) => toUSD(t.amount, t.currency));
+  const monthSpent = spentByBucket(monthTx, (t) => toUSDOn(t.amount, t.currency, t.date));
   const needsOut = monthSpent.needs
                  + recs.filter((r) => r.bucket === "NEEDS").reduce((s, r)   => s + toUSD(historizedRecurringContribution(r, prefix, now, startDay), r.currency), 0);
   const wantsOut = monthSpent.wants
@@ -1160,7 +1163,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                   // TRANSFER (2.4.55) excluded too -- not spend, and its
                   // amount can be negative (an incoming leg).
                   // Session 19: the shared spending rule (lib/spending.ts): a change-back nets against Wants; income, transfers and other reimbursements stay out.
-                  const total = totalSpent(txs, (t) => toUSD(t.amount, t.currency));
+                  const total = totalSpent(txs, (t) => toUSDOn(t.amount, t.currency, t.date));
                   return (
                     <div key={ym}>
                       <div className="flex justify-between items-center mb-2">

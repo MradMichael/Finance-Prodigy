@@ -1,7 +1,7 @@
 "use client";
 
 import type { LocalFinancials } from "../../lib/localData";
-import { nextOccurrence, dayAfter, isRecurringActive, toUSD as toUSDShared, DEFAULT_LBP_RATE, cycleStartDayOf, fmtDate } from "../../lib/localData";
+import { nextOccurrence, dayAfter, isRecurringActive, cycleStartDayOf, makeToUSDLive, fmtDate } from "../../lib/localData";
 import { periodTotals, type computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useScrollFocus } from "../useScrollFocus";
@@ -28,8 +28,7 @@ export default function StatisticsScreen({
   const tableScrollRef = useScrollFocus(); // A11Y-05: the wide table scrolls sideways
   const startDay = cycleStartDayOf(financials);
   const noun = periodNoun(startDay);
-  const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
-  const toUSD = (n: number, cur?: string) => toUSDShared(n, cur as "USD" | "LBP" | undefined, lbpRate);
+  const toUSD = makeToUSDLive(financials);
   const now = new Date();
 
   // ── Cash flow trend + table (same underlying data, two views) ──────

@@ -18,7 +18,7 @@
 //   - Cash received (decision 4): a sheet entry in, with no USD effect.
 import { useState } from "react";
 import type { Currency, LocalFinancials, PaymentMethod, StoredCard } from "../lib/localData";
-import { allCategories, fmtDate, moneyMaxFor, recordDeletion, todayISO, DEFAULT_LBP_RATE, saveCard as storeCard } from "../lib/localData";
+import { allCategories, fmtDate, moneyMaxFor, recordDeletion, todayISO, saveCard as storeCard, lbpRateOf } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY, CurrencyToggle, PaymentMethodPicker } from "./form/Primitives";
 import { buildChangeBack, buildForeignEntry, editForeignEntry, fmtForeign, isValidForeignCode, sheet, sheetCodes } from "../lib/foreignCash";
@@ -30,7 +30,7 @@ const signed = (n: number, code: string) => `${n < 0 ? "−" : "+"}${fmtForeign(
 
 export default function ForeignCashPanel({ financials, onChange }: { financials: LocalFinancials; onChange: (updated: LocalFinancials) => void }) {
   const T = useTheme();
-  const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
+  const lbpRate = lbpRateOf(financials);
   const codes = sheetCodes(financials);
   const trips = financials.trips ?? [];
   const cards = financials.cards ?? [];

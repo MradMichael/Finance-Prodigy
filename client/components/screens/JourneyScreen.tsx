@@ -3,7 +3,7 @@
 import { spendingEffect, spentByBucket } from "../../lib/spending";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import type { LocalFinancials } from "../../lib/localData";
-import { DEFAULT_LBP_RATE, activeTransactions, toUSD as toUSDShared, cycleStartDayOf } from "../../lib/localData";
+import { activeTransactions, cycleStartDayOf, makeToUSDOn } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { projectCompletion } from "../../lib/projections";
 import { useTheme } from "../../contexts/ThemeContext";
@@ -64,11 +64,9 @@ export default function JourneyScreen({
   const ymKeyFull = (k: number) => cycleLabelLong(ymKeyToCycleKey(k), startDay);
 
   // ── Category shift: earliest vs. latest calendar month with logged transactions ──
-  const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
-  // 2.4.72: was a local redefinition dividing by the raw rate. The shared
-  // helper guards a 0/negative/NaN rate, which `?? DEFAULT_LBP_RATE` above
-  // does not (nullish coalescing leaves 0 intact).
-  const toUSD = (n: number, cur?: string) => toUSDShared(n, cur as "USD" | "LBP" | undefined, lbpRate);
+  // Plan J (held): each row at the rate in effect on its own day (rateOn, guarded), as the dashboard prices it;
+  // this screen used today's rate for every row, past ones too.
+  const toUSDOn = makeToUSDOn(financials);
   // Phase 2.6.3b: soft-deleted transactions excluded from both the
   // category-shift arc and the "transactions logged" milestone count below.
   const activeTx = activeTransactions(financials.transactions);
@@ -86,7 +84,7 @@ export default function JourneyScreen({
     const k = cycleKeyForISO(t.date, startDay);
     (rowsByMonth[k] ?? (rowsByMonth[k] = [])).push(t);
   }
-  for (const [k, rows] of Object.entries(rowsByMonth)) byMonth[k] = spentByBucket(rows, (t) => toUSD(t.amount, t.currency));
+  for (const [k, rows] of Object.entries(rowsByMonth)) byMonth[k] = spentByBucket(rows, (t) => toUSDOn(t.amount, t.currency, t.date));
   const txMonths = Object.keys(byMonth).sort();
   const pctOf = (b: { needs: number; wants: number; savings: number }) => {
     const total = b.needs + b.wants + b.savings;

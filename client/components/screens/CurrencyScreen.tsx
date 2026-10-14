@@ -3,7 +3,7 @@
 import { totalSpent } from "../../lib/spending";
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
-import { historizedRecurringContribution, toUSD as toUSDShared, moneyEquals, activeTransactions, LBP_RATE_STALE_DAYS, DEFAULT_LBP_RATE, cycleStartDayOf, calendarDaysSince, settingsEdited } from "../../lib/localData";
+import { historizedRecurringContribution, moneyEquals, activeTransactions, LBP_RATE_STALE_DAYS, cycleStartDayOf, calendarDaysSince, recordRateEdit, lbpRateOf, makeToUSDLive } from "../../lib/localData";
 import { computeHoldingsByCurrency } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
@@ -50,7 +50,7 @@ function RateStaleness({ updatedAt }: { updatedAt?: string }) {
 
 export default function CurrencyScreen({ financials, onChange }: { financials: LocalFinancials; onChange: (updated: LocalFinancials) => void }) {
   const T = useTheme();
-  const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
+  const lbpRate = lbpRateOf(financials);
   const startDay = cycleStartDayOf(financials);
 
   // Draft state, committed on blur. Bounding per keystroke would rewrite the
@@ -63,11 +63,12 @@ export default function CurrencyScreen({ financials, onChange }: { financials: L
     // stamped as "just updated" -- a rejected edit must not read as verified.
     if (!isNaN(parsed)) {
       const clamped = Math.min(LBP_RATE_MAX, Math.max(LBP_RATE_MIN, parsed));
-      onChange({ ...financials, lbpRate: clamped, lbpRateUpdatedAt: new Date().toISOString(), ...settingsEdited(financials, ["lbpRate"]) });
+      // Plan J (held): the edit goes in the dated log too (recordRateEdit), so entries keep their own day's rate.
+      onChange(recordRateEdit(financials, clamped));
     }
     setLbpRateInput(null);
   }
-  const toUSD = (n: number, cur?: string) => toUSDShared(n, cur as "USD" | "LBP" | undefined, lbpRate);
+  const toUSD = makeToUSDLive(financials);
   const [stressRate, setStressRate] = useState(lbpRate);
   const [showAllRateHistory, setShowAllRateHistory] = useState(false);
 
@@ -134,7 +135,7 @@ export default function CurrencyScreen({ financials, onChange }: { financials: L
             // commitLbpRate clamps the finished value on blur for anything
             // typed, pasted, or autofilled past them.
             type="number" min={LBP_RATE_MIN} max={LBP_RATE_MAX} step="500"
-            value={lbpRateInput ?? (financials.lbpRate ?? DEFAULT_LBP_RATE)}
+            value={lbpRateInput ?? lbpRateOf(financials)}
             onChange={(e) => setLbpRateInput(e.target.value)}
             onBlur={(e) => commitLbpRate(e.target.value)}
             placeholder="89500"

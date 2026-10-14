@@ -25,7 +25,7 @@ import Sidebar from "../components/shell/Sidebar";
 import BottomNav from "../components/shell/BottomNav";
 import TopBar from "../components/shell/TopBar";
 import type { Screen, SyncStatus } from "../components/screens/shared";
-import { cycleStartDayOf, loadData, saveData, isEmptyFinancials, buildRecurringConfirmLog, nextConfirmTarget, autoPurgeExpired, DEFAULT_LBP_RATE, syncAllowed, saveFailureKind, SAVE_FAILURE_REASON } from "../lib/localData";
+import { cycleStartDayOf, loadData, saveData, isEmptyFinancials, buildRecurringConfirmLog, nextConfirmTarget, autoPurgeExpired, syncAllowed, saveFailureKind, SAVE_FAILURE_REASON, lbpRateOf } from "../lib/localData";
 import type { LocalFinancials } from "../lib/localData";
 import { computeDashboard } from "../lib/computeDashboard";
 import {currentCycleKey, calendarKeyForDate, type CycleKey, type CycleHistory } from "../lib/period";
@@ -543,7 +543,7 @@ export default function Home() {
     if (!rec) return;
     const target = nextConfirmTarget(rec, financials.transactions, todayCalendarDay());
     if (!target) return; // nothing left to confirm
-    const result = buildRecurringConfirmLog(rec, financials.lbpRate ?? DEFAULT_LBP_RATE, target.dueDate, paidDate);
+    const result = buildRecurringConfirmLog(rec, lbpRateOf(financials), target.dueDate, paidDate);
     loggingRecurringRef.current.add(recurringId);
     setLoggingRecurringIds(new Set(loggingRecurringRef.current));
     try {
@@ -581,7 +581,7 @@ export default function Home() {
     if (backfillingRef.current.has(key)) return; // already in flight
     const rec = financials.recurring.find((r) => r.id === recurringId);
     if (!rec) return;
-    const result = buildRecurringConfirmLog(rec, financials.lbpRate ?? DEFAULT_LBP_RATE, dueDate);
+    const result = buildRecurringConfirmLog(rec, lbpRateOf(financials), dueDate);
     backfillingRef.current.add(key);
     setBackfillingIds(new Set(backfillingRef.current));
     try {

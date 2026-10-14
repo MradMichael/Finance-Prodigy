@@ -14,8 +14,7 @@
 // the card shows them in euros, by category (tripForeignSpends).
 // Units (2.4.138): every `…USD` figure is USD; tripForeignSpends' amounts are
 // in their currency `code`.
-import { activeTransactions, cycleStartDayOf, makeToUSDForMonth, recordDeletion, uid, type LocalFinancials, type StoredTransaction } from "./localData";
-import { cycleKeyForISO } from "./period";
+import { activeTransactions, makeToUSDOn, recordDeletion, uid, type LocalFinancials, type StoredTransaction } from "./localData";
 
 export interface StoredTrip {
   id: string;
@@ -88,15 +87,14 @@ export function isReimbursement(t: StoredTransaction, all: StoredTransaction[]):
 
 /** The trip's actual in USD, in total and by category ("" for none), and the rows counted. */
 export function tripActual(data: LocalFinancials, trip: StoredTrip): { totalUSD: number; byCategoryUSD: Record<string, number>; rows: StoredTransaction[] } {
-  const toUSD = makeToUSDForMonth(data);
-  const startDay = cycleStartDayOf(data);
+  const toUSD = makeToUSDOn(data); // plan J (held): each row at its own day's rate
   const all = data.transactions ?? [];
   const sign = (t: StoredTransaction) => (SPENDING.has(t.bucket) ? 1 : t.bucket === "INCOME" || isReimbursement(t, all) ? -1 : 0);
   const rows = activeTransactions(all).filter((t) => t.tripId === trip.id && sign(t) !== 0);
   const byCategoryUSD: Record<string, number> = {};
   let total = 0;
   for (const t of rows) {
-    const usd = sign(t) * toUSD(t.amount, t.currency, cycleKeyForISO(t.date, startDay));
+    const usd = sign(t) * toUSD(t.amount, t.currency, t.date);
     total += usd;
     byCategoryUSD[t.category ?? ""] = round2((byCategoryUSD[t.category ?? ""] ?? 0) + usd);
   }

@@ -23,6 +23,8 @@ export const SEEN_KINDS = [
   "trips",
   // Foreign cash, model 2 (held): the sheets' entries, by id, like trips.
   "foreignEntries",
+  // Plan J (held): the rate log, by its day.
+  "lbpRateLog",
 ] as const;
 export type SeenKind = (typeof SEEN_KINDS)[number];
 
@@ -96,6 +98,7 @@ export function keyedRecords(d: LocalFinancials, kind: SeenKind): Map<string, un
     case "settings": return new Map(SETTING_KEYS.map((k) => [k, settingValue(d, k) as unknown]));
     case "incomeHistory": return byYm(d.incomeHistory);
     case "lbpRateHistory": return byYm(d.lbpRateHistory);
+    case "lbpRateLog": return new Map((d.lbpRateLog ?? []).map((e) => [e.from, e as unknown]));
     case "budgetRuleHistory": return byYm(d.budgetRuleHistory);
     case "netWorthHistory": return byYm(d.netWorthHistory);
     case "transactions": return new Map((d.transactions ?? []).map((t) => [t.id, transactionContent(t) as unknown]));

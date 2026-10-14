@@ -3,7 +3,7 @@
 import { useState, useRef } from "react";
 import { useDialogFocus } from "./useDialogFocus";
 import type { LocalFinancials, StoredDebt, PaymentMethod, StoredCard } from "../lib/localData";
-import { buildDebtPaymentTx, derivedDebtBalance, derivedEfBalance, moneyEquals, roundMoney, moneyMaxFor, allCategories, todayISO, DEFAULT_LBP_RATE, toUSD as toUSDShared, edited, saveCard as storeCard } from "../lib/localData";
+import { buildDebtPaymentTx, derivedDebtBalance, derivedEfBalance, moneyEquals, roundMoney, moneyMaxFor, allCategories, todayISO, toUSD as toUSDShared, edited, saveCard as storeCard, rateOn, lbpRateOf } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, MoneyInput, DateFieldDMY, PaymentMethodPicker } from "./form/Primitives";
 import { fmtCur } from "./screens/shared";
@@ -59,7 +59,7 @@ export default function PayDebtSheet({
   function save() {
     const amount = parseFloat(amt.replace(/,/g, ""));
     if (!amount || amount <= 0) return;
-    const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
+    const lbpRate = lbpRateOf(financials);
     let resolvedCardId: string | undefined;
     let resolvedCardLabel: string | undefined;
     if (method === "card" && cardId) {
@@ -70,10 +70,9 @@ export default function PayDebtSheet({
     // convention the main transaction form's own EF field uses. A debt
     // payment only ever DRAWS from EF, never contributes to it.
     const efAmtRaw = fromEF ? (efAmt.trim() ? parseFloat(efAmt.replace(/,/g, "")) : amount) : null;
-    // 2.4.72: was an inline `efAmtRaw / lbpRate`. toUSDShared guards a
-    // 0/negative/NaN rate; the `?? DEFAULT_LBP_RATE` this rate comes from
-    // does not, since nullish coalescing leaves 0 intact.
-    const efAmountUSD = efAmtRaw != null ? roundMoney(-toUSDShared(efAmtRaw, debt.currency, lbpRate)) : undefined;
+    // 2.4.72: was an inline `efAmtRaw / lbpRate`; toUSDShared guards a 0/negative/NaN rate.
+    // Plan J: at the payment's own day's rate (rateOn, guarded too).
+    const efAmountUSD = efAmtRaw != null ? roundMoney(-toUSDShared(efAmtRaw, debt.currency, rateOn(financials, date || todayISO()))) : undefined;
     const tx = buildDebtPaymentTx(debt, amount, bucket, lbpRate, {
       category: category || undefined,
       efAmount: efAmountUSD,
@@ -118,7 +117,7 @@ export default function PayDebtSheet({
         <div className="space-y-2.5">
           <div>
             <Label htmlFor="pay-debt-amount">Amount</Label>
-            <MoneyInput id="pay-debt-amount" value={amt} onChange={setAmt} placeholder="Payment amount" max={moneyMaxFor(debt.currency, financials.lbpRate ?? DEFAULT_LBP_RATE)} />
+            <MoneyInput id="pay-debt-amount" value={amt} onChange={setAmt} placeholder="Payment amount" max={moneyMaxFor(debt.currency, lbpRateOf(financials))} />
           </div>
           <div>
             <Label htmlFor="pay-debt-date">Date paid</Label>
@@ -171,7 +170,7 @@ export default function PayDebtSheet({
                 <span className="text-sm">{fromEF ? "✓" : "○"}</span>
               </button>
               {fromEF && (
-                <MoneyInput value={efAmt} onChange={setEfAmt} placeholder={`Full amount (${amt || "0"})`} max={moneyMaxFor(debt.currency, financials.lbpRate ?? DEFAULT_LBP_RATE)} />
+                <MoneyInput value={efAmt} onChange={setEfAmt} placeholder={`Full amount (${amt || "0"})`} max={moneyMaxFor(debt.currency, lbpRateOf(financials))} />
               )}
             </>
           )}
