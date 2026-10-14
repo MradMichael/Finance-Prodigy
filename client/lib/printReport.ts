@@ -1,7 +1,7 @@
 import { totalSpent } from "./spending";
 import type { LocalFinancials } from "./localData";
 import { cycleStartDayOf, BUDGET_RULES, nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, toUSD as toUSDShared, categoryLabel, derivedDebtBalance, activeTransactions, DEFAULT_LBP_RATE, makeToUSDForMonth } from "./localData";
-import {cycleKeyForISO, currentCycleKey, cycleLabelLong, periodNoun } from "./period";
+import {cycleKeyForISO, currentCycleKey, cycleLabelLong, periodNoun, dayLabel } from "./period";
 import type { computeDashboard } from "./computeDashboard";
 import { todayCalendarDay } from "./calendarDay";
 
@@ -40,8 +40,9 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
   // years -- a printed page can outlive the month it was printed in, and
   // "27 Dec - 26 Jan" without years is ambiguous once it does.
   const reportPeriod = currentCycleKey(new Date(), startDay);
-  const money = (n: number) => `$${Math.round(n).toLocaleString()}`;
-  const generatedAt = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
+  // CODE-01 / Q26: English, comma thousands, the sign before the dollar ("-$1,500"); it followed the browser's locale.
+  const money = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Math.round(n));
+  const generatedAt = dayLabel(new Date()); // DD/MM/YYYY (Q26)
   const ruleLabel = BUDGET_RULES[dash.budgetRule]?.label ?? dash.budgetRule;
   const lbpRate = data.lbpRate ?? DEFAULT_LBP_RATE;
   const toUSD = (n: number, cur?: string) => toUSDShared(n, cur as "USD" | "LBP" | undefined, lbpRate);

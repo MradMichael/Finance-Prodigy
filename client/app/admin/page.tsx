@@ -355,7 +355,7 @@ function AdminPageContent() {
                   <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[11px]" style={{ color: T.mute }}>
                     <span>ID: <span className="font-mono" style={{ color: T.text }}>{u.id.slice(0, 8)}…</span></span>
                     <span>Registered: {new Date(u.createdAt).toLocaleDateString("en-GB")}</span>
-                    <span>Last sync: {u.lastSync ? new Date(u.lastSync).toLocaleString() : "Never"}</span>
+                    <span>Last sync: {u.lastSync ? new Date(u.lastSync).toLocaleString("en-GB") : "Never"}</span>
                   </div>
                 </div>
               ))}

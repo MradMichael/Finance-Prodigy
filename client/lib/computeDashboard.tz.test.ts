@@ -34,6 +34,6 @@ describe("goal target date display, negative-UTC-offset user (AUD-03)", () => {
       goals: [{ id: "g1", name: "Trip", emoji: "🎯", targetAmount: 1000, currentAmount: 0, currency: "USD", targetDate: "2026-12-25", createdAt: "2026-07-01T00:00:00.000Z" }],
     });
     const result = computeDashboard(data);
-    expect(result.goals[0].projection.targetDateDisplay).toBe("25-12-2026");
+    expect(result.goals[0].projection.targetDateDisplay).toBe("25/12/2026");
   });
 });

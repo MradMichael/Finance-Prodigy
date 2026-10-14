@@ -197,9 +197,13 @@ export function cycleProgress(now: Date, startDay: number): { daysInto: number; 
 
 const MON = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-/** A local calendar day spelled like the cycle labels below, "27 Sep 2026". */
+/**
+ * A local calendar day, DD/MM/YYYY (Q26, owner, session 22: one date format everywhere; it was spelled like
+ * the cycle labels, "27 Sep 2026"). Cycle labels themselves are period names, the owner's form (b) below,
+ * and keep their spelling.
+ */
 export function dayLabel(d: Date): string {
-  return `${d.getDate()} ${MON[d.getMonth() + 1]} ${d.getFullYear()}`;
+  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 }
 
 /**

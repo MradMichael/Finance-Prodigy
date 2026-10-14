@@ -1,7 +1,7 @@
 "use client";
 
 import type { LocalFinancials } from "../../lib/localData";
-import { nextOccurrence, dayAfter, isRecurringActive, toUSD as toUSDShared, DEFAULT_LBP_RATE, cycleStartDayOf } from "../../lib/localData";
+import { nextOccurrence, dayAfter, isRecurringActive, toUSD as toUSDShared, DEFAULT_LBP_RATE, cycleStartDayOf, fmtDate } from "../../lib/localData";
 import { periodTotals, type computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useScrollFocus } from "../useScrollFocus";
@@ -196,8 +196,8 @@ export default function StatisticsScreen({
                   <span className="flex items-center gap-2" style={{ color: T.text }}>
                     {t.emoji} {t.name}
                     <span className="text-[10px]" style={{ color: T.mute }}>
-                      {/* An occurrence is a UTC-midnight calendar day: format it in UTC (TIME-08), as Projections does. */}
-                      {t.date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: "UTC" })}
+                      {/* An occurrence is a UTC-midnight calendar day: its UTC date is the day (TIME-08); DD/MM/YYYY (Q26). */}
+                      {fmtDate(t.date.toISOString().slice(0, 10))}
                     </span>
                   </span>
                   <span className="tabular-nums" style={{ color: T.mute }}>{money(t.amountUSD)}</span>

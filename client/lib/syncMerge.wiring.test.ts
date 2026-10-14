@@ -110,16 +110,15 @@ describe("the notice", () => {
   it("a replaced close is told plainly, and says where the note is kept (owner's wording)", () => {
     const { text } = buildMergeNoticeText(0, [], [], [{ cycleLabel: "27 Aug – 26 Sep 2026", standingClosedAt: "2026-09-27T08:00:00.000Z" }]);
     expect(text).toBe(
-      `Two devices closed 27 Aug – 26 Sep 2026. The earlier close, made on another device on 27 Sep 2026, ${localHM("2026-09-27T08:00:00.000Z")}, stands; this device's close was undone, and any note you wrote on it stays visible under Close history on Balance Check.`,
+      `Two devices closed 27 Aug – 26 Sep 2026. The earlier close, made on another device on 27/09/2026, ${localHM("2026-09-27T08:00:00.000Z")}, stands; this device's close was undone, and any note you wrote on it stays visible under Close history on Balance Check.`,
     );
   });
 
-  // The cycle label spells months from period.ts's own list ("Sep"); the
-  // runtime's en-GB says "Sept" on current ICU, so one sentence would carry
-  // both spellings. The moment uses the cycle label's months, in local time.
-  it("the close's moment uses the cycle label's month names, in local time", () => {
-    expect(closeMomentLabel("2026-09-27T08:00:00.000Z")).toBe(`27 Sep 2026, ${localHM("2026-09-27T08:00:00.000Z")}`);
-    expect(closeMomentLabel("2026-06-05T21:07:00.000Z")).toMatch(/^[56] Jun 2026, \d\d:07$/);
+  // Q26 (owner, session 22): the moment's day reads DD/MM/YYYY, as every full date does, in local
+  // time. (It used the cycle label's month names; the cycle label beside it keeps them.)
+  it("the close's moment reads DD/MM/YYYY, in local time", () => {
+    expect(closeMomentLabel("2026-09-27T08:00:00.000Z")).toBe(`27/09/2026, ${localHM("2026-09-27T08:00:00.000Z")}`);
+    expect(closeMomentLabel("2026-06-05T21:07:00.000Z")).toMatch(/^0[56]\/06\/2026, \d\d:07$/);
   });
 });
 

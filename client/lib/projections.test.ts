@@ -6,14 +6,14 @@ describe("projectCompletion", () => {
     const asOf = new Date(2026, 6, 15); // July 15, 2026
     const result = projectCompletion(0, 500, asOf);
     expect(result.months).toBe(0);
-    expect(result.dateDisplay).toBe("15-07-2026");
+    expect(result.dateDisplay).toBe("15/07/2026");
   });
 
   it("treats a negative remaining the same as already met", () => {
     const asOf = new Date(2026, 6, 15);
     const result = projectCompletion(-50, 500, asOf);
     expect(result.months).toBe(0);
-    expect(result.dateDisplay).toBe("15-07-2026");
+    expect(result.dateDisplay).toBe("15/07/2026");
   });
 
   it("returns null when there's still a gap but no positive monthly rate", () => {
@@ -30,7 +30,7 @@ describe("projectCompletion", () => {
     const result = projectCompletion(1000, 400, asOf);
     expect(result.months).toBe(3);
     // Jan 31 + 3 months clamps to Apr 30 (April has 30 days) rather than overflowing to May.
-    expect(result.dateDisplay).toBe("30-04-2026");
+    expect(result.dateDisplay).toBe("30/04/2026");
   });
 
   it("a larger monthly rate reaches the same target sooner", () => {

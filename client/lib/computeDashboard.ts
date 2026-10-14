@@ -139,8 +139,9 @@ export interface DashboardPayload {
   alerts: { id: string; severity: "critical" | "warning"; message: string; screen: string }[];
 }
 
+/** A projected local date as DD/MM/YYYY (Q26, owner, session 22: one date format everywhere; it was DD-MM-YYYY). */
 export function dateFmt(d: Date) {
-  return `${String(d.getDate()).padStart(2, "0")}-${String(d.getMonth() + 1).padStart(2, "0")}-${d.getFullYear()}`;
+  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 }
 
 /**

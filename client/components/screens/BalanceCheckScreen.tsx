@@ -484,7 +484,7 @@ export default function BalanceCheckScreen({
                     <div className="pt-2 space-y-1.5" style={{ borderTop: `1px solid ${T.line}` }}>
                       {tb.actualBalance != null && (
                         <p className="text-[10px]" style={{ color: T.mute }}>
-                          Last checked: <span style={{ color: T.text }}>{tb.currency === "LBP" ? "L£" : "$"}{tb.actualBalance.toLocaleString()}</span>
+                          Last checked: <span style={{ color: T.text }}>{tb.currency === "LBP" ? "L£" : "$"}{tb.actualBalance.toLocaleString("en-US")}</span>
                           {tb.actualBalanceDate && ` on ${fmtDate(tb.actualBalanceDate)}`}
                         </p>
                       )}
