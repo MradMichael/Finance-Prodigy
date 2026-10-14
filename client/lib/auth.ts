@@ -192,6 +192,16 @@ export async function signUp(
  * plaintext sync backup is portable) and adopts the pulled data as-is, the
  * same end state "sign up, then Pull" already produces manually.
  */
+// ERR-05 (session 22, draft, held): a failure, by its cause, in the user's words. Each
+// was "(<developer text>). Check your connection and try again.", a server error too.
+// The connection is named only when the server couldn't be reached; otherwise
+// the server's own sentence is passed on as written.
+const STARTING_UP = "If you're online, it may be starting up: try again in a minute.";
+const verifyFailed = (r: { error: string; unreachable?: boolean }) =>
+  r.unreachable ? `Couldn't verify your account: the server couldn't be reached. ${STARTING_UP}` : `Couldn't verify your account right now. ${r.error}`;
+const resetFailed = (r: { error?: string; unreachable?: boolean }) =>
+  r.unreachable ? `Couldn't reach the server, so your password wasn't reset. ${STARTING_UP}` : `Your password wasn't reset. ${r.error ?? ""}`.trimEnd();
+
 async function signInFromSync(
   email: string, password: string,
 ): Promise<{ ok: true; session: Session; recoveryCode?: string } | { ok: false; error: string }> {
@@ -214,7 +224,7 @@ async function signInFromSync(
     if (pulled.error.includes("No data on server yet") || pulled.error.includes("No sync data found") || pulled.error.includes("no sync credentials registered")) {
       return { ok: false, error: "No account found with this email. Check the email, or sign up if this is your first time." };
     }
-    return { ok: false, error: `Couldn't verify your account right now (${pulled.error}). Check your connection and try again.` };
+    return { ok: false, error: verifyFailed(pulled) };
   }
 
   // 2.4.37: this browser may already hold real data under some OTHER local
@@ -482,7 +492,7 @@ async function recoverFromSync(
     if (relinked.error?.includes("verify ownership")) {
       return { ok: false, error: "No account found with this email, or that recovery code doesn't match it." };
     }
-    return { ok: false, error: `Couldn't reach the server right now (${relinked.error}). Check your connection and try again.` };
+    return { ok: false, error: resetFailed(relinked) };
   }
 
   const pulled = await pullFromServer(normalizedEmail);
@@ -603,7 +613,7 @@ export async function recoverAccount(
     if (relinked.error?.includes("verify ownership")) {
       return { ok: false, error: "Invalid recovery code." };
     }
-    return { ok: false, error: `Your password wasn't reset — couldn't verify it with the server (${relinked.error}). Check your connection and try again.` };
+    return { ok: false, error: resetFailed(relinked) };
   }
 
   const recoveryTokenEnc = await sealWithDek(dek, newRecoveryTokenForSync);

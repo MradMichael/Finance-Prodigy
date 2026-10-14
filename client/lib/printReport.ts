@@ -167,7 +167,7 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
 
   <h2>Financial health</h2>
   <div class="grid">
-    <div class="card"><div class="label">Score</div><div class="value">${h(dash.health.score)} / 100 &middot; ${escapeHtml(dash.health.grade)}</div></div>
+    <div class="card"><div class="label">Score</div><div class="value">${dash.health.measured ? `${h(dash.health.score)} / 100 &middot; ${escapeHtml(dash.health.grade)}` : "No score yet"}</div></div>
     <div class="card"><div class="label">Net worth</div><div class="value">${money(dash.netWorth.total)} &middot; ${escapeHtml(dash.netWorth.tier)}</div></div>
   </div>
 

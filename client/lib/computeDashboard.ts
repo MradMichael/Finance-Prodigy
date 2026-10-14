@@ -57,6 +57,10 @@ export interface DashboardPayload {
   }[];
   health: {
     score: number; grade: string;
+    /** ERR-06 (session 22, draft, held): false until there's income and at least one entry. Before that
+     *  two sub-scores read 100 from nothing (0% of $0 on essentials, no debt payments) and a new
+     *  account scored 44, "Gaining ground". The score and grade are still computed; nothing shows them. */
+    measured: boolean;
     components: { key: string; label: string; score: number; weight: number; detail: string }[];
   };
   encouragements: string[];
@@ -716,6 +720,13 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   const nwTotal       = nwAssets - nwLiabilities;
 
   type NWColor = "jade" | "brass" | "coral" | "mute";
+  // COPY-09 (session 22, draft, held): the advice was fixed per tier and never read the data it
+  // talks about ("Set a goal..." beside two goals; "shrinking each month" with no look at the
+  // trend; "ahead of most people your age" with no age). Each line now reads what it claims,
+  // or claims less. "Last month" is the latest calendar month in netWorthHistory before this one.
+  const nwLastMonth = (data.netWorthHistory ?? []).filter((h) => h.ym < calendarKeyForDate(now)).reduce<{ ym: string; value: number } | null>((a, h) => (!a || h.ym > a.ym ? h : a), null);
+  const nwUpOnLastMonth = nwLastMonth !== null && nwTotal > nwLastMonth.value;
+  const hasActiveGoalsForAdvice = data.goals.some((g) => !g.pausedAt);
   // Sorted ascending by `max` (the upper bound each tier applies below);
   // the last row's `max` is Infinity so every net worth lands somewhere.
   const NET_WORTH_TIERS: { max: number; tier: string; tierColor: NWColor; suggestions: string[] }[] = [
@@ -730,7 +741,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     {
       max: -5000, tier: "Rebuilding", tierColor: "coral",
       suggestions: [
-        "You're climbing: the negative number is shrinking each month.",
+        nwUpOnLastMonth ? "You're climbing: your net worth is higher than last month." : "Each month the negative number shrinks brings zero closer.",
         "Consider a small side income for 3–6 months; even $200/month accelerates this significantly.",
         "Once you clear the debt, redirect that minimum payment into savings automatically.",
       ],
@@ -740,7 +751,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
       suggestions: [
         "You're within reach of zero. A few focused months can get you there.",
         "Direct any extra income straight at your smallest remaining debt to build momentum.",
-        "You've already cut the deficit a lot. This is the home stretch, not the starting line.",
+        nwUpOnLastMonth ? "You've cut the deficit since last month. This is the home stretch, not the starting line." : "This is the home stretch, not the starting line.",
       ],
     },
     {
@@ -755,14 +766,14 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
       max: 5000, tier: "Breaking even", tierColor: "brass",
       suggestions: [
         "Your liabilities are covered. Now every dollar saved is pure net worth growth.",
-        "Start or grow your safety net: it's your first true asset.",
-        "Set a goal to hit $5,000 in savings; that buffer changes how you handle surprises.",
+        efBalance > 0 ? "Keep growing your safety net: it's your first true asset." : "Start your safety net: it's your first true asset.",
+        hasActiveGoalsForAdvice ? "Keep funding your goals; $5,000 in savings changes how you handle surprises." : "Set a goal to hit $5,000 in savings; that buffer changes how you handle surprises.",
       ],
     },
     {
       max: 25000, tier: "Foundation builder", tierColor: "jade",
       suggestions: [
-        "You're ahead of most people your age. Keep the momentum going.",
+        "You're past breaking even. Keep the momentum going.",
         "Compound growth starts to matter here. Even modest returns on $10K make a difference.",
         "Consider diversifying: savings, goals, and if applicable, low-risk investments.",
       ],
@@ -1198,6 +1209,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     hasLoggedTransactions: (data.transactions ?? []).length > 0,
     health: {
       score: totalScore, grade,
+      measured: income > 0 && (data.transactions ?? []).length > 0,
       components: [
         // 2.4.54: this target is the plain budget-rule percentage, NOT the
         // same basis as the Budget panel's dollar target (effectiveBudgetTargets,

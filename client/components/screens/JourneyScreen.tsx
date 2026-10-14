@@ -307,7 +307,8 @@ export default function JourneyScreen({
           ) : efProjection.months !== null ? (
             <>
               <p className="text-xl leading-snug" style={SERIF}>
-                Keep this pace and your safety net is complete by <span style={{ ...NUMS, color: T.brass }}>{efProjection.dateDisplay}</span>.
+                {/* COPY-04 (session 22, draft, held): the pace is the budget's recommended savings (2.4.70), not the user's; it said "Keep this pace". */}
+                Saving the recommended <span style={{ ...NUMS, color: T.brass }}>{money(efRate)}</span> each {periodNoun(cycleStartDayOf(financials))}, your safety net is complete by <span style={{ ...NUMS, color: T.brass }}>{efProjection.dateDisplay}</span>.
               </p>
               <button
                 onClick={() => onNavigate("projections")}

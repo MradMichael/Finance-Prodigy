@@ -49,7 +49,7 @@ it("a network failure still says so", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("Failed to fetch"); }));
   const r = await pushToServer("u1@example.com", data);
   expect(r.ok).toBe(false);
-  expect(r.error).toBe("Could not reach server. Is it running?");
+  expect(r.error).toBe("Couldn't reach the server. If you're online, it may be starting up: try again in a minute."); // ERR-05 (session 22, draft, held)
 });
 
 // Session 9 (owner): pulls too. A pull the server answered, whose time this
@@ -74,5 +74,5 @@ it("a pull writes no sync time, and a network failure still says so", async () =
   expect(Object.keys(localStorage).filter((k) => k.startsWith("essa_last_sync"))).toEqual([]);
   vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("Failed to fetch"); }));
   const down = await pullFromServer("u1@example.com");
-  expect(down).toEqual({ ok: false, error: "Could not reach server. Is it running?" });
+  expect(down).toEqual({ ok: false, unreachable: true, error: "Couldn't reach the server. If you're online, it may be starting up: try again in a minute." }); // ERR-05 (session 22, draft, held)
 });
