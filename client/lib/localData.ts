@@ -1544,7 +1544,8 @@ function convertForeignCash(d: LocalFinancials): LocalFinancials {
  * Additive: the history stays, so a price read before the log's first day is exactly today's.
  */
 function addRateLog(d: LocalFinancials): LocalFinancials {
-  if (d.lbpRateLog) return { ...d, schemaVersion: 9 };
+  // No history, no log: the same as a new account (recordRateEdit records the rate in effect on the first edit).
+  if (d.lbpRateLog || !d.lbpRateHistory?.length) return { ...d, schemaVersion: 9 };
   const startDay = cycleStartDayOf(d);
   const lbpRateLog = [...(d.lbpRateHistory ?? [])].sort((a, b) => a.ym.localeCompare(b.ym)).map((h) => ({ from: isoLocalDay(cycleBounds(h.ym, startDay).start), value: h.value }));
   return { ...d, schemaVersion: 9, lbpRateLog };
