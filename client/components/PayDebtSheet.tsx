@@ -3,7 +3,7 @@
 import { useState, useRef } from "react";
 import { useDialogFocus } from "./useDialogFocus";
 import type { LocalFinancials, StoredDebt, PaymentMethod, StoredCard } from "../lib/localData";
-import { buildDebtPaymentTx, derivedDebtBalance, derivedEfBalance, moneyEquals, roundMoney, moneyMaxFor, allCategories, todayISO, DEFAULT_LBP_RATE, toUSD as toUSDShared, edited, saveCard as storeCard } from "../lib/localData";
+import { buildDebtPaymentTx, derivedDebtBalance, derivedEfBalance, moneyEquals, roundMoney, moneyMaxFor, allCategories, todayISO, DEFAULT_LBP_RATE, toUSD as toUSDShared, edited, saveCard as storeCard, rateOn } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, MoneyInput, DateFieldDMY, PaymentMethodPicker } from "./form/Primitives";
 import { fmtCur } from "./screens/shared";
@@ -73,7 +73,8 @@ export default function PayDebtSheet({
     // 2.4.72: was an inline `efAmtRaw / lbpRate`. toUSDShared guards a
     // 0/negative/NaN rate; the `?? DEFAULT_LBP_RATE` this rate comes from
     // does not, since nullish coalescing leaves 0 intact.
-    const efAmountUSD = efAmtRaw != null ? roundMoney(-toUSDShared(efAmtRaw, debt.currency, lbpRate)) : undefined;
+    // Plan J: at the payment's own day's rate.
+    const efAmountUSD = efAmtRaw != null ? roundMoney(-toUSDShared(efAmtRaw, debt.currency, rateOn(financials, date || todayISO()))) : undefined;
     const tx = buildDebtPaymentTx(debt, amount, bucket, lbpRate, {
       category: category || undefined,
       efAmount: efAmountUSD,

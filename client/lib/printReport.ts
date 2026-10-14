@@ -1,7 +1,7 @@
 import { totalSpent } from "./spending";
 import type { LocalFinancials } from "./localData";
-import { cycleStartDayOf, BUDGET_RULES, nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, toUSD as toUSDShared, categoryLabel, derivedDebtBalance, activeTransactions, DEFAULT_LBP_RATE, makeToUSDForMonth } from "./localData";
-import {cycleKeyForISO, currentCycleKey, cycleLabelLong, periodNoun, dayLabel } from "./period";
+import { cycleStartDayOf, BUDGET_RULES, nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, toUSD as toUSDShared, categoryLabel, derivedDebtBalance, activeTransactions, DEFAULT_LBP_RATE, makeToUSDOn } from "./localData";
+import { currentCycleKey, cycleLabelLong, periodNoun, dayLabel } from "./period";
 import type { computeDashboard } from "./computeDashboard";
 import { todayCalendarDay } from "./calendarDay";
 
@@ -53,7 +53,7 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
   // already uses everywhere else, or a rate change since the transaction
   // was logged silently reprices history and disagrees with Overview/
   // Statistics for the exact same transaction.
-  const toUSDForMonth = makeToUSDForMonth(data);
+  const toUSDOn = makeToUSDOn(data); // plan J (held): each ledger row at its own day's rate
   const BL = { NEEDS: "Needs", WANTS: "Wants", SAVINGS: "Savings", INCOME: "Income", TRANSFER: "Transfer" } as const;
 
   // SEC-02: this page is same-origin HTML built by interpolation, and stored
@@ -81,14 +81,14 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
   // amount can be negative (an incoming leg), which would otherwise corrupt
   // this total rather than just under/over-counting it.
   // Session 19: the shared spending rule (lib/spending.ts): a change-back nets against Wants; income, transfers and other reimbursements stay out.
-  const ledgerTotal = totalSpent(ledgerTx, (t) => toUSDForMonth(t.amount, t.currency, cycleKeyForISO(t.date, startDay)));
+  const ledgerTotal = totalSpent(ledgerTx, (t) => toUSDOn(t.amount, t.currency, t.date));
   const ledgerRows = ledgerTx.map((t) => `
     <tr>
       <td>${day(t.date)}</td>
       <td>${escapeHtml(t.description)}</td>
       <td>${h(BL[t.bucket] ?? t.bucket)}</td>
       <td>${t.category ? escapeHtml(categoryLabel(t.category, data.customCategories)) : "—"}</td>
-      <td class="num">${money(toUSDForMonth(t.amount, t.currency, cycleKeyForISO(t.date, startDay)))}</td>
+      <td class="num">${money(toUSDOn(t.amount, t.currency, t.date))}</td>
     </tr>`).join("");
   const rangeLabel = options.dateFrom || options.dateTo
     ? `${options.dateFrom ? options.dateFrom.split("-").reverse().join("/") : "the start"} to ${options.dateTo ? options.dateTo.split("-").reverse().join("/") : "today"}`

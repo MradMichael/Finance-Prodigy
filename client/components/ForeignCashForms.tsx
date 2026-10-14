@@ -13,8 +13,7 @@
 // "fx-ex" and "fx-sp"; a trip card passes its own).
 import { useState } from "react";
 import type { Currency, LocalFinancials, PaymentMethod, StoredCard } from "../lib/localData";
-import { allCategories, cycleStartDayOf, makeToUSDForMonth, moneyMaxFor, todayISO, DEFAULT_LBP_RATE, saveCard as storeCard } from "../lib/localData";
-import { cycleKeyForISO } from "../lib/period";
+import { allCategories, makeToUSDOn, moneyMaxFor, todayISO, DEFAULT_LBP_RATE, saveCard as storeCard } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY, CurrencyToggle, PaymentMethodPicker } from "./form/Primitives";
 import { buildExchange, buildForeignEntry, fmtForeign, isValidForeignCode, sheet, sheetCodes } from "../lib/foreignCash";
@@ -56,8 +55,7 @@ export function ExchangeForm({ financials, onChange, onDone, presetTripId, idPre
   const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
   const trips = financials.trips ?? [];
   const cards = financials.cards ?? [];
-  const toUSD = makeToUSDForMonth(financials);
-  const startDay = cycleStartDayOf(financials);
+  const toUSD = makeToUSDOn(financials); // plan J (held): what the exchange cost, at its own day's rate
 
   const [exDate, setExDate] = useState(todayISO());
   const [payMethod, setPayMethod] = useState<PaymentMethod>("cash");
@@ -71,7 +69,7 @@ export function ExchangeForm({ financials, onChange, onDone, presetTripId, idPre
   const exTrip = tripPick ?? suggestedTripId(trips, exDate || todayISO(), { orNext: true }) ?? "";
   const [error, setError] = useState("");
   const codeUpper = code.trim().toUpperCase();
-  const paidUSD = num(paid) > 0 ? toUSD(num(paid), paidCurrency, cycleKeyForISO(exDate || todayISO(), startDay)) : NaN;
+  const paidUSD = num(paid) > 0 ? toUSD(num(paid), paidCurrency, exDate || todayISO()) : NaN;
   const ratePreview = paidUSD > 0 && num(received) > 0 && isValidForeignCode(codeUpper)
     ? `You got ${fmtForeign(num(received) / paidUSD, codeUpper)} per $1 (${usd(paidUSD / num(received), 4)} per ${fmtForeign(1, codeUpper).replace(/\.00$/, "")})${paidCurrency === "LBP" ? ", at this period's L£ rate" : ""}.`
     : "";

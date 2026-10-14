@@ -3498,7 +3498,8 @@ export function applyGoalContribution(
 function contributionToGoal(t: StoredTransaction, g: StoredGoal, d: LocalFinancials): number {
   if (t.goalAmount != null) return t.goalAmount;
   if (t.currency === g.currency) return t.amount;
-  const rate = t.lbpRateAtEntry ?? rateForMonth(d.lbpRateHistory, cycleKeyForISO(t.date, cycleStartDayOf(d)), d.lbpRate);
+  // Plan J: its stored rate as before, else the rate on its own day (it was its cycle's).
+  const rate = t.lbpRateAtEntry ?? rateOn(d, t.date);
   return g.currency === "LBP" ? t.amount * rate : t.amount / rate;
 }
 

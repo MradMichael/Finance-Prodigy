@@ -5,7 +5,7 @@ import { useDialogFocus } from "./useDialogFocus";
 import type { LocalFinancials, StoredTransaction, StoredCard, Currency, PaymentMethod } from "../lib/localData";
 import {
   fmtDate, allCategories, looksRecurring, buildQuickRecurring, cycleMonthDivergence,
-  roundMoney, DEFAULT_LBP_RATE, retagBucketAmount, moneyMaxFor, cycleStartDayOf, edited, saveCard as storeCard } from "../lib/localData";
+  roundMoney, DEFAULT_LBP_RATE, retagBucketAmount, moneyMaxFor, cycleStartDayOf, edited, saveCard as storeCard, rateOn } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY, CurrencyToggle, PM_OPTIONS, CardPicker } from "./form/Primitives";
 import { cycleKeyForISO, currentCycleKey } from "../lib/period";
@@ -97,7 +97,8 @@ export default function EditTransactionSheet({
   const [cycleDate,  setCycleDate]  = useState<string | null | undefined>(transaction.cycleDate);
   const [efAmount,   setEfAmount]   = useState<string | null | undefined>(
     transaction.efAmount == null ? transaction.efAmount : String(
-      transaction.currency === "LBP" ? roundMoney(transaction.efAmount * (financials.lbpRate ?? DEFAULT_LBP_RATE)) : transaction.efAmount
+      // CUR-05 (plan J): at the entry's own day's rate, as it was entered; today's rate showed another figure.
+      transaction.currency === "LBP" ? roundMoney(transaction.efAmount * rateOn(financials, transaction.date)) : transaction.efAmount
     )
   );
   const [debtId,          setDebtId]          = useState<string | undefined>(transaction.debtId);
@@ -166,7 +167,7 @@ export default function EditTransactionSheet({
     }
     const efAmountUSD = efAmount == null ? efAmount : roundMoney(
       currency === "LBP"
-        ? (parseFloat(efAmount.replace(/,/g, "")) || 0) / (financials.lbpRate ?? DEFAULT_LBP_RATE)
+        ? (parseFloat(efAmount.replace(/,/g, "")) || 0) / rateOn(financials, date) // CUR-05 (plan J): the entry's own day
         : (parseFloat(efAmount.replace(/,/g, "")) || 0)
     );
     const debtAdjustmentNum = debtAdjustment == null ? debtAdjustment

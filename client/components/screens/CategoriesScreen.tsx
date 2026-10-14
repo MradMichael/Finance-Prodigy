@@ -3,7 +3,7 @@
 import { spentByCategory } from "../../lib/spending";
 import { useState } from "react";
 import type { LocalFinancials, CategoryRule } from "../../lib/localData";
-import { CATEGORIES, allCategories, categoryLabel, categoryIcon, matchCategoryRule, historizedRecurringContribution, toUSD as toUSDShared, uid, moneyEquals, activeTransactions, DEFAULT_LBP_RATE, cycleStartDayOf, recordDeletion, edited } from "../../lib/localData";
+import { CATEGORIES, allCategories, categoryLabel, categoryIcon, matchCategoryRule, historizedRecurringContribution, toUSD as toUSDShared, uid, moneyEquals, activeTransactions, DEFAULT_LBP_RATE, cycleStartDayOf, recordDeletion, edited, makeToUSDOn } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money } from "./shared";
 import { Label, FocusInput, PrimaryBtn } from "../form/Primitives";
@@ -36,6 +36,8 @@ export default function CategoriesScreen({
   const categoryRules = financials.categoryRules ?? [];
   const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
   const toUSD = (n: number, cur?: string) => toUSDShared(n, cur as "USD" | "LBP" | undefined, lbpRate);
+  // Plan J (held): each row at the rate in effect on its own day, as the dashboard prices it; this screen used today's rate for every row, past ones too.
+  const toUSDOn = makeToUSDOn(financials);
 
   function addCategory() {
     const name = newName.trim();
@@ -129,7 +131,7 @@ export default function CategoriesScreen({
   const totals = new Map<string, number>();
   const bump = (key: string, amt: number) => totals.set(key, (totals.get(key) ?? 0) + amt);
   // Session 19: the shared spending rule (lib/spending.ts): a change-back nets against Wants; income, transfers and other reimbursements stay out.
-  for (const [key, amt] of spentByCategory(txInScope, (t) => toUSD(t.amount, t.currency))) bump(key, amt);
+  for (const [key, amt] of spentByCategory(txInScope, (t) => toUSDOn(t.amount, t.currency, t.date))) bump(key, amt);
   if (scope === "month") {
     for (const r of financials.recurring ?? []) {
       const amt = toUSD(historizedRecurringContribution(r, currentYm, new Date(), startDay), r.currency);
