@@ -2512,7 +2512,7 @@ export function todayISO(): string {
  * commits only when `parsed > 0` and not NaN), so this is unreachable through the UI --
  * but it is reachable through the load path, which parses and migrates a stored payload
  * without validating it, and the idiom every call site uses,
- * `financials.lbpRate ?? DEFAULT_LBP_RATE`, does NOT rescue 0: nullish coalescing catches
+ * `lbpRateOf(financials)`, does NOT rescue 0: nullish coalescing catches
  * only null/undefined, and `0 ?? x` evaluates to 0. Without this guard, a restored or
  * synced payload carrying `lbpRate: 0` makes this return Infinity (or NaN for 0/0), and
  * nothing downstream checks isFinite -- `Infinity + x` is Infinity and `NaN + x` is NaN,
@@ -2539,9 +2539,15 @@ export function rateOrDefault(rate: number | null | undefined): number {
   return typeof rate === "number" && rate > 0 ? rate : DEFAULT_LBP_RATE;
 }
 
-/** CODE-05 (plan J): the account's live rate, guarded. The one place that reads `lbpRate` for a figure; it was `?? DEFAULT_LBP_RATE` in 49 places. */
+/** CODE-05 (plan J): the account's live rate, guarded. The one place that reads `lbpRate` for a figure; it was a nullish fallback to the default in 49 places, which lets a 0 through. */
 export function lbpRateOf(d: { lbpRate?: number | null }): number {
   return rateOrDefault(d.lbpRate);
+}
+
+/** CODE-05 (plan J): an amount in USD at today's rate, for what a thing is worth now. Seven screens wrote their own. */
+export function makeToUSDLive(d: { lbpRate?: number | null }): (amount: number, currency?: string) => number {
+  const rate = lbpRateOf(d);
+  return (amount, currency) => toUSD(amount, currency as Currency | undefined, rate);
 }
 
 /**
@@ -2599,7 +2605,7 @@ export function rateForMonth(
  * The historized LBP→USD converter, built once. Four files had independently declared
  * this exact lambda (`computeDashboard.ts` x3, `printReport.ts`), each dividing by a raw
  * `valueForMonth(...)` result. All four derive the rate identically —
- * `data.lbpRate ?? DEFAULT_LBP_RATE`, verified at `computeDashboard.ts:169/202/313` and
+ * `lbpRateOf(data)`, verified at `computeDashboard.ts:169/202/313` and
  * `printReport.ts:26` — so the factory derives it internally from `data` rather than
  * taking it as a parameter.
  *
@@ -2608,7 +2614,7 @@ export function rateForMonth(
  * casts for a defensive change.
  */
 export function makeToUSDForMonth(data: LocalFinancials): (amount: number, currency: string | undefined, ym: CycleKey) => number {
-  const liveRate = data.lbpRate ?? DEFAULT_LBP_RATE;
+  const liveRate = lbpRateOf(data);
   return (amount, currency, ym) =>
     currency === "LBP" ? amount / rateForMonth(data.lbpRateHistory, ym, liveRate) : amount;
 }

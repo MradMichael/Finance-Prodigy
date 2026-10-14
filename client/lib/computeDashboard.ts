@@ -1,6 +1,6 @@
 import { spentByBucket, spendingEffect, totalSpent } from "./spending";
 import type { LocalFinancials, BudgetRuleKey, StoredDebt, StoredTransaction, StoredRecurring, TrackedBalance, Currency, PeriodCloseAcknowledgement } from "./localData";
-import { goalProgress, acknowledgementFor, historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, LBP_RATE_STALE_DAYS, cycleStartDayOf, valueForMonth, makeToUSDForMonth, makeToUSDOn, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, DEFAULT_LBP_RATE, derivedEfBalance, derivedDebtBalance, activeTransactions, parseLocalDate, isRecurringActive, isAfterBalanceBaseline, calendarDaysSince } from "./localData";
+import { goalProgress, acknowledgementFor, historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, LBP_RATE_STALE_DAYS, cycleStartDayOf, valueForMonth, makeToUSDForMonth, makeToUSDOn, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, derivedEfBalance, derivedDebtBalance, activeTransactions, parseLocalDate, isRecurringActive, isAfterBalanceBaseline, calendarDaysSince, lbpRateOf } from "./localData";
 import { currentCycleKey, calendarKeyForDate, isInCycle, cycleProgress, cycleBounds, cycleKeyMinus, periodNoun, cycleLabel, type CycleKey, type CalendarKey, type CalendarHistory } from "./period";
 import { simulateDebtPayoff, type DebtInput } from "./debtEngine";
 import { calendarDayOf, dayStart } from "./calendarDay";
@@ -415,7 +415,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   // against, using a target they were never actually held to at the time.
   const budgetTargetPctForMonth = (ym: CycleKey) => budgetPctForMonth(data.budgetRuleHistory, ym, budgetTargetPct);
 
-  const lbpRate = data.lbpRate ?? DEFAULT_LBP_RATE;
+  const lbpRate = lbpRateOf(data);
   const toUSD = (amount: number, currency?: string) => toUSDShared(amount, currency as "USD" | "LBP" | undefined, lbpRate);
 
   // For judging a PAST month: use the income/LBP-rate/budget-rule that were

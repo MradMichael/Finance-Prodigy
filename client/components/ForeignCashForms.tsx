@@ -13,7 +13,7 @@
 // "fx-ex" and "fx-sp"; a trip card passes its own).
 import { useState } from "react";
 import type { Currency, LocalFinancials, PaymentMethod, StoredCard } from "../lib/localData";
-import { allCategories, makeToUSDOn, moneyMaxFor, todayISO, DEFAULT_LBP_RATE, saveCard as storeCard } from "../lib/localData";
+import { allCategories, makeToUSDOn, moneyMaxFor, todayISO, saveCard as storeCard, lbpRateOf } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY, CurrencyToggle, PaymentMethodPicker } from "./form/Primitives";
 import { buildExchange, buildForeignEntry, fmtForeign, isValidForeignCode, sheet, sheetCodes } from "../lib/foreignCash";
@@ -52,7 +52,7 @@ export function TripSelect({ id, value, onPick, financials }: { id: string; valu
 /** Record an exchange: ONE Wants/Travel row for what was paid, naming the euros received. */
 export function ExchangeForm({ financials, onChange, onDone, presetTripId, idPrefix = "fx-ex" }: FormProps) {
   const T = useTheme();
-  const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
+  const lbpRate = lbpRateOf(financials);
   const trips = financials.trips ?? [];
   const cards = financials.cards ?? [];
   const toUSD = makeToUSDOn(financials); // plan J (held): what the exchange cost, at its own day's rate
@@ -131,7 +131,7 @@ export function ExchangeForm({ financials, onChange, onDone, presetTripId, idPre
 /** Spend from foreign cash: a sheet entry, not counted in the budget. Renders nothing with no sheet yet. */
 export function SpendForm({ financials, onChange, onDone, presetTripId, idPrefix = "fx-sp" }: FormProps) {
   const T = useTheme();
-  const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
+  const lbpRate = lbpRateOf(financials);
   const trips = financials.trips ?? [];
   const codes = sheetCodes(financials);
   const field = { background: T.ink, border: `1px solid ${T.line}`, color: T.text };

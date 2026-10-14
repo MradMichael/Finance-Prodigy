@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { useDialogFocus } from "./useDialogFocus";
 import { useScrollFocus } from "./useScrollFocus";
 import type { LocalFinancials, StoredCard, StoredTransaction, TrackedBalance } from "../lib/localData";
-import { uid, todayISO, allCategories, matchCategoryRule, activeTransactions, reanchorTrackedBalance, DEFAULT_LBP_RATE, MONEY_MAX_USD, saveCard as storeCard } from "../lib/localData";
+import { uid, todayISO, allCategories, matchCategoryRule, activeTransactions, reanchorTrackedBalance, MONEY_MAX_USD, saveCard as storeCard, lbpRateOf } from "../lib/localData";
 import { trackedBalanceExpected } from "../lib/computeDashboard";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, DateFieldDMY } from "./form/Primitives";
@@ -230,7 +230,7 @@ export default function ImportStatement({
         tbPatch = reanchorTrackedBalance(
           existingTB, closingBalance,
           trackedBalanceExpected(existingTB, patchedFinancials),
-          financials.lbpRate ?? DEFAULT_LBP_RATE, balanceDate,
+          lbpRateOf(financials), balanceDate,
         );
       } else {
         const freshTB: TrackedBalance = {

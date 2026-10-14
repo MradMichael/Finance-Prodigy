@@ -1,14 +1,14 @@
 "use client";
 
 import type { LocalFinancials } from "../../lib/localData";
-import { fmtDate, toUSD as toUSDShared, derivedDebtBalance, DEFAULT_LBP_RATE } from "../../lib/localData";
+import { fmtDate, toUSD as toUSDShared, derivedDebtBalance, lbpRateOf } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money, fmtCur } from "./shared";
 
 export default function DebtsScreen({ financials, dashData, onEdit, onPay }: { financials: LocalFinancials; dashData: ReturnType<typeof computeDashboard>; onEdit: (id: string) => void; onPay: (id: string) => void }) {
   const T = useTheme();
-  const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
+  const lbpRate = lbpRateOf(financials);
   // Phase 2.6.3a: each debt's balance is derived once here (openingBalance
   // minus every linked, non-deleted transaction), not read from the stored
   // `balance` field -- same computation computeDashboard.ts does for the

@@ -5,7 +5,7 @@ import { useDialogFocus } from "./useDialogFocus";
 import type { LocalFinancials, StoredTransaction, StoredCard, Currency, PaymentMethod } from "../lib/localData";
 import {
   fmtDate, allCategories, looksRecurring, buildQuickRecurring, cycleMonthDivergence,
-  roundMoney, DEFAULT_LBP_RATE, retagBucketAmount, moneyMaxFor, cycleStartDayOf, edited, saveCard as storeCard, rateOn } from "../lib/localData";
+  roundMoney, retagBucketAmount, moneyMaxFor, cycleStartDayOf, edited, saveCard as storeCard, rateOn, lbpRateOf } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY, CurrencyToggle, PM_OPTIONS, CardPicker } from "./form/Primitives";
 import { cycleKeyForISO, currentCycleKey } from "../lib/period";
@@ -224,7 +224,7 @@ export default function EditTransactionSheet({
           <div className="grid grid-cols-1 gap-2">
             <div>
               <Label htmlFor="edit-tx-amount">Amount</Label>
-              <MoneyInput id="edit-tx-amount" value={amt} onChange={setAmt} placeholder="0" max={moneyMaxFor(currency, financials.lbpRate ?? DEFAULT_LBP_RATE)} />
+              <MoneyInput id="edit-tx-amount" value={amt} onChange={setAmt} placeholder="0" max={moneyMaxFor(currency, lbpRateOf(financials))} />
             </div>
             <div>
               <Label htmlFor="edit-tx-date">Date</Label>
@@ -235,7 +235,7 @@ export default function EditTransactionSheet({
           {fxRole && (
             <div>
               <Label htmlFor="edit-tx-fx">{fxRole === "exchange" ? "Amount received" : "Amount changed back"}</Label>
-              <MoneyInput id="edit-tx-fx" value={fxAmt} onChange={setFxAmt} placeholder="0" max={moneyMaxFor("USD", financials.lbpRate ?? DEFAULT_LBP_RATE)} />
+              <MoneyInput id="edit-tx-fx" value={fxAmt} onChange={setFxAmt} placeholder="0" max={moneyMaxFor("USD", lbpRateOf(financials))} />
             </div>
           )}
           <div>
@@ -352,7 +352,7 @@ export default function EditTransactionSheet({
                 <p className="text-[10px]" style={{ color: T.mute }}>Emergency fund</p>
                 <button type="button" onClick={() => setEfAmount(null)} aria-label="Detach this transaction from the emergency fund" className="text-[10px] font-semibold px-2 py-1 rounded-lg transition-all hover:opacity-80 flex-shrink-0" style={{ color: T.coral, border: `1px solid ${T.coral}40` }}>Detach</button>
               </div>
-              <MoneyInput value={efAmount} onChange={setEfAmount} placeholder="0" max={moneyMaxFor(currency, financials.lbpRate ?? DEFAULT_LBP_RATE)} allowNegative /> {/* a draw is negative, as the text says (session 8) */}
+              <MoneyInput value={efAmount} onChange={setEfAmount} placeholder="0" max={moneyMaxFor(currency, lbpRateOf(financials))} allowNegative /> {/* a draw is negative, as the text says (session 8) */}
               <p className="text-[9px]" style={{ color: T.mute }}>Positive adds to it, negative draws from it.</p>
             </div>
           ) : (
@@ -384,7 +384,7 @@ export default function EditTransactionSheet({
                   <p className="text-[10px]" style={{ color: T.mute }}>Debt correction</p>
                   <button type="button" onClick={() => setDebtAdjustment(null)} aria-label="Detach this debt correction" className="text-[10px] font-semibold px-2 py-1 rounded-lg transition-all hover:opacity-80 flex-shrink-0" style={{ color: T.coral, border: `1px solid ${T.coral}40` }}>Detach</button>
                 </div>
-                <MoneyInput value={debtAdjustment} onChange={setDebtAdjustment} placeholder="0" max={moneyMaxFor(currency, financials.lbpRate ?? DEFAULT_LBP_RATE)} allowNegative />
+                <MoneyInput value={debtAdjustment} onChange={setDebtAdjustment} placeholder="0" max={moneyMaxFor(currency, lbpRateOf(financials))} allowNegative />
                 <p className="text-[9px]" style={{ color: T.mute }}>Positive increases the debt, negative reduces it further.</p>
               </div>
             ) : (

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
-import { BUDGET_RULES, goalProgress, moneyEquals, capacityFreedFrom, isRecurringActive, toUSD as toUSDShared, DEFAULT_LBP_RATE, cycleStartDayOf } from "../../lib/localData";
+import { BUDGET_RULES, goalProgress, moneyEquals, capacityFreedFrom, isRecurringActive, toUSD as toUSDShared, cycleStartDayOf, lbpRateOf } from "../../lib/localData";
 import { dateFmt, toDebtInputs, type computeDashboard } from "../../lib/computeDashboard";
 import { simulateDebtPayoff, addMonths, type DebtInput } from "../../lib/debtEngine";
 import { projectCompletion } from "../../lib/projections";
@@ -85,7 +85,7 @@ export default function ProjectionsScreen({
   // the same anchor, and naming the value gives the screen's own tests
   // something to assert against (2.4.82).
   const efRecommendedPace = projectCompletion(efRemaining, budgetTargets.savings, anchor);
-  const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
+  const lbpRate = lbpRateOf(financials);
   const liveDebts: DebtInput[] = toDebtInputs(financials.debts, lbpRate, financials.transactions);
 
   // ── Looking ahead: bounded obligations that free capacity later ──

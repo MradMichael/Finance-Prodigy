@@ -3,7 +3,7 @@
 import { useState, useRef } from "react";
 import { useDialogFocus } from "./useDialogFocus";
 import type { LocalFinancials, StoredDebt } from "../lib/localData";
-import { derivedDebtBalance, buildDebtAdjustmentTx, roundMoney, moneyMaxFor, DEFAULT_LBP_RATE, edited } from "../lib/localData";
+import { derivedDebtBalance, buildDebtAdjustmentTx, roundMoney, moneyMaxFor, edited, lbpRateOf } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY } from "./form/Primitives";
 
@@ -108,7 +108,7 @@ export default function EditDebtSheet({
               />
             </div>
             <div><Label htmlFor="edit-debt-apr">APR (%)</Label><FocusInput id="edit-debt-apr" type="number" min="0" step="0.1" value={apr} onChange={(e) => setApr(e.target.value)} placeholder="0" /></div>
-            <div><Label htmlFor="edit-debt-min">Min/mo</Label><MoneyInput id="edit-debt-min" value={min} onChange={setMin} placeholder="0" max={moneyMaxFor(debt.currency, financials.lbpRate ?? DEFAULT_LBP_RATE)} /></div>
+            <div><Label htmlFor="edit-debt-min">Min/mo</Label><MoneyInput id="edit-debt-min" value={min} onChange={setMin} placeholder="0" max={moneyMaxFor(debt.currency, lbpRateOf(financials))} /></div>
           </div>
           <div>
             <Label htmlFor="edit-debt-opened">Opened date (when this debt started)</Label>

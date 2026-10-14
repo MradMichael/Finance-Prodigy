@@ -3,10 +3,10 @@
 import { useState } from "react";
 import type { LocalFinancials, TrackedBalance, PaymentMethod, StoredCard, Currency, StoredDebt } from "../../lib/localData";
 import {
-  uid, todayISO, fmtDate, fmtLocalDay, withRate, reanchorTrackedBalance, moneyMaxFor, DEFAULT_LBP_RATE,
+  uid, todayISO, fmtDate, fmtLocalDay, withRate, reanchorTrackedBalance, moneyMaxFor,
   buildPeriodClose, cycleStartDayOf, unclosedCycles, isCycleClosedBySpan,
   closeMovesBaselineBackwards, canReopen, reopenCycle, planReopen, activeCloseForCycle, rateForMonth,
-  derivedEfBalance, derivedDebtBalance, planEfClose, planDebtClose, recordDeletion, closeHistoryFor, saveCard as storeCard, rateOn, isoLocalDay } from "../../lib/localData";
+  derivedEfBalance, derivedDebtBalance, planEfClose, planDebtClose, recordDeletion, closeHistoryFor, saveCard as storeCard, rateOn, isoLocalDay, lbpRateOf } from "../../lib/localData";
 import { balanceCheckReconciliation, trackedBalanceExpectedAsOf, type computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import CloseCycleModal, { type CloseRow, type AdjustmentRow } from "../CloseCycleModal";
@@ -40,7 +40,7 @@ export default function BalanceCheckScreen({
   onChange: (updated: LocalFinancials) => void;
 }) {
   const T = useTheme();
-  const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
+  const lbpRate = lbpRateOf(financials);
   const cards = financials.cards ?? [];
   const tracked = financials.trackedBalances ?? [];
   const update = (patch: Partial<LocalFinancials>) => onChange({ ...financials, ...patch });

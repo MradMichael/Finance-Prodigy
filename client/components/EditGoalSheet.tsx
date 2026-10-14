@@ -3,7 +3,7 @@
 import { useState, useRef } from "react";
 import { useDialogFocus } from "./useDialogFocus";
 import type { LocalFinancials, StoredGoal } from "../lib/localData";
-import { moneyMaxFor, DEFAULT_LBP_RATE, goalProgress, buildGoalCorrectionTx, roundMoney, edited } from "../lib/localData";
+import { moneyMaxFor, goalProgress, buildGoalCorrectionTx, roundMoney, edited, lbpRateOf } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY } from "./form/Primitives";
 
@@ -87,8 +87,8 @@ export default function EditGoalSheet({
             </div>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <div><Label htmlFor="edit-goal-target">Target ({goal.currency === "LBP" ? "L£" : "$"})</Label><MoneyInput id="edit-goal-target" value={target} onChange={setTarget} placeholder="0" max={moneyMaxFor(goal.currency, financials.lbpRate ?? DEFAULT_LBP_RATE)} /></div>
-            <div><Label htmlFor="edit-goal-saved">Saved ({goal.currency === "LBP" ? "L£" : "$"})</Label><MoneyInput id="edit-goal-saved" value={current} onChange={setCurrent} placeholder="0" max={moneyMaxFor(goal.currency, financials.lbpRate ?? DEFAULT_LBP_RATE)} /></div>
+            <div><Label htmlFor="edit-goal-target">Target ({goal.currency === "LBP" ? "L£" : "$"})</Label><MoneyInput id="edit-goal-target" value={target} onChange={setTarget} placeholder="0" max={moneyMaxFor(goal.currency, lbpRateOf(financials))} /></div>
+            <div><Label htmlFor="edit-goal-saved">Saved ({goal.currency === "LBP" ? "L£" : "$"})</Label><MoneyInput id="edit-goal-saved" value={current} onChange={setCurrent} placeholder="0" max={moneyMaxFor(goal.currency, lbpRateOf(financials))} /></div>
           </div>
           <div>
             <Label htmlFor="edit-goal-date">Target date</Label>

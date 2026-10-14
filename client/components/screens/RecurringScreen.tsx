@@ -1,7 +1,7 @@
 "use client";
 
 import type { LocalFinancials } from "../../lib/localData";
-import { nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, remainingInstallments, FREQ_LABELS, toUSD as toUSDShared, categoryLabel, categoryIcon, DEFAULT_LBP_RATE, fmtDate } from "../../lib/localData";
+import { nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, remainingInstallments, FREQ_LABELS, categoryLabel, categoryIcon, fmtDate, makeToUSDLive } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
 import { calendarDayOf } from "../../lib/calendarDay";
@@ -11,8 +11,7 @@ export default function RecurringScreen({ financials, onEdit }: { financials: Lo
   const now  = new Date();
   // The recurring engine takes calendar days: today, on this device.
   const today = calendarDayOf(now);
-  const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
-  const toUSD   = (n: number, cur?: string) => toUSDShared(n, cur as "USD" | "LBP" | undefined, lbpRate);
+  const toUSD   = makeToUSDLive(financials);
   const BC   = { NEEDS: T.sky, WANTS: T.brass, SAVINGS: T.jade } as const;
   const BL   = { NEEDS: "Needs", WANTS: "Wants", SAVINGS: "Savings" } as const;
 

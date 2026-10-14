@@ -99,7 +99,7 @@ describe("1. v4 -> v5: the record arrives empty", () => {
     // v6 (SYNC-1 step 2), v7 (plan H 5a) and v8 (foreign cash, model 2) now run
     // after v5, so a v4 record ends at 8. The v5 step this test is about still
     // ran: periodCloses below.
-    expect(out.schemaVersion).toBe(8);
+    expect(out.schemaVersion).toBe(9); // the chain runs to plan J's v9 (session 22)
     expect(out.periodCloses).toEqual([]);
   });
 
@@ -126,7 +126,7 @@ describe("1. v4 -> v5: the record arrives empty", () => {
     const v1 = { ...DEFAULT_DATA, schemaVersion: 1, periodCloses: undefined } as unknown as LocalFinancials;
     const out = migrateFinancials(v1);
     // 8 since model 2 added the v7 -> v8 step (7 since plan H 5a, 6 since SYNC-1 step 2): still every step walked.
-    expect(out.schemaVersion).toBe(8);
+    expect(out.schemaVersion).toBe(9); // the chain runs to plan J's v9 (session 22)
     expect(out.periodCloses).toEqual([]);
   });
 });

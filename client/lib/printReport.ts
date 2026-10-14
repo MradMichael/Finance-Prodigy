@@ -1,6 +1,6 @@
 import { totalSpent } from "./spending";
 import type { LocalFinancials } from "./localData";
-import { cycleStartDayOf, BUDGET_RULES, nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, toUSD as toUSDShared, categoryLabel, derivedDebtBalance, activeTransactions, DEFAULT_LBP_RATE, makeToUSDOn } from "./localData";
+import { cycleStartDayOf, BUDGET_RULES, nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, categoryLabel, derivedDebtBalance, activeTransactions, makeToUSDOn, makeToUSDLive } from "./localData";
 import { currentCycleKey, cycleLabelLong, periodNoun, dayLabel } from "./period";
 import type { computeDashboard } from "./computeDashboard";
 import { todayCalendarDay } from "./calendarDay";
@@ -44,8 +44,7 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
   const money = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Math.round(n));
   const generatedAt = dayLabel(new Date()); // DD/MM/YYYY (Q26)
   const ruleLabel = BUDGET_RULES[dash.budgetRule]?.label ?? dash.budgetRule;
-  const lbpRate = data.lbpRate ?? DEFAULT_LBP_RATE;
-  const toUSD = (n: number, cur?: string) => toUSDShared(n, cur as "USD" | "LBP" | undefined, lbpRate);
+  const toUSD = makeToUSDLive(data);
   // 2.4.22: the ledger lists real, dated, past transactions -- unlike the
   // summary cards above (deliberately "as of now," per this function's own
   // header comment), each row needs the rate that was actually in effect in

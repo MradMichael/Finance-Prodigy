@@ -3,7 +3,7 @@
 import { spentByBucket, spentByCategory, spendingEffect, totalSpent } from "../../lib/spending";
 import { useState } from "react";
 import type { LocalFinancials, StoredRecurring } from "../../lib/localData";
-import { fmtDate, historizedRecurringContribution, toUSD as toUSDShared, categoryLabel as categoryLabelShared, categoryIcon as categoryIconShared, activeTransactions, cycleMonthDivergence, purgeTransaction, undeleteTransaction, DEFAULT_LBP_RATE, cycleStartDayOf, todayISO, makeToUSDOn } from "../../lib/localData";
+import { fmtDate, historizedRecurringContribution, categoryLabel as categoryLabelShared, categoryIcon as categoryIconShared, activeTransactions, cycleMonthDivergence, purgeTransaction, undeleteTransaction, cycleStartDayOf, todayISO, makeToUSDOn, makeToUSDLive } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money, fmtCur } from "./shared";
 import Donut from "../charts/Donut";
@@ -98,8 +98,7 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
   // looking at this screen, not just someone who already knows it exists.
   const [showDeleted, setShowDeleted] = useState(false);
 
-  const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
-  const toUSD   = (n: number, cur?: string) => toUSDShared(n, cur as "USD" | "LBP" | undefined, lbpRate);
+  const toUSD   = makeToUSDLive(financials);
   // Plan J (held): each row at the rate in effect on its own day, as the dashboard prices it; this screen used today's rate for every row, past ones too.
   const toUSDOn = makeToUSDOn(financials);
 

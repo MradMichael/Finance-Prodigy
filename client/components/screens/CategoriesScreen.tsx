@@ -3,7 +3,7 @@
 import { spentByCategory } from "../../lib/spending";
 import { useState } from "react";
 import type { LocalFinancials, CategoryRule } from "../../lib/localData";
-import { CATEGORIES, allCategories, categoryLabel, categoryIcon, matchCategoryRule, historizedRecurringContribution, toUSD as toUSDShared, uid, moneyEquals, activeTransactions, DEFAULT_LBP_RATE, cycleStartDayOf, recordDeletion, edited, makeToUSDOn } from "../../lib/localData";
+import { CATEGORIES, allCategories, categoryLabel, categoryIcon, matchCategoryRule, historizedRecurringContribution, uid, moneyEquals, activeTransactions, cycleStartDayOf, recordDeletion, edited, makeToUSDOn, makeToUSDLive } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money } from "./shared";
 import { Label, FocusInput, PrimaryBtn } from "../form/Primitives";
@@ -34,8 +34,7 @@ export default function CategoriesScreen({
 
   const customCategories = financials.customCategories ?? [];
   const categoryRules = financials.categoryRules ?? [];
-  const lbpRate = financials.lbpRate ?? DEFAULT_LBP_RATE;
-  const toUSD = (n: number, cur?: string) => toUSDShared(n, cur as "USD" | "LBP" | undefined, lbpRate);
+  const toUSD = makeToUSDLive(financials);
   // Plan J (held): each row at the rate in effect on its own day, as the dashboard prices it; this screen used today's rate for every row, past ones too.
   const toUSDOn = makeToUSDOn(financials);
 
