@@ -1788,6 +1788,23 @@ export function budgetPctForMonth(
 
 function storageKey(userId: string) { return `essa_data_${userId}`; }
 
+/**
+ * Session 23, item 4 (owner): before a restore replaces a record that can't be opened (DECRYPT_FAILED),
+ * its stored encrypted value is kept as it is, under its own key: not deleted, not synced, not exported
+ * (every reader goes through storageKey), not counted as an account's data. A timestamp, so a later copy
+ * never replaces an earlier one. Only Delete account removes them (auth.ts). Returns the key, or null
+ * when the record opens or there is none. A storage refusal throws, so the caller doesn't replace it.
+ */
+export async function keepUnreadableRecord(userId: string, now: Date = new Date()): Promise<string | null> {
+  const raw = localStorage.getItem(storageKey(userId));
+  if (raw === null) return null;
+  try { await loadData(userId); return null; } catch { /* it can't be opened: keep it */ }
+  const key = `${UNREADABLE_PREFIX}${userId}_${now.toISOString()}`;
+  localStorage.setItem(key, raw);
+  return key;
+}
+export const UNREADABLE_PREFIX = "essa_unreadable_";
+
 export async function loadData(userId: string): Promise<LocalFinancials> {
   if (typeof window === "undefined") return DEFAULT_DATA;
   const raw = localStorage.getItem(storageKey(userId));

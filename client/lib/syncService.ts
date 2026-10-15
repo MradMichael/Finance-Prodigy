@@ -154,7 +154,9 @@ export function hasAnyLocalData(): boolean {
 /** Precise check for handlePull, and recoverFromSync's `existingId` branch: does this SPECIFIC local account currently hold real data a pull-driven overwrite would destroy. */
 export async function hasRealLocalData(userId: string): Promise<boolean> {
   const { loadData, isEmptyFinancials } = await import("./localData");
-  return !isEmptyFinancials(await loadData(userId));
+  // Session 23, item 4 (owner): a record that can't be read (DECRYPT_FAILED) counts as data to protect,
+  // so the caller asks before replacing it. It threw, and Profile's Restore from database stalled on it.
+  try { return !isEmptyFinancials(await loadData(userId)); } catch { return true; }
 }
 
 function overwriteWarningMessage(sourceLabel: string): string {
@@ -464,7 +466,7 @@ export interface ReplacedCloseNotice { cycleLabel: string; standingClosedAt: str
 export type MergeAndPushResult =
   // mergedData is on the server, not yet on this device: store it, then recordMergeStored. If the store fails, record nothing.
   | { ok: true; syncedAt: string; addedFromServer: number; conflictsResolved: number; conflicts: StoredTransaction[]; conflictDetails: MergeConflictDetail[]; clashes: MergeClash[]; nonTransactionDivergence: string[]; replacedCloses: ReplacedCloseNotice[]; mergedData: LocalFinancials; firstSync: boolean; /** Item 7: the other device's edits inside a closed cycle. */ closedEdits: ClosedEdit[]; /** Session 10, item 2: another device's reset, when it cleared something here. */ resetElsewhere?: ResetElsewhere }
-  | { ok: false; error: string; conflict?: boolean; newerVersion?: undefined }
+  | { ok: false; error: string; conflict?: boolean; newerVersion?: undefined; /** ERR-03 (session 23, item 5): the merged push refused for size. */ tooLarge?: boolean }
   // Travel slice 0: the backup was written by newer code; nothing merged or pushed. The caller shows NEWER_BACKUP_MESSAGE.
   | { ok: false; newerVersion: true; error?: undefined; conflict?: undefined };
 
@@ -517,7 +519,7 @@ export async function mergeAndPush(email: string, local: LocalFinancials): Promi
   // Built on the copy just pulled, so the server takes it; this device's own
   // sync time stays where it was until the merged copy is stored.
   const pushed = await pushToServer(email, mergedData, { record: false, baseSyncedAt: pulled.syncedAt });
-  if (!pushed.ok) return { ok: false, error: pushed.error ?? "Merge succeeded locally, but push failed.", conflict: pushed.conflict };
+  if (!pushed.ok) return { ok: false, error: pushed.error ?? "Merge succeeded locally, but push failed.", conflict: pushed.conflict, ...(pushed.tooLarge ? { tooLarge: true } : {}) };
 
   return {
     ok: true,
