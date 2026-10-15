@@ -71,6 +71,10 @@ export interface SyncResult {
   // problem. Unrecorded, the next push meets a conflict and merges again,
   // finding nothing new.
   notRecorded?: boolean;
+  // ERR-03 (session 22, draft, held): past the server's size cap. Retrying can't help.
+  tooLarge?: boolean;
+  // ERR-05 (session 22, draft, held): the request never reached the server, or got no answer in time.
+  unreachable?: boolean;
 }
 
 /** COPY-11, owner-approved wording (session 3): the ask before an empty account replaces a backup that has data. */
@@ -78,6 +82,17 @@ export const EMPTY_OVERWRITE_ASK = "Your backup on our server has data, but this
 /** COPY-11, owner-approved wording (session 3): what Profile says when that ask was declined. */
 /** Travel slice 0 (owner-approved, session 15): this device met a backup, or holds a copy, written by newer code, and has stopped syncing. */
 export const NEWER_BACKUP_MESSAGE = "Your backup was saved by a newer version of ESSA, so this device has stopped syncing. Reload ESSA to update it. Until then, changes stay on this device.";
+
+/** ERR-05 (session 22, draft, held): a request that never reached the server, or got no answer in time. It
+ * said "Could not reach server. Is it running?". The server can take a while to start after a quiet spell. */
+export const UNREACHABLE = "Couldn't reach the server. If you're online, it may be starting up: try again in a minute.";
+/** ERR-05 (session 22, draft, held): an answer without the API's own error (a proxy or platform page). It said "Sync failed (HTTP 504)." */
+export const serverTrouble = (status: number) => `The server had a problem (error ${status}). Try again in a minute.`;
+/** ERR-03 (session 22, draft, held): past the server's 2 MB cap, every backup fails. It said only "Validation failed". */
+export const BACKUP_TOO_LARGE = "This backup wasn't saved: your data is larger than the 2 MB the server can hold. Export a copy to keep one safe.";
+/** ERR-03: the server's own reason for that refusal (server/src/routes/sync.ts, pushSchema). */
+const isSizeRefusal = (status: number, json: { [key: string]: unknown } | null) =>
+  status === 422 && Array.isArray(json?.issues) && json.issues.some((i) => typeof (i as { message?: unknown })?.message === "string" && /byte limit/.test((i as { message: string }).message));
 
 export const EMPTY_PUSH_DECLINED = "Not uploaded: your backup on the server has data and this device has none, so the backup was kept.";
 
@@ -198,7 +213,8 @@ export async function pushToServer(
     if (res.status === 409 && json?.code === "stale_push") {
       return { ok: false, conflict: true, error: json?.error ?? "Server data has changed since your last sync." };
     }
-    if (!res.ok) return { ok: false, error: json?.error ?? `Sync failed (HTTP ${res.status}).` };
+    if (isSizeRefusal(res.status, json)) return { ok: false, tooLarge: true, error: BACKUP_TOO_LARGE };
+    if (!res.ok) return { ok: false, error: json?.error ?? serverTrouble(res.status) };
     // A 200 with no/malformed JSON body (proxy glitch, truncated response)
     // is a real but different failure from "couldn't reach the server at
     // all" — report it as such instead of falling through to json!.syncedAt
@@ -219,7 +235,7 @@ export async function pushToServer(
     }
     return { ok: true, syncedAt: json.syncedAt };
   } catch {
-    return { ok: false, error: "Could not reach server. Is it running?" };
+    return { ok: false, unreachable: true, error: UNREACHABLE };
   }
 }
 
@@ -319,10 +335,10 @@ export async function relinkSync(
       signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
     });
     const json = await parseJsonSafe(res);
-    if (!res.ok) return { ok: false, error: json?.error ?? `Relink failed (HTTP ${res.status}).` };
+    if (!res.ok) return { ok: false, error: json?.error ?? serverTrouble(res.status) };
     return { ok: true };
   } catch {
-    return { ok: false, error: "Could not reach server." };
+    return { ok: false, unreachable: true, error: UNREACHABLE };
   }
 }
 
@@ -336,7 +352,7 @@ export async function relinkSync(
 export async function pullFromServer(
   email: string,
   { timeoutMs = SYNC_TIMEOUT_MS }: { timeoutMs?: number } = {},
-): Promise<{ ok: true; data: LocalFinancials; syncedAt: string; hasRecoveryCode: boolean } | { ok: false; error: string; notFound?: true }> {
+): Promise<{ ok: true; data: LocalFinancials; syncedAt: string; hasRecoveryCode: boolean } | { ok: false; error: string; notFound?: true; unreachable?: true }> {
   const token = getSyncToken();
   if (!token) return { ok: false, error: "Not signed in. Sign in again to sync." };
   try {
@@ -361,13 +377,13 @@ export async function pullFromServer(
     if (res.status === 404 && json && typeof json.error === "string") {
       return { ok: false, error: "No data on server yet. Push first.", notFound: true };
     }
-    if (!res.ok) return { ok: false, error: json?.error ?? `Pull failed (HTTP ${res.status}).` };
+    if (!res.ok) return { ok: false, error: json?.error ?? serverTrouble(res.status) };
     if (json === null || typeof json.syncedAt !== "string" || !("data" in json)) {
       return { ok: false, error: "Server responded, but the response was malformed. Try again." };
     }
     return { ok: true, data: json.data as LocalFinancials, syncedAt: json.syncedAt, hasRecoveryCode: json.hasRecoveryCode === true };
   } catch {
-    return { ok: false, error: "Could not reach server. Is it running?" };
+    return { ok: false, unreachable: true, error: UNREACHABLE };
   }
 }
 

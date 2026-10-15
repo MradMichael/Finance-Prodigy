@@ -108,7 +108,7 @@ describe("pushToServer", () => {
   it("reports a network failure (fetch throws) as unreachable, not as a crash", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")));
     const result = await pushToServer("a@test.com", DEFAULT_DATA);
-    expect(result).toEqual({ ok: false, error: "Could not reach server. Is it running?" });
+    expect(result).toEqual({ ok: false, unreachable: true, error: "Couldn't reach the server. If you're online, it may be starting up: try again in a minute." }); // ERR-05 (session 22, draft, held)
   });
 
   it("BUG regression guard (2.4.38): sends baseSyncedAt from the last known sync time, and surfaces a stale-push conflict distinctly from a generic failure", async () => {

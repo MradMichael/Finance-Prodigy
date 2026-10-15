@@ -5,6 +5,7 @@ import { useScrollFocus } from "../components/useScrollFocus";
 import { MERGE_NOT_STORED, PUSH_NOT_RECORDED_NOTICE } from "../lib/storageNotices";
 import { syncStatusLongLabel } from "../components/shell/SyncDot";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import FinancialDashboard from "../components/FinancialDashboard";
 import InputPanel from "../components/InputPanel";
 import TransactionsScreen from "../components/screens/TransactionsScreen";
@@ -24,7 +25,7 @@ import StatisticsScreen from "../components/screens/StatisticsScreen";
 import Sidebar from "../components/shell/Sidebar";
 import BottomNav from "../components/shell/BottomNav";
 import TopBar from "../components/shell/TopBar";
-import type { Screen, SyncStatus } from "../components/screens/shared";
+import { NAV, type Screen, type SyncStatus } from "../components/screens/shared";
 import { cycleStartDayOf, loadData, saveData, isEmptyFinancials, buildRecurringConfirmLog, nextConfirmTarget, autoPurgeExpired, syncAllowed, saveFailureKind, SAVE_FAILURE_REASON, lbpRateOf } from "../lib/localData";
 import type { LocalFinancials } from "../lib/localData";
 import { computeDashboard } from "../lib/computeDashboard";
@@ -157,6 +158,10 @@ export default function Home() {
   const lastSavedSeqRef = useRef(0);
   const autoWritesPausedRef = useRef(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // ERR-04 (session 22, draft, held): the account's data couldn't be loaded (a record
+  // that won't decrypt throws DECRYPT_FAILED, on purpose). Nothing caught it, and the
+  // page sat on its loading screen.
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const persist = useCallback(async (next: LocalFinancials, userId: string): Promise<boolean> => {
     const seq = ++saveSeqRef.current;
@@ -187,6 +192,9 @@ export default function Home() {
   // failure and when the browser comes back online. A retry that fails
   // doesn't start a new series; the next edit's failure does.
   const [backupFailed, setBackupFailed] = useState(false);
+  // ERR-03 (session 22, draft, held): past the server's 2 MB cap. Retrying can't help,
+  // so ERR-02's notice ("ESSA will try again") and retries don't apply.
+  const [backupTooLarge, setBackupTooLarge] = useState(false);
   const backupFailedRef = useRef(false);
   useEffect(() => { backupFailedRef.current = backupFailed; }, [backupFailed]);
   const retryTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -268,8 +276,14 @@ export default function Home() {
       setSyncStatus("idle");
       return;
     }
+    if (result.tooLarge) {
+      setBackupFailed(false); setBackupTooLarge(true);
+      retryTimersRef.current.forEach(clearTimeout); retryTimersRef.current = [];
+      setSyncStatus(failedSyncStatus());
+      return;
+    }
     if (result.ok) {
-      setBackupFailed(false);
+      setBackupFailed(false); setBackupTooLarge(false);
       retryTimersRef.current.forEach(clearTimeout); retryTimersRef.current = [];
       setSyncStatus("synced");
       // Session 8 (owner-approved wording, merged session 9): backed up, but this device
@@ -389,6 +403,9 @@ export default function Home() {
       const local = { ...data, userName: s.name };
       lastSavedRef.current = local;
       setFinancials(local);
+    }).catch(() => {
+      // ERR-04 (draft, held): said at once, with the ways out; see the loading branch.
+      if (!superseded()) setLoadFailed(true);
     });
   // Mount-only, and deliberately NOT keyed on `router`.
   //
@@ -724,6 +741,20 @@ export default function Home() {
     return () => clearTimeout(t);
   }, [loaded]);
 
+  // A11Y-07 (session 22, draft, held): screens are state, not routes, so nothing told a
+  // screen reader the screen had changed, and every one had the same title. Each
+  // screen now titles the page with its nav label, and a change of screen is
+  // announced. Opening the app isn't announced, only a change.
+  const [screenAnnounced, setScreenAnnounced] = useState("");
+  const firstScreenRef = useRef(true);
+  useEffect(() => {
+    if (!loaded) return;
+    const label = NAV.find((n) => n.key === screen)?.label ?? "Overview";
+    document.title = `${label} · ESSA`;
+    if (firstScreenRef.current) { firstScreenRef.current = false; return; }
+    setScreenAnnounced(`Showing ${label}`);
+  }, [screen, loaded]);
+
   // SYNC-1 step 3: fetch once the account has loaded with backup on (and when
   // backup is turned on), and whenever ESSA comes back into view. runFetch
   // holds the gate and the once-a-minute limit.
@@ -775,7 +806,28 @@ export default function Home() {
             </div>
           </div>
         </div>
-        {loadingTooLong && (
+        {loadFailed ? (
+          <div
+            role="alert"
+            className="fixed bottom-4 left-1/2 -translate-x-1/2 max-w-sm w-[calc(100%-2rem)] rounded-2xl px-5 py-4 text-center shadow-2xl"
+            style={{ background: T.panel, border: `1px solid ${T.coral}` }}
+          >
+            <p className="text-sm" style={{ color: T.text }}>ESSA couldn&apos;t open the data saved in this browser.</p>
+            <p className="text-xs mt-1" style={{ color: T.mute }}>Nothing has been deleted. If reloading doesn&apos;t help, you can restore an exported file or sign out from Profile.</p>
+            <div className="mt-3 flex flex-wrap justify-center gap-2">
+              <Link href="/profile" className="px-4 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90" style={{ background: T.jade, color: T.ink }}>
+                Open Profile
+              </Link>
+              <button
+                onClick={() => window.location.reload()}
+                className="px-4 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-80"
+                style={{ color: T.text, border: `1px solid ${T.line}` }}
+              >
+                Reload the page
+              </button>
+            </div>
+          </div>
+        ) : loadingTooLong && (
           <div
             className="fixed bottom-4 left-1/2 -translate-x-1/2 max-w-sm w-[calc(100%-2rem)] rounded-2xl px-5 py-4 text-center shadow-2xl"
             style={{ background: T.panel, border: `1px solid ${T.line}` }}
@@ -909,6 +961,17 @@ export default function Home() {
           (merged in session 3). In a live region that's always on the page
           (A11Y-03), below the save error when both show. */}
       <div role="status">
+        {backupTooLarge && (
+          <div
+            className="fixed left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50"
+            style={{ top: saveError ? "7.5rem" : "1rem", background: T.panel, border: `1px solid ${T.brass}` }}
+          >
+            {/* ERR-03 (session 22, draft, held) */}
+            <span className="text-sm" style={{ color: T.text }}>
+              Your latest changes can&apos;t be backed up: your data is larger than the 2 MB the server can hold. They&apos;re safe on this device. Export a copy from Profile to keep one safe.
+            </span>
+          </div>
+        )}
         {backupFailed && (
           <div
             className="fixed left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50 flex items-start gap-3"
@@ -927,6 +990,9 @@ export default function Home() {
           </div>
         )}
       </div>
+
+      {/* A11Y-07 (session 22, draft, held): a change of screen, announced. After the other live regions, so their order holds. */}
+      <span id="screen-announcer" role="status" className="sr-only">{screenAnnounced}</span>
 
       {/* Audit 2.4.153: the backup choice for an undecided account -- blocking, asked once. */}
       {undecided && session && serverHasCopy !== null && (
