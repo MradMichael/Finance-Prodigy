@@ -75,6 +75,13 @@ it("COPY-07: the headline reads \"so far\", in the present perfect", () => {
   expect(screen.queryByText(/You kept/)).toBeNull();
 });
 
+it("COPY-07 on a payday cycle: \"so far this cycle\" (owner, session 23: as Journey's line)", () => {
+  const data = { ...DEFAULT_DATA, userName: "Quartz Lee", income: 3000, cycleStartDay: 27, transactions: [spent(100)] } as LocalFinancials;
+  show(data);
+  expect(periodNoun(cycleStartDayOf(data))).toBe("cycle");
+  expect(exact("You've kept $2,900 so far this cycle, Quartz. Every dollar counts.")).not.toBeNull();
+});
+
 it("COPY-04: Journey names the recommended pace and its amount, not \"this pace\"", () => {
   vi.useFakeTimers(); vi.setSystemTime(new Date(2026, 6, 15));
   try {

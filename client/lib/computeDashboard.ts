@@ -741,7 +741,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     {
       max: -5000, tier: "Rebuilding", tierColor: "coral",
       suggestions: [
-        nwUpOnLastMonth ? "You're climbing: your net worth is higher than last month." : "Each month the negative number shrinks brings zero closer.",
+        nwUpOnLastMonth ? "You're climbing: your net worth is higher than last month." : "Every month you owe a little less brings zero closer.", // the owner's wording (session 23)
         "Consider a small side income for 3–6 months; even $200/month accelerates this significantly.",
         "Once you clear the debt, redirect that minimum payment into savings automatically.",
       ],

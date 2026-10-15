@@ -1,4 +1,4 @@
-// Session 22, item 3 (wording drafts, HELD): COPY-09. The net-worth advice
+// Session 22, item 3 (wording drafts); approved in session 23, with the rebuilding line's fallback reworded by the owner: COPY-09. The net-worth advice
 // was fixed per tier and never read the data it talks about: "Set a goal to
 // hit $5,000 in savings" beside two goals, "Start or grow your safety net"
 // with $500 in it, "the negative number is shrinking each month" and "You've
@@ -45,12 +45,12 @@ it("rebuilding: \"climbing\" only when net worth is up on last month", () => {
   expect(up.tier).toBe("Rebuilding");
   expect(up.suggestions[0]).toBe("You're climbing: your net worth is higher than last month.");
   const down = advice({ debts: [debt(10000)], netWorthHistory: [{ ym: SEP, value: -8000 }] });
-  expect(down.suggestions[0]).toBe("Each month the negative number shrinks brings zero closer.");
+  expect(down.suggestions[0]).toBe("Every month you owe a little less brings zero closer.");
   // "Last month" is the latest month before this one, not the earliest: down on September, though up on August.
   const twoMonths = advice({ debts: [debt(10000)], netWorthHistory: [{ ym: asCalendarKey("2026-08"), value: -20000 }, { ym: SEP, value: -8000 }] });
-  expect(twoMonths.suggestions[0]).toBe("Each month the negative number shrinks brings zero closer.");
+  expect(twoMonths.suggestions[0]).toBe("Every month you owe a little less brings zero closer.");
   const none = advice({ debts: [debt(10000)] });
-  expect(none.suggestions[0]).toBe("Each month the negative number shrinks brings zero closer.");
+  expect(none.suggestions[0]).toBe("Every month you owe a little less brings zero closer.");
 });
 
 it("closing the gap: \"cut the deficit\" only when it's smaller than last month", () => {
