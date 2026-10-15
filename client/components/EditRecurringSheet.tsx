@@ -3,9 +3,10 @@
 import { useState, useRef } from "react";
 import { useDialogFocus } from "./useDialogFocus";
 import type { LocalFinancials, StoredRecurring, RecurringFrequency, Currency } from "../lib/localData";
-import { FREQ_LABELS, allCategories, fmtDate, pendingBackfillCycles, moneyMaxFor, edited, lbpRateOf } from "../lib/localData";
+import { FREQ_LABELS, fmtDate, pendingBackfillCycles, moneyMaxFor, edited, lbpRateOf } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY, CurrencyToggle } from "./form/Primitives";
+import CategoryOptions from "./form/CategoryOptions";
 
 type Bucket = "NEEDS" | "WANTS" | "SAVINGS";
 
@@ -143,9 +144,7 @@ export default function EditRecurringSheet({
               style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
             >
               <option value="">No category</option>
-              {allCategories(financials.customCategories).map((c) => (
-                <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
-              ))}
+              <CategoryOptions customCategories={financials.customCategories} />
             </select>
           </div>
           <div>

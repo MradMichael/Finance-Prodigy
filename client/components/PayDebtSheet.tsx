@@ -3,10 +3,11 @@
 import { useState, useRef } from "react";
 import { useDialogFocus } from "./useDialogFocus";
 import type { LocalFinancials, StoredDebt, PaymentMethod, StoredCard } from "../lib/localData";
-import { buildDebtPaymentTx, derivedDebtBalance, derivedEfBalance, moneyEquals, roundMoney, moneyMaxFor, allCategories, todayISO, toUSD as toUSDShared, edited, saveCard as storeCard, rateOn, lbpRateOf } from "../lib/localData";
+import { buildDebtPaymentTx, derivedDebtBalance, derivedEfBalance, moneyEquals, roundMoney, moneyMaxFor, todayISO, toUSD as toUSDShared, edited, saveCard as storeCard, rateOn, lbpRateOf } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, MoneyInput, DateFieldDMY, PaymentMethodPicker } from "./form/Primitives";
 import { fmtCur } from "./screens/shared";
+import CategoryOptions from "./form/CategoryOptions";
 
 type Bucket = "NEEDS" | "WANTS" | "SAVINGS";
 const BUCKET_META: { value: Bucket; label: string; icon: string }[] = [
@@ -152,9 +153,7 @@ export default function PayDebtSheet({
               style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
             >
               <option value="">No category</option>
-              {allCategories(financials.customCategories).map((c) => (
-                <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
-              ))}
+              <CategoryOptions customCategories={financials.customCategories} />
             </select>
           </div>
           {/* Pay-from-EF only -- a debt payment only ever draws from the

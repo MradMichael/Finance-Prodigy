@@ -60,11 +60,12 @@ it("shows planned against actual in USD by category, the euro spends in euros by
   show(fin([exch, back, taxi], [LISBON], { foreignEntries: [dinner] }));
   const card = screen.getByRole("region", { name: "Lisbon" });
   expect(within(card).getByText("Budget $1,200.00 · spent $425.00 · $775.00 left")).toBeTruthy(); // 500 + 30 - 105
-  expect(within(card).getByText("Dining out: $0.00 of $400.00")).toBeTruthy();
-  expect(within(card).getByText("Travel: $395.00")).toBeTruthy();
+  // Session 22, item 1d (HELD, wording drafted): the category view. Euros beside the dollars, never added; the
+  // budget compares against both, the euros at the trip's exchange cost ($500 for €460: €40 ≈ $43.48).
+  expect(within(card).getByText("Dining out: €40.00 from cash (≈ $43.48) · ≈ $43.48 of $400.00")).toBeTruthy(); // the owner-approved form (session 23)
+  expect(within(card).getByText("Exchanges: $395.00, counted in the total, not by category")).toBeTruthy();
   expect(within(card).getByText("Uncategorized: $30.00")).toBeTruthy();
   expect(within(card).getByText("Spent from EUR cash: €40.00")).toBeTruthy();
-  expect(within(card).getByText("Dining out: €40.00")).toBeTruthy();
   expect(within(card).queryByText(/Foreign cash bought/)).toBeNull();
   const rows = within(card).getAllByRole("listitem").map((li) => li.textContent ?? "");
   expect(rows.find((r) => r.includes("Exchange to EUR"))).toContain("$500.00 (€460.00)");

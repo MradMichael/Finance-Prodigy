@@ -13,17 +13,30 @@
 // forms, its trip preset (session 20, item 1; approved labels only).
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
-import { allCategories, categoryLabel, fmtDate, MONEY_MAX_USD } from "../../lib/localData";
+import { categoryLabel, fmtDate, MONEY_MAX_USD } from "../../lib/localData";
 import { dayLabel } from "../../lib/period";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF } from "./shared";
 import { Label, FocusInput, MoneyInput, DateFieldDMY } from "../form/Primitives";
-import { buildTrip, deleteTrip, editTrip, tripActual, tripForeignSpends, type StoredTrip } from "../../lib/trips";
+import { buildTrip, deleteTrip, editTrip, tagToTrip, tripActual, tripCategoryView, tripForeignSpends, untaggedDuringTrip, type StoredTrip, type TripCategoryRow } from "../../lib/trips";
 import { fmtForeign, sheet, sheetCodes } from "../../lib/foreignCash";
 import { ExchangeForm, SpendForm } from "../ForeignCashForms";
+import CategoryOptions from "../form/CategoryOptions";
 
 const usd = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 const num = (s: string) => parseFloat(s.replace(/,/g, ""));
+// Session 22, item 1d (HELD, DRAFT wording): a category's line. With no cash it keeps the approved form ("Dining out: $0.00
+// of $400.00"); with cash, the euros sit beside the dollars, never added, and the budget compares against both.
+function categoryLine(label: string, r: TripCategoryRow): string {
+  const of = r.budgetUSD !== undefined ? ` of ${usd(r.budgetUSD)}` : "";
+  if (r.fromCash.length === 0) return `${label}: ${usd(r.countedUSD)}${of}`;
+  // The owner's wording (session 23): "Food & dining: $15.00 + €40.00 from cash (≈ $46.00) · ≈ $61.00 of $100.00";
+  // the dollars only when there are some; " of $X" only with a category budget.
+  const cash = r.fromCash.map((c) => `${fmtForeign(c.amount, c.code)} from cash${c.approxUSD !== null ? ` (≈ ${usd(c.approxUSD)})` : ""}`).join(" + ");
+  const spent = r.countedUSD !== 0 ? `${usd(r.countedUSD)} + ${cash}` : cash;
+  const approx = r.fromCash.some((c) => c.approxUSD !== null) ? "≈ " : "";
+  return `${label}: ${spent}${of ? ` · ${approx}${usd(r.comparedUSD)}${of}` : ""}`;
+}
 const dayOf = (iso: string) => dayLabel(new Date(`${iso}T12:00:00`));
 const REASONS = {
   name: "Name the trip.",
@@ -50,7 +63,6 @@ function TripFields({ idPrefix, testIdPrefix, draft, onDraft, financials }: {
 }) {
   const T = useTheme();
   const field = { background: T.ink, border: `1px solid ${T.line}`, color: T.text };
-  const categories = allCategories(financials.customCategories);
   const setRow = (i: number, patch: Partial<Draft["catRows"][number]>) => onDraft({ ...draft, catRows: draft.catRows.map((x, j) => (j === i ? { ...x, ...patch } : x)) });
   return (
     <>
@@ -79,7 +91,7 @@ function TripFields({ idPrefix, testIdPrefix, draft, onDraft, financials }: {
             <select id={`${idPrefix}-cat-${i}`} value={r.category} onChange={(e) => setRow(i, { category: e.target.value })}
               className="w-full rounded-lg px-2 py-1.5 text-sm" style={field}>
               <option value="">Choose a category</option>
-              {categories.map((c) => <option key={c.value} value={c.value}>{c.icon} {c.label}</option>)}
+              <CategoryOptions customCategories={financials.customCategories} />
             </select>
           </div>
           <div>
@@ -159,8 +171,8 @@ export default function TripsScreen({ financials, onChange }: { financials: Loca
           const actual = tripActual(financials, trip);
           const left = trip.budgetUSD - actual.totalUSD;
           const euros = tripForeignSpends(financials, trip);
-          const budgeted = trip.categoryBudgetsUSD ?? {};
-          const catKeys = [...new Set([...Object.keys(budgeted), ...Object.keys(actual.byCategoryUSD)])];
+          const view = tripCategoryView(financials, trip);
+          const untagged = untaggedDuringTrip(financials, trip);
           return (
             <section key={trip.id} aria-label={trip.name} className="rounded-2xl p-5 space-y-3" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
               <div className="flex items-start justify-between gap-3">
@@ -183,24 +195,23 @@ export default function TripsScreen({ financials, onChange }: { financials: Loca
               <p className="text-sm tabular-nums" style={{ color: left < 0 ? T.coral : T.text }}>
                 {`Budget ${usd(trip.budgetUSD)} · spent ${usd(actual.totalUSD)} · ${left < 0 ? `${usd(-left)} over` : `${usd(left)} left`}`}
               </p>
-              {catKeys.length > 0 && (
-                <ul className="space-y-0.5">
-                  {catKeys.map((k) => (
-                    <li key={k || "_none"} className="text-[11px] tabular-nums" style={{ color: T.mute }}>
-                      {`${categoryLabel(k || undefined, financials.customCategories)}: ${usd(actual.byCategoryUSD[k] ?? 0)}${budgeted[k] !== undefined ? ` of ${usd(budgeted[k])}` : ""}`}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {euros.map((e) => (
-                <div key={e.code} className="space-y-0.5">
-                  <p className="text-[11px] tabular-nums" style={{ color: T.mute }}>{`Spent from ${e.code} cash: ${fmtForeign(e.amount, e.code)}`}</p>
+              {/* Session 22, item 1d (HELD, DRAFT wording): the trip by category. The exchanges count in the total
+                  and in no category: they're the money moving, not a purchase. */}
+              {(view.rows.length > 0 || view.exchangesUSD !== 0) && (
+                <div className="space-y-0.5">
+                  <p className="text-[10px] uppercase tracking-widest" style={{ color: T.mute }}>By category</p>
                   <ul className="space-y-0.5">
-                    {Object.entries(e.byCategory).map(([k, v]) => (
-                      <li key={k || "_none"} className="text-[11px] tabular-nums" style={{ color: T.mute }}>{`${categoryLabel(k || undefined, financials.customCategories)}: ${fmtForeign(v, e.code)}`}</li>
+                    {view.rows.map((r) => (
+                      <li key={r.key || "_none"} className="text-[11px] tabular-nums" style={{ color: T.mute }}>{categoryLine(categoryLabel(r.key || undefined, financials.customCategories), r)}</li>
                     ))}
                   </ul>
+                  {view.exchangesUSD !== 0 && (
+                    <p className="text-[11px] tabular-nums" style={{ color: T.mute }}>{`Exchanges: ${usd(view.exchangesUSD)}, counted in the total, not by category`}</p>
+                  )}
                 </div>
+              )}
+              {euros.map((e) => (
+                <p key={e.code} className="text-[11px] tabular-nums" style={{ color: T.mute }}>{`Spent from ${e.code} cash: ${fmtForeign(e.amount, e.code)}`}</p>
               ))}
               {/* Session 20, item 1: what's left, in view while spending (the sheet's approved heading). */}
               {codes.map((c) => (
@@ -229,6 +240,22 @@ export default function TripsScreen({ financials, onChange }: { financials: Loca
                     </li>
                   ))}
                 </ul>
+              )}
+              {/* Session 22, item 1c (HELD; heading the owner's, the button DRAFT): spends dated inside the trip with no
+                  trip tag, one tap each to tag them. Never income, a transfer or an exchange. */}
+              {untagged.length > 0 && (
+                <div className="space-y-1 pt-2" style={{ borderTop: `1px solid ${T.line}` }}>
+                  <p id={`untagged-${trip.id}`} className="text-[10px] uppercase tracking-widest" style={{ color: T.mute }}>Untagged during this trip</p>
+                  <ul aria-labelledby={`untagged-${trip.id}`} className="space-y-1">
+                    {untagged.map((t) => (
+                      <li key={t.id} className="text-[11px] tabular-nums flex justify-between items-center gap-2" style={{ color: T.text }}>
+                        <span>{`${fmtDate(t.date)} · ${t.description} · ${t.currency === "LBP" ? `L£${t.amount.toLocaleString("en-US")}` : usd(t.amount)}`}</span>
+                        <button type="button" onClick={() => onChange(tagToTrip(financials, t.id, trip.id))} aria-label={`Add ${t.description} to this trip`}
+                          className="px-2 py-1 rounded-md text-[10px] font-semibold flex-shrink-0" style={{ ...fxBtn(false), minHeight: 24 }}>Add to this trip</button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
             </section>
           );

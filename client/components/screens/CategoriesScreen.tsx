@@ -9,6 +9,7 @@ import { SERIF, money } from "./shared";
 import { Label, FocusInput, PrimaryBtn } from "../form/Primitives";
 import Donut from "../charts/Donut";
 import {currentCycleKey, isInCycle, periodNoun } from "../../lib/period";
+import CategoryOptions from "../form/CategoryOptions";
 
 function slugify(name: string): string {
   return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "category";
@@ -29,6 +30,10 @@ export default function CategoriesScreen({
   const [editingValue, setEditingValue] = useState<string | null>(null);
   const [editIcon, setEditIcon] = useState("");
   const [editName, setEditName] = useState("");
+  // Session 22 (owner): no two categories in a picker may share a label. The label a
+  // new name or a rename would repeat, ignoring case and surrounding spaces (draft wording).
+  const [nameTaken, setNameTaken] = useState<string | null>(null);
+  const [editTaken, setEditTaken] = useState<string | null>(null);
   const [ruleKeyword, setRuleKeyword] = useState("");
   const [ruleCategory, setRuleCategory] = useState("");
 
@@ -38,9 +43,14 @@ export default function CategoriesScreen({
   // Plan J (held): each row at the rate in effect on its own day, as the dashboard prices it; this screen used today's rate for every row, past ones too.
   const toUSDOn = makeToUSDOn(financials);
 
+  const labelTaken = (name: string, except?: string) =>
+    allCategories(customCategories).find((c) => c.value !== except && c.label.trim().toLowerCase() === name.trim().toLowerCase())?.label ?? null;
+
   function addCategory() {
     const name = newName.trim();
     if (!name) return;
+    const clash = labelTaken(name);
+    if (clash) { setNameTaken(clash); return; }
     // "uncategorized" is reserved -- TransactionsScreen/this screen use it as
     // the synthetic grouping key for spend with no category set.
     const taken = new Set(["uncategorized", ...allCategories(customCategories).map((c) => c.value)]);
@@ -61,6 +71,7 @@ export default function CategoriesScreen({
 
   function startEdit(c: { value: string; label: string; icon: string }) {
     setEditingValue(c.value);
+    setEditTaken(null);
     setEditIcon(c.icon);
     setEditName(c.label);
   }
@@ -71,6 +82,8 @@ export default function CategoriesScreen({
   function saveEdit() {
     const name = editName.trim();
     if (!name || !editingValue) return;
+    const clash = labelTaken(name, editingValue); // its own name in another case is fine
+    if (clash) { setEditTaken(clash); return; }
     onChange({
       ...financials,
       customCategories: customCategories.map((c) =>
@@ -163,11 +176,12 @@ export default function CategoriesScreen({
               <Label htmlFor="new-cat-name">Name</Label>
               <FocusInput
                 id="new-cat-name" value={newName} placeholder="Pet care…"
-                onChange={(e) => setNewName(e.target.value)}
+                onChange={(e) => { setNewName(e.target.value); setNameTaken(null); }}
                 onKeyDown={(e) => e.key === "Enter" && addCategory()}
               />
             </div>
           </div>
+          {nameTaken && <p role="alert" className="text-xs" style={{ color: T.coral }}>There&apos;s already a category called {nameTaken}.</p>}
           <PrimaryBtn onClick={addCategory} color={T.brass} disabled={!newName.trim()}>+ Add category</PrimaryBtn>
         </div>
 
@@ -190,11 +204,12 @@ export default function CategoriesScreen({
                         <Label htmlFor="edit-cat-name">Name</Label>
                         <FocusInput
                           id="edit-cat-name" value={editName}
-                          onChange={(e) => setEditName(e.target.value)}
+                          onChange={(e) => { setEditName(e.target.value); setEditTaken(null); }}
                           onKeyDown={(e) => e.key === "Enter" && saveEdit()}
                         />
                       </div>
                     </div>
+                    {editTaken && <p role="alert" className="text-xs" style={{ color: T.coral }}>There&apos;s already a category called {editTaken}.</p>}
                     <div className="flex gap-2">
                       <button onClick={saveEdit} disabled={!editName.trim()} className="px-3 py-1.5 rounded-xl text-xs font-semibold hover:opacity-90 disabled:opacity-40" style={{ background: T.jade, color: T.ink }}>Save</button>
                       <button onClick={() => setEditingValue(null)} className="px-3 py-1.5 rounded-xl text-xs hover:opacity-70" style={{ color: T.mute }}>Cancel</button>
@@ -270,9 +285,7 @@ export default function CategoriesScreen({
                 style={{ background: T.panelSoft, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
               >
                 <option value="">Choose…</option>
-                {allCategories(customCategories).map((c) => (
-                  <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
-                ))}
+                <CategoryOptions customCategories={customCategories} />
               </select>
             </div>
           </div>

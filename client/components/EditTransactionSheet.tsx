@@ -4,12 +4,13 @@ import { useState, useRef } from "react";
 import { useDialogFocus } from "./useDialogFocus";
 import type { LocalFinancials, StoredTransaction, StoredCard, Currency, PaymentMethod } from "../lib/localData";
 import {
-  fmtDate, allCategories, looksRecurring, buildQuickRecurring, cycleMonthDivergence,
+  fmtDate, looksRecurring, buildQuickRecurring, cycleMonthDivergence,
   roundMoney, retagBucketAmount, moneyMaxFor, cycleStartDayOf, edited, saveCard as storeCard, rateOn, lbpRateOf } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY, CurrencyToggle, PM_OPTIONS, CardPicker } from "./form/Primitives";
 import { cycleKeyForISO, currentCycleKey } from "../lib/period";
 import { foreignCashRole } from "../lib/foreignCash";
+import CategoryOptions from "./form/CategoryOptions";
 
 type TxBucket = "NEEDS" | "WANTS" | "SAVINGS" | "INCOME" | "TRANSFER";
 
@@ -298,9 +299,7 @@ export default function EditTransactionSheet({
             style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
           >
             <option value="">No category</option>
-            {allCategories(financials.customCategories).map((c) => (
-              <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
-            ))}
+            <CategoryOptions customCategories={financials.customCategories} />
           </select>
           {/* Travel slice 2 (held): labels approved in session 17. */}
           {trips.length > 0 && (

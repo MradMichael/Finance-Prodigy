@@ -7,7 +7,7 @@ import { useScrollFocus } from "./useScrollFocus";
 import type { LocalFinancials, StoredTransaction, StoredGoal, StoredDebt, StoredRecurring, StoredCard, RecurringFrequency, Currency, PaymentMethod, BudgetRuleKey } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, goalProgress, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, remainingInstallments, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, buildExtraPaymentTx, allCategories, categoryLabel, categoryIcon, matchCategoryRule, roundMoney, moneyMaxFor, MONEY_MAX_USD, derivedDebtBalance, activeTransactions, softDelete, cycleStartDayOf, syncAllowed, edited, recordDeletion, saveCard as storeCard, makeToUSDOn, rateOn, lbpRateOf, makeToUSDLive } from "../lib/localData";
+import { uid, goalProgress, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, remainingInstallments, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, buildExtraPaymentTx, categoryLabel, categoryIcon, matchCategoryRule, roundMoney, moneyMaxFor, MONEY_MAX_USD, derivedDebtBalance, activeTransactions, softDelete, cycleStartDayOf, syncAllowed, edited, recordDeletion, saveCard as storeCard, makeToUSDOn, rateOn, lbpRateOf, makeToUSDLive } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker } from "./form/Primitives";
@@ -15,6 +15,8 @@ import { fmtCur, money } from "./screens/shared";
 import ImportStatement from "./ImportStatement";
 import {currentCycleKey, cycleKeyForISO, isInCycle, periodNoun, cycleLabel, type CycleKey } from "../lib/period";
 import { calendarDayOf } from "../lib/calendarDay";
+import CategoryOptions from "./form/CategoryOptions";
+import { suggestedTripId } from "../lib/trips";
 
 type Bucket = "NEEDS" | "WANTS" | "SAVINGS";
 // Transactions (not recurring items) can also be logged as one-off INCOME --
@@ -81,6 +83,9 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   const [txCategory, setTxCategory] = useState<string>("");
   const [txDesc,   setTxDesc]   = useState("");
   const [txDate,   setTxDate]   = useState(todayISO());
+  // Session 22, item 1b (HELD): the Trip follows the date (a spend inside a trip's dates defaults to it) until
+  // the person picks one, "No trip" included. Income and transfers default to no trip.
+  const [txTripPick, setTxTripPick] = useState<string | null>(null);
   const [txCurrency,  setTxCurrency]  = useState<Currency>("USD");
   // Batch C (dual-currency single transaction, 2026-08-31): one real
   // payment split across both currencies ($10 USD + L£200,000 as one
@@ -235,6 +240,8 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     return saved.card;
   }
 
+  const txTrip = txTripPick ?? (txBucket === "INCOME" || txBucket === "TRANSFER" ? "" : suggestedTripId(financials.trips ?? [], txDate) ?? "");
+
   function addTransaction() {
     const amt = parseFloat(txAmt);
     if (!amt || amt <= 0) return;
@@ -297,11 +304,12 @@ export default function InputPanel({ financials, dashData, onChange, session, on
       ...(autoCategory ? { category: autoCategory } : {}),
       ...(txPayMethod === "other" && txPayNote.trim() ? { paymentNote: txPayNote.trim() } : {}),
       ...(cardId ? { cardId, cardLabel } : {}),
+      ...(txTrip ? { tripId: txTrip } : {}),
       ...(txBucket === "SAVINGS" && txAddToEF ? { efAmount: roundMoney(efAmtUSD) } : {}),
       ...(txBucket !== "SAVINGS" && txBucket !== "INCOME" && txBucket !== "TRANSFER" && txFromEF ? { efAmount: roundMoney(-efAmtUSD) } : {}),
     };
     update({ transactions: [tx, ...financials.transactions], ...(withNewCard ? { cards: withNewCard } : {}) });
-    setTxAmt(""); setTxDesc(""); setTxPayNote(""); setTxAddToEF(false); setTxFromEF(false); setTxEfAmt(""); setTxCategory("");
+    setTxAmt(""); setTxDesc(""); setTxPayNote(""); setTxAddToEF(false); setTxFromEF(false); setTxEfAmt(""); setTxCategory(""); setTxTripPick(null);
   }
 
   // Batch C: one real payment, two currency legs, sharing everything except
@@ -327,6 +335,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
       ...(autoCategory ? { category: autoCategory } : {}),
       ...(txPayMethod === "other" && txPayNote.trim() ? { paymentNote: txPayNote.trim() } : {}),
       ...(cardId ? { cardId, cardLabel } : {}),
+      ...(txTrip ? { tripId: txTrip } : {}),
     };
     const legUSD: StoredTransaction = { id: uid(), amount: amtUSDLeg, currency: "USD", ...shared };
     const legLBP: StoredTransaction = {
@@ -334,7 +343,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
       ...withRate("LBP", lbpRateOf(financials)),
     };
     update({ transactions: [legUSD, legLBP, ...financials.transactions], ...(withNewCard ? { cards: withNewCard } : {}) });
-    setTxSplitUSD(""); setTxSplitLBP(""); setTxSplitMode(false); setTxDesc(""); setTxPayNote(""); setTxCategory("");
+    setTxSplitUSD(""); setTxSplitLBP(""); setTxSplitMode(false); setTxDesc(""); setTxPayNote(""); setTxCategory(""); setTxTripPick(null);
   }
 
   function addGoal() {
@@ -738,11 +747,20 @@ export default function InputPanel({ financials, dashData, onChange, session, on
               style={{ background: T.panelSoft, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
             >
               <option value="">No category</option>
-              {allCategories(financials.customCategories).map((c) => (
-                <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
-              ))}
+              <CategoryOptions customCategories={financials.customCategories} />
             </select>
           </div>
+
+          {(financials.trips ?? []).length > 0 && (
+          <div>
+            <Label htmlFor="tx-trip">Trip</Label>
+            <select id="tx-trip" value={txTrip} onChange={(e) => setTxTripPick(e.target.value)}
+              className="w-full rounded-xl px-3 py-2.5 text-sm" style={{ background: T.panelSoft, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}>
+              <option value="">No trip</option>
+              {[...(financials.trips ?? [])].sort((a, b) => b.startDate.localeCompare(a.startDate)).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          </div>
+          )}
 
           {/* Savings context: target hint + EF toggle -- not shown in split
               mode, since commitSplitTransaction deliberately doesn't set
@@ -1718,9 +1736,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                       style={{ background: T.panelSoft, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
                     >
                       <option value="">No category</option>
-                      {allCategories(financials.customCategories).map((c) => (
-                        <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
-                      ))}
+                      <CategoryOptions customCategories={financials.customCategories} />
                     </select>
                   </div>
 

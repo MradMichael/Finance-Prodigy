@@ -18,12 +18,13 @@
 //   - Cash received (decision 4): a sheet entry in, with no USD effect.
 import { useState } from "react";
 import type { Currency, LocalFinancials, PaymentMethod, StoredCard } from "../lib/localData";
-import { allCategories, fmtDate, moneyMaxFor, recordDeletion, todayISO, saveCard as storeCard, lbpRateOf } from "../lib/localData";
+import { fmtDate, moneyMaxFor, recordDeletion, todayISO, saveCard as storeCard, lbpRateOf } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY, CurrencyToggle, PaymentMethodPicker } from "./form/Primitives";
 import { buildChangeBack, buildForeignEntry, editForeignEntry, fmtForeign, isValidForeignCode, sheet, sheetCodes } from "../lib/foreignCash";
 import { suggestedTripId } from "../lib/trips";
 import { ExchangeForm, SpendForm, TripSelect } from "./ForeignCashForms";
+import CategoryOptions from "./form/CategoryOptions";
 
 const num = (s: string) => parseFloat(s.replace(/,/g, ""));
 const signed = (n: number, code: string) => `${n < 0 ? "−" : "+"}${fmtForeign(Math.abs(n), code)}`;
@@ -188,7 +189,7 @@ export default function ForeignCashPanel({ financials, onChange }: { financials:
                 <select value={edCategory} onChange={(e) => setEdCategory(e.target.value)} aria-label="Category"
                   className="w-full rounded-lg px-2 py-1.5 text-[11px]" style={field}>
                   <option value="">No category</option>
-                  {allCategories(financials.customCategories).map((cat) => <option key={cat.value} value={cat.value}>{cat.icon} {cat.label}</option>)}
+                  <CategoryOptions customCategories={financials.customCategories} />
                 </select>
                 <TripSelect id="fx-ed-trip" value={edTrip} onPick={setEdTrip} financials={financials} />
                 <div role="status">{edError && <p className="text-[11px]" style={{ color: T.coral }}>{edError}</p>}</div>
