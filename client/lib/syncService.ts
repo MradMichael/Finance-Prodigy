@@ -75,6 +75,8 @@ export interface SyncResult {
   tooLarge?: boolean;
   // ERR-05 (session 22, draft, held): the request never reached the server, or got no answer in time.
   unreachable?: boolean;
+  // Session 23, item 6 (draft, held): the status of a reply without the API's own error.
+  serverStatus?: number;
 }
 
 /** COPY-11, owner-approved wording (session 3): the ask before an empty account replaces a backup that has data. */
@@ -941,10 +943,10 @@ export async function deleteFromServer(email: string, token: string): Promise<Sy
       signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
     });
     const json = await parseJsonSafe(res);
-    if (!res.ok) return { ok: false, error: json?.error ?? `Delete failed (HTTP ${res.status}).` };
+    if (!res.ok) return json?.error ? { ok: false, error: json.error } : { ok: false, serverStatus: res.status, error: serverTrouble(res.status) };
     return { ok: true };
   } catch {
-    return { ok: false, error: "Could not reach server." };
+    return { ok: false, unreachable: true, error: UNREACHABLE }; // ERR-05 (session 23, item 6; draft, held)
   }
 }
 
