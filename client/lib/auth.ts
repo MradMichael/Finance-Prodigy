@@ -700,6 +700,9 @@ export async function deleteAccount(userId: string): Promise<{ serverCleanupOk: 
   putUsers(getUsers().filter((u) => u.id !== userId));
   localStorage.removeItem(SESSION_KEY);
   localStorage.removeItem(`essa_data_${userId}`);
+  // Session 23, item 4: and any copy kept of a record that couldn't be opened (localData's keepUnreadableRecord);
+  // the privacy page says Delete account removes your financial data from your browser.
+  for (const k of Object.keys(localStorage)) if (k.startsWith(`essa_unreadable_${userId}_`)) localStorage.removeItem(k);
   // Plan H 5b: this device's sync fingerprints (lib/syncSeen.ts) go with it.
   localStorage.removeItem(`essa_seen_${userId}`);
   // Plan H 5d: and its memory of the clash notices it has shown (lib/clashNotice.ts).

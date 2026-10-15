@@ -6,6 +6,7 @@ import { MERGE_NOT_STORED, PUSH_NOT_RECORDED_NOTICE } from "../lib/storageNotice
 import { syncStatusLongLabel } from "../components/shell/SyncDot";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { LOAD_FAILED, LOAD_FAILED_NEXT } from "../lib/loadFailure";
 import FinancialDashboard from "../components/FinancialDashboard";
 import InputPanel from "../components/InputPanel";
 import TransactionsScreen from "../components/screens/TransactionsScreen";
@@ -212,6 +213,13 @@ export default function Home() {
     setSyncStatus("idle");
   }, []);
 
+  // ERR-03: past the server's size cap. Its own notice, and no retries (they can't succeed).
+  const stopForTooLarge = useCallback(() => {
+    setBackupFailed(false); setBackupTooLarge(true);
+    retryTimersRef.current.forEach(clearTimeout); retryTimersRef.current = [];
+    setSyncStatus(failedSyncStatus());
+  }, []);
+
   const autoSync = useCallback(async (data: LocalFinancials, email: string, { isRetry = false }: { isRetry?: boolean } = {}) => {
     // Audit 2.4.153: the gate. Every automatic upload in this file reaches
     // the network through here -- an edit, the monthly-snapshot write on
@@ -235,6 +243,8 @@ export default function Home() {
       const merged = await mergeAndPush(email, data);
       // Travel slice 0: a backup from newer code is neither merged into nor written over; this device stops syncing and says so.
       if (!merged.ok && merged.newerVersion) { stopForNewerBackup(); return; }
+      // Session 23, item 5 (owner): the merged push refused for size is ERR-03's case, not a conflict.
+      if (!merged.ok && merged.tooLarge) { stopForTooLarge(); return; }
       if (!merged.ok) { setSyncStatus("conflict"); return; }
       const userId = sessionRef.current?.userId;
       // DI-15: the sync is recorded only once the merged copy is stored here.
@@ -276,12 +286,7 @@ export default function Home() {
       setSyncStatus("idle");
       return;
     }
-    if (result.tooLarge) {
-      setBackupFailed(false); setBackupTooLarge(true);
-      retryTimersRef.current.forEach(clearTimeout); retryTimersRef.current = [];
-      setSyncStatus(failedSyncStatus());
-      return;
-    }
+    if (result.tooLarge) { stopForTooLarge(); return; }
     if (result.ok) {
       setBackupFailed(false); setBackupTooLarge(false);
       retryTimersRef.current.forEach(clearTimeout); retryTimersRef.current = [];
@@ -305,7 +310,7 @@ export default function Home() {
         return t;
       });
     }
-  }, [persist, stopForNewerBackup]);
+  }, [persist, stopForNewerBackup, stopForTooLarge]);
 
   // Retry with the latest data on this device, not the copy that failed.
   useEffect(() => {
@@ -812,8 +817,8 @@ export default function Home() {
             className="fixed bottom-4 left-1/2 -translate-x-1/2 max-w-sm w-[calc(100%-2rem)] rounded-2xl px-5 py-4 text-center shadow-2xl"
             style={{ background: T.panel, border: `1px solid ${T.coral}` }}
           >
-            <p className="text-sm" style={{ color: T.text }}>ESSA couldn&apos;t open the data saved in this browser.</p>
-            <p className="text-xs mt-1" style={{ color: T.mute }}>Nothing has been deleted. If reloading doesn&apos;t help, you can restore an exported file or sign out from Profile.</p>
+            <p className="text-sm" style={{ color: T.text }}>{LOAD_FAILED}</p>
+            <p className="text-xs mt-1" style={{ color: T.mute }}>{LOAD_FAILED_NEXT}</p>
             <div className="mt-3 flex flex-wrap justify-center gap-2">
               <Link href="/profile" className="px-4 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90" style={{ background: T.jade, color: T.ink }}>
                 Open Profile

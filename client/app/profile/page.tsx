@@ -8,7 +8,7 @@ import RecoveryCodeModal from "../../components/RecoveryCodeModal";
 import BackupSwitch from "../../components/BackupSwitch";
 import ResetDataPanel from "../../components/ResetDataPanel";
 import type { Session } from "../../lib/auth";
-import { loadData, saveData, activeTransactions, syncAllowed, resetFinancials, saveFailureKind, SAVE_FAILURE_REASON, exportFileName } from "../../lib/localData";
+import { loadData, saveData, keepUnreadableRecord, activeTransactions, syncAllowed, resetFinancials, saveFailureKind, SAVE_FAILURE_REASON, exportFileName } from "../../lib/localData";
 import { computeDashboard } from "../../lib/computeDashboard";
 import { buildReportHtml } from "../../lib/printReport";
 import { pushToServer, pullFromServer, getLastSyncTime, confirmOverwriteIfNeeded, mergeAndPush, recordMergeStored, recordRestoreStored, buildMergeNoticeText, applyBackupChoice, NEWER_BACKUP_MESSAGE, type BackupChoice } from "../../lib/syncService";
@@ -18,6 +18,7 @@ import { takeUnseenClashes } from "../../lib/clashNotice";
 import { restoreFromExport } from "../../lib/syncMerge";
 import { REGENERATE } from "../../lib/recoveryMessages";
 import type { LocalFinancials } from "../../lib/localData";
+import { LOAD_FAILED, LOAD_FAILED_NEXT } from "../../lib/loadFailure";
 import { isAnalyticsOptedIn, setAnalyticsOptIn } from "../../lib/analytics";
 import { useTheme, useThemeControl } from "../../contexts/ThemeContext";
 import { THEMES, type ThemeKey } from "../../lib/theme";
@@ -56,6 +57,8 @@ export default function ProfilePage() {
   const [analyticsOn,   setAnalyticsOn]   = useState(false);
   // Audit 2.4.153: null until loaded, so the switch never flashes a wrong state.
   const [backupOn,      setBackupOn]      = useState<boolean | null>(null);
+  // Session 23, item 4 (owner): the data saved in this browser couldn't be opened (ERR-04's case).
+  const [unreadable,    setUnreadable]    = useState(false);
   const [resetCounts,   setResetCounts]   = useState<{ transactions: number; goals: number; debts: number; recurring: number } | null>(null);
   const [resetMsg,      setResetMsg]      = useState("");
 
@@ -76,7 +79,7 @@ export default function ProfilePage() {
     loadData(s.userId).then((d) => {
       setBackupOn(syncAllowed(d));
       setResetCounts(countsOf(d));
-    });
+    }).catch(() => setUnreadable(true)); // item 4: said at the top; the page stays usable
   // Mount-only, deliberately NOT keyed on `router` (session 15; the dashboard's
   // reasoning, app/page.tsx's load effect). `router` is used only to redirect
   // when there's no session, which ends the effect at once. Keyed on it, the
@@ -100,9 +103,16 @@ export default function ProfilePage() {
    * confirm said so -- rather than leaving the server copy to be replaced by
    * a later auto-sync the owner cannot see from this page.
    */
+  /** This device's data, or null when it can't be opened (item 4); the caller says so in ERR-04's words. */
+  async function readLocal(userId: string): Promise<LocalFinancials | null> {
+    try { return await loadData(userId); } catch { setUnreadable(true); return null; }
+  }
+
   async function handleResetData() {
     if (!session) return;
-    const next = resetFinancials(await loadData(session.userId));
+    const current = await readLocal(session.userId);
+    if (!current) { setResetMsg("✗ " + LOAD_FAILED); return; }
+    const next = resetFinancials(current);
     try {
       await saveData(next, session.userId);
     } catch (err) {
@@ -122,7 +132,8 @@ export default function ProfilePage() {
   async function chooseBackup(choice: BackupChoice) {
     if (!session) return;
     setSyncing(true); setSyncMsg("");
-    const current = await loadData(session.userId);
+    const current = await readLocal(session.userId);
+    if (!current) { setSyncing(false); setSyncMsg("✗ " + LOAD_FAILED); return; }
     const { data: next, result } = await applyBackupChoice(session.email, current, choice);
     try {
       await saveData(next, session.userId);
@@ -166,6 +177,7 @@ export default function ProfilePage() {
     const result = await pullFromServer(session.email);
     if (result.ok) {
       try {
+        await keepUnreadableRecord(session.userId); // item 4 (owner): an unreadable record is kept, not overwritten
         await saveData(result.data, session.userId);
       } catch (err) {
         setSyncing(false);
@@ -201,7 +213,8 @@ export default function ProfilePage() {
   async function handleMerge() {
     if (!session) return;
     setSyncing(true); setSyncMsg("");
-    const local = await loadData(session.userId);
+    const local = await readLocal(session.userId);
+    if (!local) { setSyncing(false); setSyncMsg("✗ " + LOAD_FAILED); return; }
     const result = await mergeAndPush(session.email, local);
     if (!result.ok) {
       setSyncing(false);
@@ -231,7 +244,8 @@ export default function ProfilePage() {
   async function handlePush() {
     if (!session) return;
     setSyncing(true); setSyncMsg("");
-    const data = await loadData(session.userId);
+    const data = await readLocal(session.userId);
+    if (!data) { setSyncing(false); setSyncMsg("✗ " + LOAD_FAILED); return; }
     const result = await pushToServer(session.email, data);
     setSyncing(false);
     if (result.ok) {
@@ -277,7 +291,8 @@ export default function ProfilePage() {
     if (!session) return;
     setDownloading("data"); setDownloadMsg("");
     try {
-      const data = await loadData(session.userId);
+      const data = await readLocal(session.userId);
+      if (!data) { setDownloadMsg("✗ " + LOAD_FAILED); return; }
       // A soft-deleted transaction still has its full payload -- it's
       // filtered from every calculation, not stripped. Left unfiltered
       // here, every transaction ever deleted (with description, amount,
@@ -344,6 +359,7 @@ export default function ProfilePage() {
       // Nothing stored here, or unreadable: the file as is, as before.
       const current = await loadData(session.userId).catch(() => null);
       const restored = current ? restoreFromExport(current, parsed as LocalFinancials) : (parsed as LocalFinancials);
+      if (!current) await keepUnreadableRecord(session.userId); // item 4 (owner): an unreadable record is kept, not overwritten
       await saveData(restored, session.userId);
       setImportMsg("✓ Data restored from file. Reloading…");
       // Same reload requirement as handlePull — see its own comment.
@@ -384,7 +400,8 @@ export default function ProfilePage() {
     }
     setDownloading("pdf");
     try {
-      const data = await loadData(session.userId);
+      const data = await readLocal(session.userId);
+      if (!data) { win.close(); setDownloadMsg("✗ " + LOAD_FAILED); return; }
       const dash = computeDashboard(data);
       const html = buildReportHtml(session.name, data, dash, {
         detailed: pdfDetailed,
@@ -442,6 +459,14 @@ export default function ProfilePage() {
       </header>
 
       <div className="max-w-lg mx-auto px-4 py-10 space-y-6">
+
+        {/* Session 23, item 4 (owner): ERR-04's approved words, here too. */}
+        {unreadable && (
+          <div role="alert" className="rounded-2xl px-5 py-4" style={{ background: T.panel, border: `1px solid ${T.coral}` }}>
+            <p className="text-sm" style={{ color: T.text }}>{LOAD_FAILED}</p>
+            <p className="text-xs mt-1" style={{ color: T.mute }}>{LOAD_FAILED_NEXT}</p>
+          </div>
+        )}
 
         {/* Avatar */}
         <div className="flex flex-col items-center gap-3 py-6">

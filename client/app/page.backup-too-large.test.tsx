@@ -18,11 +18,12 @@ vi.mock("../lib/localData", async (importOriginal) => {
   return { ...actual, loadData: vi.fn(async () => seed), saveData: vi.fn(async () => {}) };
 });
 const push = vi.fn();
+const merge = vi.fn();
 vi.mock("../lib/syncService", () => ({
   fetchAndMerge: vi.fn(async (_e: string, local: () => LocalFinancials) => ({ ok: true, mergedData: local(), localChanged: false, serverBehind: false, addedFromServer: 0, conflictDetails: [], replacedCloses: [] })),
   pullFromServer: vi.fn(async () => ({ ok: false, error: "none" })),
   pushToServer: (...a: unknown[]) => push(...a),
-  mergeAndPush: vi.fn(async () => ({ ok: false })),
+  mergeAndPush: (...a: unknown[]) => merge(...a),
   buildMergeNoticeText: () => ({ text: "", showReviewLink: false }),
   hasAutoPulled: () => true, markAutoPulled: vi.fn(), getLastSyncTime: () => "2026-10-05T08:00:00.000Z",
   checkEmailExists: vi.fn(async () => true), applyBackupChoice: vi.fn(),
@@ -51,7 +52,7 @@ function settled(): LocalFinancials {
   } as LocalFinancials;
 }
 
-beforeEach(() => { vi.useFakeTimers({ shouldAdvanceTime: true }); seed = settled(); push.mockReset(); });
+beforeEach(() => { vi.useFakeTimers({ shouldAdvanceTime: true }); seed = settled(); push.mockReset(); merge.mockReset().mockResolvedValue({ ok: false }); });
 afterEach(() => { vi.useRealTimers(); });
 
 async function editAndUpload() {
@@ -77,6 +78,18 @@ it("says why, and what to do, without \"will try again\" or a Try again button",
 it("doesn't retry: nothing more is sent in the next 20 minutes", async () => {
   push.mockResolvedValue(TOO_LARGE);
   await editAndUpload();
+  await act(async () => { await vi.advanceTimersByTimeAsync(20 * 60_000); });
+  expect(push).toHaveBeenCalledTimes(1);
+});
+
+// Session 23, item 5 (owner): the same notice when the size refusal comes from a
+// conflict's merged push. It showed the "conflict" status instead.
+it("a conflict whose merged push is refused for size shows the same notice, and doesn't retry", async () => {
+  push.mockResolvedValue({ ok: false, conflict: true, error: "Server data has changed since your last sync." });
+  merge.mockResolvedValue({ ok: false, tooLarge: true, error: TOO_LARGE.error });
+  await editAndUpload();
+  expect(await screen.findByText(TOO_LARGE_NOTICE)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
   await act(async () => { await vi.advanceTimersByTimeAsync(20 * 60_000); });
   expect(push).toHaveBeenCalledTimes(1);
 });
