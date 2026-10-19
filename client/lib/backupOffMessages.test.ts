@@ -1,4 +1,4 @@
-// Session 23, item 6 (owner; DRAFT WORDING, HELD): turning backup off and
+// Session 23, item 6; approved with edits in session 24 (the two new sentences end at "try again in a minute"): turning backup off and
 // deleting the server copy, when the delete fails. Profile said "Backup is off,
 // but deleting the server copy failed: <error> Try again, or delete your
 // account to remove it." The delete's own failure text was "Could not reach
@@ -25,13 +25,13 @@ it("a reply without the API's own error: its status kept, not HTTP text", async 
 
 it("Profile's sentence when the server couldn't be reached says \"try again\" once", () => {
   const text = backupOffDeleteFailed({ ok: false, unreachable: true, error: UNREACHABLE });
-  expect(text).toBe("Backup is off, but the server couldn't be reached, so its copy wasn't deleted. If you're online, it may be starting up: try again in a minute, or delete your account to remove it.");
+  expect(text).toBe("Backup is off, but the server couldn't be reached, so its copy wasn't deleted. If you're online, it may be starting up: try again in a minute.");
   expect(text.match(/try again/gi)).toHaveLength(1);
 });
 
 it("and when the server had a problem", () => {
   const text = backupOffDeleteFailed({ ok: false, serverStatus: 502, error: "The server had a problem (error 502). Try again in a minute." });
-  expect(text).toBe("Backup is off, but the server had a problem (error 502), so its copy wasn't deleted. Try again in a minute, or delete your account to remove it.");
+  expect(text).toBe("Backup is off, but the server had a problem (error 502), so its copy wasn't deleted. Try again in a minute.");
   expect(text.match(/try again/gi)).toHaveLength(1);
 });
 
