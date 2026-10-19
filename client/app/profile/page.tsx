@@ -15,7 +15,7 @@ import { pushToServer, pullFromServer, getLastSyncTime, confirmOverwriteIfNeeded
 import { PUSH_NOT_RECORDED, RESTORE_NOT_RECORDED_NOTICE } from "../../lib/storageNotices";
 import { saveSeen, loadSeen } from "../../lib/syncSeen";
 import { takeUnseenClashes } from "../../lib/clashNotice";
-import { restoreFromExport } from "../../lib/syncMerge";
+import { restoreFromExport, withDeviceBackupChoice } from "../../lib/syncMerge";
 import { REGENERATE } from "../../lib/recoveryMessages";
 import { backupOffDeleteFailed } from "../../lib/backupOffMessages";
 import type { LocalFinancials } from "../../lib/localData";
@@ -180,9 +180,11 @@ export default function ProfilePage() {
     // Session 10 (DI-15 on pulls): the time is recorded once the copy is stored (recordRestoreStored).
     const result = await pullFromServer(session.email);
     if (result.ok) {
+      // Item 3b (session 25): the server's copy replaces this device's data, not its backup choice.
+      const current = await loadData(session.userId).catch(() => null);
       try {
         await keepUnreadableRecord(session.userId); // item 4 (owner): an unreadable record is kept, not overwritten
-        await saveData(result.data, session.userId);
+        await saveData(withDeviceBackupChoice(result.data, current), session.userId);
       } catch (err) {
         setSyncing(false);
         setSyncMsg("✗ Couldn't save the server's copy on this device. " + SAVE_FAILURE_REASON[saveFailureKind(err)] + " Nothing was changed.");
@@ -362,7 +364,8 @@ export default function ProfilePage() {
       // and the reset's records still hold for everything the file lacks.
       // Nothing stored here, or unreadable: the file as is, as before.
       const current = await loadData(session.userId).catch(() => null);
-      const restored = current ? restoreFromExport(current, parsed as LocalFinancials) : (parsed as LocalFinancials);
+      // Item 3b (session 25): this device's backup choice stays as it is; an unreadable record has none to keep.
+      const restored = current ? restoreFromExport(current, parsed as LocalFinancials) : withDeviceBackupChoice(parsed as LocalFinancials, null);
       if (!current) await keepUnreadableRecord(session.userId); // item 4 (owner): an unreadable record is kept, not overwritten
       await saveData(restored, session.userId);
       setImportMsg("✓ Data restored from file. Reloading…");

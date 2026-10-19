@@ -133,6 +133,28 @@ function mergeRevivedKeys(a: RevivedKeys | undefined, b: RevivedKeys | undefined
  * generation, and at the same generation a deletion beats a revival.
  */
 export function restoreFromExport(current: LocalFinancials, file: LocalFinancials): LocalFinancials {
+  return withDeviceBackupChoice(restoreFile(current, file), current);
+}
+
+/**
+ * Item 3b (owner, session 25): a restore never carries the backup choice
+ * over. Profile's two restores, a file and "Restore from database", replace
+ * this device's data but keep its `syncChoice` exactly: its own when it has
+ * one, none when it has none or its record couldn't be read (the backup
+ * prompt then asks). Before, a file without a choice dropped the device's
+ * (the prompt came back saying ESSA had backed up "without asking"), and a
+ * file saved with backup on turned it back on after the person had turned it
+ * off. A merge already keeps this device's choice (mergeFinancials spreads
+ * `...local`); sign-in on a new device still takes the account's.
+ */
+export function withDeviceBackupChoice(restored: LocalFinancials, current: Pick<LocalFinancials, "syncChoice"> | null): LocalFinancials {
+  const out: LocalFinancials = { ...restored };
+  delete out.syncChoice;
+  if (current?.syncChoice) out.syncChoice = current.syncChoice;
+  return out;
+}
+
+function restoreFile(current: LocalFinancials, file: LocalFinancials): LocalFinancials {
   const gen = Math.max(restoreGeneration(current), restoreGeneration(file)) + 1;
   const revivedKeys: RevivedKeys = mergeRevivedKeys(current.revivedKeys, file.revivedKeys) ?? {};
   const live = { ...file, transactions: (file.transactions ?? []).filter((t) => t.deletedAt == null && t.purgedAt == null) } as LocalFinancials;
