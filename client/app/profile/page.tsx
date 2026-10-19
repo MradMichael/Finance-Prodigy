@@ -8,7 +8,7 @@ import RecoveryCodeModal from "../../components/RecoveryCodeModal";
 import BackupSwitch from "../../components/BackupSwitch";
 import ResetDataPanel from "../../components/ResetDataPanel";
 import type { Session } from "../../lib/auth";
-import { loadData, saveData, keepUnreadableRecord, activeTransactions, syncAllowed, resetFinancials, saveFailureKind, SAVE_FAILURE_REASON, exportFileName } from "../../lib/localData";
+import { loadData, saveData, keepUnreadableRecord, removeUnreadableCopies, activeTransactions, syncAllowed, resetFinancials, saveFailureKind, SAVE_FAILURE_REASON, exportFileName } from "../../lib/localData";
 import { computeDashboard } from "../../lib/computeDashboard";
 import { buildReportHtml } from "../../lib/printReport";
 import { pushToServer, pullFromServer, getLastSyncTime, confirmOverwriteIfNeeded, mergeAndPush, recordMergeStored, recordRestoreStored, buildMergeNoticeText, applyBackupChoice, NEWER_BACKUP_MESSAGE, type BackupChoice } from "../../lib/syncService";
@@ -120,6 +120,9 @@ export default function ProfilePage() {
       setResetMsg("✗ Couldn't erase your data on this device. " + SAVE_FAILURE_REASON[saveFailureKind(err)] + " Nothing was changed.");
       return;
     }
+    // Session 24, item 1 (owner): and any copy kept of a record that couldn't be opened. Only once the
+    // empty record is saved, so a failed erase still changes nothing.
+    removeUnreadableCopies(session.userId);
     setResetCounts(countsOf(next));
     if (syncAllowed(next)) {
       const r = await pushToServer(session.email, next, { allowEmptyOverwrite: true });

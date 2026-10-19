@@ -1805,6 +1805,12 @@ export async function keepUnreadableRecord(userId: string, now: Date = new Date(
 }
 export const UNREADABLE_PREFIX = "essa_unreadable_";
 
+/** Session 24, item 1: every copy kept for this account (keepUnreadableRecord), removed. Erase all data and Delete account. */
+export function removeUnreadableCopies(userId: string): void {
+  const mine = `${UNREADABLE_PREFIX}${userId}_`;
+  for (const k of Object.keys(localStorage)) if (k.startsWith(mine)) localStorage.removeItem(k);
+}
+
 export async function loadData(userId: string): Promise<LocalFinancials> {
   if (typeof window === "undefined") return DEFAULT_DATA;
   const raw = localStorage.getItem(storageKey(userId));
