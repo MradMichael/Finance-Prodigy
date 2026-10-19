@@ -15,10 +15,12 @@ import { useTheme } from "../contexts/ThemeContext";
  * this device only. And it names what is about to go, so the confirm is
  * about this account's data rather than a generic warning.
  */
-export default function ResetDataPanel({ counts, backupOn, onConfirm }: {
+export default function ResetDataPanel({ counts, backupOn, onConfirm, hasKeptCopy = false }: {
   counts: { transactions: number; goals: number; debts: number; recurring: number };
   backupOn: boolean;
   onConfirm: () => void;
+  /** Session 24, item 1 (draft, held): this account has a copy kept of a record that couldn't be opened. */
+  hasKeptCopy?: boolean;
 }) {
   const T = useTheme();
   const [open, setOpen] = useState(false);
@@ -44,6 +46,10 @@ export default function ResetDataPanel({ counts, backupOn, onConfirm }: {
         {plural(counts.debts, "debt")}, {plural(counts.recurring, "recurring item")}, and every card, asset and tracked
         balance. Your account stays, and so does your backup setting.
       </p>
+      {/* Session 24, item 1 (DRAFT WORDING, HELD): Erase removes a kept copy too; its contents can't be counted. */}
+      {hasKeptCopy && (
+        <p className="text-xs leading-relaxed" style={{ color: T.mute }}>This also removes the copy kept of data this browser couldn&apos;t open.</p>
+      )}
       <p className="text-xs leading-relaxed" style={{ color: backupOn ? T.coral : T.mute }}>
         {backupOn
           // Owner's wording (session 12): other devices remove the reset's

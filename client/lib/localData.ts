@@ -1806,6 +1806,12 @@ export async function keepUnreadableRecord(userId: string, now: Date = new Date(
 export const UNREADABLE_PREFIX = "essa_unreadable_";
 
 /** Session 24, item 1: every copy kept for this account (keepUnreadableRecord), removed. Erase all data and Delete account. */
+/** Session 24, item 1 (draft, held): whether this account has a copy kept (keepUnreadableRecord). */
+export function hasUnreadableCopies(userId: string): boolean {
+  const mine = `${UNREADABLE_PREFIX}${userId}_`;
+  try { return Object.keys(localStorage).some((k) => k.startsWith(mine)); } catch { return false; }
+}
+
 export function removeUnreadableCopies(userId: string): void {
   const mine = `${UNREADABLE_PREFIX}${userId}_`;
   for (const k of Object.keys(localStorage)) if (k.startsWith(mine)) localStorage.removeItem(k);

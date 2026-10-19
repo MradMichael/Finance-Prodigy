@@ -8,7 +8,7 @@ import RecoveryCodeModal from "../../components/RecoveryCodeModal";
 import BackupSwitch from "../../components/BackupSwitch";
 import ResetDataPanel from "../../components/ResetDataPanel";
 import type { Session } from "../../lib/auth";
-import { loadData, saveData, keepUnreadableRecord, removeUnreadableCopies, activeTransactions, syncAllowed, resetFinancials, saveFailureKind, SAVE_FAILURE_REASON, exportFileName } from "../../lib/localData";
+import { loadData, saveData, keepUnreadableRecord, removeUnreadableCopies, hasUnreadableCopies, activeTransactions, syncAllowed, resetFinancials, saveFailureKind, SAVE_FAILURE_REASON, exportFileName } from "../../lib/localData";
 import { computeDashboard } from "../../lib/computeDashboard";
 import { buildReportHtml } from "../../lib/printReport";
 import { pushToServer, pullFromServer, getLastSyncTime, confirmOverwriteIfNeeded, mergeAndPush, recordMergeStored, recordRestoreStored, buildMergeNoticeText, applyBackupChoice, NEWER_BACKUP_MESSAGE, type BackupChoice } from "../../lib/syncService";
@@ -823,7 +823,7 @@ export default function ProfilePage() {
             Danger zone
           </h2>
           {resetCounts && backupOn !== null && (
-            <ResetDataPanel counts={resetCounts} backupOn={backupOn} onConfirm={handleResetData} />
+            <ResetDataPanel counts={resetCounts} backupOn={backupOn} onConfirm={handleResetData} hasKeptCopy={!!session && hasUnreadableCopies(session.userId)} />
           )}
           <div role="status">{resetMsg && <p className="text-xs" style={{ color: T.mute }}>{resetMsg}</p>}</div>
           {!showDelete ? (
