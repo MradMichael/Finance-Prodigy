@@ -309,7 +309,7 @@ export function DateFieldDMY({
   // "12") instead of silently accepting an out-of-range value that would
   // just never get committed — typing 13/13/2026 used to look accepted
   // with no feedback that nothing was actually saved.
-  function makeHandler(maxLen: number, maxValue: number, setter: (v: string) => void, next?: React.RefObject<HTMLInputElement>) {
+  function makeHandler(maxLen: number, maxValue: number, setter: (v: string) => void, next?: React.RefObject<HTMLInputElement | null>) {
     return (e: React.ChangeEvent<HTMLInputElement>) => {
       // Session 15 (owner): a full box that gets another digit starts over
       // from what was typed, as a native date field's segments do. The boxes
@@ -332,7 +332,7 @@ export function DateFieldDMY({
     };
   }
 
-  function handleBackspace(e: React.KeyboardEvent<HTMLInputElement>, current: string, prev?: React.RefObject<HTMLInputElement>, prevValue?: string, prevSetter?: (v: string) => void) {
+  function handleBackspace(e: React.KeyboardEvent<HTMLInputElement>, current: string, prev?: React.RefObject<HTMLInputElement | null>, prevValue?: string, prevSetter?: (v: string) => void) {
     if (e.key === "Backspace" && current === "" && prev && prevSetter && prevValue !== undefined) {
       e.preventDefault();
       const shortened = prevValue.slice(0, -1);
