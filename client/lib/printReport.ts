@@ -115,12 +115,12 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
   // real recurring obligation and belongs in this durable record; suppressing
   // it here (matching monthlyEquivalent's actual-spend-only semantics) used
   // to make it vanish from the report entirely the moment it got logged paid.
-  const activeRecurring = (data.recurring ?? []).filter((r) => toUSD(nominalMonthlyEquivalent(r, data.transactions ?? []), r.currency) > 0);
-  const recurringMonthlyTotal = activeRecurring.reduce((s, r) => s + toUSD(nominalMonthlyEquivalent(r, data.transactions ?? []), r.currency), 0);
+  const activeRecurring = (data.recurring ?? []).filter((r) => toUSD(nominalMonthlyEquivalent(r, data.transactions ?? [], data), r.currency) > 0);
+  const recurringMonthlyTotal = activeRecurring.reduce((s, r) => s + toUSD(nominalMonthlyEquivalent(r, data.transactions ?? [], data), r.currency), 0);
   // The recurring engine takes calendar days: the report's day, on this device.
   const reportToday = todayCalendarDay();
   const recurringRows = activeRecurring.map((r) => {
-    const target = nextConfirmTarget(r, data.transactions, reportToday);
+    const target = nextConfirmTarget(r, data.transactions, data, reportToday);
     const overdue = (target?.overdueCount ?? 0) > 0;
     const paidThisCycle = target ? isCycleConfirmed(r, target.dueDate, data.transactions) : false;
     const tag = overdue

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { allocateGoalCapacity, capacityByMonth, fastestGoalCompletion, type GoalCapacityInput, type RecurringCapacityInput } from "./goalFeasibility";
-import { capacityFreedFrom, type StoredRecurring, type StoredTransaction } from "./localData";
+import { DEFAULT_DATA, capacityFreedFrom, type StoredRecurring, type StoredTransaction } from "./localData";
 import { type CalendarDay, calendarDayOf, occurrenceDay } from "./calendarDay";
 
 // Session 4 (item 7): the recurring engine takes calendar days. These tests
@@ -173,8 +173,8 @@ describe("capacityByMonth — the step-change (the acceptance criterion, written
 
     // Both resolve through the same path the product uses; only the second
     // yields a freed-from date.
-    expect(capacityFreedFrom(indefinite, [], asDay(asOf))).toBeNull();
-    const cappedFreed = capacityFreedFrom(capped, [], asDay(asOf));
+    expect(capacityFreedFrom(indefinite, [], DEFAULT_DATA, asDay(asOf))).toBeNull();
+    const cappedFreed = capacityFreedFrom(capped, [], DEFAULT_DATA, asDay(asOf));
     expect(cappedFreed).not.toBeNull();
 
     const obligations: RecurringCapacityInput[] = [
@@ -241,7 +241,7 @@ describe("capacityByMonth — the step-change (the acceptance criterion, written
 
     // $1,500 of $6,750 confirmed -> $5,250 left = 7 payments, Oct 2026
     // through Apr 2027. April's $750 is owed, so the step is May.
-    const freed = capacityFreedFrom(uni, confirmed, asDay(today));
+    const freed = capacityFreedFrom(uni, confirmed, DEFAULT_DATA, asDay(today));
     expect(freed).not.toBeNull();
     expect(freed!.toISOString().slice(0, 10)).toBe("2027-05-01");
 

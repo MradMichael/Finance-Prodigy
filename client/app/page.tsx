@@ -563,7 +563,7 @@ export default function Home() {
     if (loggingRecurringRef.current.has(recurringId)) return; // already in flight
     const rec = financials.recurring.find((r) => r.id === recurringId);
     if (!rec) return;
-    const target = nextConfirmTarget(rec, financials.transactions, todayCalendarDay());
+    const target = nextConfirmTarget(rec, financials.transactions, financials, todayCalendarDay());
     if (!target) return; // nothing left to confirm
     const result = buildRecurringConfirmLog(rec, lbpRateOf(financials), target.dueDate, paidDate);
     loggingRecurringRef.current.add(recurringId);

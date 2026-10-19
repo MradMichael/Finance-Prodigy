@@ -70,7 +70,7 @@ describe("monthlyEquivalent", () => {
     expect(monthlyEquivalent(r, new Date(2026, 1, 15))).toBe(100); // Feb, unchanged
     // Premise: the cap genuinely has not been met, which is what makes the
     // assertion below right rather than merely different.
-    expect(recurringPaidSoFar(r, [])).toBe(0);
+    expect(recurringPaidSoFar(r, [], DEFAULT_DATA)).toBe(0);
     expect(monthlyEquivalent(r, new Date(2027, 0, 1))).toBe(100);
   });
 
@@ -99,14 +99,14 @@ describe("nominalMonthlyEquivalent", () => {
     const r = makeRecurring({ amount: 50, startDate: "2026-01-01", lastPaidCycle: "2026-07" });
     const asOf = new Date(2026, 6, 15);
     expect(monthlyEquivalent(r, asOf)).toBe(0); // suppressed, for spend/budget math
-    expect(nominalMonthlyEquivalent(r, [], asOf)).toBe(50); // NOT suppressed, for display
+    expect(nominalMonthlyEquivalent(r, [], DEFAULT_DATA, asOf)).toBe(50); // NOT suppressed, for display
   });
 
   it("is still 0 for a genuinely ended/not-yet-started item -- suppression is the only thing it ignores", () => {
     const r = makeRecurring({ startDate: "2026-06-01" });
-    expect(nominalMonthlyEquivalent(r, [], new Date(2026, 4, 15))).toBe(0); // before start
+    expect(nominalMonthlyEquivalent(r, [], DEFAULT_DATA, new Date(2026, 4, 15))).toBe(0); // before start
     const ended = makeRecurring({ endDate: "2026-06-30" });
-    expect(nominalMonthlyEquivalent(ended, [], new Date(2026, 6, 1))).toBe(0); // after end
+    expect(nominalMonthlyEquivalent(ended, [], DEFAULT_DATA, new Date(2026, 6, 1))).toBe(0); // after end
   });
 });
 
@@ -114,7 +114,7 @@ describe("recurringPaidSoFar", () => {
   it("is 0 without a totalAmount cap, regardless of any confirmed transactions", () => {
     const uncapped = makeRecurring({ id: "r1", totalAmount: null });
     const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-02-01", recurringId: "r1" };
-    expect(recurringPaidSoFar(uncapped, [tx])).toBe(0);
+    expect(recurringPaidSoFar(uncapped, [tx], DEFAULT_DATA)).toBe(0);
   });
 
   it("is 0 for a capped item with real pre-cutover history and nothing confirmed -- NO grandfathered credit, even with a confirmCutoverDate (2.4.31 fix)", () => {
@@ -124,44 +124,44 @@ describe("recurringPaidSoFar", () => {
     // row -- confirmed live: Uni's progress bar read "$1,500 paid" against
     // exactly one real $750 transaction before this fix.
     const r = makeRecurring({ id: "r1", amount: 750, totalAmount: 6750, startDate: "2026-01-01", confirmCutoverDate: "2026-04-01" });
-    expect(recurringPaidSoFar(r, [])).toBe(0);
+    expect(recurringPaidSoFar(r, [], DEFAULT_DATA)).toBe(0);
   });
 
   it("counts only real confirmed transactions, ignoring grandfathered pre-cutover cycles entirely", () => {
     const r = makeRecurring({ id: "r1", amount: 750, totalAmount: 6750, startDate: "2026-01-01", confirmCutoverDate: "2026-04-01" });
     const tx: StoredTransaction = { id: "t1", amount: 750, currency: "USD", bucket: "NEEDS", description: "Uni", date: "2026-04-01", recurringId: "r1" };
     // Not $2,250 (3 grandfathered) + $750 -- just the one real transaction.
-    expect(recurringPaidSoFar(r, [tx])).toBe(750);
+    expect(recurringPaidSoFar(r, [tx], DEFAULT_DATA)).toBe(750);
   });
 
   it("sums every confirmed transaction for this item", () => {
     const r = makeRecurring({ id: "r1", amount: 750, totalAmount: 6750, startDate: "2026-01-01" });
     const tx = (date: string): StoredTransaction => ({ id: `t-${date}`, amount: 750, currency: "USD", bucket: "NEEDS", description: "Uni", date, recurringId: "r1" });
-    expect(recurringPaidSoFar(r, [tx("2026-04-01"), tx("2026-05-01"), tx("2026-06-01")])).toBe(2250);
+    expect(recurringPaidSoFar(r, [tx("2026-04-01"), tx("2026-05-01"), tx("2026-06-01")], DEFAULT_DATA)).toBe(2250);
   });
 
   it("clamps at totalAmount even if confirmed transactions alone would exceed it", () => {
     const r = makeRecurring({ id: "r1", amount: 750, totalAmount: 1500, startDate: "2026-01-01" });
     const tx = (date: string): StoredTransaction => ({ id: `t-${date}`, amount: 750, currency: "USD", bucket: "NEEDS", description: "Uni", date, recurringId: "r1" });
-    expect(recurringPaidSoFar(r, [tx("2026-01-01"), tx("2026-02-01"), tx("2026-03-01")])).toBe(1500);
+    expect(recurringPaidSoFar(r, [tx("2026-01-01"), tx("2026-02-01"), tx("2026-03-01")], DEFAULT_DATA)).toBe(1500);
   });
 
   it("counts a confirmed transaction dated in the FUTURE relative to today -- paid-ahead money is genuinely paid and belongs against the cap (2.4.30 fix, unaffected by this change)", () => {
     const r = makeRecurring({ id: "r1", amount: 750, totalAmount: 6750, startDate: "2026-01-01" });
     const tx: StoredTransaction = { id: "t1", amount: 750, currency: "USD", bucket: "NEEDS", description: "Uni", date: "2026-09-01", recurringId: "r1" };
-    expect(recurringPaidSoFar(r, [tx])).toBe(750);
+    expect(recurringPaidSoFar(r, [tx], DEFAULT_DATA)).toBe(750);
   });
 
   it("ignores a transaction belonging to a different recurring item", () => {
     const r = makeRecurring({ id: "r1", amount: 750, totalAmount: 6750, startDate: "2026-01-01" });
     const tx: StoredTransaction = { id: "t1", amount: 750, currency: "USD", bucket: "NEEDS", description: "Other", date: "2026-04-01", recurringId: "r2" };
-    expect(recurringPaidSoFar(r, [tx])).toBe(0);
+    expect(recurringPaidSoFar(r, [tx], DEFAULT_DATA)).toBe(0);
   });
 
   it("Phase 2.6.3b: a soft-deleted confirming transaction no longer counts toward paid-so-far -- deleting it un-pays the cycle, no special-case code needed", () => {
     const r = makeRecurring({ id: "r1", amount: 750, totalAmount: 6750, startDate: "2026-01-01" });
     const tx: StoredTransaction = { id: "t1", amount: 750, currency: "USD", bucket: "NEEDS", description: "Uni", date: "2026-04-01", recurringId: "r1", deletedAt: "2026-08-20T00:00:00.000Z" };
-    expect(recurringPaidSoFar(r, [tx])).toBe(0);
+    expect(recurringPaidSoFar(r, [tx], DEFAULT_DATA)).toBe(0);
   });
 });
 
@@ -441,13 +441,13 @@ describe("dueCycles", () => {
 describe("remainingInstallments", () => {
   it("neither endDate nor totalAmount set: null -- indefinite items have nothing to report", () => {
     const r = makeRecurring({ endDate: null, totalAmount: null });
-    expect(remainingInstallments(r, [], asDay(utcMidnight(2026, 2, 1)))).toBeNull();
+    expect(remainingInstallments(r, [], DEFAULT_DATA, asDay(utcMidnight(2026, 2, 1)))).toBeNull();
   });
 
   it("endDate-only: count and endsOn come straight from dueCycles, no transactions needed", () => {
     const r = makeRecurring({ frequency: "monthly", startDate: "2026-01-01", endDate: "2026-06-15" });
     // asOf March 1 -> due cycles Mar 1, Apr 1, May 1, Jun 1 (Jun 1 <= Jun 15, next would be Jul 1 > Jun 15)
-    const result = remainingInstallments(r, [], asDay(utcMidnight(2026, 2, 1)));
+    const result = remainingInstallments(r, [], DEFAULT_DATA, asDay(utcMidnight(2026, 2, 1)));
     expect(result).not.toBeNull();
     expect(result!.count).toBe(4);
     expect(result!.endsOn.toISOString().slice(0, 10)).toBe("2026-06-01");
@@ -455,13 +455,13 @@ describe("remainingInstallments", () => {
 
   it("endDate-only, already past the end date: null, same as an exhausted item", () => {
     const r = makeRecurring({ frequency: "monthly", startDate: "2026-01-01", endDate: "2026-03-15" });
-    expect(remainingInstallments(r, [], asDay(utcMidnight(2026, 5, 1)))).toBeNull(); // Jun 1, well past Mar 15
+    expect(remainingInstallments(r, [], DEFAULT_DATA, asDay(utcMidnight(2026, 5, 1)))).toBeNull(); // Jun 1, well past Mar 15
   });
 
   it("totalAmount-only, nothing paid yet: remaining count derived from totalAmount / amount, not a calendar-position guess", () => {
     // $750/mo, $6750 cap -> 9 payments total, nothing confirmed yet.
     const r = makeRecurring({ amount: 750, frequency: "monthly", startDate: "2026-01-01", totalAmount: 6750, endDate: null });
-    const result = remainingInstallments(r, [], asDay(utcMidnight(2026, 0, 1)));
+    const result = remainingInstallments(r, [], DEFAULT_DATA, asDay(utcMidnight(2026, 0, 1)));
     expect(result).not.toBeNull();
     expect(result!.count).toBe(9);
   });
@@ -474,7 +474,7 @@ describe("remainingInstallments", () => {
     const r = makeRecurring({ id: "uni", amount: 750, frequency: "monthly", startDate: "2026-01-01", totalAmount: 6750, endDate: null });
     const tx = (date: string): StoredTransaction => ({ id: `t-${date}`, amount: 750, currency: "USD", bucket: "NEEDS", description: "Uni", date, recurringId: "uni" });
     const transactions = [tx("2026-01-01"), tx("2026-02-01")];
-    const result = remainingInstallments(r, transactions, asDay(utcMidnight(2026, 7, 1))); // Aug 1 -- 7 real months elapsed, only 2 confirmed
+    const result = remainingInstallments(r, transactions, DEFAULT_DATA, asDay(utcMidnight(2026, 7, 1))); // Aug 1 -- 7 real months elapsed, only 2 confirmed
     expect(result).not.toBeNull();
     expect(result!.count).toBe(7); // (6750 - 1500) / 750, not 9 - 7-elapsed = 2
   });
@@ -482,7 +482,7 @@ describe("remainingInstallments", () => {
   it("totalAmount-only, fully paid off: null, same as any other exhausted item", () => {
     const r = makeRecurring({ id: "uni", amount: 750, frequency: "monthly", startDate: "2026-01-01", totalAmount: 1500, endDate: null });
     const tx = (date: string): StoredTransaction => ({ id: `t-${date}`, amount: 750, currency: "USD", bucket: "NEEDS", description: "Uni", date, recurringId: "uni" });
-    expect(remainingInstallments(r, [tx("2026-01-01"), tx("2026-02-01")], asDay(utcMidnight(2026, 2, 1)))).toBeNull();
+    expect(remainingInstallments(r, [tx("2026-01-01"), tx("2026-02-01")], DEFAULT_DATA, asDay(utcMidnight(2026, 2, 1)))).toBeNull();
   });
 
   it("both endDate and totalAmount set, totalAmount is the binding constraint: reports the earlier/smaller of the two", () => {
@@ -491,7 +491,7 @@ describe("remainingInstallments", () => {
     // (nextOccurrence stops at cycle 4 regardless of endDate) and via the
     // money-based count, so both paths should agree at exactly 4.
     const r = makeRecurring({ amount: 500, frequency: "monthly", startDate: "2026-01-01", totalAmount: 2000, endDate: "2028-01-01" });
-    const result = remainingInstallments(r, [], asDay(utcMidnight(2026, 0, 1)));
+    const result = remainingInstallments(r, [], DEFAULT_DATA, asDay(utcMidnight(2026, 0, 1)));
     expect(result).not.toBeNull();
     expect(result!.count).toBe(4);
     expect(result!.endsOn.toISOString().slice(0, 10)).toBe("2026-04-01");
@@ -501,7 +501,7 @@ describe("remainingInstallments", () => {
     // $100/mo, $10,000 cap (100 payments -- far more than will ever be
     // reached) but endDate is only 3 cycles out -- endDate must win.
     const r = makeRecurring({ amount: 100, frequency: "monthly", startDate: "2026-01-01", totalAmount: 10_000, endDate: "2026-03-15" });
-    const result = remainingInstallments(r, [], asDay(utcMidnight(2026, 0, 1)));
+    const result = remainingInstallments(r, [], DEFAULT_DATA, asDay(utcMidnight(2026, 0, 1)));
     expect(result).not.toBeNull();
     expect(result!.count).toBe(3); // Jan 1, Feb 1, Mar 1 -- not 100
     expect(result!.endsOn.toISOString().slice(0, 10)).toBe("2026-03-01");
@@ -531,12 +531,12 @@ describe("remainingInstallments", () => {
 describe("capacityFreedFrom", () => {
   it("neither bound set: null -- an indefinite obligation never frees capacity", () => {
     const r = makeRecurring({ endDate: null, totalAmount: null });
-    expect(capacityFreedFrom(r, [], asDay(utcMidnight(2026, 2, 1)))).toBeNull();
+    expect(capacityFreedFrom(r, [], DEFAULT_DATA, asDay(utcMidnight(2026, 2, 1)))).toBeNull();
   });
 
   it("endDate-only: passes r.endDate through unchanged, preserving capacityByMonth's existing contract", () => {
     const r = makeRecurring({ frequency: "monthly", startDate: "2026-01-01", endDate: "2026-06-15" });
-    const freed = capacityFreedFrom(r, [], asDay(utcMidnight(2026, 2, 1)));
+    const freed = capacityFreedFrom(r, [], DEFAULT_DATA, asDay(utcMidnight(2026, 2, 1)));
     expect(freed).not.toBeNull();
     expect(freed!.toISOString().slice(0, 10)).toBe("2026-06-15");
   });
@@ -546,7 +546,7 @@ describe("capacityFreedFrom", () => {
     // cycle is 2026-09-01 and capacity is free from 2026-10-01 -- NOT from
     // September, in which $750 is still owed.
     const r = makeRecurring({ id: "uni", amount: 750, frequency: "monthly", startDate: "2026-01-01", totalAmount: 6750, endDate: null });
-    const freed = capacityFreedFrom(r, [], asDay(utcMidnight(2026, 0, 1)));
+    const freed = capacityFreedFrom(r, [], DEFAULT_DATA, asDay(utcMidnight(2026, 0, 1)));
     expect(freed).not.toBeNull();
     expect(freed!.toISOString().slice(0, 10)).toBe("2026-10-01");
   });
@@ -560,14 +560,14 @@ describe("capacityFreedFrom", () => {
     // remain and freed the capacity most of a year too early.
     const r = makeRecurring({ id: "uni", amount: 750, frequency: "monthly", startDate: "2026-01-01", totalAmount: 6750, endDate: null });
     const tx = (date: string): StoredTransaction => ({ id: `t-${date}`, amount: 750, currency: "USD", bucket: "NEEDS", description: "Uni", date, recurringId: "uni" });
-    const freed = capacityFreedFrom(r, [tx("2026-01-01"), tx("2026-02-01")], asDay(utcMidnight(2026, 7, 1)));
+    const freed = capacityFreedFrom(r, [tx("2026-01-01"), tx("2026-02-01")], DEFAULT_DATA, asDay(utcMidnight(2026, 7, 1)));
     expect(freed).not.toBeNull();
     expect(freed!.toISOString().slice(0, 10)).toBe("2027-03-01");
   });
 
   it("both bounds set, endDate binding: endDate still wins and is passed through unchanged", () => {
     const r = makeRecurring({ amount: 100, frequency: "monthly", startDate: "2026-01-01", totalAmount: 10_000, endDate: "2026-03-15" });
-    const freed = capacityFreedFrom(r, [], asDay(utcMidnight(2026, 0, 1)));
+    const freed = capacityFreedFrom(r, [], DEFAULT_DATA, asDay(utcMidnight(2026, 0, 1)));
     expect(freed!.toISOString().slice(0, 10)).toBe("2026-03-15");
   });
 
@@ -576,7 +576,7 @@ describe("capacityFreedFrom", () => {
     // future step here would promise capacity that is already in hand.
     const r = makeRecurring({ id: "uni", amount: 750, frequency: "monthly", startDate: "2026-01-01", totalAmount: 1500, endDate: null });
     const tx = (date: string): StoredTransaction => ({ id: `t-${date}`, amount: 750, currency: "USD", bucket: "NEEDS", description: "Uni", date, recurringId: "uni" });
-    expect(capacityFreedFrom(r, [tx("2026-01-01"), tx("2026-02-01")], asDay(utcMidnight(2026, 2, 1)))).toBeNull();
+    expect(capacityFreedFrom(r, [tx("2026-01-01"), tx("2026-02-01")], DEFAULT_DATA, asDay(utcMidnight(2026, 2, 1)))).toBeNull();
   });
 
   it("a weekly totalAmount item frees from the next WEEKLY cycle, not the next month -- the offset is one cycle, not one month", () => {
@@ -584,7 +584,7 @@ describe("capacityFreedFrom", () => {
     // so capacity frees from Jan 29 -- proving the +1 offset follows the
     // item's own frequency rather than assuming monthly.
     const r = makeRecurring({ amount: 50, frequency: "weekly", startDate: "2026-01-01", totalAmount: 200, endDate: null });
-    const freed = capacityFreedFrom(r, [], asDay(utcMidnight(2026, 0, 1)));
+    const freed = capacityFreedFrom(r, [], DEFAULT_DATA, asDay(utcMidnight(2026, 0, 1)));
     expect(freed!.toISOString().slice(0, 10)).toBe("2026-01-29");
   });
 });
@@ -717,7 +717,7 @@ describe("pendingBackfillCycles", () => {
 
   it("integration: backfilling a listed cycle via buildRecurringConfirmLog removes it from the pending list and makes recurringPaidSoFar count it -- the full 2.4.31 fix, end to end", () => {
     const r = makeRecurring({ id: "r1", amount: 750, totalAmount: 6750, startDate: "2026-01-01", confirmCutoverDate: "2026-04-01" });
-    expect(recurringPaidSoFar(r, [])).toBe(0);
+    expect(recurringPaidSoFar(r, [], DEFAULT_DATA)).toBe(0);
     const pending = pendingBackfillCycles(r, []);
     expect(pending.length).toBe(3);
     const { tx } = buildRecurringConfirmLog(r, 89500, pending[0]); // backfill Jan 1
@@ -725,7 +725,7 @@ describe("pendingBackfillCycles", () => {
     expect(tx.cycleDate).toBe("2026-01-01");
     const afterBackfill = [tx];
     expect(pendingBackfillCycles(r, afterBackfill).length).toBe(2); // Jan no longer pending
-    expect(recurringPaidSoFar(r, afterBackfill)).toBe(750); // and now counts toward the cap
+    expect(recurringPaidSoFar(r, afterBackfill, DEFAULT_DATA)).toBe(750); // and now counts toward the cap
   });
 });
 
@@ -863,7 +863,7 @@ describe("historizedRecurringContribution", () => {
 describe("nextConfirmTarget", () => {
   it("before the item's own startDate, returns the start date itself as the next confirmable cycle -- confirmable early, same as today's behavior, not null", () => {
     const r = makeRecurring({ id: "r1", amount: 100, startDate: "2026-06-01" });
-    const result = nextConfirmTarget(r, [], asDay(utcMidnight(2026, 4, 1))); // May 1, before the Jun 1 start
+    const result = nextConfirmTarget(r, [], DEFAULT_DATA, asDay(utcMidnight(2026, 4, 1))); // May 1, before the Jun 1 start
     expect(result?.dueDate.toISOString().slice(0, 10)).toBe("2026-06-01");
     expect(result?.overdueCount).toBe(0);
   });
@@ -871,14 +871,14 @@ describe("nextConfirmTarget", () => {
   it("a confirmed current cycle with no backlog returns the NEXT cycle, not the one just confirmed", () => {
     const r = makeRecurring({ id: "r1", amount: 100, startDate: "2026-01-01" });
     const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-01-01", recurringId: "r1" };
-    const result = nextConfirmTarget(r, [tx], asDay(utcMidnight(2026, 0, 20))); // Jan 20 -- Jan 1 cycle already confirmed
+    const result = nextConfirmTarget(r, [tx], DEFAULT_DATA, asDay(utcMidnight(2026, 0, 20))); // Jan 20 -- Jan 1 cycle already confirmed
     expect(result?.dueDate.toISOString().slice(0, 10)).toBe("2026-02-01");
     expect(result?.overdueCount).toBe(0);
   });
 
   it("a 3-cycle backlog returns the OLDEST outstanding cycle first (FIFO), with the real count", () => {
     const r = makeRecurring({ id: "r1", amount: 100, startDate: "2026-01-01" }); // no cutover -- overdue from day one
-    const result = nextConfirmTarget(r, [], asDay(utcMidnight(2026, 2, 15))); // Mar 15 -- Jan 1/Feb 1/Mar 1 all past due, none confirmed
+    const result = nextConfirmTarget(r, [], DEFAULT_DATA, asDay(utcMidnight(2026, 2, 15))); // Mar 15 -- Jan 1/Feb 1/Mar 1 all past due, none confirmed
     expect(result?.dueDate.toISOString().slice(0, 10)).toBe("2026-01-01");
     expect(result?.overdueCount).toBe(3);
   });
@@ -886,7 +886,7 @@ describe("nextConfirmTarget", () => {
   it("confirming the oldest outstanding cycle decrements the count and advances to the next-oldest", () => {
     const r = makeRecurring({ id: "r1", amount: 100, startDate: "2026-01-01" });
     const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-01-01", recurringId: "r1" };
-    const result = nextConfirmTarget(r, [tx], asDay(utcMidnight(2026, 2, 15))); // same asOf as the 3-cycle-backlog test, Jan 1 now confirmed
+    const result = nextConfirmTarget(r, [tx], DEFAULT_DATA, asDay(utcMidnight(2026, 2, 15))); // same asOf as the 3-cycle-backlog test, Jan 1 now confirmed
     expect(result?.dueDate.toISOString().slice(0, 10)).toBe("2026-02-01");
     expect(result?.overdueCount).toBe(2);
   });
@@ -894,7 +894,7 @@ describe("nextConfirmTarget", () => {
   it("null once totalAmount is fully accounted for -- even though calendar time would otherwise keep producing cycles", () => {
     const r = makeRecurring({ id: "r1", amount: 100, totalAmount: 200, startDate: "2026-01-01" });
     const paid = ["2026-01-01", "2026-02-01"].map((date): StoredTransaction => ({ id: `t-${date}`, amount: 100, currency: "USD", bucket: "NEEDS", description: "Rent", date, recurringId: "r1" }));
-    expect(nextConfirmTarget(r, paid, asDay(utcMidnight(2026, 2, 15)))).toBeNull(); // Mar 15 -- fully paid off, nothing left to confirm
+    expect(nextConfirmTarget(r, paid, DEFAULT_DATA, asDay(utcMidnight(2026, 2, 15)))).toBeNull(); // Mar 15 -- fully paid off, nothing left to confirm
   });
 
   // TIME-06 (session 2 item G; fixed in session 3): west of UTC the walk
@@ -904,7 +904,7 @@ describe("nextConfirmTarget", () => {
   it("with the first cycle confirmed, every later overdue cycle still counts", () => {
     const r = makeRecurring({ id: "r1", amount: 100, startDate: "2026-01-01" });
     const paidJan: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-01-01", recurringId: "r1" };
-    const target = nextConfirmTarget(r, [paidJan], asDay(utcMidnight(2026, 5, 15))); // 15 Jun
+    const target = nextConfirmTarget(r, [paidJan], DEFAULT_DATA, asDay(utcMidnight(2026, 5, 15))); // 15 Jun
     expect(target?.dueDate.toISOString().slice(0, 10)).toBe("2026-02-01");
     expect(target?.overdueCount).toBe(5); // Feb to Jun
   });
@@ -912,19 +912,19 @@ describe("nextConfirmTarget", () => {
   it("null once the item has genuinely ended -- endDate passed, and everything that was ever due is already confirmed", () => {
     const r = makeRecurring({ id: "r1", amount: 100, startDate: "2026-01-01", endDate: "2026-01-31" }); // exactly one cycle, ever
     const tx: StoredTransaction = { id: "t1", amount: 100, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-01-01", recurringId: "r1" };
-    expect(nextConfirmTarget(r, [tx], asDay(utcMidnight(2026, 2, 1)))).toBeNull(); // Mar 1, well past endDate
+    expect(nextConfirmTarget(r, [tx], DEFAULT_DATA, asDay(utcMidnight(2026, 2, 1)))).toBeNull(); // Mar 1, well past endDate
   });
 
   it("BUG regression (2.4.30): confirming a cycle EARLY -- before its own due date -- must not be re-offered on the next call", () => {
     const r = makeRecurring({ id: "r1", amount: 750, startDate: "2026-02-01" }); // no cutover
     const asOf = utcMidnight(2026, 0, 25); // Jan 25 -- before the Feb 1 start/first cycle is even due
-    const first = nextConfirmTarget(r, [], asDay(asOf));
+    const first = nextConfirmTarget(r, [], DEFAULT_DATA, asDay(asOf));
     expect(first?.dueDate.toISOString().slice(0, 10)).toBe("2026-02-01"); // confirmable early, as designed
     // Confirm it early -- a transaction dated to the cycle (Feb 1); asOf hasn't moved, still Jan 25,
     // so this cycle is nowhere near "overdue" -- exactly the blind spot that produced 3 duplicate
     // transactions in live use (the owner clicking Confirm on Uni in Renewing Soon).
     const tx: StoredTransaction = { id: "t1", amount: 750, currency: "USD", bucket: "NEEDS", description: "Uni", date: "2026-02-01", recurringId: "r1" };
-    const second = nextConfirmTarget(r, [tx], asDay(asOf));
+    const second = nextConfirmTarget(r, [tx], DEFAULT_DATA, asDay(asOf));
     // Must advance to the NEXT cycle (Mar 1), not re-offer the one just confirmed.
     expect(second?.dueDate.toISOString().slice(0, 10)).toBe("2026-03-01");
   });
@@ -934,7 +934,7 @@ describe("nextConfirmTarget", () => {
     const asOf = utcMidnight(2026, 0, 25); // Jan 25
     const tx1: StoredTransaction = { id: "t1", amount: 750, currency: "USD", bucket: "NEEDS", description: "Uni", date: "2026-02-01", recurringId: "r1" };
     const tx2: StoredTransaction = { id: "t2", amount: 750, currency: "USD", bucket: "NEEDS", description: "Uni", date: "2026-03-01", recurringId: "r1" };
-    const result = nextConfirmTarget(r, [tx1, tx2], asDay(asOf));
+    const result = nextConfirmTarget(r, [tx1, tx2], DEFAULT_DATA, asDay(asOf));
     expect(result?.dueDate.toISOString().slice(0, 10)).toBe("2026-04-01");
   });
 });

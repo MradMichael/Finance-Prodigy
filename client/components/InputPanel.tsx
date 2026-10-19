@@ -1410,17 +1410,17 @@ export default function InputPanel({ financials, dashData, onChange, session, on
             // suppresses a paid cycle to avoid double-counting real spend.
             // CUR-01: each item's figure is in its OWN currency, so convert
             // before adding -- the same toUSD RecurringScreen applies.
-            const totalMonthly = recs.reduce((s, r) => s + toUSD(nominalMonthlyEquivalent(r, financials.transactions, now), r.currency), 0);
+            const totalMonthly = recs.reduce((s, r) => s + toUSD(nominalMonthlyEquivalent(r, financials.transactions, financials, now), r.currency), 0);
             return (
               <>
                 {recs.length > 0 && (
                   <div className="space-y-2 mb-1">
                     {recs.map((r) => {
-                      const mo     = nominalMonthlyEquivalent(r, financials.transactions, now);
+                      const mo     = nominalMonthlyEquivalent(r, financials.transactions, financials, now);
                       const b      = BUCKETS.find((b) => b.value === r.bucket)!;
                       const cur    = r.currency ?? "USD";
                       const sym    = cur === "LBP" ? "L£" : "$";
-                      const target = nextConfirmTarget(r, financials.transactions, today);
+                      const target = nextConfirmTarget(r, financials.transactions, financials, today);
                       // 2.4.112: "ended" is now asked of BOTH bounds, because
                       // isRecurringActive no longer guesses exhaustion from
                       // elapsed time. A capped item is over when the money is
@@ -1431,13 +1431,13 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                       // direction: an item paid off EARLY kept reading as live
                       // until the calendar caught up.
                       const ended  = !isRecurringActive(r, now)
-                        || (r.totalAmount != null && remainingInstallments(r, financials.transactions, today) === null);
+                        || (r.totalAmount != null && remainingInstallments(r, financials.transactions, financials, today) === null);
                       const overdue = (target?.overdueCount ?? 0) > 0;
                       // Covers both "confirmed on time" and "confirmed early" (paid ahead of its due date) -- either way still shown as paid.
                       const paidThisCycle = target ? isCycleConfirmed(r, target.dueDate, financials.transactions) : false;
-                      const paid   = r.totalAmount ? recurringPaidSoFar(r, financials.transactions) : null;
+                      const paid   = r.totalAmount ? recurringPaidSoFar(r, financials.transactions, financials) : null;
                       const pct    = paid != null && r.totalAmount ? Math.min(100, (paid / r.totalAmount) * 100) : null;
-                      const remaining = !ended ? remainingInstallments(r, financials.transactions, today) : null;
+                      const remaining = !ended ? remainingInstallments(r, financials.transactions, financials, today) : null;
                       const isAddingExtra = extraRecId === r.id;
                       const isConfirming  = confirmingRecId === r.id;
                       const justConfirmed = justConfirmedIds?.has(r.id);

@@ -1048,7 +1048,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   const todayMidnight = dayStart(today);
   const upcomingRenewals: DashboardPayload["upcomingRenewals"] = data.recurring
     .map((r) => {
-      const target = nextConfirmTarget(r, data.transactions, today);
+      const target = nextConfirmTarget(r, data.transactions, data, today);
       if (!target) return null; // nothing left to confirm -- exhausted or not yet started
       const dueInDays = Math.round((target.dueDate.getTime() - todayMidnight.getTime()) / (24 * 3600 * 1000));
       // Overdue never ages out of visibility -- only a plain (not yet due)

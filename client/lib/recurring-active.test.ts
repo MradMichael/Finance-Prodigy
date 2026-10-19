@@ -19,7 +19,7 @@ import { type CalendarDay, calendarDayOf, occurrenceDay } from "./calendarDay";
 // in UTC, Asia/Beirut and America/Los_Angeles before the change.
 const asDay = (d: Date): CalendarDay =>
   d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0 && d.getUTCMilliseconds() === 0 ? occurrenceDay(d) : calendarDayOf(d);
-import {
+import { DEFAULT_DATA,
   isRecurringActive, nominalMonthlyEquivalent, monthlyEquivalent,
   remainingInstallments, recurringPaidSoFar, nextConfirmTarget,
   type StoredRecurring, type StoredTransaction,
@@ -48,15 +48,15 @@ describe("the 2027-05-02 case, on the owner's real item shape", () => {
   it("an item with NOTHING confirmed is still active after the old flip date", () => {
     // Premise: the money genuinely has not been paid, so "active" is the
     // correct answer and not merely a changed one.
-    expect(recurringPaidSoFar(UNI, [])).toBe(0);
-    expect(remainingInstallments(UNI, [], asDay(AFTER_FLIP))).not.toBeNull();
+    expect(recurringPaidSoFar(UNI, [], DEFAULT_DATA)).toBe(0);
+    expect(remainingInstallments(UNI, [], DEFAULT_DATA, asDay(AFTER_FLIP))).not.toBeNull();
     expect(isRecurringActive(UNI, AFTER_FLIP)).toBe(true);
   });
 
   it("and it still reports a cost, instead of reading $0 while money is owed", () => {
     // WAS $0 -- the single most visible consequence, reaching RecurringScreen's
     // totals, InputPanel's list and printReport's PDF table.
-    expect(nominalMonthlyEquivalent(UNI, [], AFTER_FLIP)).toBe(750);
+    expect(nominalMonthlyEquivalent(UNI, [], DEFAULT_DATA, AFTER_FLIP)).toBe(750);
     expect(monthlyEquivalent(UNI, AFTER_FLIP)).toBe(750);
   });
 
@@ -65,20 +65,20 @@ describe("the 2027-05-02 case, on the owner's real item shape", () => {
     // payment for an item every other screen had written off at $0, so the
     // assertion that matters is agreement between them.
     const six = confirmed(6);
-    const target = nextConfirmTarget(UNI, six, asDay(AFTER_FLIP));
+    const target = nextConfirmTarget(UNI, six, DEFAULT_DATA, asDay(AFTER_FLIP));
     // Premise: the confirm flow really is still chasing this item.
     expect(target).not.toBeNull();
     expect(target!.overdueCount).toBeGreaterThan(0);
     // ...and so the rest of the app must not be calling it finished.
     expect(isRecurringActive(UNI, AFTER_FLIP)).toBe(true);
-    expect(nominalMonthlyEquivalent(UNI, six, AFTER_FLIP)).toBe(750);
-    expect(recurringPaidSoFar(UNI, six)).toBe(4500); // $2,250 still owed
+    expect(nominalMonthlyEquivalent(UNI, six, DEFAULT_DATA, AFTER_FLIP)).toBe(750);
+    expect(recurringPaidSoFar(UNI, six, DEFAULT_DATA)).toBe(4500); // $2,250 still owed
   });
 
   it("it was ALSO declared ended before its own last cycle came due", () => {
     // A second consequence of the same clause, independent of confirmation:
     // the flip (2027-05-02) preceded the ninth outstanding installment.
-    const remaining = remainingInstallments(UNI, [], asDay(at("2026-09-15")));
+    const remaining = remainingInstallments(UNI, [], DEFAULT_DATA, asDay(at("2026-09-15")));
     expect(remaining!.endsOn.toISOString().slice(0, 10)).toBe("2027-06-01");
     expect(isRecurringActive(UNI, at("2027-05-10"))).toBe(true);
   });
@@ -88,8 +88,8 @@ describe("exhaustion is still answered — by the function that actually knows",
   it("a fully paid item has no installments remaining, though it stays calendar-active", () => {
     const all = confirmed(9);
     // Premise: the cap really is met.
-    expect(recurringPaidSoFar(UNI, all)).toBe(6750);
-    expect(remainingInstallments(UNI, all, asDay(at("2027-05-10")))).toBeNull();
+    expect(recurringPaidSoFar(UNI, all, DEFAULT_DATA)).toBe(6750);
+    expect(remainingInstallments(UNI, all, DEFAULT_DATA, asDay(at("2027-05-10")))).toBeNull();
     // isRecurringActive alone no longer knows this, and should not: it is a
     // calendar question now. InputPanel's "Ended" badge combines the two.
     expect(isRecurringActive(UNI, at("2027-05-10"))).toBe(true);
@@ -100,8 +100,8 @@ describe("exhaustion is still answered — by the function that actually knows",
     // The old clause would have kept this reading live until 2027-05-02.
     const all = confirmed(9);
     const early = at("2027-01-15");
-    expect(remainingInstallments(UNI, all, asDay(early))).toBeNull();
-    expect(nextConfirmTarget(UNI, all, asDay(early))).toBeNull();
+    expect(remainingInstallments(UNI, all, DEFAULT_DATA, asDay(early))).toBeNull();
+    expect(nextConfirmTarget(UNI, all, DEFAULT_DATA, asDay(early))).toBeNull();
   });
 });
 
@@ -119,23 +119,23 @@ describe("a fully paid item costs $0 — closed, and it was wrong in BOTH direct
   it("paid off AFTER the old flip date — the case the removal exposed", () => {
     const all = confirmed(9);
     // Premise: genuinely finished.
-    expect(recurringPaidSoFar(UNI, all)).toBe(6750);
-    expect(remainingInstallments(UNI, all, asDay(at("2027-05-10")))).toBeNull();
-    expect(nominalMonthlyEquivalent(UNI, all, at("2027-05-10"))).toBe(0);
+    expect(recurringPaidSoFar(UNI, all, DEFAULT_DATA)).toBe(6750);
+    expect(remainingInstallments(UNI, all, DEFAULT_DATA, asDay(at("2027-05-10")))).toBeNull();
+    expect(nominalMonthlyEquivalent(UNI, all, DEFAULT_DATA, at("2027-05-10"))).toBe(0);
   });
 
   it("paid off EARLY — the half that was always wrong and was never reported", () => {
     const all = confirmed(9);
     // Measured $750 both before the clause was removed and after, i.e. the
     // elapsed-time clause never helped here at all.
-    expect(remainingInstallments(UNI, all, asDay(at("2027-01-15")))).toBeNull();
-    expect(nominalMonthlyEquivalent(UNI, all, at("2027-01-15"))).toBe(0);
+    expect(remainingInstallments(UNI, all, DEFAULT_DATA, asDay(at("2027-01-15")))).toBeNull();
+    expect(nominalMonthlyEquivalent(UNI, all, DEFAULT_DATA, at("2027-01-15"))).toBe(0);
   });
 
   it("an item still owing money is NOT zeroed — the pair, so the above isn't 'always 0'", () => {
     const six = confirmed(6);
-    expect(recurringPaidSoFar(UNI, six)).toBe(4500);
-    expect(nominalMonthlyEquivalent(UNI, six, at("2027-05-10"))).toBe(750);
+    expect(recurringPaidSoFar(UNI, six, DEFAULT_DATA)).toBe(4500);
+    expect(nominalMonthlyEquivalent(UNI, six, DEFAULT_DATA, at("2027-05-10"))).toBe(750);
   });
 });
 
@@ -144,18 +144,18 @@ describe("the neighbouring clauses are untouched", () => {
     const withEnd = { ...UNI, endDate: "2026-12-01" } as StoredRecurring;
     expect(isRecurringActive(withEnd, at("2026-11-01"))).toBe(true);
     expect(isRecurringActive(withEnd, at("2027-01-01"))).toBe(false);
-    expect(nominalMonthlyEquivalent(withEnd, [], at("2027-01-01"))).toBe(0);
+    expect(nominalMonthlyEquivalent(withEnd, [], DEFAULT_DATA, at("2027-01-01"))).toBe(0);
   });
 
   it("startDate still gates an item that has not begun", () => {
     expect(isRecurringActive(UNI, at("2026-07-01"))).toBe(false);
-    expect(nominalMonthlyEquivalent(UNI, [], at("2026-07-01"))).toBe(0);
+    expect(nominalMonthlyEquivalent(UNI, [], DEFAULT_DATA, at("2026-07-01"))).toBe(0);
   });
 
   it("an item with no totalAmount is unaffected in every direction — the control", () => {
     const uncapped = { ...UNI, totalAmount: null } as StoredRecurring;
     // Never touched the removed clause, so nothing here can have moved.
     expect(isRecurringActive(uncapped, at("2027-08-01"))).toBe(true);
-    expect(nominalMonthlyEquivalent(uncapped, [], at("2027-08-01"))).toBe(750);
+    expect(nominalMonthlyEquivalent(uncapped, [], DEFAULT_DATA, at("2027-08-01"))).toBe(750);
   });
 });

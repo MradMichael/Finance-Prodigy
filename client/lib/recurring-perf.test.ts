@@ -37,7 +37,7 @@
 // constant 1194-cycle term is gone. Only the closed form (Fix 2) flattens
 // age dependence, and C at 1.07x is what "flat" looks like.
 import { describe, it, expect } from "vitest";
-import { capacityFreedFrom, nextOccurrence, nominalMonthlyEquivalent, recurringPaidSoFar, type StoredRecurring, type StoredTransaction } from "./localData";
+import { DEFAULT_DATA, capacityFreedFrom, nextOccurrence, nominalMonthlyEquivalent, recurringPaidSoFar, type StoredRecurring, type StoredTransaction } from "./localData";
 import { type CalendarDay, calendarDayOf, occurrenceDay } from "./calendarDay";
 
 // Session 4 (item 7): the recurring engine takes calendar days. These tests
@@ -154,12 +154,12 @@ describe("A. the walk must not build cycles it discards (cause 1: the 100-year h
     const bounded   = item("monthly", 2026, { endDate: "2027-05-01" });
     // Premise, and the whole force of this test: the answers are the same,
     // so every extra cycle the unbounded walk builds is discarded.
-    const a = capacityFreedFrom(unbounded, [], asDay(NOW));
-    const b = capacityFreedFrom(bounded, [], asDay(NOW));
+    const a = capacityFreedFrom(unbounded, [], DEFAULT_DATA, asDay(NOW));
+    const b = capacityFreedFrom(bounded, [], DEFAULT_DATA, asDay(NOW));
     expect(a).toBeInstanceOf(Date);
     expect(a!.toISOString()).toBe(b!.toISOString());
 
-    const tUnbounded = median(() => capacityFreedFrom(unbounded, [], asDay(NOW)), { batch: 50 });
+    const tUnbounded = median(() => capacityFreedFrom(unbounded, [], DEFAULT_DATA, asDay(NOW)), { batch: 50 });
     expect(tUnbounded).toBeLessThan(2);
   });
 });
@@ -224,10 +224,10 @@ describe("C. cost must not grow with an item's age (cause 2, from the other side
     const fresh = item("monthly", 2026);
     const aged  = item("monthly", 1950);
     // Premise: both did real, measurable work.
-    expect(median(() => capacityFreedFrom(fresh, [], asDay(NOW)), { batch: 4, samples: 5 })).toBeGreaterThan(0);
+    expect(median(() => capacityFreedFrom(fresh, [], DEFAULT_DATA, asDay(NOW)), { batch: 4, samples: 5 })).toBeGreaterThan(0);
     // PAIRED since 2.4.151 -- same shape as B (a ratio of two separately
     // timed calls), so the same fix. See pairedRatio.
-    const ratio = pairedRatio(() => capacityFreedFrom(aged, [], asDay(NOW)), () => capacityFreedFrom(fresh, [], asDay(NOW)), { batch: 4, samples: 5 });
+    const ratio = pairedRatio(() => capacityFreedFrom(aged, [], DEFAULT_DATA, asDay(NOW)), () => capacityFreedFrom(fresh, [], DEFAULT_DATA, asDay(NOW)), { batch: 4, samples: 5 });
     expect(ratio).toBeLessThan(2);
   });
 });
@@ -243,7 +243,7 @@ describe("D. absolute backstop", () => {
   // change that slows everything equally, and a tight backstop is a flaky
   // one.
   it("capacityFreedFrom on a 20-year-old monthly item completes in under 50ms (WAS ~516ms)", () => {
-    const aged = median(() => capacityFreedFrom(item("monthly", 2006), [], asDay(NOW)), { samples: 5 });
+    const aged = median(() => capacityFreedFrom(item("monthly", 2006), [], DEFAULT_DATA, asDay(NOW)), { samples: 5 });
     expect(aged).toBeLessThan(50);
   });
 });
@@ -259,10 +259,10 @@ describe("premise: the shape under test is the one the owner actually has", () =
     expect(capped.endDate).toBeNull();
     // capacityFreedFrom returns null immediately when there is no cap to
     // resolve -- the control for "the expensive path was not entered".
-    expect(capacityFreedFrom(item("monthly", 2006, { totalAmount: null }), [], asDay(NOW))).toBeNull();
+    expect(capacityFreedFrom(item("monthly", 2006, { totalAmount: null }), [], DEFAULT_DATA, asDay(NOW))).toBeNull();
     // And the capped one really does resolve, i.e. the measured path is the
     // one that does the work.
-    expect(capacityFreedFrom(capped, [], asDay(NOW))).toBeInstanceOf(Date);
+    expect(capacityFreedFrom(capped, [], DEFAULT_DATA, asDay(NOW))).toBeInstanceOf(Date);
   });
 });
 
@@ -297,7 +297,7 @@ describe("E. the 3N display path stays cheap now that it reads the ledger (2.4.1
   const items = Array.from({ length: ITEMS }, () => item("monthly", 2026));
   const render = () => {
     let total = 0;
-    for (let c = 0; c < CALLS; c++) for (const r of items) total += nominalMonthlyEquivalent(r, txs, NOW);
+    for (let c = 0; c < CALLS; c++) for (const r of items) total += nominalMonthlyEquivalent(r, txs, DEFAULT_DATA, NOW);
     return total;
   };
 
@@ -306,10 +306,10 @@ describe("E. the 3N display path stays cheap now that it reads the ledger (2.4.1
     // same run: 3N wrapper calls must cost about 3N bare recurringPaidSoFar
     // calls, because that scan is all the wrapper legitimately does.
     // Measured 0.98x. A per-call cycle walk is what pushes this up.
-    expect(recurringPaidSoFar(items[0], txs)).toBeGreaterThan(0); // premise: the scan runs
+    expect(recurringPaidSoFar(items[0], txs, DEFAULT_DATA)).toBeGreaterThan(0); // premise: the scan runs
     const bare = () => {
       let t = 0;
-      for (let c = 0; c < CALLS; c++) for (const r of items) t += recurringPaidSoFar(r, txs);
+      for (let c = 0; c < CALLS; c++) for (const r of items) t += recurringPaidSoFar(r, txs, DEFAULT_DATA);
       return t;
     };
     // Premise: the control does measurable work, so the ratio is not
