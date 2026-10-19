@@ -19,7 +19,7 @@ export default function ResetDataPanel({ counts, backupOn, onConfirm, hasKeptCop
   counts: { transactions: number; goals: number; debts: number; recurring: number };
   backupOn: boolean;
   onConfirm: () => void;
-  /** Session 24, item 1 (draft, held): this account has a copy kept of a record that couldn't be opened. */
+  /** Session 24, item 1 (sentence approved, session 25): this account has a copy kept of a record that couldn't be opened. */
   hasKeptCopy?: boolean;
 }) {
   const T = useTheme();
@@ -46,9 +46,9 @@ export default function ResetDataPanel({ counts, backupOn, onConfirm, hasKeptCop
         {plural(counts.debts, "debt")}, {plural(counts.recurring, "recurring item")}, and every card, asset and tracked
         balance. Your account stays, and so does your backup setting.
       </p>
-      {/* Session 24, item 1 (DRAFT WORDING, HELD): Erase removes a kept copy too; its contents can't be counted. */}
+      {/* Session 24, item 1; the owner's sentence (session 25, item 3a): Erase removes a kept copy too; its contents can't be counted. */}
       {hasKeptCopy && (
-        <p className="text-xs leading-relaxed" style={{ color: T.mute }}>This also removes the copy kept of data this browser couldn&apos;t open.</p>
+        <p className="text-xs leading-relaxed" style={{ color: T.mute }}>This also removes a saved copy of data this browser couldn&apos;t open.</p>
       )}
       <p className="text-xs leading-relaxed" style={{ color: backupOn ? T.coral : T.mute }}>
         {backupOn

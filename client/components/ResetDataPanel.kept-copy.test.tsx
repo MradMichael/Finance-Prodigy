@@ -1,7 +1,7 @@
-// Session 24, item 1 (DRAFT WORDING, HELD): Erase's confirmation counts what the
-// readable record holds. When the account also has a copy kept of a record
-// that couldn't be opened, Erase removes it too, and the confirmation says so
-// in one more sentence, shown only then.
+// Session 24, item 1; the sentence approved by the owner in session 25 (item 3a):
+// Erase's confirmation counts what the readable record holds. When the account
+// also has a copy kept of a record that couldn't be opened, Erase removes it
+// too, and the confirmation says so in one more sentence, shown only then.
 import { it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import ResetDataPanel from "./ResetDataPanel";
@@ -9,7 +9,7 @@ import { ThemeProvider } from "../contexts/ThemeContext";
 import { hasUnreadableCopies } from "../lib/localData";
 
 afterEach(() => { cleanup(); localStorage.clear(); });
-const SENTENCE = "This also removes the copy kept of data this browser couldn't open.";
+const SENTENCE = "This also removes a saved copy of data this browser couldn't open.";
 const COUNTS = { transactions: 3, goals: 1, debts: 0, recurring: 2 };
 const open = (hasKeptCopy: boolean) => {
   render(<ThemeProvider><ResetDataPanel counts={COUNTS} backupOn={false} onConfirm={vi.fn()} hasKeptCopy={hasKeptCopy} /></ThemeProvider>);
