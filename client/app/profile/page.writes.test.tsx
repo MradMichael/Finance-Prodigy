@@ -47,7 +47,7 @@ it("Delete account: nothing until \"delete\" is typed, then the account is delet
   fireEvent.click(screen.getByRole("button", { name: "Delete account & all data" }));
   const go = screen.getByRole("button", { name: "Delete permanently" }) as HTMLButtonElement;
   expect(go.disabled).toBe(true);
-  fireEvent.change(screen.getByPlaceholderText("delete"), { target: { value: "DELETE" } }); // the Field's label isn't tied to its input (noticed, session 24)
+  fireEvent.change(screen.getByRole("textbox", { name: "Type delete to confirm" }), { target: { value: "DELETE" } }); // by its name since item 3c (session 25)
   fireEvent.click(go);
   await waitFor(() => expect(deleteAccount).toHaveBeenCalledWith("u1"));
   await waitFor(() => expect(ROUTER.push).toHaveBeenCalledWith("/sign-in"));
