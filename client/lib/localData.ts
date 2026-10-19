@@ -1996,8 +1996,9 @@ export function planDebtClose(
   debt: StoredDebt,
   transactions: StoredTransaction[],
   countedNative: number,
+  data: LocalFinancials, // session 24, item 3: the rates for a linked payment in the other currency
 ): { entry: PeriodCloseDebt; transaction?: StoredTransaction } {
-  const expectedNative = derivedDebtBalance(debt, transactions);
+  const expectedNative = derivedDebtBalance(debt, transactions, data);
   const deltaNative = roundMoney(expectedNative - countedNative);
   const base = { debtId: debt.id, currency: debt.currency, expectedNative, countedNative, deltaNative };
   if (deltaNative === 0) return { entry: base };
@@ -2610,6 +2611,14 @@ export function rateOn(d: LocalFinancials, day: string): number {
 }
 
 /** Plan J: an amount in USD at the rate in effect on its own day (`toUSD`'s guards, `rateOn`'s rate). */
+/** Session 24, item 3: an amount in one currency, in another, at the rate on its own day (plan J). */
+export function inCurrencyOn(d: LocalFinancials, amount: number, from: Currency | undefined, to: Currency | undefined, day: string): number {
+  const a = from ?? "USD", b = to ?? "USD";
+  if (a === b) return amount;
+  const rate = rateOn(d, day);
+  return a === "LBP" ? amount / rate : amount * rate;
+}
+
 export function makeToUSDOn(d: LocalFinancials): (amount: number, currency: string | undefined, day: string) => number {
   return (amount, currency, day) => (currency === "LBP" ? amount / rateOn(d, day) : amount);
 }
@@ -3988,10 +3997,12 @@ export function derivedEfBalance(data: LocalFinancials): number {
  * undefined-vs-null distinction is for the edit form's own state, not this
  * calculation (mirrors efAmount's own comment on derivedEfBalance).
  */
-export function derivedDebtBalance(debt: StoredDebt, transactions: StoredTransaction[]): number {
+export function derivedDebtBalance(debt: StoredDebt, transactions: StoredTransaction[], data: LocalFinancials): number {
+  // Session 24, item 3 (DI-03): a linked transaction in the other currency converts into the debt's, at the
+  // rate on the payment's own day (plan J). It was subtracted raw: L£1,000,000 cleared a $1,200 debt.
   const paid = transactions
     .filter((t) => t.debtId === debt.id && t.deletedAt == null)
-    .reduce((s, t) => s + t.amount + (t.debtAdjustment ?? 0), 0);
+    .reduce((s, t) => s + inCurrencyOn(data, t.amount + (t.debtAdjustment ?? 0), t.currency, debt.currency, t.date), 0);
   return roundMoney(Math.max(0, debt.openingBalance - paid));
 }
 

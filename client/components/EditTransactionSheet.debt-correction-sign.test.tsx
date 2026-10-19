@@ -23,7 +23,7 @@ const FEE = { id: "t1", amount: 0, currency: "USD", bucket: "SAVINGS", descripti
 
 function open() {
   const data = { ...DEFAULT_DATA, income: 3000, debts: [DEBT], transactions: [FEE] } as LocalFinancials;
-  expect(derivedDebtBalance(DEBT, data.transactions)).toBe(5300);
+  expect(derivedDebtBalance(DEBT, data.transactions, DEFAULT_DATA)).toBe(5300);
   const onChange = vi.fn<(d: LocalFinancials) => void>();
   render(<ThemeProvider><EditTransactionSheet transaction={FEE} financials={data} onChange={onChange} onClose={vi.fn()} /></ThemeProvider>);
   const box = screen.getByText(HELP).parentElement!;
@@ -31,7 +31,7 @@ function open() {
   const saved = () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     const out = onChange.mock.calls.at(-1)![0];
-    return { tx: out.transactions.find((t) => t.id === "t1")!, balance: derivedDebtBalance(DEBT, out.transactions) };
+    return { tx: out.transactions.find((t) => t.id === "t1")!, balance: derivedDebtBalance(DEBT, out.transactions, DEFAULT_DATA) };
   };
   return { field, saved };
 }
@@ -82,7 +82,7 @@ it("a correction that lowered the debt reads as negative, and keeps its sign whe
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
   const out = onChange.mock.calls.at(-1)![0];
   expect(out.transactions[0].debtAdjustment).toBe(60);
-  expect(derivedDebtBalance(DEBT, out.transactions)).toBe(4940);
+  expect(derivedDebtBalance(DEBT, out.transactions, DEFAULT_DATA)).toBe(4940);
 });
 
 it("the minus sign stays a leading sign: one, in front", async () => {

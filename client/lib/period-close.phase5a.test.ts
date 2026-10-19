@@ -114,16 +114,16 @@ describe("2. a USD debt", () => {
   ];
 
   it("the premise: 4,750.00 less two payments derives to 4,012.50", () => {
-    expect(derivedDebtBalance(DEBT_USD, paid)).toBe(4_012.5);
+    expect(derivedDebtBalance(DEBT_USD, paid, DEFAULT_DATA)).toBe(4_012.5);
   });
 
   it("a statement of 4,058.75 is recorded and the derived balance follows it", () => {
-    const { entry, transaction } = planDebtClose(DEBT_USD, paid, 4_058.75);
+    const { entry, transaction } = planDebtClose(DEBT_USD, paid, 4_058.75, DEFAULT_DATA);
     expect(entry.expectedNative).toBe(4_012.5);
     expect(entry.countedNative).toBe(4_058.75);
     expect(entry.deltaNative).toBe(-46.25);
     expect(entry.currency).toBe("USD");
-    expect(derivedDebtBalance(DEBT_USD, [transaction!, ...paid])).toBe(4_058.75);
+    expect(derivedDebtBalance(DEBT_USD, [transaction!, ...paid], DEFAULT_DATA)).toBe(4_058.75);
   });
 });
 
@@ -131,14 +131,14 @@ describe("3. an LBP debt stays in lira, start to finish", () => {
   const paid = [tx({ id: "p3", debtId: "d2", amount: 1_342_500, currency: "LBP", description: "Debt payment" })];
 
   it("the premise: 8,950,000 less 1,342,500 derives to 7,607,500 lira", () => {
-    expect(derivedDebtBalance(DEBT_LBP, paid)).toBe(7_607_500);
+    expect(derivedDebtBalance(DEBT_LBP, paid, DEFAULT_DATA)).toBe(7_607_500);
   });
 
   it("nothing is converted -- the figures stay five orders of magnitude from dollars", () => {
     // The unit test proper. 7,607,500 lira is $85.00 at 89,500, so any stray
     // conversion lands three orders of magnitude away and cannot be mistaken
     // for a rounding difference. This is the shape 2.4.137's fixture lacked.
-    const { entry, transaction } = planDebtClose(DEBT_LBP, paid, 7_830_000);
+    const { entry, transaction } = planDebtClose(DEBT_LBP, paid, 7_830_000, DEFAULT_DATA);
     expect(entry.currency).toBe("LBP");
     expect(entry.expectedNative).toBe(7_607_500);
     expect(entry.countedNative).toBe(7_830_000);
@@ -148,13 +148,13 @@ describe("3. an LBP debt stays in lira, start to finish", () => {
     expect(entry.expectedNative).not.toBeCloseTo(85, 0);
     expect(transaction!.currency).toBe("LBP");
     expect(transaction!.debtAdjustment).toBe(-222_500);
-    expect(derivedDebtBalance(DEBT_LBP, [transaction!, ...paid])).toBe(7_830_000);
+    expect(derivedDebtBalance(DEBT_LBP, [transaction!, ...paid], DEFAULT_DATA)).toBe(7_830_000);
   });
 
   it("stores no USD figure for the debt at all", () => {
     // Deliberate: nothing in this phase compares debts to a dollar
     // threshold, so a USD field would exist only to be believed later.
-    const { entry } = planDebtClose(DEBT_LBP, paid, 7_830_000);
+    const { entry } = planDebtClose(DEBT_LBP, paid, 7_830_000, DEFAULT_DATA);
     expect(Object.keys(entry).some((k) => k.endsWith("USD"))).toBe(false);
   });
 });
@@ -169,13 +169,13 @@ describe("4. an interest-bearing debt drifts, and the close mislabels the fix", 
     // the drift, so it cannot be driven, only simulated.
     const interestBearing: StoredDebt = { ...DEBT_USD, id: "d3", apr: 18 };
     const paid = [tx({ id: "p4", debtId: "d3", amount: 325 })];
-    const derived = derivedDebtBalance(interestBearing, paid);
+    const derived = derivedDebtBalance(interestBearing, paid, DEFAULT_DATA);
     expect(derived).toBe(4_425);                       // 4,750.00 - 325.00
     const statement = 4_491.38;                        // + 18%/12 on 4,425
 
-    const { entry, transaction } = planDebtClose(interestBearing, paid, statement);
+    const { entry, transaction } = planDebtClose(interestBearing, paid, statement, DEFAULT_DATA);
     expect(entry.deltaNative).toBe(-66.38);
-    expect(derivedDebtBalance(interestBearing, [transaction!, ...paid])).toBe(statement);
+    expect(derivedDebtBalance(interestBearing, [transaction!, ...paid], DEFAULT_DATA)).toBe(statement);
     // The balance becomes true and the LEDGER becomes misleading about why:
     // this row is interest, filed under a name that says someone erred. It
     // will recur every cycle for as long as the debt carries an APR.
@@ -188,8 +188,8 @@ describe("5. an overpaid debt reads zero, and the close cannot see the credit", 
     // Math.max(0, ...) in derivedDebtBalance. Pinned so a later reader does
     // not mistake the silence for the debt genuinely being settled exactly.
     const over = [tx({ id: "p5", debtId: "d1", amount: 5_120.4 })];
-    expect(derivedDebtBalance(DEBT_USD, over)).toBe(0);  // really -370.40
-    const { entry, transaction } = planDebtClose(DEBT_USD, over, 0);
+    expect(derivedDebtBalance(DEBT_USD, over, DEFAULT_DATA)).toBe(0);  // really -370.40
+    const { entry, transaction } = planDebtClose(DEBT_USD, over, 0, DEFAULT_DATA);
     expect(entry.deltaNative).toBe(0);
     expect(transaction).toBeUndefined();
   });
@@ -212,7 +212,7 @@ describe("6. reopen removes what the close wrote", () => {
     const data = { ...base, cycleStartDay: SD, debts: [DEBT_LBP],
       transactions: [...paid, ...base.transactions] } as LocalFinancials;
     const ef = planEfClose(data, 2_380.25);
-    const debt = planDebtClose(DEBT_LBP, data.transactions, 7_830_000);
+    const debt = planDebtClose(DEBT_LBP, data.transactions, 7_830_000, DEFAULT_DATA);
     const record = buildPeriodClose({
       cycleKey: CUR, startDay: SD, closedAt: NOW, lbpRate: DEFAULT_LBP_RATE,
       accounts: [], emergencyFund: ef.entry, debts: [debt.entry],
@@ -228,14 +228,14 @@ describe("6. reopen removes what the close wrote", () => {
   it("the premise: the close really did move both balances", () => {
     const { after } = closedWithAdjustments();
     expect(derivedEfBalance(after)).toBe(2_380.25);
-    expect(derivedDebtBalance(DEBT_LBP, after.transactions)).toBe(7_830_000);
+    expect(derivedDebtBalance(DEBT_LBP, after.transactions, DEFAULT_DATA)).toBe(7_830_000);
   });
 
   it("both balances go back to what they were", () => {
     const { after } = closedWithAdjustments();
     const out = reopenCycle(after, CUR, NOW)!;
     expect(derivedEfBalance(out)).toBe(2_425.5);
-    expect(derivedDebtBalance(DEBT_LBP, out.transactions)).toBe(7_607_500);
+    expect(derivedDebtBalance(DEBT_LBP, out.transactions, DEFAULT_DATA)).toBe(7_607_500);
   });
 
   it("the rows are SOFT-deleted, not spliced out of the ledger", () => {

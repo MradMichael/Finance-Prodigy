@@ -322,13 +322,13 @@ export function periodTotals(
  * harmless either way since simulateDebtPayoff re-filters internally, but
  * one behavior, not two slightly different ones.
  *
- * Phase 2.6.3a: balance comes from derivedDebtBalance(d, transactions), not
+ * Phase 2.6.3a: balance comes from derivedDebtBalance(d, transactions, data), not
  * d.balance -- the stored field stops being read anywhere debt payoff math
  * happens.
  */
-export function toDebtInputs(debts: StoredDebt[], lbpRate: number, transactions: StoredTransaction[]): DebtInput[] {
+export function toDebtInputs(debts: StoredDebt[], lbpRate: number, transactions: StoredTransaction[], data: LocalFinancials): DebtInput[] {
   return debts
-    .map((d) => ({ d, balance: derivedDebtBalance(d, transactions) }))
+    .map((d) => ({ d, balance: derivedDebtBalance(d, transactions, data) }))
     .filter(({ balance }) => balance > 0)
     .map(({ d, balance }) => ({
       id: d.id, name: d.name,
@@ -512,7 +512,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   // minus every linked, non-deleted transaction), not read from the stored
   // `balance` field -- shared by every site below that needs a per-debt
   // balance, so it isn't recomputed once per site per debt.
-  const debtBalances = new Map(data.debts.map((d) => [d.id, derivedDebtBalance(d, data.transactions)]));
+  const debtBalances = new Map(data.debts.map((d) => [d.id, derivedDebtBalance(d, data.transactions, data)]));
 
   // Paid-off debts stay in the array for history -- their minPayment isn't
   // cleared, so summing over all debts unfiltered would keep counting a
@@ -645,7 +645,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   if (data.debts.length > 0 && totalDebtBalance > 0) {
     const extra = Math.max(0, netCashFlow * 0.3);
     const monthlyPayment = totalMinPayments + extra;
-    const debtInputs: DebtInput[] = toDebtInputs(data.debts, lbpRate, data.transactions);
+    const debtInputs: DebtInput[] = toDebtInputs(data.debts, lbpRate, data.transactions, data);
     if (monthlyPayment > 0) {
       const chosen = simulateDebtPayoff(debtInputs, extra, "AVALANCHE", now);
       debtPlan = {

@@ -32,7 +32,7 @@ it("a payment of 1,234.50 is one transaction in the debt's currency, linked to i
   const { written, onClose } = pay(CARD, "1,234.50");
   expect(written!.transactions).toHaveLength(1);
   expect(written!.transactions[0]).toMatchObject({ amount: 1234.5, currency: "USD", debtId: "d-usd", bucket: "NEEDS", date: todayISO() });
-  expect(derivedDebtBalance(CARD, written!.transactions)).toBe(3765.5);
+  expect(derivedDebtBalance(CARD, written!.transactions, DEFAULT_DATA)).toBe(3765.5);
   expect(onClose).toHaveBeenCalled();
 });
 
@@ -44,7 +44,7 @@ it("on the bucket chosen", () => {
 it("a lira debt's payment is stored in lira, not converted", () => {
   const { written } = pay(LOAN, "895,000");
   expect(written!.transactions[0]).toMatchObject({ amount: 895_000, currency: "LBP", debtId: "d-lbp" });
-  expect(derivedDebtBalance(LOAN, written!.transactions)).toBe(8_055_000);
+  expect(derivedDebtBalance(LOAN, written!.transactions, DEFAULT_DATA)).toBe(8_055_000);
 });
 
 it("paid from the safety net, the draw is stored as a negative dollar amount: L£895,000 at 89,500 is −$10", () => {

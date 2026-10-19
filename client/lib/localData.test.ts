@@ -1095,7 +1095,7 @@ describe("Phase 2.6.3c -- buildDebtPaymentTx and buildEfAdjustmentTx (tests-firs
 
     it("feeds derivedDebtBalance correctly -- a real payment reduces the debt by its own amount, matching the exact 2.4.27 scenario", () => {
       const tx = buildDebtPaymentTx(debt, 325, "NEEDS", 89500);
-      expect(derivedDebtBalance(debt, [tx])).toBe(1675);
+      expect(derivedDebtBalance(debt, [tx], DEFAULT_DATA)).toBe(1675);
     });
 
     // Phase 2.6.4 -- closes 2.4.27 at its actual point of use (a partial
@@ -1117,7 +1117,7 @@ describe("Phase 2.6.3c -- buildDebtPaymentTx and buildEfAdjustmentTx (tests-firs
     it("carries a partial EF-sourced amount, the exact real 2.4.27 case -- $300 of a $325 payment came from EF", () => {
       const tx = buildDebtPaymentTx(debt, 325, "NEEDS", 89500, { efAmount: -300 });
       expect(tx.efAmount).toBe(-300);
-      expect(derivedDebtBalance(debt, [tx])).toBe(1675);
+      expect(derivedDebtBalance(debt, [tx], DEFAULT_DATA)).toBe(1675);
       const data = { ...DEFAULT_DATA, emergencyFundOpeningBalance: 900, transactions: [tx] };
       expect(derivedEfBalance(data)).toBe(600); // 900 - 300, not the full 900 - 325
     });
@@ -1377,16 +1377,16 @@ describe("Phase 2.6.3c -- buildDebtPaymentTx and buildEfAdjustmentTx (tests-firs
       // ADDS contributions to its opening balance -- the two balances move
       // in opposite directions relative to their carrier field, so the same
       // delta formula would land on the wrong sign here.
-      const delta = derivedDebtBalance(debt, []) - 1500; // owner says the real balance is $1,500
+      const delta = derivedDebtBalance(debt, [], DEFAULT_DATA) - 1500; // owner says the real balance is $1,500
       const tx = buildDebtAdjustmentTx(debt, delta);
-      expect(derivedDebtBalance(debt, [tx])).toBe(1500);
+      expect(derivedDebtBalance(debt, [tx], DEFAULT_DATA)).toBe(1500);
     });
 
     it("a debt correction moving the balance UP (e.g. missed interest) uses a negative debtAdjustment", () => {
-      const delta = derivedDebtBalance(debt, []) - 2200; // owner says the real balance is actually $2,200, higher than the $2,000 shown
+      const delta = derivedDebtBalance(debt, [], DEFAULT_DATA) - 2200; // owner says the real balance is actually $2,200, higher than the $2,000 shown
       const tx = buildDebtAdjustmentTx(debt, delta);
       expect(tx.debtAdjustment).toBe(-200);
-      expect(derivedDebtBalance(debt, [tx])).toBe(2200);
+      expect(derivedDebtBalance(debt, [tx], DEFAULT_DATA)).toBe(2200);
     });
 
     it("stamps createdAt and updatedAt", () => {
@@ -2295,44 +2295,44 @@ describe("migrateFinancials", () => {
 
     describe("derivedDebtBalance", () => {
       it("returns the opening balance unchanged when no transaction links to this debt", () => {
-        expect(derivedDebtBalance(makeDebt(), [makeTx()])).toBe(2000);
+        expect(derivedDebtBalance(makeDebt(), [makeTx()], DEFAULT_DATA)).toBe(2000);
       });
 
       it("subtracts a single linked payment", () => {
-        expect(derivedDebtBalance(makeDebt(), [makeTx({ debtId: "d1", amount: 325 })])).toBe(1675);
+        expect(derivedDebtBalance(makeDebt(), [makeTx({ debtId: "d1", amount: 325 })], DEFAULT_DATA)).toBe(1675);
       });
 
       it("reproduces the exact real 2.4.27 scenario: $2,000 opening balance, one real $325 payment, correct $1,675 result", () => {
         const debt = makeDebt({ id: "p76rh1el", name: "Dad", balance: 2000, openingBalance: 2000 });
         const tx = makeTx({ id: "t1", amount: 325, debtId: "p76rh1el", efAmount: -300 });
-        expect(derivedDebtBalance(debt, [tx])).toBe(1675);
+        expect(derivedDebtBalance(debt, [tx], DEFAULT_DATA)).toBe(1675);
       });
 
       it("accumulates multiple linked payments", () => {
         const txs = [makeTx({ id: "t1", debtId: "d1", amount: 325 }), makeTx({ id: "t2", debtId: "d1", amount: 200 })];
-        expect(derivedDebtBalance(makeDebt(), txs)).toBe(1475);
+        expect(derivedDebtBalance(makeDebt(), txs, DEFAULT_DATA)).toBe(1475);
       });
 
       it("ignores a transaction linked to a DIFFERENT debt", () => {
-        expect(derivedDebtBalance(makeDebt({ id: "d1" }), [makeTx({ debtId: "d2", amount: 1000 })])).toBe(2000);
+        expect(derivedDebtBalance(makeDebt({ id: "d1" }), [makeTx({ debtId: "d2", amount: 1000 })], DEFAULT_DATA)).toBe(2000);
       });
 
       it("ignores a transaction with no debtId at all", () => {
-        expect(derivedDebtBalance(makeDebt(), [makeTx({ amount: 1000 })])).toBe(2000);
+        expect(derivedDebtBalance(makeDebt(), [makeTx({ amount: 1000 })], DEFAULT_DATA)).toBe(2000);
       });
 
       it("excludes a soft-deleted linked transaction from the sum", () => {
         const txs = [makeTx({ id: "t1", debtId: "d1", amount: 325 }), makeTx({ id: "t2", debtId: "d1", amount: 500, deletedAt: "2026-08-20T00:00:00.000Z" })];
-        expect(derivedDebtBalance(makeDebt(), txs)).toBe(1675); // only t1 counts
+        expect(derivedDebtBalance(makeDebt(), txs, DEFAULT_DATA)).toBe(1675); // only t1 counts
       });
 
       it("clamps at 0 -- an overpayment doesn't produce a negative debt balance", () => {
-        expect(derivedDebtBalance(makeDebt({ openingBalance: 100 }), [makeTx({ debtId: "d1", amount: 500 })])).toBe(0);
+        expect(derivedDebtBalance(makeDebt({ openingBalance: 100 }), [makeTx({ debtId: "d1", amount: 500 })], DEFAULT_DATA)).toBe(0);
       });
 
       it("rounds the final result to the cent", () => {
         const txs = Array.from({ length: 3 }, (_, i) => makeTx({ id: `t${i}`, debtId: "d1", amount: 0.1 }));
-        expect(derivedDebtBalance(makeDebt({ openingBalance: 1 }), txs)).toBe(0.7); // 1 - 0.3, not float dust
+        expect(derivedDebtBalance(makeDebt({ openingBalance: 1 }), txs, DEFAULT_DATA)).toBe(0.7); // 1 - 0.3, not float dust
       });
 
       // Phase 2.6.4 step 3 -- debtAdjustment is an independent carrier field,
@@ -2342,32 +2342,32 @@ describe("migrateFinancials", () => {
       // being counted as a real payment anywhere else.
       it("adds a positive debtAdjustment on top of amount", () => {
         const txs = [makeTx({ debtId: "d1", amount: 325, debtAdjustment: 50 })];
-        expect(derivedDebtBalance(makeDebt(), txs)).toBe(1625); // 2000 - 325 - 50
+        expect(derivedDebtBalance(makeDebt(), txs, DEFAULT_DATA)).toBe(1625); // 2000 - 325 - 50
       });
 
       it("a negative debtAdjustment reduces the amount paid down, increasing the remaining balance", () => {
         const txs = [makeTx({ debtId: "d1", amount: 325, debtAdjustment: -50 })];
-        expect(derivedDebtBalance(makeDebt(), txs)).toBe(1725); // 2000 - 325 + 50
+        expect(derivedDebtBalance(makeDebt(), txs, DEFAULT_DATA)).toBe(1725); // 2000 - 325 + 50
       });
 
       it("a correction transaction (amount 0, debtAdjustment set) moves the balance on its own", () => {
         const txs = [makeTx({ debtId: "d1", amount: 0, debtAdjustment: -300 })];
-        expect(derivedDebtBalance(makeDebt(), txs)).toBe(2300); // 2000 - 0 - (-300)
+        expect(derivedDebtBalance(makeDebt(), txs, DEFAULT_DATA)).toBe(2300); // 2000 - 0 - (-300)
       });
 
       it("treats undefined debtAdjustment as contributing 0 -- the ordinary, non-correction case", () => {
         const txs = [makeTx({ debtId: "d1", amount: 325 })];
-        expect(derivedDebtBalance(makeDebt(), txs)).toBe(1675); // unchanged from the plain-amount test above
+        expect(derivedDebtBalance(makeDebt(), txs, DEFAULT_DATA)).toBe(1675); // unchanged from the plain-amount test above
       });
 
       it("treats explicit null debtAdjustment as contributing 0 -- a deliberately detached correction, same as undefined", () => {
         const txs = [makeTx({ debtId: "d1", amount: 325, debtAdjustment: null })];
-        expect(derivedDebtBalance(makeDebt(), txs)).toBe(1675);
+        expect(derivedDebtBalance(makeDebt(), txs, DEFAULT_DATA)).toBe(1675);
       });
 
       it("excludes debtAdjustment from a soft-deleted linked transaction, same as amount", () => {
         const txs = [makeTx({ id: "t1", debtId: "d1", amount: 325, debtAdjustment: -300, deletedAt: "2026-08-20T00:00:00.000Z" })];
-        expect(derivedDebtBalance(makeDebt(), txs)).toBe(2000); // fully excluded, not just amount
+        expect(derivedDebtBalance(makeDebt(), txs, DEFAULT_DATA)).toBe(2000); // fully excluded, not just amount
       });
     });
   });

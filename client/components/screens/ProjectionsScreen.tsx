@@ -86,7 +86,7 @@ export default function ProjectionsScreen({
   // something to assert against (2.4.82).
   const efRecommendedPace = projectCompletion(efRemaining, budgetTargets.savings, anchor);
   const lbpRate = lbpRateOf(financials);
-  const liveDebts: DebtInput[] = toDebtInputs(financials.debts, lbpRate, financials.transactions);
+  const liveDebts: DebtInput[] = toDebtInputs(financials.debts, lbpRate, financials.transactions, financials);
 
   // ── Looking ahead: bounded obligations that free capacity later ──
   //

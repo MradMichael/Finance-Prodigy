@@ -1805,7 +1805,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
             // Phase 2.6.3a: derived once per row from openingBalance + the
             // linked transaction ledger, not read from the stored `balance`
             // field.
-            const balance = derivedDebtBalance(d, financials.transactions);
+            const balance = derivedDebtBalance(d, financials.transactions, financials);
             return (
               <div key={d.id}>
                 <div

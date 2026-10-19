@@ -14,7 +14,7 @@ export default function DebtsScreen({ financials, dashData, onEdit, onPay }: { f
   // `balance` field -- same computation computeDashboard.ts does for the
   // health score and payoff plan, so this screen's own numbers can't
   // disagree with those.
-  const debtBalances = new Map(financials.debts.map((d) => [d.id, derivedDebtBalance(d, financials.transactions)]));
+  const debtBalances = new Map(financials.debts.map((d) => [d.id, derivedDebtBalance(d, financials.transactions, financials)]));
   // Paid-off debts stay in the array for history -- their minPayment is
   // never cleared, so summing over every debt unfiltered keeps counting a
   // payment obligation that no longer exists, and never triggers the

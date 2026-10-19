@@ -36,14 +36,14 @@ it("a lower balance typed records one correction that brings the debt to exactly
   expect(writes).toHaveLength(1);
   expect(last().transactions).toHaveLength(1);
   expect(last().transactions[0]).toMatchObject({ amount: 0, currency: "USD", debtId: "d1", debtAdjustment: 800 });
-  expect(derivedDebtBalance(LOAN, last().transactions)).toBe(4200);
+  expect(derivedDebtBalance(LOAN, last().transactions, DEFAULT_DATA)).toBe(4200);
 });
 
 it("a higher balance typed records a correction the other way: $5,000 to $5,300", () => {
   const { last } = open();
   setBalance("5300");
   expect(last().transactions[0].debtAdjustment).toBe(-300);
-  expect(derivedDebtBalance(LOAN, last().transactions)).toBe(5300);
+  expect(derivedDebtBalance(LOAN, last().transactions, DEFAULT_DATA)).toBe(5300);
 });
 
 it("the same balance typed records nothing", () => {
