@@ -151,7 +151,7 @@ describe("3. a corrected figure becomes a ledger row", () => {
     const out = written(onChange);
 
     expect(derivedEfBalance(out)).toBe(2_380.25);
-    expect(derivedDebtBalance(DEBT_LBP, out.transactions!)).toBe(7_830_000);
+    expect(derivedDebtBalance(DEBT_LBP, out.transactions!, DEFAULT_DATA)).toBe(7_830_000);
 
     const close = out.periodCloses![0];
     expect(close.emergencyFund!.deltaUSD).toBe(-45.25);

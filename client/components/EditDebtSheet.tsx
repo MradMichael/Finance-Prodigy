@@ -39,7 +39,7 @@ export default function EditDebtSheet({
   // correction transactions along the way.
   const [balanceInput, setBalanceInput] = useState<string | null>(null);
 
-  const balance = derivedDebtBalance(debt, financials.transactions);
+  const balance = derivedDebtBalance(debt, financials.transactions, financials);
 
   function save() {
     if (!name.trim()) return;
@@ -60,7 +60,7 @@ export default function EditDebtSheet({
   // not `entered - current`.
   function commitBalance(raw: string) {
     const entered = Math.max(0, parseFloat(raw.replace(/,/g, "")) || 0);
-    const current = derivedDebtBalance(debt, financials.transactions);
+    const current = derivedDebtBalance(debt, financials.transactions, financials);
     const delta = roundMoney(current - entered);
     if (delta !== 0) {
       update({ transactions: [buildDebtAdjustmentTx(debt, delta), ...financials.transactions] });

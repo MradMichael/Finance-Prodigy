@@ -94,7 +94,7 @@ export default function BalanceCheckScreen({
     const debtPlans = openDebts
       .map(({ d }) => ({ d, counted: countedOf(d.id) }))
       .filter((x): x is { d: StoredDebt; counted: number } => x.counted != null && !isNaN(x.counted))
-      .map(({ d, counted }) => planDebtClose(d, financials.transactions ?? [], counted));
+      .map(({ d, counted }) => planDebtClose(d, financials.transactions ?? [], counted, financials));
     const newTransactions = [
       ...(efPlan?.transaction ? [efPlan.transaction] : []),
       ...debtPlans.flatMap((p) => (p.transaction ? [p.transaction] : [])),
@@ -209,7 +209,7 @@ export default function BalanceCheckScreen({
   const efExpectedUSD = derivedEfBalance(financials);
   const efInUse = efExpectedUSD !== 0 || (financials.emergencyFundOpeningBalance ?? 0) !== 0;
   const openDebts = (financials.debts ?? [])
-    .map((d) => ({ d, expectedNative: derivedDebtBalance(d, financials.transactions ?? []) }))
+    .map((d) => ({ d, expectedNative: derivedDebtBalance(d, financials.transactions ?? [], financials) }))
     .filter(({ expectedNative }) => expectedNative > 0);
   const adjustmentRows: AdjustmentRow[] = [
     ...(efInUse

@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { useDialogFocus } from "./useDialogFocus";
 import { useScrollFocus } from "./useScrollFocus";
 import type { LocalFinancials, StoredCard, StoredTransaction, TrackedBalance } from "../lib/localData";
-import { uid, todayISO, matchCategoryRule, activeTransactions, reanchorTrackedBalance, MONEY_MAX_USD, saveCard as storeCard, lbpRateOf } from "../lib/localData";
+import { uid, todayISO, matchCategoryRule, activeTransactions, reanchorTrackedBalance, MONEY_MAX_USD, saveCard as storeCard, rateOn } from "../lib/localData";
 import { trackedBalanceExpected } from "../lib/computeDashboard";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, DateFieldDMY } from "./form/Primitives";
@@ -235,10 +235,14 @@ export default function ImportStatement({
       // nothing to re-anchor from -- it's already correctly seeded fresh.
       let tbPatch: TrackedBalance;
       if (existingTB) {
+        // Session 24, item 3 (CUR-02): the statement is in dollars; a lira Balance Check takes it in lira, at the
+        // statement's closing day's rate (plan J). The re-anchor stores its figure as the balance's own currency.
+        const dayRate = rateOn(patchedFinancials, balanceDate);
+        const native = existingTB.currency === "LBP" ? Math.round(closingBalance * dayRate) : closingBalance;
         tbPatch = reanchorTrackedBalance(
-          existingTB, closingBalance,
+          existingTB, native,
           trackedBalanceExpected(existingTB, patchedFinancials),
-          lbpRateOf(financials), balanceDate,
+          dayRate, balanceDate,
         );
       } else {
         const freshTB: TrackedBalance = {

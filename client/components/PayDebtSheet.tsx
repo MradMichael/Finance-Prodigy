@@ -54,7 +54,7 @@ export default function PayDebtSheet({
   const [otherNote,  setOtherNote]  = useState("");
   const [date,       setDate]       = useState(todayISO());
 
-  const balance = derivedDebtBalance(debt, financials.transactions);
+  const balance = derivedDebtBalance(debt, financials.transactions, financials);
   const efBalance = derivedEfBalance(financials);
 
   function save() {
@@ -83,7 +83,7 @@ export default function PayDebtSheet({
       date: date || todayISO(),
     });
     const newTransactions = [tx, ...financials.transactions];
-    const newBal = derivedDebtBalance(debt, newTransactions);
+    const newBal = derivedDebtBalance(debt, newTransactions, financials);
     // Plan H 5b: a payment that pays the debt off is the person's edit to it.
     const updatedDebts = financials.debts.map((d) => {
       if (d.id !== debt.id) return d;
