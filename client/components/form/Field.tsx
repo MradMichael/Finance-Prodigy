@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useTheme } from "../../contexts/ThemeContext";
 
 export default function Field({
@@ -13,13 +13,16 @@ export default function Field({
   const [focused, setFocused] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const isPassword = type === "password";
+  // Item 3c (owner, session 25; WCAG 2.2 AA 1.3.1, 4.1.2): the label names its input, for a screen reader and a click.
+  const id = useId();
   return (
     <div>
-      <label className="block text-[11px] uppercase tracking-widest mb-1.5 font-medium" style={{ color: T.mute }}>
+      <label htmlFor={id} className="block text-[11px] uppercase tracking-widest mb-1.5 font-medium" style={{ color: T.mute }}>
         {label}
       </label>
       <div className="relative">
         <input
+          id={id}
           type={isPassword && revealed ? "text" : type}
           value={value}
           onChange={(e) => onChange(e.target.value)}
