@@ -17,6 +17,7 @@ import { saveSeen, loadSeen } from "../../lib/syncSeen";
 import { takeUnseenClashes } from "../../lib/clashNotice";
 import { restoreFromExport } from "../../lib/syncMerge";
 import { REGENERATE } from "../../lib/recoveryMessages";
+import { backupOffDeleteFailed } from "../../lib/backupOffMessages";
 import type { LocalFinancials } from "../../lib/localData";
 import { LOAD_FAILED, LOAD_FAILED_NEXT } from "../../lib/loadFailure";
 import { isAnalyticsOptedIn, setAnalyticsOptIn } from "../../lib/analytics";
@@ -154,7 +155,7 @@ export default function ProfilePage() {
     } else if (choice === "off-delete") {
       setSyncMsg(result?.ok
         ? "✓ Backup is off and the server copy has been deleted."
-        : "Backup is off, but deleting the server copy failed: " + (result?.error ?? "unknown error") + " Try again, or delete your account to remove it.");
+        : backupOffDeleteFailed(result)); // session 23, item 6 (draft, held)
     } else {
       setSyncMsg("✓ Backup is off. The copy already on the server was kept and will no longer update.");
     }
