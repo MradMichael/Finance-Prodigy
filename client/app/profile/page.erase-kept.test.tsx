@@ -63,3 +63,15 @@ it("a failed erase removes nothing", async () => {
   expect(await screen.findByText(/^✗ Couldn't erase your data on this device\./)).toBeTruthy();
   for (const k of MINE) expect(localStorage.getItem(k)).toBe("an encrypted blob");
 });
+
+it("Profile's confirmation names the kept copy when this account has one, and only then (item 3a, session 25)", async () => {
+  const SENTENCE = "This also removes a saved copy of data this browser couldn't open.";
+  render(<ThemeProvider><ProfilePage /></ThemeProvider>);
+  fireEvent.click(await screen.findByRole("button", { name: "Reset all data" }));
+  expect(screen.getByText(SENTENCE)).toBeTruthy();
+  cleanup();
+  for (const k of MINE) localStorage.removeItem(k); // another account's copy alone doesn't count
+  render(<ThemeProvider><ProfilePage /></ThemeProvider>);
+  fireEvent.click(await screen.findByRole("button", { name: "Reset all data" }));
+  expect(screen.queryByText(SENTENCE)).toBeNull();
+});
