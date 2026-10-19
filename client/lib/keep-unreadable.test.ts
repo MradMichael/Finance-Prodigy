@@ -4,7 +4,7 @@
 // Delete account removes it (the privacy page: Delete account "removes your
 // account and financial data from your browser").
 import { it, expect, beforeEach } from "vitest";
-import { keepUnreadableRecord, saveData, loadData, DEFAULT_DATA, type LocalFinancials } from "./localData";
+import { keepUnreadableRecord, removeUnreadableCopies, saveData, loadData, DEFAULT_DATA, type LocalFinancials } from "./localData";
 import { activateSessionKey } from "./crypto";
 import { hasAnyLocalData } from "./syncService";
 import { deleteAccount } from "./auth";
@@ -53,4 +53,16 @@ it("Delete account removes the kept copies too", async () => {
   await deleteAccount("u1");
   expect(localStorage.getItem("essa_unreadable_u1_2026-10-15T09:00:00.000Z")).toBeNull();
   expect(localStorage.getItem("essa_unreadable_u2_2026-10-15T09:00:00.000Z")).toBe("y");
+});
+
+// Session 24, item 1: Erase all data removes them too, through the same helper as Delete account.
+it("removeUnreadableCopies removes one account's kept copies and no one else's", () => {
+  localStorage.setItem("essa_unreadable_u1_2026-10-15T09:00:00.000Z", "x");
+  localStorage.setItem("essa_unreadable_u10_2026-10-15T09:00:00.000Z", "z");
+  localStorage.setItem("essa_unreadable_u2_2026-10-15T09:00:00.000Z", "y");
+  removeUnreadableCopies("u1");
+  expect(localStorage.getItem("essa_unreadable_u1_2026-10-15T09:00:00.000Z")).toBeNull();
+  expect(localStorage.getItem("essa_unreadable_u10_2026-10-15T09:00:00.000Z")).toBe("z");
+  expect(localStorage.getItem("essa_unreadable_u2_2026-10-15T09:00:00.000Z")).toBe("y");
+  expect(localStorage.getItem("essa_data_u1")).not.toBeNull();
 });
