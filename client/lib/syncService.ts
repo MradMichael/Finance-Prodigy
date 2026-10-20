@@ -71,11 +71,11 @@ export interface SyncResult {
   // problem. Unrecorded, the next push meets a conflict and merges again,
   // finding nothing new.
   notRecorded?: boolean;
-  // ERR-03 (session 22, draft, held): past the server's size cap. Retrying can't help.
+  // ERR-03 (session 22; approved and merged in session 23, b173718): past the server's size cap. Retrying can't help.
   tooLarge?: boolean;
-  // ERR-05 (session 22, draft, held): the request never reached the server, or got no answer in time.
+  // ERR-05 (session 22; approved and merged in session 23, b173718): the request never reached the server, or got no answer in time.
   unreachable?: boolean;
-  // Session 23, item 6 (draft, held): the status of a reply without the API's own error.
+  // Session 23, item 6 (approved and merged in session 24, 070f457): the status of a reply without the API's own error.
   serverStatus?: number;
 }
 
@@ -85,12 +85,12 @@ export const EMPTY_OVERWRITE_ASK = "Your backup on our server has data, but this
 /** Travel slice 0 (owner-approved, session 15): this device met a backup, or holds a copy, written by newer code, and has stopped syncing. */
 export const NEWER_BACKUP_MESSAGE = "Your backup was saved by a newer version of ESSA, so this device has stopped syncing. Reload ESSA to update it. Until then, changes stay on this device.";
 
-/** ERR-05 (session 22, draft, held): a request that never reached the server, or got no answer in time. It
+/** ERR-05 (session 22; approved and merged in session 23, b173718): a request that never reached the server, or got no answer in time. It
  * said "Could not reach server. Is it running?". The server can take a while to start after a quiet spell. */
 export const UNREACHABLE = "Couldn't reach the server. If you're online, it may be starting up: try again in a minute.";
-/** ERR-05 (session 22, draft, held): an answer without the API's own error (a proxy or platform page). It said "Sync failed (HTTP 504)." */
+/** ERR-05 (session 22; approved and merged in session 23, b173718): an answer without the API's own error (a proxy or platform page). It said "Sync failed (HTTP 504)." */
 export const serverTrouble = (status: number) => `The server had a problem (error ${status}). Try again in a minute.`;
-/** ERR-03 (session 22, draft, held): past the server's 2 MB cap, every backup fails. It said only "Validation failed". */
+/** ERR-03 (session 22; approved and merged in session 23, b173718): past the server's 2 MB cap, every backup fails. It said only "Validation failed". */
 export const BACKUP_TOO_LARGE = "This backup wasn't saved: your data is larger than the 2 MB the server can hold. Export a copy to keep one safe.";
 /** ERR-03: the server's own reason for that refusal (server/src/routes/sync.ts, pushSchema). */
 const isSizeRefusal = (status: number, json: { [key: string]: unknown } | null) =>
@@ -849,7 +849,7 @@ function settingValueText(setting: SettingKey, v: unknown): string {
 const CLASH_NOUNS = {
   goal: "the goal", debt: "the debt", recurring: "the recurring payment", asset: "the asset",
   wishlist: "the wishlist item", category: "the category", rule: "the category rule",
-  trip: "the trip", // travel slice 2 (held): approved in session 17
+  trip: "the trip", // travel slice 2 (merged in session 19, 15d791f): approved in session 17
   foreignEntry: "the foreign cash entry", // foreign cash, model 2: approved in session 19
 } as const;
 
@@ -946,7 +946,7 @@ export async function deleteFromServer(email: string, token: string): Promise<Sy
     if (!res.ok) return json?.error ? { ok: false, error: json.error } : { ok: false, serverStatus: res.status, error: serverTrouble(res.status) };
     return { ok: true };
   } catch {
-    return { ok: false, unreachable: true, error: UNREACHABLE }; // ERR-05 (session 23, item 6; draft, held)
+    return { ok: false, unreachable: true, error: UNREACHABLE }; // ERR-05 (session 23, item 6; approved and merged in session 24, 070f457)
   }
 }
 

@@ -159,7 +159,7 @@ export default function Home() {
   const lastSavedSeqRef = useRef(0);
   const autoWritesPausedRef = useRef(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  // ERR-04 (session 22, draft, held): the account's data couldn't be loaded (a record
+  // ERR-04 (session 22; approved and merged in session 23, b173718): the account's data couldn't be loaded (a record
   // that won't decrypt throws DECRYPT_FAILED, on purpose). Nothing caught it, and the
   // page sat on its loading screen.
   const [loadFailed, setLoadFailed] = useState(false);
@@ -193,7 +193,7 @@ export default function Home() {
   // failure and when the browser comes back online. A retry that fails
   // doesn't start a new series; the next edit's failure does.
   const [backupFailed, setBackupFailed] = useState(false);
-  // ERR-03 (session 22, draft, held): past the server's 2 MB cap. Retrying can't help,
+  // ERR-03 (session 22; approved and merged in session 23, b173718): past the server's 2 MB cap. Retrying can't help,
   // so ERR-02's notice ("ESSA will try again") and retries don't apply.
   const [backupTooLarge, setBackupTooLarge] = useState(false);
   const backupFailedRef = useRef(false);
@@ -409,7 +409,7 @@ export default function Home() {
       lastSavedRef.current = local;
       setFinancials(local);
     }).catch(() => {
-      // ERR-04 (draft, held): said at once, with the ways out; see the loading branch.
+      // ERR-04 (approved and merged in session 23, b173718): said at once, with the ways out; see the loading branch.
       if (!superseded()) setLoadFailed(true);
     });
   // Mount-only, and deliberately NOT keyed on `router`.
@@ -746,7 +746,7 @@ export default function Home() {
     return () => clearTimeout(t);
   }, [loaded]);
 
-  // A11Y-07 (session 22, draft, held): screens are state, not routes, so nothing told a
+  // A11Y-07 (session 22; approved and merged in session 23, b173718): screens are state, not routes, so nothing told a
   // screen reader the screen had changed, and every one had the same title. Each
   // screen now titles the page with its nav label, and a change of screen is
   // announced. Opening the app isn't announced, only a change.
@@ -971,7 +971,7 @@ export default function Home() {
             className="fixed left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50"
             style={{ top: saveError ? "7.5rem" : "1rem", background: T.panel, border: `1px solid ${T.brass}` }}
           >
-            {/* ERR-03 (session 22, draft, held) */}
+            {/* ERR-03 (session 22; approved and merged in session 23, b173718) */}
             <span className="text-sm" style={{ color: T.text }}>
               Your latest changes can&apos;t be backed up: your data is larger than the 2 MB the server can hold. They&apos;re safe on this device. Export a copy from Profile to keep one safe.
             </span>
@@ -996,7 +996,7 @@ export default function Home() {
         )}
       </div>
 
-      {/* A11Y-07 (session 22, draft, held): a change of screen, announced. After the other live regions, so their order holds. */}
+      {/* A11Y-07 (session 22; approved and merged in session 23, b173718): a change of screen, announced. After the other live regions, so their order holds. */}
       <span id="screen-announcer" role="status" className="sr-only">{screenAnnounced}</span>
 
       {/* Audit 2.4.153: the backup choice for an undecided account -- blocking, asked once. */}

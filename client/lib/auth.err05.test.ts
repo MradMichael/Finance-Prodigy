@@ -1,4 +1,4 @@
-// Session 22, item 3 (wording drafts, HELD): ERR-05 in sign-in and recovery.
+// Session 22, item 3 (wording drafts; approved and merged in session 23, b173718): ERR-05 in sign-in and recovery.
 // Every failure here was wrapped as "(<developer text>). Check your
 // connection and try again.", even a server error, which then read "Something
 // went wrong on our side ... Check your connection". Now: the connection is

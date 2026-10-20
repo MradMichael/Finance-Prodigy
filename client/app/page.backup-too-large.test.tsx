@@ -1,4 +1,4 @@
-// Session 22, item 3 (wording drafts, HELD): ERR-03 on the dashboard. Past
+// Session 22, item 3 (wording drafts; approved and merged in session 23, b173718): ERR-03 on the dashboard. Past
 // the server's 2 MB cap every backup fails, for good. The automatic backup
 // showed ERR-02's notice ("... and ESSA will try again") and retried at 1, 5
 // and 15 minutes, which can't succeed. Now it says why, and what to do, and

@@ -1,4 +1,4 @@
-// Session 22, item 3 (wording drafts, HELD): ERR-03 and ERR-05 in the sync service.
+// Session 22, item 3 (wording drafts; approved and merged in session 23, b173718): ERR-03 and ERR-05 in the sync service.
 // - ERR-03: past the server's 2 MB cap, a push said only "Validation failed";
 //   the reason was in `issues`, and nothing showed it. It's now named, with
 //   what to do, and marked so the automatic backup stops retrying.

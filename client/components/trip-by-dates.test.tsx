@@ -1,4 +1,4 @@
-// Session 22, item 1b (owner; HELD): a spend dated inside a trip's dates
+// Session 22, item 1b (owner; approved and merged in session 23, 2f5d30c): a spend dated inside a trip's dates
 // defaults its Trip to that trip, still changeable to "No trip"; outside every
 // trip it defaults to "No trip", and tagging an earlier booking by hand still
 // works. In the main entry form and statement import (the foreign-cash spend

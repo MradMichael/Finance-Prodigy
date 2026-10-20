@@ -63,7 +63,7 @@ export default function CurrencyScreen({ financials, onChange }: { financials: L
     // stamped as "just updated" -- a rejected edit must not read as verified.
     if (!isNaN(parsed)) {
       const clamped = Math.min(LBP_RATE_MAX, Math.max(LBP_RATE_MIN, parsed));
-      // Plan J (held): the edit goes in the dated log too (recordRateEdit), so entries keep their own day's rate.
+      // Plan J (merged in session 23, bafa688): the edit goes in the dated log too (recordRateEdit), so entries keep their own day's rate.
       onChange(recordRateEdit(financials, clamped));
     }
     setLbpRateInput(null);

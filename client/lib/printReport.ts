@@ -52,7 +52,7 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
   // already uses everywhere else, or a rate change since the transaction
   // was logged silently reprices history and disagrees with Overview/
   // Statistics for the exact same transaction.
-  const toUSDOn = makeToUSDOn(data); // plan J (held): each ledger row at its own day's rate
+  const toUSDOn = makeToUSDOn(data); // plan J (merged in session 23, bafa688): each ledger row at its own day's rate
   const BL = { NEEDS: "Needs", WANTS: "Wants", SAVINGS: "Savings", INCOME: "Income", TRANSFER: "Transfer" } as const;
 
   // SEC-02: this page is same-origin HTML built by interpolation, and stored

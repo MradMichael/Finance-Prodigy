@@ -239,7 +239,7 @@ export default function FinancialDashboard({
                 : budgetTargetPct.savings > 0 && month.savingsRatePct >= budgetTargetPct.savings
                 ? <>{user.name.split(" ")[0]}, you saved <span style={{ color: T.jade }}>{money(month.savingsContrib)}</span>, at or above your {budgetTargetPct.savings}% target.</>
                 : month.netCashFlow > 0
-                // COPY-07 (session 22, draft, held): income minus spending so far, said so; it read "You kept $X this cycle" from the cycle's first minutes.
+                // COPY-07 (session 22; approved and merged in session 23, b173718): income minus spending so far, said so; it read "You kept $X this cycle" from the cycle's first minutes.
                 ? <>You&apos;ve kept <span style={{ color: T.brass }}>{money(month.netCashFlow)}</span> so far this {noun}, {user.name.split(" ")[0]}. Every dollar counts.</>
                 : <>Spending exceeded income by <span style={{ color: T.coral }}>{money(-month.netCashFlow)}</span> this {noun}, {user.name.split(" ")[0]}. The plan below shows the path.</>}
             </h1>
@@ -470,7 +470,7 @@ export default function FinancialDashboard({
         {/* Row 1: health · 50/30/20 · trend */}
         <div className="grid gap-6 md:grid-cols-3">
           <Panel title="Financial health">
-            {/* ERR-06 (session 22, draft, held): no score until there's something to score. */}
+            {/* ERR-06 (session 22; approved and merged in session 23, b173718): no score until there's something to score. */}
             {!health.measured ? (
               <div className="py-6 text-center">
                 <p className="text-2xl" style={{ ...SERIF, color: T.text }}>No score yet</p>

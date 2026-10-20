@@ -1,4 +1,4 @@
-// CODE-05's remainder (plan J, session 22; HELD): the live rate was read as
+// CODE-05's remainder (plan J, session 22; merged in session 23, bafa688): the live rate was read as
 // `x.lbpRate ?? DEFAULT_LBP_RATE` in 49 places (a 0 or NaN rate passes
 // through `??`), and seven screens wrote their own lira converter. The rate
 // is now read through lbpRateOf (guarded by rateOrDefault, "the single place

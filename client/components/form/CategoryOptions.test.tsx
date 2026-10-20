@@ -1,4 +1,4 @@
-// Session 22, item 1a (owner; HELD): eight travel categories, in every
+// Session 22, item 1a (owner; approved and merged in session 23, 2f5d30c): eight travel categories, in every
 // category picker, grouped as "Travel": Flights, Accommodation, Local
 // transport, Food & dining, Activities, Shopping, Insurance & visas, Other
 // travel. They're built in (code, not seeded into anyone's data), so custom

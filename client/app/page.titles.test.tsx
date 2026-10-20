@@ -1,4 +1,4 @@
-// Session 22, item 3 (wording drafts, HELD): A11Y-07. Every page and every
+// Session 22, item 3 (wording drafts; approved and merged in session 23, b173718): A11Y-07. Every page and every
 // app screen had one title, "ESSA: Earn Spend Save Achieve", and changing
 // screens inside the app (React state, not a route) said nothing to a screen
 // reader. Now each page has its own title, from its own heading; each app

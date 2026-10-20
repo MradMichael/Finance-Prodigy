@@ -99,7 +99,7 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
   const [showDeleted, setShowDeleted] = useState(false);
 
   const toUSD   = makeToUSDLive(financials);
-  // Plan J (held): each row at the rate in effect on its own day, as the dashboard prices it; this screen used today's rate for every row, past ones too.
+  // Plan J (merged in session 23, bafa688): each row at the rate in effect on its own day, as the dashboard prices it; this screen used today's rate for every row, past ones too.
   const toUSDOn = makeToUSDOn(financials);
 
   // Every normal read on this screen (totals, search, trends, the month

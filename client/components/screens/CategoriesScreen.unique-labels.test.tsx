@@ -1,9 +1,9 @@
-// Session 22, item 1 (owner's answer; HELD): no two categories in a picker may
+// Session 22, item 1 (owner's answer; approved and merged in session 23, 2f5d30c): no two categories in a picker may
 // share a label. The travel "Shopping" is now "Souvenirs & shopping" (owner's
 // wording), and the built-in labels are all different. A custom category
 // could still repeat one: adding "Shopping" made a second "Shopping"
 // (shopping-2). Adding or renaming one to a label already in the pickers
-// (ignoring case and surrounding spaces) is refused, and says why (draft).
+// (ignoring case and surrounding spaces) is refused, and says why (approved; approved and merged in session 23, 2f5d30c).
 // Changing only the case of a category's own name is allowed.
 import { it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";

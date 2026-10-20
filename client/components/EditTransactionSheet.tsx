@@ -85,7 +85,7 @@ export default function EditTransactionSheet({
   const [date,       setDate]       = useState(transaction.date);
   const [bucket,     setBucket]     = useState<TxBucket>(transaction.bucket);
   const [category,   setCategory]   = useState<string>(transaction.category ?? "");
-  // Travel slice 2 (held): the trip this row belongs to; a tag whose trip is gone shows as none.
+  // Travel slice 2 (merged in session 19, 15d791f): the trip this row belongs to; a tag whose trip is gone shows as none.
   const trips = financials.trips ?? [];
   const [tripId,     setTripId]     = useState<string>(trips.some((x) => x.id === transaction.tripId) ? transaction.tripId! : "");
   const [currency,   setCurrency]   = useState<Currency>(transaction.currency ?? "USD");
@@ -301,7 +301,7 @@ export default function EditTransactionSheet({
             <option value="">No category</option>
             <CategoryOptions customCategories={financials.customCategories} />
           </select>
-          {/* Travel slice 2 (held): labels approved in session 17. */}
+          {/* Travel slice 2 (merged in session 19, 15d791f): labels approved in session 17. */}
           {trips.length > 0 && (
             <select value={tripId} onChange={(e) => setTripId(e.target.value)} aria-label="Trip"
               className="w-full rounded-lg px-2 py-1.5 text-[10px]"

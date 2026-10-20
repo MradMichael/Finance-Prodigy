@@ -31,7 +31,7 @@ export default function CategoriesScreen({
   const [editIcon, setEditIcon] = useState("");
   const [editName, setEditName] = useState("");
   // Session 22 (owner): no two categories in a picker may share a label. The label a
-  // new name or a rename would repeat, ignoring case and surrounding spaces (draft wording).
+  // new name or a rename would repeat, ignoring case and surrounding spaces (approved wording; approved and merged in session 23, 2f5d30c).
   const [nameTaken, setNameTaken] = useState<string | null>(null);
   const [editTaken, setEditTaken] = useState<string | null>(null);
   const [ruleKeyword, setRuleKeyword] = useState("");
@@ -40,7 +40,7 @@ export default function CategoriesScreen({
   const customCategories = financials.customCategories ?? [];
   const categoryRules = financials.categoryRules ?? [];
   const toUSD = makeToUSDLive(financials);
-  // Plan J (held): each row at the rate in effect on its own day, as the dashboard prices it; this screen used today's rate for every row, past ones too.
+  // Plan J (merged in session 23, bafa688): each row at the rate in effect on its own day, as the dashboard prices it; this screen used today's rate for every row, past ones too.
   const toUSDOn = makeToUSDOn(financials);
 
   const labelTaken = (name: string, except?: string) =>

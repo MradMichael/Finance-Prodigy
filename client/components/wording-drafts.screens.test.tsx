@@ -1,4 +1,4 @@
-// Session 22, item 3 (wording drafts, HELD), on screen:
+// Session 22, item 3 (wording drafts; approved and merged in session 23, b173718), on screen:
 // - ERR-06: a brand-new account scored 44, "Gaining ground", from two
 //   sub-scores that read 100 because nothing was there to measure (0% of $0
 //   on essentials, no debt payments). No score now until there's income and

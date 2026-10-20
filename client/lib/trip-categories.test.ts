@@ -1,4 +1,4 @@
-// Session 22, items 1c-1e (owner; HELD): a trip's category view and its
+// Session 22, items 1c-1e (owner; approved and merged in session 23, 2f5d30c): a trip's category view and its
 // untagged spends. The owner's example: €400 bought for $460.04; a €40 dinner
 // from that cash (Food & dining); a $300 hotel by card (Accommodation); a
 // Netflix charge inside the trip's dates, untagged.

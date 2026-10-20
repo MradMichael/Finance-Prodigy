@@ -25,7 +25,7 @@ import CategoryOptions from "../form/CategoryOptions";
 
 const usd = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 const num = (s: string) => parseFloat(s.replace(/,/g, ""));
-// Session 22, item 1d (HELD, DRAFT wording): a category's line. With no cash it keeps the approved form ("Dining out: $0.00
+// Session 22, item 1d (approved and merged in session 23, 2f5d30c): a category's line. With no cash it keeps the approved form ("Dining out: $0.00
 // of $400.00"); with cash, the euros sit beside the dollars, never added, and the budget compares against both.
 function categoryLine(label: string, r: TripCategoryRow): string {
   const of = r.budgetUSD !== undefined ? ` of ${usd(r.budgetUSD)}` : "";
@@ -195,7 +195,7 @@ export default function TripsScreen({ financials, onChange }: { financials: Loca
               <p className="text-sm tabular-nums" style={{ color: left < 0 ? T.coral : T.text }}>
                 {`Budget ${usd(trip.budgetUSD)} · spent ${usd(actual.totalUSD)} · ${left < 0 ? `${usd(-left)} over` : `${usd(left)} left`}`}
               </p>
-              {/* Session 22, item 1d (HELD, DRAFT wording): the trip by category. The exchanges count in the total
+              {/* Session 22, item 1d (approved and merged in session 23, 2f5d30c): the trip by category. The exchanges count in the total
                   and in no category: they're the money moving, not a purchase. */}
               {(view.rows.length > 0 || view.exchangesUSD !== 0) && (
                 <div className="space-y-0.5">

@@ -1,4 +1,4 @@
-// Plan J (session 22; HELD): two parts no test reached, found by the
+// Plan J (session 22; merged in session 23, bafa688): two parts no test reached, found by the
 // perturbation run (they pass as written; each perturbation now fails here).
 // - A past cycle's totals (periodTotals: the rollover and every per-cycle
 //   view) price each row at its own day's rate, not today's.

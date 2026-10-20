@@ -56,7 +56,7 @@ export function ExchangeForm({ financials, onChange, onDone, presetTripId, idPre
   const lbpRate = lbpRateOf(financials);
   const trips = financials.trips ?? [];
   const cards = financials.cards ?? [];
-  const toUSD = makeToUSDOn(financials); // plan J (held): what the exchange cost, at its own day's rate
+  const toUSD = makeToUSDOn(financials); // plan J (merged in session 23, bafa688): what the exchange cost, at its own day's rate
 
   const [exDate, setExDate] = useState(todayISO());
   const [payMethod, setPayMethod] = useState<PaymentMethod>("cash");

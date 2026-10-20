@@ -19,11 +19,11 @@ export const SEEN_KINDS = [
   "settings", "incomeHistory", "lbpRateHistory", "budgetRuleHistory", "netWorthHistory",
   // Item 7 (owner, session 8): every transaction, by id.
   "transactions",
-  // Travel slice 2 (held): trips, by id, like the wishlist.
+  // Travel slice 2 (merged in session 19, 15d791f): trips, by id, like the wishlist.
   "trips",
-  // Foreign cash, model 2 (held): the sheets' entries, by id, like trips.
+  // Foreign cash, model 2 (merged in session 19, 15d791f): the sheets' entries, by id, like trips.
   "foreignEntries",
-  // Plan J (held): the rate log, by its day.
+  // Plan J (merged in session 23, bafa688): the rate log, by its day.
   "lbpRateLog",
 ] as const;
 export type SeenKind = (typeof SEEN_KINDS)[number];
