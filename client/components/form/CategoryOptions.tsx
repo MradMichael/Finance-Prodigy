@@ -3,7 +3,7 @@
 import { allCategories, categoryLabel, TRAVEL_CATEGORY_KEYS, type CustomCategory } from "../../lib/localData";
 
 /**
- * Session 22, item 1a (owner; HELD): the options every category picker shows.
+ * Session 22, item 1a (owner; approved and merged in session 23, 2f5d30c): the options every category picker shows.
  * The ordinary built-ins and the account's own categories as before, then the
  * travel categories grouped as "Travel". The picker supplies its own first
  * option ("No category", "Choose…").

@@ -565,7 +565,7 @@ export interface StoredTransaction {
   // euros received) or a change-back row (the euros given back). Dropped by
   // a purge, like every other payload field.
   fx?: ForeignCashNote;
-  // Travel slice 2 (held): the trip this row belongs to (lib/trips.ts). An
+  // Travel slice 2 (merged in session 19, 15d791f): the trip this row belongs to (lib/trips.ts). An
   // exchange's two rows carry it together. A tag whose trip was deleted is
   // kept, and counts nowhere.
   tripId?: string;
@@ -796,7 +796,7 @@ export const CATEGORIES = [
   { value: "education",    label: "Education",         icon: "📚" },
   { value: "gifts",        label: "Gifts & donations", icon: "🎁" },
   { value: "other",        label: "Other",             icon: "📦" },
-  // Session 22, item 1a (owner; HELD): travel categories, built in (not seeded into anyone's data), shown in
+  // Session 22, item 1a (owner; approved and merged in session 23, 2f5d30c): travel categories, built in (not seeded into anyone's data), shown in
   // every picker grouped as "Travel" (components/form/CategoryOptions). "travel" above stays the exchange row's.
   { value: "travel-flights",         label: "Flights",           icon: "🛫" },
   { value: "travel-accommodation",   label: "Accommodation",     icon: "🏨" },
@@ -934,7 +934,7 @@ export interface LocalFinancials {
   /** Same idea as incomeHistory, for `lbpRate` — LBP is volatile enough that using today's rate to re-convert a past month's LBP transactions silently rewrites history every time the rate is updated. */
   lbpRateHistory?: CycleHistory;
   /**
-   * Plan J (session 22; HELD): the rate as edited, dated by the local day of the edit. Appended at the edit, a
+   * Plan J (session 22; merged in session 23, bafa688): the rate as edited, dated by the local day of the edit. Appended at the edit, a
    * second edit the same day replacing that day's entry; never rewritten otherwise. rateOn reads it. `at` is
    * the edit's instant, for a two-sided clash in a merge. lbpRateHistory above is still written (each cycle's
    * last value), so older readers read what they did.
@@ -1051,9 +1051,9 @@ export interface LocalFinancials {
    * (lib/clashNotice.ts).
    */
   transactionClashRecords?: ClashRecord[];
-  // Travel slice 2 (held): trips (lib/trips.ts), merged like the wishlist.
+  // Travel slice 2 (merged in session 19, 15d791f): trips (lib/trips.ts), merged like the wishlist.
   trips?: StoredTrip[];
-  // Foreign cash, model 2 (held): the sheets' entries that aren't ledger
+  // Foreign cash, model 2 (merged in session 19, 15d791f): the sheets' entries that aren't ledger
   // rows (lib/foreignCash.ts), merged like trips.
   foreignEntries?: StoredForeignEntry[];
 }
@@ -1559,7 +1559,7 @@ function convertForeignCash(d: LocalFinancials): LocalFinancials {
   };
 }
 /**
- * Plan J, v8 → v9 (session 22; HELD): the rate log, from the cycle history. Each cycle's entry becomes
+ * Plan J, v8 → v9 (session 22; merged in session 23, bafa688): the rate log, from the cycle history. Each cycle's entry becomes
  * `{ from: that cycle's first day, value }`, under the payday at migration (2.4.102: a cycle written under
  * an earlier payday is read under this one, as the history already is). A copy that has a log keeps it.
  * Additive: the history stays, so a price read before the log's first day is exactly today's.
@@ -2603,7 +2603,7 @@ export function makeToUSDLive(d: { lbpRate?: number | null }): (amount: number, 
 }
 
 /**
- * Plan J (session 22; HELD): the rate in effect on a local day (YYYY-MM-DD, or an instant: its first ten
+ * Plan J (session 22; merged in session 23, bafa688): the rate in effect on a local day (YYYY-MM-DD, or an instant: its first ten
  * characters). The latest log entry on or before it. Before the log's first entry, or with no log, exactly
  * today's path: the cycle history, then the live rate. Every flow (what a transaction cost) reads this, the
  * current cycle included, so a rate edit never re-prices what's already entered; held values read the live rate.
@@ -2630,7 +2630,7 @@ export function makeToUSDOn(d: LocalFinancials): (amount: number, currency: stri
 }
 
 /**
- * Plan J (session 22; HELD): a rate edit. The live rate and its edit time as before, and an entry in the log
+ * Plan J (session 22; merged in session 23, bafa688): a rate edit. The live rate and its edit time as before, and an entry in the log
  * dated the edit's local day; a second edit the same day replaces that day's entry only.
  */
 export function recordRateEdit(d: LocalFinancials, value: number, now: Date = new Date()): LocalFinancials {

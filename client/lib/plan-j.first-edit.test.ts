@@ -1,4 +1,4 @@
-// Plan J (session 22; HELD), a gap found before the live check: the first
+// Plan J (session 22; merged in session 23, bafa688), a gap found before the live check: the first
 // rate edit on an account whose log has nothing before today (a new account
 // carries no log) repriced this cycle's earlier lira entries. rateOn fell back
 // to the cycle's history entry for a day the log didn't cover, and the

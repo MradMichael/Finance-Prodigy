@@ -1,4 +1,4 @@
-// Session 22, item 1 (owner's answer; HELD): a custom category added before
+// Session 22, item 1 (owner's answer; approved and merged in session 23, 2f5d30c): a custom category added before
 // the no-shared-label rule can still carry a built-in's label, e.g. a custom
 // "Shopping" beside the built-in one. Its stored data stays as it is (no
 // rename, no migration). On screen it reads "Shopping (custom)" (owner's

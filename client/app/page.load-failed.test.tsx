@@ -1,4 +1,4 @@
-// Session 22, item 3 (wording drafts, HELD): ERR-04. A stored record that
+// Session 22, item 3 (wording drafts; approved and merged in session 23, b173718): ERR-04. A stored record that
 // won't decrypt made loadData throw DECRYPT_FAILED, on purpose, and nothing
 // caught it: the page sat on its loading screen, and after 8 seconds said a
 // slow connection or a stuck tab could cause this, with "Reload the page",

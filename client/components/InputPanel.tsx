@@ -83,7 +83,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   const [txCategory, setTxCategory] = useState<string>("");
   const [txDesc,   setTxDesc]   = useState("");
   const [txDate,   setTxDate]   = useState(todayISO());
-  // Session 22, item 1b (HELD): the Trip follows the date (a spend inside a trip's dates defaults to it) until
+  // Session 22, item 1b (approved and merged in session 23, 2f5d30c): the Trip follows the date (a spend inside a trip's dates defaults to it) until
   // the person picks one, "No trip" included. Income and transfers default to no trip.
   const [txTripPick, setTxTripPick] = useState<string | null>(null);
   const [txCurrency,  setTxCurrency]  = useState<Currency>("USD");
@@ -558,7 +558,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   const today    = calendarDayOf(now);
   const lbpRate  = lbpRateOf(financials);
   const toUSD    = makeToUSDLive(financials);
-  // Plan J (held): each row at the rate in effect on its own day, as the dashboard prices it; this screen used today's rate for every row, past ones too.
+  // Plan J (merged in session 23, bafa688): each row at the rate in effect on its own day, as the dashboard prices it; this screen used today's rate for every row, past ones too.
   const toUSDOn  = makeToUSDOn(financials);
   const recs     = financials.recurring ?? [];
   // Recurring bills already fed the Needs/Wants/Savings totals just below

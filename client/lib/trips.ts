@@ -87,7 +87,7 @@ export function isReimbursement(t: StoredTransaction, all: StoredTransaction[]):
 
 /** The trip's actual in USD, in total and by category ("" for none), and the rows counted. */
 export function tripActual(data: LocalFinancials, trip: StoredTrip): { totalUSD: number; byCategoryUSD: Record<string, number>; rows: StoredTransaction[] } {
-  const toUSD = makeToUSDOn(data); // plan J (held): each row at its own day's rate
+  const toUSD = makeToUSDOn(data); // plan J (merged in session 23, bafa688): each row at its own day's rate
   const all = data.transactions ?? [];
   const sign = (t: StoredTransaction) => (SPENDING.has(t.bucket) ? 1 : t.bucket === "INCOME" || isReimbursement(t, all) ? -1 : 0);
   const rows = activeTransactions(all).filter((t) => t.tripId === trip.id && sign(t) !== 0);
@@ -118,7 +118,7 @@ export function deleteTrip(data: LocalFinancials, tripId: string, now: Date = ne
   return { ...data, trips: (data.trips ?? []).filter((t) => t.id !== tripId), deletedKeys: recordDeletion(data, "trips", tripId, now) };
 }
 
-// ── Session 22, items 1c and 1d (owner; HELD) ──────────────────────────────
+// ── Session 22, items 1c and 1d (owner; approved and merged in session 23, 2f5d30c) ──────────────────────────────
 
 /**
  * The spends dated inside the trip (start and end included) that carry no

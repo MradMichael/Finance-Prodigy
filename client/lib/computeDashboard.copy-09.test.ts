@@ -20,7 +20,7 @@ const SEP = asCalendarKey("2026-09");
 const advice = (o: Partial<LocalFinancials>) => computeDashboard({ ...DEFAULT_DATA, income: 3000, ...o } as LocalFinancials).netWorth;
 
 it("breaking even with two goals and $500 in the safety net: no \"Set a goal\", no \"Start or grow\"", () => {
-  // Item 4a (held): breaking even is now under one month of the $3,000 income, so $2,841, not $4,841.
+  // Item 4a (merged in session 26, f65310f): breaking even is now under one month of the $3,000 income, so $2,841, not $4,841.
   const nw = advice({ assets: [asset(2341)], emergencyFundOpeningBalance: 500, goals: [goal("g1", "Laptop"), goal("g2", "Wedding")] as LocalFinancials["goals"] });
   expect(nw.total).toBe(2841);
   expect(nw.tier).toBe("Breaking even");
@@ -32,7 +32,7 @@ it("breaking even with two goals and $500 in the safety net: no \"Set a goal\", 
 });
 
 it("breaking even with no goals and nothing in the safety net: the advice to start both", () => {
-  const nw = advice({ assets: [asset(2000)] }); // item 4a (held): under one month of income
+  const nw = advice({ assets: [asset(2000)] }); // item 4a (merged in session 26, f65310f): under one month of income
   expect(nw.tier).toBe("Breaking even");
   expect(nw.suggestions).toEqual([
     "Your liabilities are covered. Now every dollar saved is pure net worth growth.",

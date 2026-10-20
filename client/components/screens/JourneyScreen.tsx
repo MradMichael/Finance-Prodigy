@@ -64,7 +64,7 @@ export default function JourneyScreen({
   const ymKeyFull = (k: number) => cycleLabelLong(ymKeyToCycleKey(k), startDay);
 
   // ── Category shift: earliest vs. latest calendar month with logged transactions ──
-  // Plan J (held): each row at the rate in effect on its own day (rateOn, guarded), as the dashboard prices it;
+  // Plan J (merged in session 23, bafa688): each row at the rate in effect on its own day (rateOn, guarded), as the dashboard prices it;
   // this screen used today's rate for every row, past ones too.
   const toUSDOn = makeToUSDOn(financials);
   // Phase 2.6.3b: soft-deleted transactions excluded from both the
@@ -307,7 +307,7 @@ export default function JourneyScreen({
           ) : efProjection.months !== null ? (
             <>
               <p className="text-xl leading-snug" style={SERIF}>
-                {/* COPY-04 (session 22, draft, held): the pace is the budget's recommended savings (2.4.70), not the user's; it said "Keep this pace". */}
+                {/* COPY-04 (session 22; approved and merged in session 23, b173718): the pace is the budget's recommended savings (2.4.70), not the user's; it said "Keep this pace". */}
                 Saving the recommended <span style={{ ...NUMS, color: T.brass }}>{money(efRate)}</span> each {periodNoun(cycleStartDayOf(financials))}, your safety net is complete by <span style={{ ...NUMS, color: T.brass }}>{efProjection.dateDisplay}</span>.
               </p>
               <button

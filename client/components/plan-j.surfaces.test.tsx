@@ -1,4 +1,4 @@
-// Plan J on screen (session 22; HELD). The rate was L£89,500 per $1 until an
+// Plan J on screen (session 22; merged in session 23, bafa688). The rate was L£89,500 per $1 until an
 // edit to 120,000 on 20 Sep (the log: 89,500 from 1 Sep, 120,000 from 20 Sep).
 // - CUR-05: the edit sheet showed a past lira entry's emergency-fund portion
 //   at today's rate (L£1,200,000 for what was typed as L£895,000), so

@@ -409,7 +409,7 @@ export default function BalanceCheckScreen({
                 const { residual, explainedByActivity, netActivitySinceCheck } = balanceCheckReconciliation(gap, b.changeSinceCheck);
                 const residualStillOpen = Math.abs(residual) >= 1;
                 const expectedAsOfCheck = Math.round((b.expected - b.changeSinceCheck) * 100) / 100;
-                // J3 (plan J, held): a lira balance reads in lira, at the rate on its check's own day.
+                // J3 (plan J, merged in session 23, bafa688): a lira balance reads in lira, at the rate on its check's own day.
                 const checkRate = liraRate(b.currency, b.actualDate, tracked.find((t) => t.id === b.id)?.startingDate);
                 const shown = (usd: number) => (checkRate ? fmtCur(Math.round(usd * checkRate), "LBP") : money(usd));
                 const saidNative = (financials.trackedBalances ?? []).find((t) => t.id === b.id)?.actualBalance;

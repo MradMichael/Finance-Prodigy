@@ -192,7 +192,7 @@ export async function signUp(
  * plaintext sync backup is portable) and adopts the pulled data as-is, the
  * same end state "sign up, then Pull" already produces manually.
  */
-// ERR-05 (session 22, draft, held): a failure, by its cause, in the user's words. Each
+// ERR-05 (session 22; approved and merged in session 23, b173718): a failure, by its cause, in the user's words. Each
 // was "(<developer text>). Check your connection and try again.", a server error too.
 // The connection is named only when the server couldn't be reached; otherwise
 // the server's own sentence is passed on as written.

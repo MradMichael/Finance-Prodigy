@@ -57,7 +57,7 @@ export interface DashboardPayload {
   }[];
   health: {
     score: number; grade: string;
-    /** ERR-06 (session 22, draft, held): false until there's income and at least one entry. Before that
+    /** ERR-06 (session 22; approved and merged in session 23, b173718): false until there's income and at least one entry. Before that
      *  two sub-scores read 100 from nothing (0% of $0 on essentials, no debt payments) and a new
      *  account scored 44, "Gaining ground". The score and grade are still computed; nothing shows them. */
     measured: boolean;
@@ -188,7 +188,7 @@ function historizedRecurAsOf(r: StoredRecurring, cycleStart: Date, cycleEnd: Dat
 function expectedFromRelevantTx(
   tb: Pick<TrackedBalance, "startingBalance" | "startingDate" | "currency">,
   relevantTx: StoredTransaction[],
-  // Plan J (held): each row and the starting balance at the rate in effect on its own day.
+  // Plan J (merged in session 23, bafa688): each row and the starting balance at the rate in effect on its own day.
   toUSDOn: (amount: number, currency: string | undefined, day: string) => number,
 ): number {
   // INCOME transactions received on this same payment method put money IN,
@@ -296,7 +296,7 @@ export function periodTotals(
   const toUSDForMonth = makeToUSDForMonth(data);
   const tx = activeTransactions(data.transactions ?? []).filter((t) => isInCycle(t.date, ym, startDay));
   // Session 19: the shared spending rule (lib/spending.ts): a change-back nets against Wants; income, transfers and other reimbursements stay out.
-  const toUSDOn = makeToUSDOn(data); // plan J (held): what each row cost, on its own day
+  const toUSDOn = makeToUSDOn(data); // plan J (merged in session 23, bafa688): what each row cost, on its own day
   const spent = spentByBucket(tx, (t) => toUSDOn(t.amount, t.currency, t.date));
   const salary = valueForMonth(data.incomeHistory, ym, data.income);
   const txIncome = tx.filter((t) => t.bucket === "INCOME").reduce((s, t) => s + toUSDOn(t.amount, t.currency, t.date), 0);
@@ -435,7 +435,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   // display sites (e.g. sixMonthTrend) use this directly; only the one
   // division site (the savings-streak check) needs the floored version.
   const toUSDForMonth = makeToUSDForMonth(data);
-  // Plan J (held): every transaction at the rate in effect on its own day, this cycle's included (2.4.90's
+  // Plan J (merged in session 23, bafa688): every transaction at the rate in effect on its own day, this cycle's included (2.4.90's
   // residual: a rate edit no longer re-prices what's already entered). Recurring items keep their cycle's rate.
   const toUSDOn = makeToUSDOn(data);
   // Base salary for that month plus any one-off INCOME transactions logged
@@ -721,7 +721,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   const nwTotal       = nwAssets - nwLiabilities;
 
   type NWColor = "jade" | "brass" | "coral" | "mute";
-  // COPY-09 (session 22, draft, held): the advice was fixed per tier and never read the data it
+  // COPY-09 (session 22; approved and merged in session 23, b173718): the advice was fixed per tier and never read the data it
   // talks about ("Set a goal..." beside two goals; "shrinking each month" with no look at the
   // trend; "ahead of most people your age" with no age). Each line now reads what it claims,
   // or claims less. "Last month" is the latest calendar month in netWorthHistory before this one.

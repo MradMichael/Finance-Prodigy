@@ -1,4 +1,4 @@
-// Travel slice 2 (HELD): trips sync like the wishlist. Merged by key with
+// Travel slice 2 (merged in session 19, 15d791f): trips sync like the wishlist. Merged by key with
 // tombstones before a device has a record of a last sync, and under the
 // fingerprint rule after: a one-sided change is taken, a two-sided one keeps
 // the later edit and is named ("the trip": approved in session 17). A reset clears trips;

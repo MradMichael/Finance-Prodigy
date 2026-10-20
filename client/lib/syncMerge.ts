@@ -276,7 +276,7 @@ export const RULE_FIELDS = [
   "income", "lbpRate", "lbpRateUpdatedAt", "budgetRule", "budgetCustomNeeds", "budgetCustomWants", "budgetSplitHealedAt", "budgetSplitHealedFrom",
   "cycleStartDay", "cycleStartDayChangedAt", "emergencyFundTargetMonths",
   "incomeHistory", "lbpRateHistory", "budgetRuleHistory", "netWorthHistory",
-  "lbpRateLog", // plan J (held)
+  "lbpRateLog", // plan J (merged in session 23, bafa688)
 ] as const satisfies readonly (keyof LocalFinancials)[];
 
 export interface MergeFinancialsResult {
@@ -660,9 +660,9 @@ function mergeUnderRule(local: LocalFinancials, server: LocalFinancials, deleted
   const recurring = mergeBySeen(local.recurring ?? [], server.recurring ?? [], (r) => r.id, s("recurring"), stamp); named("recurring", recurring);
   const assets = mergeBySeen(local.assets ?? [], server.assets ?? [], (a) => a.id, s("assets"), stamp); named("asset", assets);
   const wishlist = mergeBySeen(live(local.wishlist, (w) => w.id, "wishlist"), live(server.wishlist, (w) => w.id, "wishlist"), (w) => w.id, s("wishlist"), stamp); named("wishlist", wishlist);
-  // Travel slice 2 (held): trips, as the wishlist.
+  // Travel slice 2 (merged in session 19, 15d791f): trips, as the wishlist.
   const trips = mergeBySeen(live(local.trips, (t) => t.id, "trips"), live(server.trips, (t) => t.id, "trips"), (t) => t.id, s("trips"), stamp); named("trip", trips);
-  // Foreign cash, model 2 (held): the sheets' entries, as trips; named by their description.
+  // Foreign cash, model 2 (merged in session 19, 15d791f): the sheets' entries, as trips; named by their description.
   const foreignEntries = mergeBySeen(live(local.foreignEntries, (e) => e.id, "foreignEntries"), live(server.foreignEntries, (e) => e.id, "foreignEntries"), (e) => e.id, s("foreignEntries"), stamp);
   settle(foreignEntries, (c) => ({ kind: "foreignEntry", name: c.winner.description, later: c.later }));
   const categories = mergeBySeen(live(local.customCategories, (c) => c.value, "customCategories"), live(server.customCategories, (c) => c.value, "customCategories"), (c) => c.value, s("customCategories"), stamp);
@@ -689,7 +689,7 @@ function mergeUnderRule(local: LocalFinancials, server: LocalFinancials, deleted
       ...(local.foreignEntries || server.foreignEntries ? { foreignEntries: foreignEntries.items } : {}),
       incomeHistory: hist(local.incomeHistory, server.incomeHistory, "incomeHistory"),
       lbpRateHistory: hist(local.lbpRateHistory, server.lbpRateHistory, "lbpRateHistory"),
-      // Plan J (held): the rate log merges by its day under the fingerprint rule, a two-sided clash on one day
+      // Plan J (merged in session 23, bafa688): the rate log merges by its day under the fingerprint rule, a two-sided clash on one day
       // to the later edit (`at`). Written only when a copy has a log, as trips are.
       ...(local.lbpRateLog || server.lbpRateLog ? { lbpRateLog: mergeBySeen(local.lbpRateLog ?? [], server.lbpRateLog ?? [], (e) => e.from, s("lbpRateLog"), at).items.sort((a, b) => a.from.localeCompare(b.from)) } : {}),
       budgetRuleHistory: hist(local.budgetRuleHistory, server.budgetRuleHistory, "budgetRuleHistory"),
