@@ -1,4 +1,4 @@
-// Item 4a (owner, session 25; HELD): what the net worth bands change on screen.
+// Item 4a (owner, session 25; merged in session 26): what the net worth bands change on screen.
 // With no income set there's no tier: Overview shows the figure without a tier
 // and the owner's sentence where the advice was; the report shows the figure
 // without " · <tier>". (Journey's colour reads tierColor, "mute" with no

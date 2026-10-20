@@ -739,14 +739,14 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
       suggestions: [
         "Target the highest-APR debt first: that's where interest is burning fastest.",
         "Every dollar above the minimum payment is money that stops compounding against you.",
-        "Even a little extra each month cuts months off your payoff date. Run the numbers in Debts.", // item 4a (draft, held)
+        "Even a little extra each month cuts months off your payoff date. Run the numbers in Debts.", // item 4a (approved, session 26)
       ],
     },
     {
       max: -2, tier: "Rebuilding", tierColor: "coral",
       suggestions: [
         nwUpOnLastMonth ? "You're climbing: your net worth is higher than last month." : "Every month you owe a little less brings zero closer.", // the owner's wording (session 23)
-        "Consider a small side income for a few months; even a little a month accelerates this significantly.", // item 4a (draft, held)
+        "A small side income for a few months, even a little each month, speeds this up.", // item 4a: the owner's words (session 26)
         "Once you clear the debt, redirect that minimum payment into savings automatically.",
       ],
     },
@@ -771,7 +771,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
       suggestions: [
         "Your liabilities are covered. Now every dollar saved is pure net worth growth.",
         efBalance > 0 ? "Keep growing your safety net: it's your first true asset." : "Start your safety net: it's your first true asset.",
-        // Item 4a (draft, held): one month of income, not a fixed $5,000.
+        // Item 4a (approved, session 26): one month of income, not a fixed $5,000.
         hasActiveGoalsForAdvice ? "Keep funding your goals; a month of income in savings changes how you handle surprises." : "Set a goal to save one month of income; that buffer changes how you handle surprises.",
       ],
     },
@@ -779,7 +779,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
       max: 6, tier: "Foundation builder", tierColor: "jade",
       suggestions: [
         "You're past breaking even. Keep the momentum going.",
-        "Compound growth starts to matter here. Even modest returns make a difference at this size.", // item 4a (draft, held)
+        "Compound growth starts to matter here. Even modest returns make a difference at this size.", // item 4a (approved, session 26)
         "Consider diversifying: savings, goals, and if applicable, low-risk investments.",
       ],
     },

@@ -1,7 +1,8 @@
 // Item 4a (owner, session 25; plan "NET WORTH BANDS", session 24): the tier
 // is net worth in months of Setup's monthly income, not fixed dollars. The
 // thresholds and the no-income rule are approved; the four advice lines that
-// named fixed dollars are rewritten as drafted, HELD for approval.
+// named fixed dollars are rewritten: three as drafted and the Rebuilding line in
+// the owner's words, all approved in session 26.
 import { it, expect, vi, beforeEach, afterEach } from "vitest";
 import { computeDashboard } from "./computeDashboard";
 import { DEFAULT_DATA, type LocalFinancials, type StoredAsset, type StoredDebt } from "./localData";
@@ -47,9 +48,9 @@ it("no income set: no tier, no advice, a neutral colour", () => {
   expect(r.tierColor).toBe("mute");
 });
 
-it("the four advice lines that named fixed dollars, as drafted (HELD for approval)", () => {
+it("the four advice lines that named fixed dollars, as approved (session 26)", () => {
   expect(nw(-20000, 1500).suggestions).toContain("Even a little extra each month cuts months off your payoff date. Run the numbers in Debts.");
-  expect(nw(-5000, 1500).suggestions).toContain("Consider a small side income for a few months; even a little a month accelerates this significantly.");
+  expect(nw(-5000, 1500).suggestions).toContain("A small side income for a few months, even a little each month, speeds this up."); // the owner's words
   expect(nw(500, 1500).suggestions).toContain("Set a goal to save one month of income; that buffer changes how you handle surprises.");
   const withGoal = computeDashboard({ ...DEFAULT_DATA, income: 1500, assets: [asset(500)], goals: [{ id: "g1", name: "Laptop", emoji: "💻", targetAmount: 1200, currentAmount: 0, openingAmount: 0, currency: "USD", targetDate: "2027-12-01", createdAt: "2026-05-01T09:00:00.000Z" }] } as unknown as LocalFinancials).netWorth;
   expect(withGoal.suggestions).toContain("Keep funding your goals; a month of income in savings changes how you handle surprises.");

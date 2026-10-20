@@ -27,7 +27,7 @@ it("breaking even with two goals and $500 in the safety net: no \"Set a goal\", 
   expect(nw.suggestions).toEqual([
     "Your liabilities are covered. Now every dollar saved is pure net worth growth.",
     "Keep growing your safety net: it's your first true asset.",
-    "Keep funding your goals; a month of income in savings changes how you handle surprises.", // item 4a (draft, held)
+    "Keep funding your goals; a month of income in savings changes how you handle surprises.", // item 4a (approved, session 26)
   ]);
 });
 
@@ -37,7 +37,7 @@ it("breaking even with no goals and nothing in the safety net: the advice to sta
   expect(nw.suggestions).toEqual([
     "Your liabilities are covered. Now every dollar saved is pure net worth growth.",
     "Start your safety net: it's your first true asset.",
-    "Set a goal to save one month of income; that buffer changes how you handle surprises.", // item 4a (draft, held)
+    "Set a goal to save one month of income; that buffer changes how you handle surprises.", // item 4a (approved, session 26)
   ]);
 });
 
