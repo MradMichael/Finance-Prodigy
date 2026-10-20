@@ -26,7 +26,7 @@
 //   * whether an extra payment SHOULD count toward totalAmount. Left open on
 //     purpose -- see the last describe block.
 import { describe, it, expect } from "vitest";
-import {
+import { DEFAULT_DATA,
   isCycleConfirmed, recurringPaidSoFar, purgeTransaction,
   type StoredRecurring, type StoredTransaction,
 } from "./localData";
@@ -73,7 +73,7 @@ describe("1. THE COUNTERFACTUAL — what recurringId would have done", () => {
   it("would have counted toward the totalAmount cap", () => {
     // recurringPaidSoFar filters on recurringId alone, no cycleDate clause.
     const wrong: StoredTransaction = { ...extraBase(), recurringId: "r1" };
-    expect(recurringPaidSoFar(REC, [wrong])).toBe(200);
+    expect(recurringPaidSoFar(REC, [wrong], DEFAULT_DATA)).toBe(200);
   });
 
   it("recurringId + cycleDate:null dodges the confirm but overloads a sentinel", () => {
@@ -86,7 +86,7 @@ describe("1. THE COUNTERFACTUAL — what recurringId would have done", () => {
     const alt: StoredTransaction = { ...extraBase(), recurringId: "r1", cycleDate: null };
     expect(isCycleConfirmed(REC, DUE, [alt])).toBe(false);
     // ...but it still feeds the cap, so it does not settle that question either.
-    expect(recurringPaidSoFar(REC, [alt])).toBe(200);
+    expect(recurringPaidSoFar(REC, [alt], DEFAULT_DATA)).toBe(200);
   });
 });
 
@@ -100,14 +100,14 @@ describe("2. extraForRecurringId — inert to every existing reader", () => {
   });
 
   it("does not count toward the totalAmount cap", () => {
-    expect(recurringPaidSoFar(REC, [extra])).toBe(0);
+    expect(recurringPaidSoFar(REC, [extra], DEFAULT_DATA)).toBe(0);
   });
 
   it("does not disturb a real confirmation sitting beside it", () => {
     // Premise: the real confirmation IS counted, so the zero above is the
     // extra payment being ignored rather than the fixture being inert.
-    expect(recurringPaidSoFar(REC, [confirmed])).toBe(750);
-    expect(recurringPaidSoFar(REC, [confirmed, extra])).toBe(750);
+    expect(recurringPaidSoFar(REC, [confirmed], DEFAULT_DATA)).toBe(750);
+    expect(recurringPaidSoFar(REC, [confirmed, extra], DEFAULT_DATA)).toBe(750);
     expect(isCycleConfirmed(REC, DUE, [confirmed, extra])).toBe(true);
   });
 
@@ -138,6 +138,6 @@ describe("3. NOT DECIDED HERE — whether an extra payment should reduce the cap
     // name. This assertion pins today's behaviour so a future change to it is
     // a deliberate edit to a test that says so, not a silent drift.
     const extra: StoredTransaction = { ...extraBase(), extraForRecurringId: "r1" };
-    expect(recurringPaidSoFar(REC, [extra])).toBe(0);
+    expect(recurringPaidSoFar(REC, [extra], DEFAULT_DATA)).toBe(0);
   });
 });

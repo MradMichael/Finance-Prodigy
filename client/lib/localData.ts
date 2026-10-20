@@ -2861,10 +2861,10 @@ export function monthlyEquivalent(r: StoredRecurring, asOf: Date = new Date()): 
  * render, so the difference is worth the less obvious-looking call.
  */
 export function nominalMonthlyEquivalent(
-  r: StoredRecurring, transactions: StoredTransaction[], asOf: Date = new Date(),
+  r: StoredRecurring, transactions: StoredTransaction[], data: LocalFinancials, asOf: Date = new Date(),
 ): number {
   if (!isRecurringActive(r, asOf)) return 0;
-  if (r.totalAmount != null && r.totalAmount > 0 && recurringPaidSoFar(r, transactions) >= r.totalAmount) return 0;
+  if (r.totalAmount != null && r.totalAmount > 0 && recurringPaidSoFar(r, transactions, data) >= r.totalAmount) return 0;
   return r.amount * FREQ_MONTHLY[r.frequency];
 }
 
@@ -3000,13 +3000,17 @@ export function nextOccurrence(r: StoredRecurring, asOf: CalendarDay = todayCale
  * allows -- the same blind spot that let repeat confirms silently exceed
  * the cap.
  */
-export function recurringPaidSoFar(r: StoredRecurring, transactions: StoredTransaction[]): number {
+export function recurringPaidSoFar(r: StoredRecurring, transactions: StoredTransaction[], data: LocalFinancials): number {
   if (!r.totalAmount || r.amount <= 0) return 0;
   // Phase 2.6.3b: a soft-deleted confirming transaction no longer counts --
   // same reasoning as isCycleConfirmed above.
+  // Item 3d (owner, session 25): each row in the item's own currency, at the
+  // rate on the row's own day. A confirmed row can be in the other currency
+  // (the edit sheet changes it), and its raw amount was added as is: one
+  // L£8,950,000 payment read as 8,950,000 toward a $300 cap.
   const confirmedSum = transactions
     .filter((t) => t.deletedAt == null && t.recurringId === r.id)
-    .reduce((s, t) => s + t.amount, 0);
+    .reduce((s, t) => s + inCurrencyOn(data, t.amount, t.currency, r.currency, t.date), 0);
   return Math.min(r.totalAmount, confirmedSum);
 }
 
@@ -3163,7 +3167,7 @@ export function dayAfter(occurrence: Date): CalendarDay {
  * stays in effect either way.
  */
 export function remainingInstallments(
-  r: StoredRecurring, transactions: StoredTransaction[], asOf: CalendarDay = todayCalendarDay(),
+  r: StoredRecurring, transactions: StoredTransaction[], data: LocalFinancials, asOf: CalendarDay = todayCalendarDay(),
 ): { count: number; endsOn: Date } | null {
   if (!r.endDate && !r.totalAmount) return null;
   // The walk starts at asOf: dueCycles' first step is nextOccurrence(r, asOf)
@@ -3174,7 +3178,7 @@ export function remainingInstallments(
     return cycles.length ? { count: cycles.length, endsOn: cycles[cycles.length - 1] } : null;
   }
 
-  const remainingAmount = r.totalAmount - recurringPaidSoFar(r, transactions);
+  const remainingAmount = r.totalAmount - recurringPaidSoFar(r, transactions, data);
   if (remainingAmount <= 0) return null;
   const byAmount = Math.ceil(remainingAmount / r.amount);
 
@@ -3235,7 +3239,7 @@ export function remainingInstallments(
  * so a weekly item frees a week later rather than a month later.
  */
 export function capacityFreedFrom(
-  r: StoredRecurring, transactions: StoredTransaction[], asOf: CalendarDay = todayCalendarDay(),
+  r: StoredRecurring, transactions: StoredTransaction[], data: LocalFinancials, asOf: CalendarDay = todayCalendarDay(),
 ): Date | null {
   // 2.4.110: THE EARLIER OF THE TWO BOUNDS, not whichever is checked first.
   //
@@ -3249,7 +3253,7 @@ export function capacityFreedFrom(
   const endBound = r.endDate ? new Date(r.endDate) : null;
   if (!r.totalAmount) return endBound; // endDate only, or neither
 
-  const remaining = remainingInstallments(r, transactions, asOf);
+  const remaining = remainingInstallments(r, transactions, data, asOf);
   // Cap already met: the obligation is over NOW, so there is no future step
   // to report -- including when an endDate is still outstanding, which
   // previously returned that endDate and promised capacity the user already
@@ -3412,8 +3416,8 @@ export function buildRecurringConfirmLog(r: StoredRecurring, lbpRate: number, du
  * A loop, not a single check: confirming several cycles ahead in a row
  * must skip past all of them, not just the first.
  */
-export function nextConfirmTarget(r: StoredRecurring, transactions: StoredTransaction[], asOf: CalendarDay): { dueDate: Date; overdueCount: number } | null {
-  if (r.totalAmount != null && r.totalAmount > 0 && recurringPaidSoFar(r, transactions) >= r.totalAmount) return null;
+export function nextConfirmTarget(r: StoredRecurring, transactions: StoredTransaction[], data: LocalFinancials, asOf: CalendarDay): { dueDate: Date; overdueCount: number } | null {
+  if (r.totalAmount != null && r.totalAmount > 0 && recurringPaidSoFar(r, transactions, data) >= r.totalAmount) return null;
   const uncapped: StoredRecurring = r.totalAmount != null ? { ...r, totalAmount: null } : r;
   const from = storedDay(r.confirmCutoverDate ?? r.startDate);
   const overdue = dueCycles(uncapped, from, asOf).filter((d) => isCycleOverdue(r, d, asOf, transactions));

@@ -121,7 +121,7 @@ export default function ProjectionsScreen({
     .filter((r) => isRecurringActive(r, capacityNow))
     .map((r) => ({
       r,
-      freed: capacityFreedFrom(r, financials.transactions, calendarDayOf(capacityNow)),
+      freed: capacityFreedFrom(r, financials.transactions, financials, calendarDayOf(capacityNow)),
       monthlyAmountUSD: toUSDShared(r.amount, r.currency, lbpRate),
     }))
     .filter((o): o is typeof o & { freed: Date } => o.freed !== null)
