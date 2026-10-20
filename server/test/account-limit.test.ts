@@ -1,13 +1,14 @@
 // SEC-07 (owner, session 25, item 4b; HELD): password guessing on one account
 // was limited only per client (the sync limiter, per IP). A guesser spread
 // over many addresses had no ceiling on one account. Now each account counts
-// its own wrong credentials on pull, relink and delete: five are free, then
+// its own wrong credentials on pull, push, relink and delete: five are free, then
 // each further failure locks that account's checks for 1, 2, 4, 8, then 15
 // minutes. While locked, every request for it is refused before any
 // comparison, the right password too, so a guess during a lock tells nothing.
-// Push doesn't count (a stale device after a password reset fails every
-// upload; counted, it would lock its owner out). One app per test: the counts
-// live on the app, as in production.
+// Push counts too (owner, session 26, reversing decision 47): a client refused
+// for its credentials stops its automatic requests (client lib/syncRefused.ts),
+// so a stale device fails once. One app per test: the counts live on the app,
+// as in production.
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import request from "supertest";
 import { createApp } from "../src/app";
@@ -34,6 +35,7 @@ const pull = (email: string, token: string) => request(app).post("/api/sync/pull
 const wrong = async (n: number, email = A) => { for (let i = 0; i < n; i++) expect((await pull(email, `guess-${i}`)).status).toBe(401); };
 const relink = (oldRecoveryToken: string) => request(app).post("/api/sync/relink").send({ email: A, token: "new-token", recoveryToken: "new-recovery", oldRecoveryToken });
 const del = (token: string) => request(app).delete("/api/sync").send({ email: A, token });
+const push = (token: string) => request(app).post("/api/sync/push").send({ email: A, token, data: { income: 1 } });
 
 describe("a lock after five free failures", () => {
   it("six wrong pulls lock the account: the right password is refused too (429, Retry-After, no data)", async () => {
@@ -101,12 +103,31 @@ describe("what counts, and for whom", () => {
     expect(store.userSync.has(A)).toBe(true);
   });
 
-  it("wrong pushes don't count", async () => {
-    for (let i = 0; i < 8; i++) {
-      const res = await request(app).post("/api/sync/push").send({ email: A, token: `stale-${i}`, data: { income: 1 } });
-      expect(res.status).toBe(401);
-    }
+  it("wrong pushes count with wrong pulls (owner, session 26)", async () => {
+    for (let i = 0; i < 3; i++) expect((await push(`stale-${i}`)).status).toBe(401);
+    await wrong(3);
+    expect((await pull(A, "token-of-A")).status).toBe(429);
+  });
+
+  it("a guessing loop through push hits the limit: from the 7th, refused before any comparison, the right token too", async () => {
+    for (let i = 0; i < 6; i++) expect((await push(`guess-${i}`)).status).toBe(401);
+    const locked = await push("token-of-A");
+    expect(locked.status).toBe(429);
+    expect(locked.headers["retry-after"]).toBe("60");
+    expect(locked.body.accountLocked).toBe(true);
+    expect(store.userSync.get(A)?.dataJson).toBe(storedData()); // nothing written
+  });
+
+  it("a successful push clears the count", async () => {
+    for (let i = 0; i < 5; i++) expect((await push(`guess-${i}`)).status).toBe(401);
+    expect((await push("token-of-A")).status).toBe(200);
+    for (let i = 0; i < 5; i++) expect((await push(`guess-again-${i}`)).status).toBe(401);
     expect((await pull(A, "token-of-A")).status).toBe(200);
+  });
+
+  it("a wrong token on push or pull is refused with the code the client stops on", async () => {
+    expect((await push("stale")).body).toEqual({ error: "Invalid sync credentials for this account.", code: "credentials_refused" });
+    expect((await pull(A, "stale")).body).toEqual({ error: "Invalid sync credentials for this account.", code: "credentials_refused" });
   });
 
   it("a pull for an address with no copy (404) doesn't count", async () => {

@@ -40,6 +40,7 @@ import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "../components/EssaBrand";
 import RecurringModelNoticeModal from "../components/RecurringModelNoticeModal";
 import SyncChoicePrompt from "../components/SyncChoicePrompt";
+import { SYNC_REFUSED_MESSAGE, isSyncRefused, markSyncRefused } from "../lib/syncRefused";
 import EditDebtSheet from "../components/EditDebtSheet";
 import EditRecurringSheet from "../components/EditRecurringSheet";
 import EditGoalSheet from "../components/EditGoalSheet";
@@ -205,6 +206,24 @@ export default function Home() {
   // upload, fetch or retry) until it's reloaded, and says so.
   const [newerBackup, setNewerBackup] = useState(false);
   const newerBackupRef = useRef(false);
+  // SEC-07 amended (owner, session 26, item 2; HELD for its sentence): a push or pull
+  // refused for its credentials (a password changed on another device) stops every
+  // automatic server request, uploads, retries, fetches and the conflict merge, until
+  // a sign-in on this device. Each refused request counts toward the account's lock,
+  // so this device fails once and can't lock it. Kept across reloads (lib/syncRefused.ts).
+  const [syncRefused, setSyncRefused] = useState(false);
+  const syncRefusedRef = useRef(false);
+  const refusedHere = () => syncRefusedRef.current || isSyncRefused(sessionRef.current?.userId);
+  useEffect(() => { const r = isSyncRefused(session?.userId); syncRefusedRef.current = r; setSyncRefused(r); }, [session]);
+  const stopForRefusedCredentials = useCallback(() => {
+    syncRefusedRef.current = true;
+    setSyncRefused(true);
+    const id = sessionRef.current?.userId;
+    if (id) markSyncRefused(id);
+    setBackupFailed(false);
+    retryTimersRef.current.forEach(clearTimeout); retryTimersRef.current = [];
+    setSyncStatus(failedSyncStatus());
+  }, []);
   const stopForNewerBackup = useCallback(() => {
     newerBackupRef.current = true;
     setNewerBackup(true);
@@ -227,10 +246,12 @@ export default function Home() {
     // one check stops all four. Undecided is paused, not on.
     if (!syncAllowed(data)) return;
     if (newerBackupRef.current) return; // travel slice 0: stopped until reloaded
+    if (refusedHere()) return; // SEC-07 amended: stopped until a sign-in here
     setSyncStatus("syncing");
     const result = await pushToServer(email, data);
     // Travel slice 0: a copy from newer code isn't uploaded; this device stops syncing and says so.
     if (result.newerVersion) { stopForNewerBackup(); return; }
+    if (result.credentialsRefused) { stopForRefusedCredentials(); return; }
     // 2.4.38: a conflict isn't a transient failure a retry would fix.
     // Phase 2.7 sub-phase 3: attempt an automatic merge instead of only
     // setting the static indicator -- pull the server's current data,
@@ -243,6 +264,7 @@ export default function Home() {
       const merged = await mergeAndPush(email, data);
       // Travel slice 0: a backup from newer code is neither merged into nor written over; this device stops syncing and says so.
       if (!merged.ok && merged.newerVersion) { stopForNewerBackup(); return; }
+      if (!merged.ok && merged.credentialsRefused) { stopForRefusedCredentials(); return; }
       // Session 23, item 5 (owner): the merged push refused for size is ERR-03's case, not a conflict.
       if (!merged.ok && merged.tooLarge) { stopForTooLarge(); return; }
       if (!merged.ok) { setSyncStatus("conflict"); return; }
@@ -310,7 +332,7 @@ export default function Home() {
         return t;
       });
     }
-  }, [persist, stopForNewerBackup, stopForTooLarge]);
+  }, [persist, stopForNewerBackup, stopForTooLarge, stopForRefusedCredentials]);
 
   // Retry with the latest data on this device, not the copy that failed.
   useEffect(() => {
@@ -507,6 +529,7 @@ export default function Home() {
     // 2.4.153's gate: no request at all unless backup is on.
     if (!s || !local || !syncAllowed(local)) return;
     if (newerBackupRef.current) return; // travel slice 0: stopped until reloaded
+    if (refusedHere()) return; // SEC-07 amended: stopped until a sign-in here
     if (fetchingRef.current || Date.now() - lastFetchAtRef.current < FETCH_MIN_INTERVAL_MS) return;
     fetchingRef.current = true;
     lastFetchAtRef.current = Date.now();
@@ -517,6 +540,7 @@ export default function Home() {
       if (!r.ok) {
         // Travel slice 0: a backup from newer code isn't merged; not a failure. This device stops syncing and says so.
         if (r.newerVersion) { stopForNewerBackup(); return; }
+        if (r.credentialsRefused) { stopForRefusedCredentials(); return; }
         if (!r.notFound) {
           const failed = failedSyncStatus();
           setSyncStatus((st) => (st === "idle" ? failed : st));
@@ -546,7 +570,7 @@ export default function Home() {
     } finally {
       fetchingRef.current = false;
     }
-  }, [persist, autoSync, stopForNewerBackup]);
+  }, [persist, autoSync, stopForNewerBackup, stopForRefusedCredentials]);
 
   // Confirms a recurring item's oldest outstanding cycle (Phase 2.5.3) --
   // the FIFO target nextConfirmTarget resolves, whether that's an overdue
@@ -966,6 +990,15 @@ export default function Home() {
           (merged in session 3). In a live region that's always on the page
           (A11Y-03), below the save error when both show. */}
       <div role="status">
+        {syncRefused && (
+          <div
+            className="fixed left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50"
+            style={{ top: saveError ? "7.5rem" : "1rem", background: T.panel, border: `1px solid ${T.brass}` }}
+          >
+            {/* SEC-07 amended (session 26, item 2): DRAFT, held for the owner's approval. */}
+            <span className="text-sm" style={{ color: T.text }}>{SYNC_REFUSED_MESSAGE}</span>
+          </div>
+        )}
         {backupTooLarge && (
           <div
             className="fixed left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50"

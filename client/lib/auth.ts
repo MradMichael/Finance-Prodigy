@@ -1,5 +1,6 @@
 "use client";
 
+import { clearSyncRefused } from "./syncRefused";
 import { toB64 as b64, fromB64 as unb64, hasActiveKey, clearEncryptionKey, clearSyncToken, getActiveDek, sealWithDek, openWithDek } from "./crypto";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -265,6 +266,7 @@ async function signInFromSync(
 
   const session: Session = { userId: id, email: normalizedEmail, name };
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  clearSyncRefused(session.userId); // SEC-07 amended (session 26): a sign-in here resumes automatic sync
   activateSessionKey(dek);
 
   const { saveData } = await import("./localData");
@@ -367,6 +369,7 @@ export async function signIn(
   await syncTokenPromise;
   const session: Session = { userId: user.id, email: user.email, name: user.name };
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  clearSyncRefused(session.userId); // SEC-07 amended (session 26): a sign-in here resumes automatic sync
   activateSessionKey(dek);
   // FB-1b: this device's first unlock since the change -- move any plaintext
   // recovery token into its encrypted form while the key is here to do it.
@@ -533,6 +536,7 @@ async function recoverFromSync(
 
   const session: Session = { userId: id, email: normalizedEmail, name };
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  clearSyncRefused(session.userId); // SEC-07 amended (session 26): a sign-in here resumes automatic sync
   activateSessionKey(dek);
 
   const { saveData } = await import("./localData");
@@ -625,6 +629,7 @@ export async function recoverAccount(
 
   const session: Session = { userId: user.id, email: user.email, name: user.name };
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  clearSyncRefused(session.userId); // SEC-07 amended (session 26): a sign-in here resumes automatic sync
   activateSessionKey(dek);
   return { ok: true, session, newRecoveryCode };
 }

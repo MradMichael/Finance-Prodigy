@@ -9,9 +9,10 @@ import { prisma } from "../lib/prisma";
 import { emailSchema, tokenSchema } from "../lib/validation";
 import { lockedSentence, type AccountLimit } from "../lib/accountLimit";
 
-// SEC-07 (owner, session 25, item 4b; HELD): pull, relink and delete count wrong
-// credentials per account (lib/accountLimit.ts); push doesn't (a stale device after
-// a password reset fails every upload, and would lock its owner out).
+// SEC-07 (owner, session 25, item 4b; amended session 26; HELD): pull, push, relink
+// and delete count wrong credentials per account (lib/accountLimit.ts). A client
+// refused for its credentials (code "credentials_refused") stops its automatic
+// requests until a sign-in, so a stale device fails once (client lib/syncRefused.ts).
 const accountLimit = (req: Request): AccountLimit => req.app.locals.accountLimit as AccountLimit;
 /** A locked account is refused here, before any lookup or comparison. True when refused. */
 function refuseIfLocked(req: Request, res: Response, email: string): boolean {
@@ -143,6 +144,7 @@ class SyncConflictError extends Error {}
 router.post("/push", async (req, res, next) => {
   try {
     const { email: normalizedEmail, data, token, recoveryToken, baseSyncedAt } = pushSchema.parse(req.body);
+    if (refuseIfLocked(req, res, normalizedEmail)) return;
     const tokenHash = hashToken(token);
     const recoveryTokenHash = recoveryToken ? hashToken(recoveryToken) : undefined;
     // Computed once and reused in both the create and update branches below —
@@ -196,7 +198,8 @@ router.post("/push", async (req, res, next) => {
       }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
     } catch (err) {
       if (err instanceof SyncAuthError) {
-        return res.status(401).json({ error: "Invalid sync credentials for this account." });
+        accountLimit(req).fail(normalizedEmail);
+        return res.status(401).json({ error: "Invalid sync credentials for this account.", code: "credentials_refused" });
       }
       // Distinct `code` from the P2034 case just below -- both are 409s,
       // but only one of them means "retry now," so the client needs to be
@@ -211,6 +214,8 @@ router.post("/push", async (req, res, next) => {
       }
       throw err;
     }
+
+    accountLimit(req).succeed(normalizedEmail);
 
     // 2.4.132 step 1 -- the analytics warehouse is no longer written.
     //
@@ -272,7 +277,7 @@ const pull: RequestHandler = async (req, res, next) => {
     if (!hashesEqual(record.authTokenHash, hashToken(token))) {
       logger.warn("pull_denied_token_mismatch", { ...meta, tokenLength: token.length, lastSyncedAt: record.syncedAt });
       accountLimit(req).fail(email);
-      return res.status(401).json({ error: "Invalid sync credentials for this account." });
+      return res.status(401).json({ error: "Invalid sync credentials for this account.", code: "credentials_refused" });
     }
 
     // Lets a new-device sign-in (signInFromSync) know this account already
