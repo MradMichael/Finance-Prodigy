@@ -1,6 +1,8 @@
-// SEC-07 amended (owner, session 26, item 2; HELD): a sign-in on this device
-// clears the stop a refused request set (lib/syncRefused.ts), so automatic
-// backup resumes with the token that sign-in derived.
+// SEC-07 amended (owner, session 26, item 2; HELD). Owner, session 27: the
+// stop a refused request set (lib/syncRefused.ts) clears only when the SERVER
+// accepted a sign-in or recovery; a local sign-in never clears it (the old
+// password signs in locally on a stale device). The server-accepted paths are
+// in stale-device-sign-in.test.ts.
 import { it, expect, vi, beforeEach } from "vitest";
 import { signUp, signIn, signOut } from "./auth";
 import { isSyncRefused, markSyncRefused } from "./syncRefused";
@@ -13,7 +15,7 @@ vi.mock("./syncService", () => ({
 
 beforeEach(() => { localStorage.clear(); sessionStorage.clear(); });
 
-it("signing in again on this device clears this account's stop, and only this account's", async () => {
+it("a local sign-in doesn't clear the stop, nor another account's", async () => {
   expect((await signUp("quartz@test.com", "Quartz Lantern", "password12345")).ok).toBe(true);
   const first = await signIn("quartz@test.com", "password12345");
   if (!first.ok) throw new Error(first.error);
@@ -23,7 +25,7 @@ it("signing in again on this device clears this account's stop, and only this ac
   signOut();
   expect(isSyncRefused(id)).toBe(true); // signing out doesn't clear it
   expect((await signIn("quartz@test.com", "password12345")).ok).toBe(true);
-  expect(isSyncRefused(id)).toBe(false);
+  expect(isSyncRefused(id)).toBe(true); // a local sign-in: the server accepted nothing
   expect(isSyncRefused("someone-else")).toBe(true);
 });
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { clearSyncRefused } from "./syncRefused";
+import { clearSyncRefused, isSyncRefused } from "./syncRefused";
 import { toB64 as b64, fromB64 as unb64, hasActiveKey, clearEncryptionKey, clearSyncToken, getActiveDek, sealWithDek, openWithDek } from "./crypto";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -266,7 +266,7 @@ async function signInFromSync(
 
   const session: Session = { userId: id, email: normalizedEmail, name };
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-  clearSyncRefused(session.userId); // SEC-07 amended (session 26): a sign-in here resumes automatic sync
+  clearSyncRefused(session.userId); // SEC-07 amended (session 26): the server accepted this sign-in or recovery
   activateSessionKey(dek);
 
   const { saveData } = await import("./localData");
@@ -290,7 +290,7 @@ async function signInFromSync(
 
 export async function signIn(
   email: string, password: string,
-): Promise<{ ok: true; session: Session; recoveryCode?: string } | { ok: false; error: string }> {
+): Promise<{ ok: true; session: Session; recoveryCode?: string } | { ok: false; error: string; staleDevice?: true }> {
   const user = getUsers().find((u) => u.email === email.toLowerCase().trim());
   // No local account for this email on this device — the common case is a
   // second device (new phone) for an email that's only ever signed up
@@ -341,7 +341,7 @@ export async function signIn(
       putUsers(getUsers().map((u) => (u.id === user.id ? { ...u, pwHash: upgraded } : u)));
     }
   }
-  if (!valid) return { ok: false, error: "Incorrect password." };
+  if (!valid) return staleDeviceCheck(user, password);
 
   const { unwrapWithPassword, migrateLegacyEnvelope, activateSessionKey, initSyncToken } = await import("./crypto");
 
@@ -369,12 +369,126 @@ export async function signIn(
   await syncTokenPromise;
   const session: Session = { userId: user.id, email: user.email, name: user.name };
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-  clearSyncRefused(session.userId); // SEC-07 amended (session 26): a sign-in here resumes automatic sync
+  // Session 27, item 1 (owner): a local sign-in doesn't clear the stop; only one the server accepted does.
   activateSessionKey(dek);
   // FB-1b: this device's first unlock since the change -- move any plaintext
   // recovery token into its encrypted form while the key is here to do it.
   await migrateLegacyRecoveryToken(user.id, dek);
   return { ok: true, session, recoveryCode };
+}
+
+// ── Session 27, item 1 (owner; HELD): a stale device and the new password ──
+// This device's data is locked under its own data key (DEK), wrapped under
+// the password it last used. After a reset on another device the new password
+// unlocks nothing here and the old one derives a token the server refuses. A
+// password the local check refuses is asked of the server once, when this
+// device has synced this account before or was stopped for its credentials
+// (so a typo on a device that never synced stays local). Accepted, the page
+// asks for the previous password (updateDevicePassword) or starts from the
+// backup (restartDeviceFromServer). Nothing is written until then.
+const PREVIOUS_PASSWORD_WRONG = "That isn't the password this device used before."; // DRAFT, held (prompt A's error)
+
+type ServerCheck = Awaited<ReturnType<typeof import("./syncService").pullFromServer>>;
+
+/** One pull with the token this password derives. The token is kept only when the server accepts it. */
+async function serverAccepts(email: string, password: string): Promise<ServerCheck> {
+  const { initSyncToken, clearSyncToken } = await import("./crypto");
+  await initSyncToken(password, email);
+  const { pullFromServer } = await import("./syncService");
+  const pulled = await pullFromServer(email);
+  if (!pulled.ok) clearSyncToken();
+  return pulled;
+}
+
+/** What a refused or failed check says: the existing sentences only. */
+function staleCheckFailed(r: Exclude<ServerCheck, { ok: true }>): string {
+  if (r.unreachable) return verifyFailed(r);
+  if (r.accountLocked) return r.error; // SEC-07's approved sentence
+  if (r.credentialsRefused || r.notFound || r.error.includes("Invalid sync credentials")) return "Incorrect password.";
+  return verifyFailed(r);
+}
+
+async function staleDeviceCheck(user: StoredUser, password: string): Promise<{ ok: false; error: string; staleDevice?: true }> {
+  // The sync time syncService records per account (recordSyncTime): this device has synced this account.
+  let synced = false;
+  try { synced = localStorage.getItem(`essa_last_sync_${user.id}`) !== null; } catch { /* unknown: treat as not synced */ }
+  if (!synced && !isSyncRefused(user.id)) return { ok: false, error: "Incorrect password." };
+  const r = await serverAccepts(user.email, password);
+  if (r.ok) return { ok: false, error: "", staleDevice: true };
+  return { ok: false, error: staleCheckFailed(r) };
+}
+
+/**
+ * Path 1: the previous password, so nothing on this device is lost. It unwraps
+ * this device's DEK; the server must still accept the new password; then only
+ * the password side is rewrapped under the new one. The DEK, the recovery
+ * envelope and every record it encrypts are untouched (the data record isn't
+ * rewritten). The stop clears: the server accepted.
+ */
+export async function updateDevicePassword(
+  email: string, newPassword: string, previousPassword: string,
+): Promise<{ ok: true; session: Session } | { ok: false; error: string }> {
+  const user = getUsers().find((u) => u.email === email.toLowerCase().trim());
+  if (!user || !user.wrappedDekPassword || !user.pwHash.startsWith("pbkdf2:")) return { ok: false, error: "Incorrect password." };
+  if (!(await verifyPassword(previousPassword, user.pwHash))) return { ok: false, error: PREVIOUS_PASSWORD_WRONG };
+  const { unwrapWithPassword, rewrapPasswordOnly, activateSessionKey } = await import("./crypto");
+  const dek = await unwrapWithPassword(previousPassword, user.id, user.wrappedDekPassword);
+  if (!dek) return { ok: false, error: PREVIOUS_PASSWORD_WRONG };
+  const check = await serverAccepts(user.email, newPassword);
+  if (!check.ok) return { ok: false, error: staleCheckFailed(check) };
+  const [wrappedDekPassword, pwHash] = await Promise.all([rewrapPasswordOnly(dek, newPassword, user.id), hashPassword(newPassword)]);
+  putUsers(getUsers().map((u) => (u.id === user.id ? { ...u, pwHash, wrappedDekPassword } : u)));
+  const session: Session = { userId: user.id, email: user.email, name: user.name };
+  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  clearSyncRefused(session.userId); // the server accepted the new password
+  activateSessionKey(dek);
+  await migrateLegacyRecoveryToken(user.id, dek);
+  return { ok: true, session };
+}
+
+/**
+ * Path 2: no previous password. This device's record and its two old key
+ * envelopes are kept first, byte for byte, under the kept-copy keys (still
+ * openable with the old password; Erase and Delete account remove them, as
+ * any kept copy). Only then does the device start from the server copy, like
+ * a joining device, under a new DEK and the new password. A kept copy that
+ * can't be written stops it before anything is replaced.
+ */
+export async function restartDeviceFromServer(
+  email: string, newPassword: string,
+): Promise<{ ok: true; session: Session; recoveryCode?: string } | { ok: false; error: string }> {
+  const user = getUsers().find((u) => u.email === email.toLowerCase().trim());
+  if (!user) return { ok: false, error: "Incorrect password." };
+  const check = await serverAccepts(user.email, newPassword);
+  if (!check.ok) return { ok: false, error: staleCheckFailed(check) };
+  const { UNREADABLE_PREFIX, saveFailureKind, SAVE_FAILURE_REASON } = await import("./localData");
+  const raw = localStorage.getItem(`essa_data_${user.id}`);
+  if (raw !== null) {
+    const keep = `${UNREADABLE_PREFIX}${user.id}_${new Date().toISOString()}`;
+    try {
+      localStorage.setItem(keep, raw);
+      localStorage.setItem(`${keep}_envelopes`, JSON.stringify({ wrappedDekPassword: user.wrappedDekPassword, wrappedDekRecovery: user.wrappedDekRecovery }));
+    } catch (err) {
+      try { localStorage.removeItem(keep); localStorage.removeItem(`${keep}_envelopes`); } catch { /* nothing more to undo */ }
+      return { ok: false, error: "Couldn't save the server's copy on this device. " + SAVE_FAILURE_REASON[saveFailureKind(err)] + " Nothing was changed." };
+    }
+  }
+  const { createEnvelopes, activateSessionKey } = await import("./crypto");
+  const [{ wrappedPassword, wrappedRecovery, recoveryCode, dek }, pwHash] = await Promise.all([createEnvelopes(newPassword, user.id), hashPassword(newPassword)]);
+  const name = check.data.userName || user.name;
+  putUsers(getUsers().map((u) => (u.id === user.id
+    ? withoutLegacyToken({ ...u, name, pwHash, wrappedDekPassword: wrappedPassword, wrappedDekRecovery: wrappedRecovery, recoveryTokenEnc: undefined })
+    : u)));
+  const session: Session = { userId: user.id, email: user.email, name };
+  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  clearSyncRefused(session.userId); // the server accepted the new password
+  activateSessionKey(dek);
+  const { saveData } = await import("./localData");
+  await saveData({ ...check.data, userName: name }, user.id);
+  await (await import("./syncSeen")).saveSeen(user.id, check.data);
+  (await import("./syncService")).recordRestoreStored(user.id, check.syncedAt);
+  await (await import("./clashNotice")).takeUnseenClashes(user.id, check.data, undefined, { firstSync: true });
+  return { ok: true, session, recoveryCode: check.hasRecoveryCode ? undefined : recoveryCode };
 }
 
 /**
@@ -536,7 +650,7 @@ async function recoverFromSync(
 
   const session: Session = { userId: id, email: normalizedEmail, name };
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-  clearSyncRefused(session.userId); // SEC-07 amended (session 26): a sign-in here resumes automatic sync
+  clearSyncRefused(session.userId); // SEC-07 amended (session 26): the server accepted this sign-in or recovery
   activateSessionKey(dek);
 
   const { saveData } = await import("./localData");
@@ -629,7 +743,7 @@ export async function recoverAccount(
 
   const session: Session = { userId: user.id, email: user.email, name: user.name };
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-  clearSyncRefused(session.userId); // SEC-07 amended (session 26): a sign-in here resumes automatic sync
+  clearSyncRefused(session.userId); // SEC-07 amended (session 26): the server accepted this sign-in or recovery
   activateSessionKey(dek);
   return { ok: true, session, newRecoveryCode };
 }

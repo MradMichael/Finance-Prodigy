@@ -138,6 +138,17 @@ export async function rewrapRecoveryOnly(dek: Uint8Array, userId: string): Promi
   return { wrappedRecovery, recoveryCode };
 }
 
+/**
+ * Session 27, item 1 (owner; HELD): rewrapRecoveryOnly's twin. Re-wraps an
+ * already-unwrapped DEK under a new password and leaves the recovery side as
+ * it is: a stale device moving to the password changed on another device. The
+ * DEK, so every record it encrypts, doesn't change.
+ */
+export async function rewrapPasswordOnly(dek: Uint8Array, password: string, userId: string): Promise<Envelope> {
+  const kek = await deriveKek(password, `essa-kek-v1-${userId}`);
+  return wrapDek(dek, kek);
+}
+
 /** Unwraps the DEK using the password. Returns null if the envelope doesn't match (shouldn't happen if the password was already verified against pwHash). */
 export async function unwrapWithPassword(password: string, userId: string, wrapped: Envelope): Promise<Uint8Array | null> {
   const kek = await deriveKek(password, `essa-kek-v1-${userId}`);

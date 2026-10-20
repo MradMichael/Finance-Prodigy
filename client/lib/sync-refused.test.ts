@@ -5,7 +5,7 @@
 // merge. The stop it triggers is kept per account (lib/syncRefused.ts).
 import { it, expect, vi, beforeEach, afterEach } from "vitest";
 import { pushToServer, pullFromServer, fetchAndMerge, mergeAndPush } from "./syncService";
-import { isSyncRefused, markSyncRefused, clearSyncRefused } from "./syncRefused";
+import { isSyncRefused, markSyncRefused, clearSyncRefused, SYNC_REFUSED_MESSAGE } from "./syncRefused";
 import { DEFAULT_DATA, type LocalFinancials } from "./localData";
 
 const REFUSED = { error: "Invalid sync credentials for this account.", code: "credentials_refused" };
@@ -46,4 +46,8 @@ it("the stop is kept per account until cleared", () => {
   expect(isSyncRefused(null)).toBe(false);
   clearSyncRefused("u1");
   expect(isSyncRefused("u1")).toBe(false);
+});
+
+it("the notice is the owner's wording (session 27)", () => {
+  expect(SYNC_REFUSED_MESSAGE).toBe("Backup has stopped on this device: the server didn't accept this device's password. If you changed your password on another device, sign in here with the new one. Your data on this device is safe.");
 });
