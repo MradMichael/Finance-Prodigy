@@ -11,6 +11,8 @@ import { createHmac } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { store, type UserSyncRow } from "./support/fakePrisma";
 import { api, hash } from "./support/http";
+import request from "supertest";
+import { createApp } from "../src/app";
 
 const KEY = "0123456789abcdef".repeat(4); // a test key, not a secret
 const A = "logged-account@example.com";
@@ -41,6 +43,13 @@ const CASES: { event: string; seed?: () => void; send: () => PromiseLike<unknown
     send: () => relink({ token: "t", recoveryToken: "r", oldRecoveryToken: "old" }) },
   { event: "delete_denied_no_token_registered", seed: seed({ authTokenHash: null }), send: () => del("any") },
   { event: "delete_denied_token_mismatch", seed: seed({ authTokenHash: hash("right") }), send: () => del("wrong") },
+  // SEC-07 (session 25, item 4b; merged in session 28): one app, since the per-account count lives on it; six wrong pulls, then the refused one.
+  { event: "sync_denied_account_locked", seed: seed({ authTokenHash: hash("right") }), send: async () => {
+    const app = createApp();
+    const one = (token: string) => request(app).post("/api/sync/pull").set("User-Agent", UA).set("Authorization", `Bearer ${token}`).send({ email: A });
+    for (let i = 0; i < 6; i++) await one("wrong");
+    return one("right");
+  } },
 ];
 
 /** Everything the process writes to stdout/stderr while `send` runs. */

@@ -77,6 +77,9 @@ export interface SyncResult {
   unreachable?: boolean;
   // Session 23, item 6 (approved and merged in session 24, 070f457): the status of a reply without the API's own error.
   serverStatus?: number;
+  // SEC-07 amended (session 26, item 2; merged in session 28): refused for its credentials (the server's
+  // code "credentials_refused"): the caller stops automatic sync until a sign-in.
+  credentialsRefused?: boolean;
 }
 
 /** COPY-11, owner-approved wording (session 3): the ask before an empty account replaces a backup that has data. */
@@ -218,6 +221,7 @@ export async function pushToServer(
       return { ok: false, conflict: true, error: json?.error ?? "Server data has changed since your last sync." };
     }
     if (isSizeRefusal(res.status, json)) return { ok: false, tooLarge: true, error: BACKUP_TOO_LARGE };
+    if (res.status === 401 && json?.code === "credentials_refused") return { ok: false, credentialsRefused: true, error: json.error ?? "Invalid sync credentials for this account." };
     if (!res.ok) return { ok: false, error: json?.error ?? serverTrouble(res.status) };
     // A 200 with no/malformed JSON body (proxy glitch, truncated response)
     // is a real but different failure from "couldn't reach the server at
@@ -356,7 +360,7 @@ export async function relinkSync(
 export async function pullFromServer(
   email: string,
   { timeoutMs = SYNC_TIMEOUT_MS }: { timeoutMs?: number } = {},
-): Promise<{ ok: true; data: LocalFinancials; syncedAt: string; hasRecoveryCode: boolean } | { ok: false; error: string; notFound?: true; unreachable?: true }> {
+): Promise<{ ok: true; data: LocalFinancials; syncedAt: string; hasRecoveryCode: boolean } | { ok: false; error: string; notFound?: true; unreachable?: true; accountLocked?: true; credentialsRefused?: true }> {
   const token = getSyncToken();
   if (!token) return { ok: false, error: "Not signed in. Sign in again to sync." };
   try {
@@ -381,6 +385,9 @@ export async function pullFromServer(
     if (res.status === 404 && json && typeof json.error === "string") {
       return { ok: false, error: "No data on server yet. Push first.", notFound: true };
     }
+    // SEC-07 (session 25, item 4b; merged in session 28): a locked account's refusal carries the server's sentence and a flag.
+    if (res.status === 429 && json?.accountLocked === true && typeof json.error === "string") return { ok: false, error: json.error, accountLocked: true };
+    if (res.status === 401 && json?.code === "credentials_refused") return { ok: false, credentialsRefused: true, error: json.error ?? "Invalid sync credentials for this account." };
     if (!res.ok) return { ok: false, error: json?.error ?? serverTrouble(res.status) };
     if (json === null || typeof json.syncedAt !== "string" || !("data" in json)) {
       return { ok: false, error: "Server responded, but the response was malformed. Try again." };
@@ -468,7 +475,7 @@ export interface ReplacedCloseNotice { cycleLabel: string; standingClosedAt: str
 export type MergeAndPushResult =
   // mergedData is on the server, not yet on this device: store it, then recordMergeStored. If the store fails, record nothing.
   | { ok: true; syncedAt: string; addedFromServer: number; conflictsResolved: number; conflicts: StoredTransaction[]; conflictDetails: MergeConflictDetail[]; clashes: MergeClash[]; nonTransactionDivergence: string[]; replacedCloses: ReplacedCloseNotice[]; mergedData: LocalFinancials; firstSync: boolean; /** Item 7: the other device's edits inside a closed cycle. */ closedEdits: ClosedEdit[]; /** Session 10, item 2: another device's reset, when it cleared something here. */ resetElsewhere?: ResetElsewhere }
-  | { ok: false; error: string; conflict?: boolean; newerVersion?: undefined; /** ERR-03 (session 23, item 5): the merged push refused for size. */ tooLarge?: boolean }
+  | { ok: false; error: string; conflict?: boolean; newerVersion?: undefined; /** ERR-03 (session 23, item 5): the merged push refused for size. */ tooLarge?: boolean; /** SEC-07 amended (session 26): refused for its credentials. */ credentialsRefused?: boolean }
   // Travel slice 0: the backup was written by newer code; nothing merged or pushed. The caller shows NEWER_BACKUP_MESSAGE.
   | { ok: false; newerVersion: true; error?: undefined; conflict?: undefined };
 
@@ -504,7 +511,7 @@ export type MergeAndPushResult =
 export async function mergeAndPush(email: string, local: LocalFinancials): Promise<MergeAndPushResult> {
   const seen = await lastSeen();
   const pulled = await pullFromServer(email);
-  if (!pulled.ok) return { ok: false, error: pulled.error };
+  if (!pulled.ok) return { ok: false, error: pulled.error, ...(pulled.credentialsRefused ? { credentialsRefused: true } : {}) };
   // Travel slice 0: never merged into, never written over.
   if (isFromNewerVersion(pulled.data)) return { ok: false, newerVersion: true };
   // Session 18: an older copy is brought up to this version before it's merged.
@@ -521,7 +528,7 @@ export async function mergeAndPush(email: string, local: LocalFinancials): Promi
   // Built on the copy just pulled, so the server takes it; this device's own
   // sync time stays where it was until the merged copy is stored.
   const pushed = await pushToServer(email, mergedData, { record: false, baseSyncedAt: pulled.syncedAt });
-  if (!pushed.ok) return { ok: false, error: pushed.error ?? "Merge succeeded locally, but push failed.", conflict: pushed.conflict, ...(pushed.tooLarge ? { tooLarge: true } : {}) };
+  if (!pushed.ok) return { ok: false, error: pushed.error ?? "Merge succeeded locally, but push failed.", conflict: pushed.conflict, ...(pushed.tooLarge ? { tooLarge: true } : {}), ...(pushed.credentialsRefused ? { credentialsRefused: true } : {}) };
 
   return {
     ok: true,
@@ -623,7 +630,7 @@ export type FetchAndMergeResult =
       /** Session 10, item 2: another device's reset, when it cleared something here. */
       resetElsewhere?: ResetElsewhere;
     }
-  | { ok: false; error: string; notFound?: true; newerVersion?: undefined }
+  | { ok: false; error: string; notFound?: true; newerVersion?: undefined; /** SEC-07 amended (session 26): refused for its credentials. */ credentialsRefused?: true }
   // Travel slice 0: the backup was written by newer code; nothing merged. Not a failure: the caller shows NEWER_BACKUP_MESSAGE.
   | { ok: false; newerVersion: true; error?: undefined; notFound?: undefined };
 
@@ -658,7 +665,7 @@ function sameRecords(a: LocalFinancials, b: LocalFinancials, fields: readonly (k
 export async function fetchAndMerge(email: string, currentLocal: () => LocalFinancials | null): Promise<FetchAndMergeResult> {
   const seen = await lastSeen();
   const pulled = await pullFromServer(email, { timeoutMs: FETCH_TIMEOUT_MS });
-  if (!pulled.ok) return { ok: false, error: pulled.error, ...(pulled.notFound ? { notFound: true as const } : {}) };
+  if (!pulled.ok) return { ok: false, error: pulled.error, ...(pulled.notFound ? { notFound: true as const } : {}), ...(pulled.credentialsRefused ? { credentialsRefused: true as const } : {}) };
   if (isFromNewerVersion(pulled.data)) return { ok: false, newerVersion: true };
   // Session 18: an older copy is brought up to this version before it's
   // merged, and it's the migrated copy the record of the last sync is taken

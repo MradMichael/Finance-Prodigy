@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { signIn, getSession } from "../../lib/auth";
+import { signIn, getSession, updateDevicePassword, restartDeviceFromServer } from "../../lib/auth";
 import { useTheme } from "../../contexts/ThemeContext";
 import { Sovereign } from "../../components/EssaBrand";
 import RecoveryCodeModal from "../../components/RecoveryCodeModal";
@@ -17,6 +17,11 @@ export default function SignInPage() {
   const [error,    setError]    = useState("");
   const [loading,  setLoading]  = useState(false);
   const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
+  // Session 27, item 1 (owner; the prompts approved, merged in session 28): the server accepted a password this
+  // device doesn't know (changed on another device). Prompt A asks for the previous one; prompt B,
+  // "I don't remember it", explains starting from the backup before doing it.
+  const [stale, setStale] = useState<null | "previous" | "restart">(null);
+  const [previous, setPrevious] = useState("");
 
   useEffect(() => {
     if (getSession()) router.replace("/");
@@ -28,12 +33,36 @@ export default function SignInPage() {
     await new Promise((r) => setTimeout(r, 300));
     const result = await signIn(email, password);
     setLoading(false);
+    if (!result.ok && result.staleDevice) { setStale("previous"); return; }
     if (!result.ok) { setError(result.error); return; }
     // Older accounts get a recovery code the first time they sign in after
     // this feature shipped — show it once before continuing.
     if (result.recoveryCode) { setRecoveryCode(result.recoveryCode); return; }
     router.push("/");
   }
+
+  async function keepDeviceData(e: React.FormEvent) {
+    e.preventDefault();
+    setError(""); setLoading(true);
+    const r = await updateDevicePassword(email, password, previous);
+    setLoading(false);
+    if (!r.ok) { setError(r.error); return; }
+    router.push("/");
+  }
+
+  async function startFromBackup() {
+    setError(""); setLoading(true);
+    const r = await restartDeviceFromServer(email, password);
+    setLoading(false);
+    if (!r.ok) { setError(r.error); return; }
+    if (r.recoveryCode) { setRecoveryCode(r.recoveryCode); return; }
+    router.push("/");
+  }
+
+  const button = "w-full py-3 rounded-xl text-sm font-semibold tracking-wide transition-all duration-150 hover:opacity-90 active:scale-95 disabled:opacity-60";
+  const errorBox = error && (
+    <div className="rounded-xl px-4 py-3 text-sm" style={{ background: T.coral + "18", border: `1px solid ${T.coral}40`, color: T.coral }}>{error}</div>
+  );
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-4 py-12" style={{ background: T.ink }}>
@@ -54,6 +83,26 @@ export default function SignInPage() {
         className="w-full max-w-sm rounded-2xl p-8 shadow-2xl"
         style={{ background: T.panel, border: `1px solid ${T.line}` }}
       >
+        {stale === "previous" && (
+          <form onSubmit={keepDeviceData} className="space-y-4">
+            <h2 className="text-lg font-medium" style={{ color: T.text, fontFamily: "Spectral, Georgia, serif" }}>Bring this device up to date</h2>
+            <p className="text-sm leading-relaxed" style={{ color: T.mute }}>Your new password works for your account. This device&apos;s data is still locked with the password it used before. Enter that password to keep everything saved on this device.</p>
+            <Field label="Previous password" type="password" value={previous} onChange={setPrevious} placeholder="••••••••" autoComplete="off" />
+            {errorBox}
+            <button type="submit" disabled={loading || !previous} className={button} style={{ background: T.brass, color: T.ink }}>Keep this device&apos;s data</button>
+            <button type="button" onClick={() => { setError(""); setStale("restart"); }} className={button} style={{ color: T.mute, border: `1px solid ${T.line}` }}>I don&apos;t remember it</button>
+          </form>
+        )}
+        {stale === "restart" && (
+          <div className="space-y-4">
+            <h2 className="text-lg font-medium" style={{ color: T.text, fontFamily: "Spectral, Georgia, serif" }}>Bring this device up to date</h2>
+            <p className="text-sm leading-relaxed" style={{ color: T.mute }}>This device will start again from your backup on the server. Anything saved here that wasn&apos;t backed up is kept on this device, locked with the previous password, and isn&apos;t deleted.</p>
+            {errorBox}
+            <button type="button" onClick={startFromBackup} disabled={loading} className={button} style={{ background: T.brass, color: T.ink }}>Start from the backup</button>
+            <button type="button" onClick={() => { setError(""); setStale("previous"); }} className={button} style={{ color: T.mute, border: `1px solid ${T.line}` }}>Back</button>
+          </div>
+        )}
+        {!stale && (<>
         <h2 className="text-lg font-medium mb-1" style={{ color: T.text, fontFamily: "Spectral, Georgia, serif" }}>
           Welcome back
         </h2>
@@ -94,6 +143,7 @@ export default function SignInPage() {
             Create one
           </Link>
         </p>
+        </>)}
       </div>
 
       <p className="text-[10px] mt-8 text-center max-w-xs" style={{ color: T.mute }}>
