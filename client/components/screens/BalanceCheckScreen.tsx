@@ -43,6 +43,11 @@ export default function BalanceCheckScreen({
   const lbpRate = lbpRateOf(financials);
   const cards = financials.cards ?? [];
   const tracked = financials.trackedBalances ?? [];
+  // J3 (plan J) and COPY-06 (session 25, item 3e): one rule for every lira figure on this screen. A lira
+  // balance reads in lira at the rate on its last check's day, or its start day before any check
+  // (CUR-04's day). Null for a dollar balance, which reads in dollars.
+  const liraRate = (currency: string | undefined, checkedAt: string | null | undefined, startDay: string | undefined): number | null =>
+    currency !== "LBP" ? null : checkedAt ? rateOn(financials, isoLocalDay(new Date(checkedAt))) : startDay ? rateOn(financials, startDay) : null;
   const update = (patch: Partial<LocalFinancials>) => onChange({ ...financials, ...patch });
 
   // ── Period close (docs/PERIOD_CLOSE_PLAN.md Phase 2) ──
@@ -405,7 +410,7 @@ export default function BalanceCheckScreen({
                 const residualStillOpen = Math.abs(residual) >= 1;
                 const expectedAsOfCheck = Math.round((b.expected - b.changeSinceCheck) * 100) / 100;
                 // J3 (plan J, held): a lira balance reads in lira, at the rate on its check's own day.
-                const checkRate = b.currency === "LBP" && b.actualDate ? rateOn(financials, isoLocalDay(new Date(b.actualDate))) : null;
+                const checkRate = liraRate(b.currency, b.actualDate, tracked.find((t) => t.id === b.id)?.startingDate);
                 const shown = (usd: number) => (checkRate ? fmtCur(Math.round(usd * checkRate), "LBP") : money(usd));
                 const saidNative = (financials.trackedBalances ?? []).find((t) => t.id === b.id)?.actualBalance;
                 const hasActivitySince = Math.abs(netActivitySinceCheck) >= 0.01;
@@ -493,7 +498,7 @@ export default function BalanceCheckScreen({
                       )}
                       {check && (
                         <p className="text-[10px]" style={{ color: T.mute }}>
-                          Expected now: <span style={{ color: T.text }}>{fmtCur(check.expected, "USD")}</span>
+                          Expected now: <span style={{ color: T.text }}>{(() => { const r = liraRate(tb.currency, check.actualDate, tb.startingDate); return r ? fmtCur(Math.round(check.expected * r), "LBP") : fmtCur(check.expected, "USD"); })()}</span>
                         </p>
                       )}
                       <div className="flex gap-2">
