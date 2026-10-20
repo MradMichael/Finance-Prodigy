@@ -461,17 +461,10 @@ export async function restartDeviceFromServer(
   if (!user) return { ok: false, error: "Incorrect password." };
   const check = await serverAccepts(user.email, newPassword);
   if (!check.ok) return { ok: false, error: staleCheckFailed(check) };
-  const { UNREADABLE_PREFIX, saveFailureKind, SAVE_FAILURE_REASON } = await import("./localData");
-  const raw = localStorage.getItem(`essa_data_${user.id}`);
-  if (raw !== null) {
-    const keep = `${UNREADABLE_PREFIX}${user.id}_${new Date().toISOString()}`;
-    try {
-      localStorage.setItem(keep, raw);
-      localStorage.setItem(`${keep}_envelopes`, JSON.stringify({ wrappedDekPassword: user.wrappedDekPassword, wrappedDekRecovery: user.wrappedDekRecovery }));
-    } catch (err) {
-      try { localStorage.removeItem(keep); localStorage.removeItem(`${keep}_envelopes`); } catch { /* nothing more to undo */ }
-      return { ok: false, error: "Couldn't save the server's copy on this device. " + SAVE_FAILURE_REASON[saveFailureKind(err)] + " Nothing was changed." };
-    }
+  try { await keepRecordAndLocks(user); }
+  catch (err) {
+    const { saveFailureKind, SAVE_FAILURE_REASON } = await import("./localData");
+    return { ok: false, error: "Couldn't save the server's copy on this device. " + SAVE_FAILURE_REASON[saveFailureKind(err)] + " Nothing was changed." };
   }
   const { createEnvelopes, activateSessionKey } = await import("./crypto");
   const [{ wrappedPassword, wrappedRecovery, recoveryCode, dek }, pwHash] = await Promise.all([createEnvelopes(newPassword, user.id), hashPassword(newPassword)]);
@@ -587,10 +580,51 @@ export async function regenerateRecoveryCode(
  * mismatched device, 2.2.12). In that case this replaces that record in
  * place instead of appending a second one for the same email.
  */
+/**
+ * Sessions 27-28 (owner): before this device's record and its key envelopes are
+ * replaced (starting from the backup, or account recovery), both are kept byte
+ * for byte under the kept-copy keys, still openable with the password they were
+ * locked with (Erase all data and Delete account remove kept copies). Returns
+ * the record's kept key, or null when there's no record. Throws when storage
+ * refuses, having removed anything half-written, so the caller replaces nothing.
+ */
+async function keepRecordAndLocks(user: StoredUser): Promise<string | null> {
+  const { UNREADABLE_PREFIX } = await import("./localData");
+  const raw = localStorage.getItem(`essa_data_${user.id}`);
+  if (raw === null) return null;
+  const keep = `${UNREADABLE_PREFIX}${user.id}_${new Date().toISOString()}`;
+  try {
+    localStorage.setItem(keep, raw);
+    localStorage.setItem(`${keep}_envelopes`, JSON.stringify({ wrappedDekPassword: user.wrappedDekPassword, wrappedDekRecovery: user.wrappedDekRecovery }));
+  } catch (err) {
+    dropKeptCopy(keep);
+    throw err;
+  }
+  return keep;
+}
+
+/** A copy kept for a replacement that didn't happen, removed again. */
+function dropKeptCopy(key: string | null): void {
+  if (!key) return;
+  try { localStorage.removeItem(key); localStorage.removeItem(`${key}_envelopes`); } catch { /* nothing more to undo */ }
+}
+
 async function recoverFromSync(
   email: string, recoveryCode: string, newPassword: string, existingId?: string,
 ): Promise<{ ok: true; session: Session; newRecoveryCode: string } | { ok: false; error: string }> {
   if (newPassword.length < 10) return { ok: false, error: "Password must be at least 10 characters." };
+  // Session 28, item 2 (owner): a device that recovery replaces keeps its record
+  // and locks first, before the server is touched. A recovery that then stops
+  // without replacing anything removes that copy again.
+  let kept: string | null = null;
+  const existingUser = existingId ? getUsers().find((u) => u.id === existingId) : undefined;
+  if (existingUser) {
+    try { kept = await keepRecordAndLocks(existingUser); }
+    catch (err) {
+      const { saveFailureKind, SAVE_FAILURE_REASON } = await import("./localData");
+      return { ok: false, error: resetFailed({ error: SAVE_FAILURE_REASON[saveFailureKind(err)] }) };
+    }
+  }
   const normalizedEmail = email.toLowerCase().trim();
   const { createEnvelopes, activateSessionKey, initSyncToken, deriveRecoveryToken } = await import("./crypto");
   const { relinkSync, pullFromServer } = await import("./syncService");
@@ -608,6 +642,7 @@ async function recoverFromSync(
 
   const relinked = await relinkSync(normalizedEmail, newToken, newRecoveryToken, oldRecoveryToken);
   if (!relinked.ok) {
+    dropKeptCopy(kept);
     if (relinked.error?.includes("verify ownership")) {
       return { ok: false, error: "No account found with this email, or that recovery code doesn't match it." };
     }
@@ -616,6 +651,7 @@ async function recoverFromSync(
 
   const pulled = await pullFromServer(normalizedEmail);
   if (!pulled.ok) {
+    dropKeptCopy(kept);
     return { ok: false, error: `Your password was reset, but retrieving your data failed (${pulled.error}). Try signing in now — the new password should work.` };
   }
 
@@ -643,6 +679,7 @@ async function recoverFromSync(
   // signInFromSync's own guard just above.
   const { confirmOverwriteIfNeeded } = await import("./syncService");
   if (!(await confirmOverwriteIfNeeded(existingId, "your account on the server"))) {
+    dropKeptCopy(kept);
     return { ok: false, error: "Cancelled — nothing on this device was changed." };
   }
 
