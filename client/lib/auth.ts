@@ -212,6 +212,8 @@ async function signInFromSync(
   const { pullFromServer } = await import("./syncService");
   const pulled = await pullFromServer(normalizedEmail);
   if (!pulled.ok) {
+    // SEC-07 (session 25, item 4b; HELD): a locked account's sentence, as the server words it.
+    if (pulled.accountLocked) return { ok: false, error: pulled.error };
     // Distinguish the three real cases instead of one blanket message: the
     // server's /pull already tells them apart (404 = nothing registered
     // for this email at all, 401 = registered but this token, i.e. this

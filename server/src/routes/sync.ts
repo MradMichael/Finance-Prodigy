@@ -1,4 +1,4 @@
-import { Router, type RequestHandler } from "express";
+import { Router, type Request, type RequestHandler, type Response } from "express";
 import { createHash, timingSafeEqual } from "crypto";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
@@ -7,6 +7,22 @@ import { emailRef } from "../lib/emailRef";
 import { logger } from "../lib/logger";
 import { prisma } from "../lib/prisma";
 import { emailSchema, tokenSchema } from "../lib/validation";
+import { lockedSentence, type AccountLimit } from "../lib/accountLimit";
+
+// SEC-07 (owner, session 25, item 4b; HELD): pull, relink and delete count wrong
+// credentials per account (lib/accountLimit.ts); push doesn't (a stale device after
+// a password reset fails every upload, and would lock its owner out).
+const accountLimit = (req: Request): AccountLimit => req.app.locals.accountLimit as AccountLimit;
+/** A locked account is refused here, before any lookup or comparison. True when refused. */
+function refuseIfLocked(req: Request, res: Response, email: string): boolean {
+  const ms = accountLimit(req).lockedFor(email);
+  if (!ms) return false;
+  const seconds = Math.ceil(ms / 1000);
+  logger.warn("sync_denied_account_locked", { emailRef: emailRef(email), userAgent: req.header("user-agent") ?? null, retryAfterSeconds: seconds });
+  res.setHeader("Retry-After", String(seconds));
+  res.status(429).json({ error: lockedSentence(ms), accountLocked: true, retryAfterSeconds: seconds });
+  return true;
+}
 
 const router = Router();
 
@@ -236,6 +252,7 @@ const pull: RequestHandler = async (req, res, next) => {
     const auth = req.header("authorization") ?? "";
     const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
     tokenSchema.parse(token);
+    if (refuseIfLocked(req, res, email)) return;
     // Metadata only — never the token/password or anything derived from
     // them. This is currently the ONLY place a failed sign-in-on-new-device
     // attempt leaves any trace at all; without it, diagnosing a real report
@@ -254,6 +271,7 @@ const pull: RequestHandler = async (req, res, next) => {
     }
     if (!hashesEqual(record.authTokenHash, hashToken(token))) {
       logger.warn("pull_denied_token_mismatch", { ...meta, tokenLength: token.length, lastSyncedAt: record.syncedAt });
+      accountLimit(req).fail(email);
       return res.status(401).json({ error: "Invalid sync credentials for this account." });
     }
 
@@ -261,6 +279,7 @@ const pull: RequestHandler = async (req, res, next) => {
     // has a recovery code registered elsewhere, so it can skip surfacing
     // the fresh one it must still generate locally -- otherwise every new
     // device shows a "save your recovery code" modal forever, not just once.
+    accountLimit(req).succeed(email);
     res.json({ ok: true, data: JSON.parse(record.dataJson), syncedAt: record.syncedAt, hasRecoveryCode: !!record.recoveryTokenHash });
   } catch (err) {
     next(err);
@@ -281,6 +300,8 @@ router.post("/relink", async (req, res, next) => {
     const tokenHash = hashToken(token);
     const recoveryTokenHash = hashToken(recoveryToken);
     const meta = { emailRef: emailRef(email), userAgent: req.header("user-agent") ?? null };
+    if (refuseIfLocked(req, res, email)) return;
+    let guessed = false; // a wrong old recovery code counts; a row with none on file doesn't
 
     try {
       await withTransactionRetry(() => prisma.$transaction(async (tx) => {
@@ -308,6 +329,7 @@ router.post("/relink", async (req, res, next) => {
 
         if (!oldRecoveryToken || !hashesEqual(hashToken(oldRecoveryToken), existing.recoveryTokenHash)) {
           logger.warn("relink_denied_old_recovery_token_mismatch", { ...meta, hadOldRecoveryToken: !!oldRecoveryToken });
+          guessed = true;
           throw new SyncAuthError();
         }
 
@@ -319,6 +341,7 @@ router.post("/relink", async (req, res, next) => {
       }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
     } catch (err) {
       if (err instanceof SyncAuthError) {
+        if (guessed) accountLimit(req).fail(email);
         return res.status(401).json({ error: "Could not verify ownership of this account's sync data." });
       }
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2034") {
@@ -327,6 +350,7 @@ router.post("/relink", async (req, res, next) => {
       throw err;
     }
 
+    accountLimit(req).succeed(email);
     res.json({ ok: true });
   } catch (err) {
     next(err);
@@ -349,6 +373,7 @@ router.delete("/", async (req, res, next) => {
     // Metadata only, matching the same pattern already on /pull/relink —
     // this was the one auth-denial path on this route with zero trace.
     const meta = { emailRef: emailRef(email), userAgent: req.header("user-agent") ?? null };
+    if (refuseIfLocked(req, res, email)) return;
 
     const record = await prisma.userSync.findUnique({ where: { email } });
     if (!record) {
@@ -378,6 +403,7 @@ router.delete("/", async (req, res, next) => {
     }
     if (!hashesEqual(record.authTokenHash, tokenHash)) {
       logger.warn("delete_denied_token_mismatch", meta);
+      accountLimit(req).fail(email);
       return res.status(401).json({ error: "Invalid sync credentials for this account." });
     }
 
@@ -392,6 +418,7 @@ router.delete("/", async (req, res, next) => {
       if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025")) throw err;
     }
 
+    accountLimit(req).succeed(email);
     await deleteAllDataForEmail(email);
 
     res.json({ ok: true });

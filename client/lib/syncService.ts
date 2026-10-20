@@ -356,7 +356,7 @@ export async function relinkSync(
 export async function pullFromServer(
   email: string,
   { timeoutMs = SYNC_TIMEOUT_MS }: { timeoutMs?: number } = {},
-): Promise<{ ok: true; data: LocalFinancials; syncedAt: string; hasRecoveryCode: boolean } | { ok: false; error: string; notFound?: true; unreachable?: true }> {
+): Promise<{ ok: true; data: LocalFinancials; syncedAt: string; hasRecoveryCode: boolean } | { ok: false; error: string; notFound?: true; unreachable?: true; accountLocked?: true }> {
   const token = getSyncToken();
   if (!token) return { ok: false, error: "Not signed in. Sign in again to sync." };
   try {
@@ -381,6 +381,8 @@ export async function pullFromServer(
     if (res.status === 404 && json && typeof json.error === "string") {
       return { ok: false, error: "No data on server yet. Push first.", notFound: true };
     }
+    // SEC-07 (session 25, item 4b; HELD): a locked account's refusal carries the server's sentence and a flag.
+    if (res.status === 429 && json?.accountLocked === true && typeof json.error === "string") return { ok: false, error: json.error, accountLocked: true };
     if (!res.ok) return { ok: false, error: json?.error ?? serverTrouble(res.status) };
     if (json === null || typeof json.syncedAt !== "string" || !("data" in json)) {
       return { ok: false, error: "Server responded, but the response was malformed. Try again." };
