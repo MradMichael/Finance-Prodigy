@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 
 /**
- * SEC-07 (owner, session 25, item 4b; HELD): a per-account limit on wrong
+ * SEC-07 (owner, session 25, item 4b; merged in session 28): a per-account limit on wrong
  * credentials, with backoff. The sync limiter counts per client (IP); a
  * guesser spread across many addresses had no ceiling on one account.
  *
@@ -63,7 +63,7 @@ export function createAccountLimit(): AccountLimit {
   };
 }
 
-/** The sentence a locked account sees (DRAFT, held for the owner's approval). */
+/** The sentence a locked account sees (approved by the owner, session 26). */
 export function lockedSentence(ms: number): string {
   const minutes = Math.max(1, Math.ceil(ms / 60_000));
   return `Too many failed attempts for this account. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`;

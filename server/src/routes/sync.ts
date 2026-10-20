@@ -9,7 +9,7 @@ import { prisma } from "../lib/prisma";
 import { emailSchema, tokenSchema } from "../lib/validation";
 import { lockedSentence, type AccountLimit } from "../lib/accountLimit";
 
-// SEC-07 (owner, session 25, item 4b; amended session 26; HELD): pull, push, relink
+// SEC-07 (owner, session 25, item 4b; amended session 26; merged in session 28): pull, push, relink
 // and delete count wrong credentials per account (lib/accountLimit.ts). A client
 // refused for its credentials (code "credentials_refused") stops its automatic
 // requests until a sign-in, so a stale device fails once (client lib/syncRefused.ts).

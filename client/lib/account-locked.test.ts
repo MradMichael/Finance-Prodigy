@@ -1,6 +1,6 @@
-// SEC-07 (owner, session 25, item 4b; HELD): the client side of the
+// SEC-07 (owner, session 25, item 4b; merged in session 28): the client side of the
 // per-account lock. The server refuses a locked account with 429,
-// `accountLocked: true` and its sentence (DRAFT) with the wait filled in.
+// `accountLocked: true` and its sentence (approved in session 26) with the wait filled in.
 // pullFromServer passes the flag on, and sign-in shows the sentence as it is,
 // not behind "Couldn't verify your account right now.", the way "Incorrect
 // password for this email." is shown.

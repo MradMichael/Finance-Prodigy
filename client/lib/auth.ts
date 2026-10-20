@@ -213,7 +213,7 @@ async function signInFromSync(
   const { pullFromServer } = await import("./syncService");
   const pulled = await pullFromServer(normalizedEmail);
   if (!pulled.ok) {
-    // SEC-07 (session 25, item 4b; HELD): a locked account's sentence, as the server words it.
+    // SEC-07 (session 25, item 4b; merged in session 28): a locked account's sentence, as the server words it.
     if (pulled.accountLocked) return { ok: false, error: pulled.error };
     // Distinguish the three real cases instead of one blanket message: the
     // server's /pull already tells them apart (404 = nothing registered
@@ -377,7 +377,7 @@ export async function signIn(
   return { ok: true, session, recoveryCode };
 }
 
-// ── Session 27, item 1 (owner; HELD): a stale device and the new password ──
+// ── Session 27, item 1 (owner; merged in session 28): a stale device and the new password ──
 // This device's data is locked under its own data key (DEK), wrapped under
 // the password it last used. After a reset on another device the new password
 // unlocks nothing here and the old one derives a token the server refuses. A
@@ -386,7 +386,7 @@ export async function signIn(
 // (so a typo on a device that never synced stays local). Accepted, the page
 // asks for the previous password (updateDevicePassword) or starts from the
 // backup (restartDeviceFromServer). Nothing is written until then.
-const PREVIOUS_PASSWORD_WRONG = "That isn't the password this device used before."; // DRAFT, held (prompt A's error)
+const PREVIOUS_PASSWORD_WRONG = "That isn't the password this device used before."; // prompt A's error (approved in session 28)
 
 type ServerCheck = Awaited<ReturnType<typeof import("./syncService").pullFromServer>>;
 

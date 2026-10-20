@@ -17,7 +17,7 @@ export default function SignInPage() {
   const [error,    setError]    = useState("");
   const [loading,  setLoading]  = useState(false);
   const [recoveryCode, setRecoveryCode] = useState<string | null>(null);
-  // Session 27, item 1 (owner; HELD, the prompts are drafts): the server accepted a password this
+  // Session 27, item 1 (owner; the prompts approved, merged in session 28): the server accepted a password this
   // device doesn't know (changed on another device). Prompt A asks for the previous one; prompt B,
   // "I don't remember it", explains starting from the backup before doing it.
   const [stale, setStale] = useState<null | "previous" | "restart">(null);
@@ -96,7 +96,7 @@ export default function SignInPage() {
         {stale === "restart" && (
           <div className="space-y-4">
             <h2 className="text-lg font-medium" style={{ color: T.text, fontFamily: "Spectral, Georgia, serif" }}>Bring this device up to date</h2>
-            <p className="text-sm leading-relaxed" style={{ color: T.mute }}>This device will start again from your backup on the server. Anything saved here that wasn&apos;t backed up stays on this device, still locked with the previous password. Nothing is deleted.</p>
+            <p className="text-sm leading-relaxed" style={{ color: T.mute }}>This device will start again from your backup on the server. Anything saved here that wasn&apos;t backed up is kept on this device, locked with the previous password, and isn&apos;t deleted.</p>
             {errorBox}
             <button type="button" onClick={startFromBackup} disabled={loading} className={button} style={{ background: T.brass, color: T.ink }}>Start from the backup</button>
             <button type="button" onClick={() => { setError(""); setStale("previous"); }} className={button} style={{ color: T.mute, border: `1px solid ${T.line}` }}>Back</button>

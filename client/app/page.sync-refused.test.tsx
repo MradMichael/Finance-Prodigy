@@ -1,4 +1,4 @@
-// SEC-07 amended (owner, session 26, item 2; HELD for its sentence): a stale
+// SEC-07 amended (owner, session 26, item 2; merged in session 28): a stale
 // device. Its password was changed on another device, so the server refuses
 // its token, and every refused request now counts toward the account's lock
 // (six lock it). The dashboard used to show ERR-02's notice and retry at 1, 5

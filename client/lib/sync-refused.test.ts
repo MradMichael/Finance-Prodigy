@@ -1,4 +1,4 @@
-// SEC-07 amended (owner, session 26, item 2; HELD): the client can tell a
+// SEC-07 amended (owner, session 26, item 2; merged in session 28): the client can tell a
 // request refused for its credentials (the server's code
 // "credentials_refused") from every other refusal, and passes it on from
 // each automatic path: a push, a pull, the fetch-on-open and the conflict

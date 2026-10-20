@@ -1,4 +1,4 @@
-// SEC-07 amended (owner, session 26, item 2; HELD). Owner, session 27: the
+// SEC-07 amended (owner, session 26, item 2; merged in session 28). Owner, session 27: the
 // stop a refused request set (lib/syncRefused.ts) clears only when the SERVER
 // accepted a sign-in or recovery; a local sign-in never clears it (the old
 // password signs in locally on a stale device). The server-accepted paths are

@@ -1,4 +1,4 @@
-// Session 27, item 1 (owner; HELD, the prompts are drafts): the sign-in page on
+// Session 27, item 1 (owner; the prompts approved, merged in session 28): the sign-in page on
 // a stale device. When the server accepts a password this device doesn't
 // know, the page asks for the previous one (prompt A); "I don't remember it"
 // explains starting from the backup (prompt B) before doing it.
@@ -21,7 +21,7 @@ import SignInPage from "./page";
 import { ThemeProvider } from "../../contexts/ThemeContext";
 
 const A_TEXT = "Your new password works for your account. This device's data is still locked with the password it used before. Enter that password to keep everything saved on this device.";
-const B_TEXT = "This device will start again from your backup on the server. Anything saved here that wasn't backed up stays on this device, still locked with the previous password. Nothing is deleted.";
+const B_TEXT = "This device will start again from your backup on the server. Anything saved here that wasn't backed up is kept on this device, locked with the previous password, and isn't deleted."; // the owner's words (session 28)
 const SESSION = { userId: "u1", email: "quartz@test.com", name: "Quartz Lantern" };
 
 beforeEach(() => {

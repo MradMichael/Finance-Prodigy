@@ -139,7 +139,7 @@ export async function rewrapRecoveryOnly(dek: Uint8Array, userId: string): Promi
 }
 
 /**
- * Session 27, item 1 (owner; HELD): rewrapRecoveryOnly's twin. Re-wraps an
+ * Session 27, item 1 (owner; merged in session 28): rewrapRecoveryOnly's twin. Re-wraps an
  * already-unwrapped DEK under a new password and leaves the recovery side as
  * it is: a stale device moving to the password changed on another device. The
  * DEK, so every record it encrypts, doesn't change.

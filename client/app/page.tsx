@@ -206,7 +206,7 @@ export default function Home() {
   // upload, fetch or retry) until it's reloaded, and says so.
   const [newerBackup, setNewerBackup] = useState(false);
   const newerBackupRef = useRef(false);
-  // SEC-07 amended (owner, session 26, item 2; HELD for its sentence): a push or pull
+  // SEC-07 amended (owner, session 26, item 2; merged in session 28): a push or pull
   // refused for its credentials (a password changed on another device) stops every
   // automatic server request, uploads, retries, fetches and the conflict merge, until
   // a sign-in on this device. Each refused request counts toward the account's lock,
@@ -995,7 +995,7 @@ export default function Home() {
             className="fixed left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50"
             style={{ top: saveError ? "7.5rem" : "1rem", background: T.panel, border: `1px solid ${T.brass}` }}
           >
-            {/* SEC-07 amended (session 26, item 2): DRAFT, held for the owner's approval. */}
+            {/* SEC-07 amended (session 26, item 2): the owner's wording (session 27). */}
             <span className="text-sm" style={{ color: T.text }}>{SYNC_REFUSED_MESSAGE}</span>
           </div>
         )}

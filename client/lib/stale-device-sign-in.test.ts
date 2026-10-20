@@ -1,4 +1,4 @@
-// Session 27, item 1 (owner; HELD with SEC-07): a stale device signs in with
+// Session 27, item 1 (owner; merged in session 28 with SEC-07): a stale device signs in with
 // the NEW password. Device B's data is locked under B's own data key, which
 // only B's previous password unwraps; after a reset on another device the new
 // password unlocks nothing here, and the old one derives a token the server

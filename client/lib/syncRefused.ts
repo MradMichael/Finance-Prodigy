@@ -1,5 +1,5 @@
 /**
- * SEC-07 amended (owner, session 26, item 2; HELD for its sentence): a push or
+ * SEC-07 amended (owner, session 26, item 2; merged in session 28): a push or
  * pull refused for its credentials stops this device's automatic server
  * requests until the person signs in again here. Every refused request counts
  * toward the account's lock (server/src/lib/accountLimit.ts), so a device left

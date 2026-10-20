@@ -22,7 +22,7 @@ import { logger } from "./lib/logger";
 
 export function createApp(): express.Express {
   const app = express();
-  // SEC-07 (owner, session 25, item 4b; HELD): wrong credentials counted per account, one count per app.
+  // SEC-07 (owner, session 25, item 4b; merged in session 28): wrong credentials counted per account, one count per app.
   app.locals.accountLimit = createAccountLimit();
   // Railway (like most PaaS hosts) puts exactly one reverse proxy in front of
   // this process. Without this, express-rate-limit's default keyGenerator

@@ -77,7 +77,7 @@ export interface SyncResult {
   unreachable?: boolean;
   // Session 23, item 6 (approved and merged in session 24, 070f457): the status of a reply without the API's own error.
   serverStatus?: number;
-  // SEC-07 amended (session 26, item 2; HELD): refused for its credentials (the server's
+  // SEC-07 amended (session 26, item 2; merged in session 28): refused for its credentials (the server's
   // code "credentials_refused"): the caller stops automatic sync until a sign-in.
   credentialsRefused?: boolean;
 }
@@ -385,7 +385,7 @@ export async function pullFromServer(
     if (res.status === 404 && json && typeof json.error === "string") {
       return { ok: false, error: "No data on server yet. Push first.", notFound: true };
     }
-    // SEC-07 (session 25, item 4b; HELD): a locked account's refusal carries the server's sentence and a flag.
+    // SEC-07 (session 25, item 4b; merged in session 28): a locked account's refusal carries the server's sentence and a flag.
     if (res.status === 429 && json?.accountLocked === true && typeof json.error === "string") return { ok: false, error: json.error, accountLocked: true };
     if (res.status === 401 && json?.code === "credentials_refused") return { ok: false, credentialsRefused: true, error: json.error ?? "Invalid sync credentials for this account." };
     if (!res.ok) return { ok: false, error: json?.error ?? serverTrouble(res.status) };

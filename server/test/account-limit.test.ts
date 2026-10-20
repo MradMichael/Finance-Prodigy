@@ -1,4 +1,4 @@
-// SEC-07 (owner, session 25, item 4b; HELD): password guessing on one account
+// SEC-07 (owner, session 25, item 4b; merged in session 28): password guessing on one account
 // was limited only per client (the sync limiter, per IP). A guesser spread
 // over many addresses had no ceiling on one account. Now each account counts
 // its own wrong credentials on pull, push, relink and delete: five are free, then
@@ -144,7 +144,7 @@ describe("what counts, and for whom", () => {
   });
 });
 
-describe("the sentence (DRAFT, held for approval)", () => {
+describe("the sentence (approved by the owner, session 26)", () => {
   it("names the wait in minutes, rounded up", async () => {
     await wrong(6);
     at(20_000); // 40 seconds left
