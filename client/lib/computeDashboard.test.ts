@@ -147,7 +147,7 @@ describe("net worth tiers", () => {
     { assets: 0, debtBalance: 10000, expectedTier: "Rebuilding", expectedColor: "coral" },
     { assets: 200, debtBalance: 2000, expectedTier: "Closing the gap", expectedColor: "brass" },
     { assets: 4000, debtBalance: 5000, expectedTier: "Almost positive", expectedColor: "brass" },
-    { assets: 3000, debtBalance: 0, expectedTier: "Breaking even", expectedColor: "brass" },
+    { assets: 2000, debtBalance: 0, expectedTier: "Breaking even", expectedColor: "brass" }, // item 4a (held): under one month of the $3,000 income
     { assets: 10000, debtBalance: 0, expectedTier: "Foundation builder", expectedColor: "jade" },
     { assets: 50000, debtBalance: 0, expectedTier: "Growing wealth", expectedColor: "jade" },
     { assets: 150000, debtBalance: 0, expectedTier: "Wealth building", expectedColor: "jade" },

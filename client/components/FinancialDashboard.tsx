@@ -651,12 +651,14 @@ export default function FinancialDashboard({
                   <p className="text-5xl font-medium" style={{ ...SERIF, ...NUMS, color: netWorth.total >= 0 ? T.jade : T.coral }}>
                     {netWorth.total >= 0 ? "+" : ""}{money(netWorth.total)}
                   </p>
-                  <span
-                    className="inline-block mt-2 text-xs px-2.5 py-1 rounded-full font-medium"
-                    style={{ background: nwColor + "18", color: nwColor, border: `1px solid ${nwColor}40` }}
-                  >
-                    {netWorth.tier}
-                  </span>
+                  {netWorth.tier && (
+                    <span
+                      className="inline-block mt-2 text-xs px-2.5 py-1 rounded-full font-medium"
+                      style={{ background: nwColor + "18", color: nwColor, border: `1px solid ${nwColor}40` }}
+                    >
+                      {netWorth.tier}
+                    </span>
+                  )}
                 </div>
                 <div className="flex gap-6 text-right">
                   <div>
@@ -695,6 +697,8 @@ export default function FinancialDashboard({
 
               <div className="space-y-2 pt-4" style={{ borderTop: `1px solid ${T.line}` }}>
                 <p className="text-[10px] uppercase tracking-widest mb-2" style={{ color: T.mute }}>To grow your net worth</p>
+                {/* Item 4a (owner's sentence, session 25): with no income set there's no tier to advise on. */}
+                {!netWorth.tier && <p className="text-sm" style={{ color: T.mute }}>Set your monthly income to see where your net worth stands.</p>}
                 {netWorth.suggestions.map((s, i) => (
                   <p key={i} className="text-sm flex gap-2" style={{ color: i === 0 ? T.text : T.mute }}>
                     <span style={{ color: nwColor, flexShrink: 0 }}>→</span>
