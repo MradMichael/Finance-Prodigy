@@ -158,7 +158,7 @@ export default function ProfilePage() {
     } else if (choice === "off-delete") {
       setSyncMsg(result?.ok
         ? "✓ Backup is off and the server copy has been deleted."
-        : backupOffDeleteFailed(result)); // session 23, item 6 (draft, held)
+        : backupOffDeleteFailed(result)); // session 23, item 6; approved by the owner and merged in session 24 (070f457)
     } else {
       setSyncMsg("✓ Backup is off. The copy already on the server was kept and will no longer update.");
     }
