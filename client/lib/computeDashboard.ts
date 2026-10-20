@@ -128,7 +128,8 @@ export interface DashboardPayload {
     assets: number;
     liabilities: number;
     total: number;
-    tier: string;
+    /** Item 4a (session 25): null with no monthly income set (nothing to measure against). */
+    tier: string | null;
     tierColor: "jade" | "brass" | "coral" | "mute";
     suggestions: string[];
   };
@@ -729,25 +730,28 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   const hasActiveGoalsForAdvice = data.goals.some((g) => !g.pausedAt);
   // Sorted ascending by `max` (the upper bound each tier applies below);
   // the last row's `max` is Infinity so every net worth lands somewhere.
+  // Item 4a (owner, session 25; plan "NET WORTH BANDS"): `max` is in MONTHS
+  // of Setup's monthly income, not dollars, so the same tier means the same
+  // thing at $800 a month and at $3,000. Thresholds approved by the owner.
   const NET_WORTH_TIERS: { max: number; tier: string; tierColor: NWColor; suggestions: string[] }[] = [
     {
-      max: -20000, tier: "Heavy debt load", tierColor: "coral",
+      max: -6, tier: "Heavy debt load", tierColor: "coral",
       suggestions: [
         "Target the highest-APR debt first: that's where interest is burning fastest.",
         "Every dollar above the minimum payment is money that stops compounding against you.",
-        "Even $50 extra per month cuts months off your payoff date. Run the numbers in Debts.",
+        "Even a little extra each month cuts months off your payoff date. Run the numbers in Debts.", // item 4a (approved, session 26)
       ],
     },
     {
-      max: -5000, tier: "Rebuilding", tierColor: "coral",
+      max: -2, tier: "Rebuilding", tierColor: "coral",
       suggestions: [
         nwUpOnLastMonth ? "You're climbing: your net worth is higher than last month." : "Every month you owe a little less brings zero closer.", // the owner's wording (session 23)
-        "Consider a small side income for 3–6 months; even $200/month accelerates this significantly.",
+        "A small side income for a few months, even a little each month, speeds this up.", // item 4a: the owner's words (session 26)
         "Once you clear the debt, redirect that minimum payment into savings automatically.",
       ],
     },
     {
-      max: -1500, tier: "Closing the gap", tierColor: "brass",
+      max: -0.5, tier: "Closing the gap", tierColor: "brass",
       suggestions: [
         "You're within reach of zero. A few focused months can get you there.",
         "Direct any extra income straight at your smallest remaining debt to build momentum.",
@@ -763,23 +767,24 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
       ],
     },
     {
-      max: 5000, tier: "Breaking even", tierColor: "brass",
+      max: 1, tier: "Breaking even", tierColor: "brass",
       suggestions: [
         "Your liabilities are covered. Now every dollar saved is pure net worth growth.",
         efBalance > 0 ? "Keep growing your safety net: it's your first true asset." : "Start your safety net: it's your first true asset.",
-        hasActiveGoalsForAdvice ? "Keep funding your goals; $5,000 in savings changes how you handle surprises." : "Set a goal to hit $5,000 in savings; that buffer changes how you handle surprises.",
+        // Item 4a (approved, session 26): one month of income, not a fixed $5,000.
+        hasActiveGoalsForAdvice ? "Keep funding your goals; a month of income in savings changes how you handle surprises." : "Set a goal to save one month of income; that buffer changes how you handle surprises.",
       ],
     },
     {
-      max: 25000, tier: "Foundation builder", tierColor: "jade",
+      max: 6, tier: "Foundation builder", tierColor: "jade",
       suggestions: [
         "You're past breaking even. Keep the momentum going.",
-        "Compound growth starts to matter here. Even modest returns on $10K make a difference.",
+        "Compound growth starts to matter here. Even modest returns make a difference at this size.", // item 4a (approved, session 26)
         "Consider diversifying: savings, goals, and if applicable, low-risk investments.",
       ],
     },
     {
-      max: 100000, tier: "Growing wealth", tierColor: "jade",
+      max: 24, tier: "Growing wealth", tierColor: "jade",
       suggestions: [
         "Significant position: you have real financial resilience now.",
         "At this level, optimizing income is often more powerful than cutting expenses.",
@@ -795,7 +800,12 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
       ],
     },
   ];
-  const nwData = NET_WORTH_TIERS.find((t) => nwTotal < t.max)!;
+  // No income set: nothing to divide by, so no tier and no advice (ERR-06's
+  // rule: no judgement without the input it needs). The figure still shows.
+  const nwMonths = data.income > 0 ? nwTotal / data.income : null;
+  const nwData = nwMonths === null
+    ? { max: null, tier: null, tierColor: "mute" as NWColor, suggestions: [] as string[] }
+    : NET_WORTH_TIERS.find((t) => nwMonths < t.max)!;
 
   // ── Six-month trend ───────────────────────────────────────────────
   const sixMonthTrend = Array.from({ length: 6 }, (_, i) => {
