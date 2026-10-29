@@ -62,7 +62,7 @@ export default function ProfilePage() {
   const [unreadable,    setUnreadable]    = useState(false);
   const [resetCounts,   setResetCounts]   = useState<{ transactions: number; goals: number; debts: number; recurring: number } | null>(null);
   const [resetMsg,      setResetMsg]      = useState("");
-  // Session 28, item 3 (owner; HELD, wording drafts): kept copies, each opened with the password it was locked with.
+  // Session 28, item 3 (owner; wording approved, merged in session 29): kept copies, each opened with the password it was locked with.
   const [keptCopies,    setKeptCopies]    = useState<{ key: string; keptAt: string }[]>([]);
   const [copyPasswords, setCopyPasswords] = useState<Record<string, string>>({});
   const [copyMsgs,      setCopyMsgs]      = useState<Record<string, string>>({});
@@ -331,7 +331,7 @@ export default function ProfilePage() {
   // from 2.4.33 by hand. Same destination as Pull (saveData, full reload),
   // same guard (confirmOverwriteIfNeeded) — the only thing that changes is
   // where the replacement data comes from.
-  // Session 28, item 3 (owner; HELD, wording drafts): open a kept copy, merge it as a fetched copy is
+  // Session 28, item 3 (owner; wording approved, merged in session 29): open a kept copy, merge it as a fetched copy is
   // merged, save, and only then remove the copy. A wrong password or a failed save changes nothing.
   async function handleOpenCopy(key: string) {
     if (!session) return;
@@ -850,7 +850,7 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* Session 28, item 3 (owner; HELD, wording drafts): copies kept on this device. */}
+        {/* Session 28, item 3 (owner; wording approved, merged in session 29): copies kept on this device. */}
         {keptCopies.length > 0 && (
           <div className="rounded-2xl p-6 space-y-4" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
             <h2 className="text-sm font-semibold" style={{ color: T.text, fontFamily: "Spectral, Georgia, serif" }}>Copies kept on this device</h2>

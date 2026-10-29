@@ -699,7 +699,7 @@ export async function fetchAndMerge(email: string, currentLocal: () => LocalFina
 }
 
 /**
- * Session 28, item 3 (owner; HELD): a kept copy merged into this account's data
+ * Session 28, item 3 (owner; merged in session 29): a kept copy merged into this account's data
  * the way a fetched copy is (fetchAndMerge): brought up to this version, merged
  * with this device's record of its last sync under the fingerprint rule and the
  * deletion records, and described for the usual notice. A copy from newer code

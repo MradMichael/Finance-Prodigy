@@ -485,7 +485,7 @@ export async function restartDeviceFromServer(
 }
 
 /**
- * Session 28, item 3 (owner; HELD): one kept copy opened with the password it
+ * Session 28, item 3 (owner; merged in session 29): one kept copy opened with the password it
  * was locked with. Tried in order, reading only: the copy's own key envelopes
  * (a device that started from the backup, or was recovered), this account's
  * current password envelope (an ERR-04 copy written under the current key),

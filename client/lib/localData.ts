@@ -1812,7 +1812,7 @@ export function hasUnreadableCopies(userId: string): boolean {
   try { return Object.keys(localStorage).some((k) => k.startsWith(mine)); } catch { return false; }
 }
 
-/** Session 28, item 3 (owner; HELD): this account's kept copies, not their envelopes, oldest first: when each was kept, nothing of its contents. */
+/** Session 28, item 3 (owner; merged in session 29): this account's kept copies, not their envelopes, oldest first: when each was kept, nothing of its contents. */
 export function listKeptCopies(userId: string): { key: string; keptAt: string }[] {
   const mine = `${UNREADABLE_PREFIX}${userId}_`;
   let keys: string[];

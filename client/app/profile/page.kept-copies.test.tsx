@@ -1,4 +1,4 @@
-// Session 28, item 3 (owner; HELD, every sentence here is a draft): Profile
+// Session 28, item 3 (owner; wording approved, merged in session 29): Profile
 // lists this account's kept copies (how many, and when) and opens one with the
 // password it was locked with: merged into the current data as a fetched copy
 // is, saved, and only then removed. A wrong password, or a save that fails,

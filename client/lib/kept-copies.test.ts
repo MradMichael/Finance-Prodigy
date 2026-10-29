@@ -1,4 +1,4 @@
-// Session 28, item 3 (owner; HELD, wording drafts): opening a kept copy.
+// Session 28, item 3 (owner; wording approved, merged in session 29): opening a kept copy.
 // Kept copies (essa_unreadable_<id>_<time>) hold this account's data that
 // this browser couldn't open, or that a device kept before starting from the
 // backup or being recovered (sessions 27-28, with their old key envelopes).
