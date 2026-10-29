@@ -100,11 +100,12 @@ describe("1. REGRESSION — an instant-pinned close must not break isAfterBalanc
     expect(results).toEqual([false, true]);
   });
 
-  it("a bare-date asOf is unchanged — ImportStatement's existing case", () => {
-    // The slice must be identity on a date, or the second caller moves.
+  it("a bare-date asOf (ImportStatement's case): its local day, and the end of that day in LOCAL time (TIME-04, session 30)", () => {
+    // The slice must be identity on a date, or the second caller moves. The instant was the end of
+    // the day in UTC (T23:59:59.999Z) until TIME-04 (owner, session 30): now a close's rule, local.
     const closed = reanchorTrackedBalance(TB(), 430, 461, DEFAULT_LBP_RATE, "2026-09-05");
     expect(closed.startingDate).toBe("2026-09-05");
-    expect(closed.startingAt).toBe("2026-09-05T23:59:59.999Z");
+    expect(closed.startingAt).toBe(new Date(new Date(2026, 8, 6).getTime() - 1).toISOString());
   });
 });
 
