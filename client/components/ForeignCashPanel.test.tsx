@@ -49,13 +49,13 @@ it("records an exchange on a past date: the rate and what it counts as first, th
   expect(rows[0]).toMatchObject({ amount: 500, currency: "USD", bucket: "WANTS", category: "travel", paymentMethod: "cash", date: "2026-10-03", description: "Exchange to EUR", fx: { code: "EUR", amount: 460, kind: "exchange" }, tripId: "trip-lis" });
 });
 
-it("refuses a code that isn't three letters, or USD or LBP, and amounts that aren't positive", () => {
+it("refuses a code that isn't three letters, or USD (LBP is lira since CUR-06, session 30: a draft sentence, HELD), and amounts that aren't positive", () => {
   const { onChange } = show(base());
   fireEvent.click(screen.getByRole("button", { name: "Record an exchange" }));
   const form = screen.getByRole("form", { name: "Record an exchange" });
   fireEvent.change(within(form).getByLabelText("Currency received"), { target: { value: "usd" } });
   fireEvent.click(within(form).getByRole("button", { name: "Save exchange" }));
-  expect(within(form).getByText("Use a three-letter currency code other than USD or LBP, like EUR.")).toBeTruthy();
+  expect(within(form).getByText("Use a three-letter currency code other than USD, like EUR, or LBP for lira.")).toBeTruthy();
   fireEvent.change(within(form).getByLabelText("Currency received"), { target: { value: "EUR" } });
   fireEvent.click(within(form).getByRole("button", { name: "Save exchange" }));
   expect(within(form).getByText("Enter both amounts.")).toBeTruthy();

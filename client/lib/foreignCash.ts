@@ -44,6 +44,32 @@ export function buildExchange(
   };
 }
 
+/**
+ * CUR-06 (owner, session 30, DECISIONS_PENDING entry 8 (a)): dollars changed into lira, recorded
+ * through the exchange form with lira as the currency received. Lira is a ledger currency and the
+ * money stays the person's, so it isn't an exchange row (spending, the foreign cash on a sheet): it's
+ * a two-currency transfer, two TRANSFER rows linked as a transfer's legs are (linkedPaymentId, display
+ * only): out of the paying pool in dollars, into the receiving pool in lira. Not spending; no sheet;
+ * no trip. The rate is the two amounts.
+ */
+export function buildLiraExchange(
+  p: { date: string; paid: number; from: Pool; received: number; to: Pool },
+  lbpRate: number,
+): [StoredTransaction, StoredTransaction] {
+  const now = new Date().toISOString();
+  const linkedPaymentId = uid();
+  const date = p.date || todayISO();
+  const out: StoredTransaction = {
+    id: uid(), amount: -p.paid, currency: "USD", bucket: "TRANSFER", description: "Exchange to LBP", date, ...poolOf(p.from),
+    createdAt: now, updatedAt: now, linkedPaymentId, ...withRate("USD", lbpRate),
+  };
+  const inn: StoredTransaction = {
+    id: uid(), amount: p.received, currency: "LBP", bucket: "TRANSFER", description: "Exchange from USD", date, ...poolOf(p.to),
+    createdAt: now, updatedAt: now, linkedPaymentId, ...withRate("LBP", lbpRate),
+  };
+  return [out, inn];
+}
+
 /** Euros changed back: one reimbursement-shaped row (a TRANSFER that gained what was received; category Travel), naming the euros given back. */
 export function buildChangeBack(
   p: { date: string; code: string; given: number; received: number; receivedCurrency: Currency; to: Pool; description: string; tripId?: string },
