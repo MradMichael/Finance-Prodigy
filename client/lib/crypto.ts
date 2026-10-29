@@ -109,6 +109,12 @@ export async function migrateLegacyEnvelope(password: string, userId: string): P
   return { dek, ...(await rewrapEnvelopes(dek, password, userId)) };
 }
 
+/** Session 28, item 3: the pre-envelope key a legacy account's data was encrypted with (migrateLegacyEnvelope's DEK), to open a copy kept from then. Writes nothing. */
+export async function legacyKey(password: string, userId: string): Promise<Uint8Array> {
+  const legacyKek = await deriveKek(password, `essa-v1-${userId}`);
+  return new Uint8Array(await crypto.subtle.exportKey("raw", legacyKek));
+}
+
 /** Wraps an existing DEK under a (possibly new) password and a freshly-generated recovery code. Used for both initial creation and password-reset re-wrapping. */
 export async function rewrapEnvelopes(dek: Uint8Array, password: string, userId: string): Promise<DekEnvelopes> {
   const recoveryCode = generateRecoveryCode();

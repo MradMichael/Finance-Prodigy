@@ -1812,6 +1812,23 @@ export function hasUnreadableCopies(userId: string): boolean {
   try { return Object.keys(localStorage).some((k) => k.startsWith(mine)); } catch { return false; }
 }
 
+/** Session 28, item 3 (owner; merged in session 29): this account's kept copies, not their envelopes, oldest first: when each was kept, nothing of its contents. */
+export function listKeptCopies(userId: string): { key: string; keptAt: string }[] {
+  const mine = `${UNREADABLE_PREFIX}${userId}_`;
+  let keys: string[];
+  try { keys = Object.keys(localStorage); } catch { return []; }
+  return keys
+    .filter((k) => k.startsWith(mine) && !k.endsWith("_envelopes"))
+    .map((key) => ({ key, keptAt: key.slice(mine.length) }))
+    .sort((a, b) => (a.keptAt < b.keptAt ? -1 : a.keptAt > b.keptAt ? 1 : 0));
+}
+
+/** Session 28, item 3: one kept copy and its envelopes removed, once what it held has been saved into the account's data. */
+export function removeKeptCopy(key: string): void {
+  localStorage.removeItem(key);
+  localStorage.removeItem(`${key}_envelopes`);
+}
+
 export function removeUnreadableCopies(userId: string): void {
   const mine = `${UNREADABLE_PREFIX}${userId}_`;
   for (const k of Object.keys(localStorage)) if (k.startsWith(mine)) localStorage.removeItem(k);

@@ -3,15 +3,15 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getSession, hasValidSession, updateProfile, deleteAccount, signOut, ensureFirstUserIsAdmin, regenerateRecoveryCode } from "../../lib/auth";
+import { getSession, hasValidSession, updateProfile, deleteAccount, signOut, ensureFirstUserIsAdmin, regenerateRecoveryCode, openKeptCopy } from "../../lib/auth";
 import RecoveryCodeModal from "../../components/RecoveryCodeModal";
 import BackupSwitch from "../../components/BackupSwitch";
 import ResetDataPanel from "../../components/ResetDataPanel";
 import type { Session } from "../../lib/auth";
-import { loadData, saveData, keepUnreadableRecord, removeUnreadableCopies, hasUnreadableCopies, activeTransactions, syncAllowed, resetFinancials, saveFailureKind, SAVE_FAILURE_REASON, exportFileName } from "../../lib/localData";
+import { loadData, saveData, keepUnreadableRecord, removeUnreadableCopies, hasUnreadableCopies, activeTransactions, syncAllowed, resetFinancials, saveFailureKind, SAVE_FAILURE_REASON, exportFileName, listKeptCopies, removeKeptCopy, fmtDate, isoLocalDay } from "../../lib/localData";
 import { computeDashboard } from "../../lib/computeDashboard";
 import { buildReportHtml } from "../../lib/printReport";
-import { pushToServer, pullFromServer, getLastSyncTime, confirmOverwriteIfNeeded, mergeAndPush, recordMergeStored, recordRestoreStored, buildMergeNoticeText, applyBackupChoice, NEWER_BACKUP_MESSAGE, type BackupChoice } from "../../lib/syncService";
+import { pushToServer, pullFromServer, getLastSyncTime, confirmOverwriteIfNeeded, mergeAndPush, recordMergeStored, recordRestoreStored, buildMergeNoticeText, applyBackupChoice, NEWER_BACKUP_MESSAGE, mergeCopyIntoLocal, type BackupChoice } from "../../lib/syncService";
 import { PUSH_NOT_RECORDED, RESTORE_NOT_RECORDED_NOTICE } from "../../lib/storageNotices";
 import { saveSeen, loadSeen } from "../../lib/syncSeen";
 import { takeUnseenClashes } from "../../lib/clashNotice";
@@ -62,6 +62,11 @@ export default function ProfilePage() {
   const [unreadable,    setUnreadable]    = useState(false);
   const [resetCounts,   setResetCounts]   = useState<{ transactions: number; goals: number; debts: number; recurring: number } | null>(null);
   const [resetMsg,      setResetMsg]      = useState("");
+  // Session 28, item 3 (owner; wording approved, merged in session 29): kept copies, each opened with the password it was locked with.
+  const [keptCopies,    setKeptCopies]    = useState<{ key: string; keptAt: string }[]>([]);
+  const [copyPasswords, setCopyPasswords] = useState<Record<string, string>>({});
+  const [copyMsgs,      setCopyMsgs]      = useState<Record<string, string>>({});
+  useEffect(() => { const s = getSession(); if (s) setKeptCopies(listKeptCopies(s.userId)); }, []);
 
   useEffect(() => {
     ensureFirstUserIsAdmin();
@@ -326,6 +331,34 @@ export default function ProfilePage() {
   // from 2.4.33 by hand. Same destination as Pull (saveData, full reload),
   // same guard (confirmOverwriteIfNeeded) — the only thing that changes is
   // where the replacement data comes from.
+  // Session 28, item 3 (owner; wording approved, merged in session 29): open a kept copy, merge it as a fetched copy is
+  // merged, save, and only then remove the copy. A wrong password or a failed save changes nothing.
+  async function handleOpenCopy(key: string) {
+    if (!session) return;
+    const say = (text: string) => setCopyMsgs((m) => ({ ...m, [key]: text }));
+    say("");
+    const plain = await openKeptCopy(session.userId, key, copyPasswords[key] ?? "");
+    let copy: LocalFinancials | null = null;
+    try { copy = plain === null ? null : (JSON.parse(plain) as LocalFinancials); } catch { copy = null; }
+    if (!copy) { say("That password doesn't open this copy."); return; }
+    const local = await readLocal(session.userId);
+    if (!local) { say("✗ " + LOAD_FAILED); return; }
+    const merged = await mergeCopyIntoLocal(local, copy);
+    if (merged.newerVersion) { say(NEWER_BACKUP_MESSAGE); return; }
+    try {
+      await saveData(merged.mergedData, session.userId);
+    } catch (err) {
+      say("Couldn't save the merged data on this device. " + SAVE_FAILURE_REASON[saveFailureKind(err)] + " The copy is still kept.");
+      return;
+    }
+    removeKeptCopy(key);
+    const named = await takeUnseenClashes(session.userId, merged.mergedData, undefined, { firstSync: merged.firstSync });
+    const notice = buildMergeNoticeText(merged.addedFromServer, merged.conflictDetails, named, merged.replacedCloses, merged.nonTransactionDivergence, merged.closedEdits, merged.resetElsewhere);
+    say("✓ The copy was merged into your data. " + (notice.text || "It held nothing this device didn't already have.") + " Reloading…");
+    // Same reload requirement as handlePull: the dashboard reads the stored data once, on its own mount.
+    setTimeout(() => { window.location.href = "/"; }, 1500);
+  }
+
   async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = ""; // clears the input so re-selecting the same file later still fires onChange
@@ -816,6 +849,30 @@ export default function ProfilePage() {
             </button>
           </div>
         </div>
+
+        {/* Session 28, item 3 (owner; wording approved, merged in session 29): copies kept on this device. */}
+        {keptCopies.length > 0 && (
+          <div className="rounded-2xl p-6 space-y-4" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
+            <h2 className="text-sm font-semibold" style={{ color: T.text, fontFamily: "Spectral, Georgia, serif" }}>Copies kept on this device</h2>
+            <p className="text-xs leading-relaxed" style={{ color: T.mute }}>These are copies of data this browser couldn&apos;t open, kept so nothing is lost. Enter the password one was locked with to merge it into your data.</p>
+            <p className="text-xs" style={{ color: T.mute }}>{keptCopies.length === 1 ? "1 copy kept" : `${keptCopies.length} copies kept`}</p>
+            {keptCopies.map((c) => (
+              <div key={c.key} className="space-y-2 pt-3" style={{ borderTop: `1px solid ${T.line}` }}>
+                <p className="text-sm" style={{ color: T.text }}>{`Kept on ${fmtDate(isoLocalDay(new Date(c.keptAt)))}`}</p>
+                <Field label="Password it was locked with" type="password" value={copyPasswords[c.key] ?? ""} onChange={(v) => setCopyPasswords((m) => ({ ...m, [c.key]: v }))} placeholder="••••••••" autoComplete="off" />
+                <button
+                  onClick={() => handleOpenCopy(c.key)}
+                  disabled={!copyPasswords[c.key]}
+                  className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+                  style={{ background: T.brass, color: T.ink }}
+                >
+                  Open and merge
+                </button>
+                <div role="status">{copyMsgs[c.key] && <p className="text-xs" style={{ color: T.mute }}>{copyMsgs[c.key]}</p>}</div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Danger zone */}
         <div

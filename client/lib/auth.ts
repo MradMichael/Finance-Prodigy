@@ -485,6 +485,33 @@ export async function restartDeviceFromServer(
 }
 
 /**
+ * Session 28, item 3 (owner; merged in session 29): one kept copy opened with the password it
+ * was locked with. Tried in order, reading only: the copy's own key envelopes
+ * (a device that started from the backup, or was recovered), this account's
+ * current password envelope (an ERR-04 copy written under the current key),
+ * then the pre-envelope legacy key. Null when none opens it.
+ */
+export async function openKeptCopy(userId: string, key: string, password: string): Promise<string | null> {
+  const raw = localStorage.getItem(key);
+  if (raw === null || !password) return null;
+  const { unwrapWithPassword, openWithDek, legacyKey } = await import("./crypto");
+  let own: { wrappedDekPassword?: import("./crypto").Envelope } | null = null;
+  try { own = JSON.parse(localStorage.getItem(`${key}_envelopes`) ?? "null"); } catch { own = null; }
+  const user = getUsers().find((u) => u.id === userId);
+  const candidates: (() => Promise<Uint8Array | null>)[] = [];
+  if (own?.wrappedDekPassword) candidates.push(() => unwrapWithPassword(password, userId, own!.wrappedDekPassword!));
+  if (user?.wrappedDekPassword) candidates.push(() => unwrapWithPassword(password, userId, user.wrappedDekPassword!));
+  candidates.push(() => legacyKey(password, userId));
+  for (const next of candidates) {
+    const dek = await next();
+    if (!dek) continue;
+    const plain = await openWithDek(dek, raw);
+    if (plain !== null) return plain;
+  }
+  return null;
+}
+
+/**
  * Issues a fresh recovery code for the CURRENTLY signed-in account, for a
  * user who lost/never saved the original and wants a new one while they
  * still know they're safely logged in — not a password reset, and doesn't

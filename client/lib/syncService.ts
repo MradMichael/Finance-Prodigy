@@ -699,6 +699,31 @@ export async function fetchAndMerge(email: string, currentLocal: () => LocalFina
 }
 
 /**
+ * Session 28, item 3 (owner; merged in session 29): a kept copy merged into this account's data
+ * the way a fetched copy is (fetchAndMerge): brought up to this version, merged
+ * with this device's record of its last sync under the fingerprint rule and the
+ * deletion records, and described for the usual notice. A copy from newer code
+ * isn't merged.
+ */
+export async function mergeCopyIntoLocal(local: LocalFinancials, copy: LocalFinancials) {
+  if (isFromNewerVersion(copy)) return { newerVersion: true as const };
+  const seen = await lastSeen();
+  const other = migrateIfOlder(copy);
+  const result = mergeFinancials(local, other, new Date(), seen);
+  return {
+    newerVersion: false as const,
+    mergedData: result.data,
+    addedFromServer: result.transactions.addedFromServer,
+    clashes: result.clashes,
+    nonTransactionDivergence: seen ? [] : detectNonTransactionDivergence(local, other),
+    firstSync: !seen,
+    closedEdits: result.closedEdits,
+    resetElsewhere: result.resetElsewhere,
+    ...describeMerge(result),
+  };
+}
+
+/**
  * Phase 2.7, sub-phase 3 -- the actual wording a user sees after an
  * automatic merge. Pure and separately testable so the wording rules
  * (owner's instruction, 2026-09-01) can be verified without a live sync:
