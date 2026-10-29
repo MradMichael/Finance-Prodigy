@@ -1,7 +1,7 @@
 "use client";
 
 import type { LocalFinancials } from "../../lib/localData";
-import { fmtDate, toUSD as toUSDShared, derivedDebtBalance, lbpRateOf } from "../../lib/localData";
+import { fmtDate, toUSD as toUSDShared, derivedDebtBalance, lbpRateOf, debtPayoff } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money, fmtCur } from "./shared";
@@ -19,7 +19,8 @@ export default function DebtsScreen({ financials, dashData, onEdit, onPay }: { f
   // never cleared, so summing over every debt unfiltered keeps counting a
   // payment obligation that no longer exists, and never triggers the
   // debt-free state once the last active debt is paid. A debt is "paid off"
-  // once its derived balance reaches 0, not via a separate stored flag.
+  // once its derived balance reaches 0, not via a separate stored flag (and,
+  // since DI-01, session 30, every row below reads it the same way: debtPayoff).
   const activeDebts = financials.debts.filter((d) => (debtBalances.get(d.id) ?? 0) > 0);
   // Summed across debts that may carry different currencies -- USD is the
   // only sensible display for a combined figure (same reasoning as every
@@ -116,12 +117,13 @@ export default function DebtsScreen({ financials, dashData, onEdit, onPay }: { f
             {financials.debts.map((d) => {
                 const balance = debtBalances.get(d.id) ?? 0;
                 const monthlyInt = (d.apr / 100 / 12) * balance;
+                const payoff = debtPayoff(d, financials.transactions, financials); // DI-01 (session 30): from the balance, not a stored flag
                 return (
-                  <div key={d.id} className="rounded-2xl p-5 group" style={{ background: T.panel, border: `1px solid ${T.line}`, opacity: d.paidOffAt ? 0.65 : 1 }}>
+                  <div key={d.id} className="rounded-2xl p-5 group" style={{ background: T.panel, border: `1px solid ${T.line}`, opacity: payoff.paidOff ? 0.65 : 1 }}>
                     <div className="flex justify-between items-start gap-2 mb-3">
                       <p className="font-medium flex items-center gap-1.5 min-w-0" style={{ color: T.text }}>
                         <span className="truncate">{d.name}</span>
-                        {d.paidOffAt && (
+                        {payoff.paidOff && (
                           <span className="flex-shrink-0 text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full" style={{ background: T.jade + "22", color: T.jade }}>Paid off</span>
                         )}
                         <button
@@ -130,7 +132,7 @@ export default function DebtsScreen({ financials, dashData, onEdit, onPay }: { f
                           className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded transition-all opacity-70 hover:!opacity-100"
                           style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
                         >✎</button>
-                        {!d.paidOffAt && (
+                        {!payoff.paidOff && (
                           <button
                             onClick={() => onPay(d.id)}
                             aria-label="Record a payment"
@@ -139,13 +141,13 @@ export default function DebtsScreen({ financials, dashData, onEdit, onPay }: { f
                           >pay</button>
                         )}
                       </p>
-                      <p className="text-xl font-semibold tabular-nums flex-shrink-0" style={{ ...SERIF, color: d.paidOffAt ? T.jade : T.coral }}>{fmtCur(balance, d.currency)}</p>
+                      <p className="text-xl font-semibold tabular-nums flex-shrink-0" style={{ ...SERIF, color: payoff.paidOff ? T.jade : T.coral }}>{fmtCur(balance, d.currency)}</p>
                     </div>
                     <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs" style={{ color: T.mute }}>
                       <span>APR <span style={{ color: T.text }}>{d.apr}%</span></span>
                       <span>Min payment <span style={{ color: T.text }}>{fmtCur(d.minPayment, d.currency)}/mo</span></span>
                       <span>Monthly interest <span style={{ color: T.coral }}>{fmtCur(monthlyInt, d.currency)}</span></span>
-                      {d.paidOffAt && <span style={{ color: T.jade }}>Paid {fmtDate(d.paidOffAt)}</span>}
+                      {payoff.on && <span style={{ color: T.jade }}>Paid {fmtDate(payoff.on)}</span>}
                     </div>
                   </div>
                 );

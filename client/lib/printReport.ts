@@ -1,6 +1,6 @@
 import { totalSpent } from "./spending";
 import type { LocalFinancials } from "./localData";
-import { cycleStartDayOf, BUDGET_RULES, nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, categoryLabel, derivedDebtBalance, activeTransactions, makeToUSDOn, makeToUSDLive } from "./localData";
+import { cycleStartDayOf, BUDGET_RULES, nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, categoryLabel, derivedDebtBalance, debtPayoff, activeTransactions, makeToUSDOn, makeToUSDLive } from "./localData";
 import { currentCycleKey, cycleLabelLong, periodNoun, dayLabel } from "./period";
 import type { computeDashboard } from "./computeDashboard";
 import { todayCalendarDay } from "./calendarDay";
@@ -104,7 +104,7 @@ export function buildReportHtml(userName: string, data: LocalFinancials, dash: D
 
   const debtRows = data.debts.map((d) => `
     <tr>
-      <td>${escapeHtml(d.name)}${d.paidOffAt ? ' <span class="tag">paid off</span>' : ""}</td>
+      <td>${escapeHtml(d.name)}${debtPayoff(d, data.transactions, data).paidOff ? ' <span class="tag">paid off</span>' : ""}</td>
       <td class="num">${money(toUSD(derivedDebtBalance(d, data.transactions, data), d.currency))}</td>
       <td class="num">${pct(d.apr)}</td>
       <td class="num">${money(toUSD(d.minPayment, d.currency))}/mo</td>

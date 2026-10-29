@@ -135,7 +135,10 @@ describe("records: an edit stamps updatedAt", () => {
   });
 });
 
-describe("a payment that pays a debt off is the person's edit to it", () => {
+// DI-01 (owner, session 30): "paid off" is derived from the balance, so a
+// payment no longer writes anything on the debt: it was "the person's edit to
+// it" (plan H 5b) only because it stamped paidOffAt.
+describe("a payment changes nothing on the debt itself, so stamps nothing", () => {
   const pay = (amount: string) => {
     const d = base({ debts: [{ ...DEBT, openingBalance: 50, balance: 50 }] });
     render(<ThemeProvider><PayDebtSheet debt={d.debts[0]} financials={d} onChange={onChange} onClose={vi.fn()} /></ThemeProvider>);
@@ -144,12 +147,14 @@ describe("a payment that pays a debt off is the person's edit to it", () => {
     return last().debts[0];
   };
 
-  it("paid off: paidOffAt and updatedAt", () => {
-    expect(pay("50")).toMatchObject({ paidOffAt: AT, updatedAt: AT });
+  it("paid off: no stamp (DI-01)", () => {
+    const d = pay("50") as unknown as Record<string, unknown>;
+    expect(d.paidOffAt).toBeUndefined();
+    expect(d.updatedAt).toBeUndefined();
   });
 
-  it("a part payment changes nothing on the debt itself, so stamps nothing", () => {
-    const d = pay("20");
+  it("a part payment: no stamp", () => {
+    const d = pay("20") as unknown as Record<string, unknown>;
     expect(d.paidOffAt).toBeUndefined();
     expect(d.updatedAt).toBeUndefined();
   });

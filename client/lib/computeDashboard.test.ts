@@ -1045,7 +1045,7 @@ describe("paid-off debts don't inflate ongoing debt pressure", () => {
       income: 1000,
       debts: [
         { id: "d1", name: "Active loan", balance: 500, apr: 10, minPayment: 100, currency: "USD", createdAt: "2026-01-01T00:00:00.000Z", openingBalance: 500 },
-        { id: "d2", name: "Paid off card", balance: 0, apr: 20, minPayment: 200, currency: "USD", createdAt: "2026-01-01T00:00:00.000Z", paidOffAt: "2026-06-01T00:00:00.000Z", openingBalance: 300 },
+        { id: "d2", name: "Paid off card", balance: 0, apr: 20, minPayment: 200, currency: "USD", createdAt: "2026-01-01T00:00:00.000Z", openingBalance: 300 },
       ],
       // Phase 2.6.3a: under the ledger-derived model, "paid off" is a
       // consequence of linked transactions reaching openingBalance, not the
