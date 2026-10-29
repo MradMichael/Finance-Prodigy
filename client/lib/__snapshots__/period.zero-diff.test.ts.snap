@@ -112,6 +112,7 @@ exports[`period primitive — zero-diff gate > the entire computeDashboard paylo
       "expected": -1160,
       "id": "tb1",
       "name": "Wallet",
+      "nowNative": -1160,
     },
   ],
   "budgetPace": [
@@ -294,16 +295,16 @@ exports[`period primitive — zero-diff gate > the entire computeDashboard paylo
   },
   "netWorth": {
     "assets": 1500,
-    "liabilities": 2000,
-    "max": 0,
+    "liabilities": 3160,
+    "max": -0.5,
     "suggestions": [
-      "You're close to zero: that milestone shifts your psychology entirely.",
-      "Focus on one debt at a time to cross into positive territory fast.",
-      "Celebrate each debt closed: that freed cash is your first wealth-building tool.",
+      "You're within reach of zero. A few focused months can get you there.",
+      "Direct any extra income straight at your smallest remaining debt to build momentum.",
+      "This is the home stretch, not the starting line.",
     ],
-    "tier": "Almost positive",
+    "tier": "Closing the gap",
     "tierColor": "brass",
-    "total": -500,
+    "total": -1660,
   },
   "netWorthTrend": [
     {
@@ -323,7 +324,7 @@ exports[`period primitive — zero-diff gate > the entire computeDashboard paylo
       "ym": "2026-08",
     },
     {
-      "value": -500,
+      "value": -1660,
       "ym": "2026-09",
     },
   ],
@@ -440,6 +441,7 @@ exports[`period primitive — zero-diff gate > the entire computeDashboard paylo
       "expected": -1160,
       "id": "tb1",
       "name": "Wallet",
+      "nowNative": -1160,
     },
   ],
   "budgetPace": [
@@ -622,16 +624,16 @@ exports[`period primitive — zero-diff gate > the entire computeDashboard paylo
   },
   "netWorth": {
     "assets": 1500,
-    "liabilities": 2000,
-    "max": 0,
+    "liabilities": 3160,
+    "max": -0.5,
     "suggestions": [
-      "You're close to zero: that milestone shifts your psychology entirely.",
-      "Focus on one debt at a time to cross into positive territory fast.",
-      "Celebrate each debt closed: that freed cash is your first wealth-building tool.",
+      "You're within reach of zero. A few focused months can get you there.",
+      "Direct any extra income straight at your smallest remaining debt to build momentum.",
+      "This is the home stretch, not the starting line.",
     ],
-    "tier": "Almost positive",
+    "tier": "Closing the gap",
     "tierColor": "brass",
-    "total": -500,
+    "total": -1660,
   },
   "netWorthTrend": [
     {
@@ -651,7 +653,7 @@ exports[`period primitive — zero-diff gate > the entire computeDashboard paylo
       "ym": "2026-08",
     },
     {
-      "value": -500,
+      "value": -1660,
       "ym": "2026-09",
     },
   ],
@@ -768,6 +770,7 @@ exports[`period primitive — zero-diff gate > the entire computeDashboard paylo
       "expected": -1160,
       "id": "tb1",
       "name": "Wallet",
+      "nowNative": -1160,
     },
   ],
   "budgetPace": [
@@ -950,16 +953,16 @@ exports[`period primitive — zero-diff gate > the entire computeDashboard paylo
   },
   "netWorth": {
     "assets": 1500,
-    "liabilities": 2000,
-    "max": 0,
+    "liabilities": 3160,
+    "max": -0.5,
     "suggestions": [
-      "You're close to zero: that milestone shifts your psychology entirely.",
-      "Focus on one debt at a time to cross into positive territory fast.",
-      "Celebrate each debt closed: that freed cash is your first wealth-building tool.",
+      "You're within reach of zero. A few focused months can get you there.",
+      "Direct any extra income straight at your smallest remaining debt to build momentum.",
+      "This is the home stretch, not the starting line.",
     ],
-    "tier": "Almost positive",
+    "tier": "Closing the gap",
     "tierColor": "brass",
-    "total": -500,
+    "total": -1660,
   },
   "netWorthTrend": [
     {
@@ -979,7 +982,7 @@ exports[`period primitive — zero-diff gate > the entire computeDashboard paylo
       "ym": "2026-08",
     },
     {
-      "value": -500,
+      "value": -1660,
       "ym": "2026-09",
     },
   ],

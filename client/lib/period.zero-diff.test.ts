@@ -37,6 +37,23 @@
 //     assertions -- passed untouched across the change, which is the check
 //     that makes this regeneration meaningful rather than a reset.
 //
+//   2026-10-29, DI-06 (session 30; the owner's answer to DECISIONS_PENDING
+//   entry 2: net worth includes tracked balances). In each zone's baseline,
+//   these lines and no others:
+//
+//       + "nowNative": -1160,        the balanceChecks entry's new field
+//       netWorth.liabilities  2000 -> 3160
+//       netWorth.total        -500 -> -1660
+//       netWorth tier "Almost positive" -> "Closing the gap" (max 0 -> -0.5),
+//         with that tier's three advice lines in place of the other's
+//       this month's netWorthTrend point  -500 -> -1660
+//
+//     Re-derived by hand: the fixture's cash pool is overspent to -$1,160,
+//     which now counts as owed: -500 - 1,160 = -1,660; at $3,000 a month
+//     that's -0.55 months, inside "Closing the gap" (-2 to -0.5), where
+//     -500 (-0.17) was "Almost positive". Layer 2's headline assertions
+//     passed untouched.
+//
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { computeDashboard } from "./computeDashboard";
 import { DEFAULT_DATA, type LocalFinancials, type StoredTransaction } from "./localData";

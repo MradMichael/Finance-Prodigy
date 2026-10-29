@@ -1,6 +1,6 @@
 import { spentByBucket, spendingEffect, totalSpent } from "./spending";
 import type { LocalFinancials, BudgetRuleKey, StoredDebt, StoredTransaction, StoredRecurring, TrackedBalance, Currency, PeriodCloseAcknowledgement } from "./localData";
-import { goalProgress, acknowledgementFor, historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, LBP_RATE_STALE_DAYS, cycleStartDayOf, valueForMonth, makeToUSDForMonth, makeToUSDOn, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, derivedEfBalance, derivedDebtBalance, activeTransactions, parseLocalDate, isRecurringActive, isAfterBalanceBaseline, calendarDaysSince, lbpRateOf } from "./localData";
+import { goalProgress, acknowledgementFor, historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, LBP_RATE_STALE_DAYS, cycleStartDayOf, valueForMonth, makeToUSDForMonth, makeToUSDOn, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, derivedEfBalance, derivedDebtBalance, activeTransactions, parseLocalDate, isRecurringActive, isAfterBalanceBaseline, calendarDaysSince, lbpRateOf, rateOn } from "./localData";
 import { currentCycleKey, calendarKeyForDate, isInCycle, cycleProgress, cycleBounds, cycleKeyMinus, periodNoun, cycleLabel, type CycleKey, type CalendarKey, type CalendarHistory } from "./period";
 import { simulateDebtPayoff, type DebtInput } from "./debtEngine";
 import { calendarDayOf, dayStart } from "./calendarDay";
@@ -104,6 +104,8 @@ export interface DashboardPayload {
     /** expected/actual/discrepancy are normalized to USD, like every other cross-cutting total in this payload — `currency` is the balance's own native currency, kept for display labeling only. */
     /** Live running total (starting balance minus every transaction since), as of right now. */
     expected: number;
+    /** DI-06 (session 30): the same figure in the balance's own currency (trackedBalanceNow): Balance Check's "Expected now", and what net worth counts (at today's rate). */
+    nowNative: number;
     actual: number | null; actualDate: string | null;
     /** actual - expectedAsOfCheck, when actual is known -- judged against what was expected AT THE MOMENT actual was confirmed, not today's live `expected`. Logging a new transaction after a confirmed-accurate check-in moves `expected` but not `actual`, which isn't a real discrepancy -- it just means the check-in predates that transaction. */
     discrepancy: number | null;
@@ -191,6 +193,19 @@ function expectedFromRelevantTx(
   // Plan J (merged in session 23, bafa688): each row and the starting balance at the rate in effect on its own day.
   toUSDOn: (amount: number, currency: string | undefined, day: string) => number,
 ): number {
+  return Math.round(rawExpectedFromRelevantTx(tb, relevantTx, toUSDOn) * 100) / 100;
+}
+
+/**
+ * The same figure unrounded. DI-06 (session 30): a lira balance's figure in
+ * lira is built from this, not from the cent-rounded dollars, which put a
+ * lira reading up to half a cent's worth out (L£447 at 89,500).
+ */
+function rawExpectedFromRelevantTx(
+  tb: Pick<TrackedBalance, "startingBalance" | "startingDate" | "currency">,
+  relevantTx: StoredTransaction[],
+  toUSDOn: (amount: number, currency: string | undefined, day: string) => number,
+): number {
   // INCOME transactions received on this same payment method put money IN,
   // so they subtract from "spent" (raising the expected balance) instead
   // of adding to it like every other bucket does. TRANSFER (2.4.55) gets
@@ -204,7 +219,7 @@ function expectedFromRelevantTx(
   // had no way to catch from the code alone.
   const spentOf = relevantTx.reduce((s, t) => s + (t.bucket === "INCOME" || t.bucket === "TRANSFER" ? -1 : 1) * toUSDOn(t.amount, t.currency, t.date), 0);
   const startingUSD = toUSDOn(tb.startingBalance, tb.currency, tb.startingDate);
-  return Math.round((startingUSD - spentOf) * 100) / 100;
+  return startingUSD - spentOf;
 }
 
 /**
@@ -262,12 +277,41 @@ export function trackedBalanceExpected(
   tb: Pick<TrackedBalance, "paymentMethod" | "cardId" | "startingBalance" | "startingDate" | "startingAt" | "currency">,
   data: LocalFinancials,
 ): number {
+  return expectedFromRelevantTx(tb, relevantTxOf(tb, data), makeToUSDOn(data));
+}
+
+function relevantTxOf(tb: Pick<TrackedBalance, "paymentMethod" | "cardId" | "startingDate" | "startingAt">, data: LocalFinancials): StoredTransaction[] {
   const key = `${tb.paymentMethod}|${tb.paymentMethod === "card" ? (tb.cardId ?? "") : ""}`;
-  const relevantTx = activeTransactions(data.transactions ?? []).filter((t) => {
+  return activeTransactions(data.transactions ?? []).filter((t) => {
     const tKey = `${t.paymentMethod ?? ""}|${t.paymentMethod === "card" ? (t.cardId ?? "") : ""}`;
     return tKey === key && isAfterBalanceBaseline(t, tb);
   });
-  return expectedFromRelevantTx(tb, relevantTx, makeToUSDOn(data));
+}
+
+/**
+ * DI-06 (owner, session 30, DECISIONS_PENDING entry 2 (a)): a tracked
+ * balance's current balance, as Balance Check's "Expected now" shows it -- the
+ * one figure net worth, the currency screen's holdings and Balance Check read.
+ * `expectedUSDRaw` is the ledger's figure, unrounded (rawExpectedFromRelevantTx:
+ * each row at its own day's rate). A lira balance reads it in lira at its last check's day's
+ * rate, or its start day's before any check (COPY-06's rule); `usdToday`
+ * values that at today's rate, as every held lira figure is (assets, goals;
+ * 2.4.90's stock rule). A dollar balance is its figure in both.
+ */
+export function trackedBalanceNow(
+  tb: Pick<TrackedBalance, "currency" | "actualBalanceDate" | "startingDate">,
+  expectedUSDRaw: number,
+  data: LocalFinancials,
+): { native: number; usdToday: number } {
+  if (tb.currency !== "LBP") { const usd = Math.round(expectedUSDRaw * 100) / 100; return { native: usd, usdToday: usd }; }
+  const day = tb.actualBalanceDate ? localDayOfInstant(tb.actualBalanceDate) : tb.startingDate;
+  const native = Math.round(expectedUSDRaw * rateOn(data, day));
+  return { native, usdToday: toUSDShared(native, "LBP", lbpRateOf(data)) };
+}
+
+/** trackedBalanceNow for a caller outside computeDashboard's loop (the currency screen's holdings). */
+export function trackedBalanceNowOf(tb: TrackedBalance, data: LocalFinancials): { native: number; usdToday: number } {
+  return trackedBalanceNow(tb, rawExpectedFromRelevantTx(tb, relevantTxOf(tb, data), makeToUSDOn(data)), data);
 }
 
 /**
@@ -348,13 +392,19 @@ export function toDebtInputs(debts: StoredDebt[], lbpRate: number, transactions:
  * a liability moves the OPPOSITE direction from an asset when LBP devalues
  * (cheaper to repay in USD terms, not "exposed" the way an LBP asset is);
  * netting it into this sum would understate real exposure, not double-count.
+ *
+ * DI-06 (owner, session 30): a tracked balance counts at its current figure
+ * (trackedBalanceNow), the one net worth counts. It was the last confirmed
+ * figure (`actualBalance ?? startingBalance`), so spending since the check-in
+ * didn't reduce "cash & assets".
  */
 export function computeHoldingsByCurrency(data: LocalFinancials, lbpRate: number): { usdAssets: number; lbpAssets: number; holdingsTotalUSD: number } {
+  const trackedNative = (b: TrackedBalance) => trackedBalanceNowOf(b, data).native;
   const usdAssets = data.assets.filter((a) => a.currency === "USD").reduce((s, a) => s + a.value, 0)
-    + data.trackedBalances.filter((b) => b.currency === "USD").reduce((s, b) => s + (b.actualBalance ?? b.startingBalance), 0)
+    + data.trackedBalances.filter((b) => b.currency === "USD").reduce((s, b) => s + trackedNative(b), 0)
     + data.goals.filter((g) => g.currency === "USD").reduce((s, g) => s + goalProgress(g, data), 0);
   const lbpAssets = data.assets.filter((a) => a.currency === "LBP").reduce((s, a) => s + a.value, 0)
-    + data.trackedBalances.filter((b) => b.currency === "LBP").reduce((s, b) => s + (b.actualBalance ?? b.startingBalance), 0)
+    + data.trackedBalances.filter((b) => b.currency === "LBP").reduce((s, b) => s + trackedNative(b), 0)
     + data.goals.filter((g) => g.currency === "LBP").reduce((s, g) => s + goalProgress(g, data), 0);
   const holdingsTotalUSD = toUSDShared(usdAssets, "USD", lbpRate) + toUSDShared(lbpAssets, "LBP", lbpRate);
   return { usdAssets, lbpAssets, holdingsTotalUSD };
@@ -706,18 +756,95 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     };
   });
 
+  // ── Balance reconciliation — "did I forget to log a payment?" ──────
+  // Expected = starting balance minus every transaction on this payment
+  // method since the starting date. Only sees the transaction ledger, so
+  // debt payments and un-"extra"'d recurring charges aren't reflected —
+  // a real gap, not a bug (see TrackedBalance's doc comment). Each
+  // transaction converts at the LBP rate that was in effect *for its own
+  // month*, not today's rate — otherwise updating the rate would silently
+  // shift the expected balance for every LBP transaction ever logged.
+  //
+  // startingBalance/actualBalance are entered (and tb.currency-labeled) in
+  // the balance's own native currency, which can be LBP — but `spent` above
+  // is already normalized to USD, like every other cross-cutting total in
+  // this function. Comparing a raw LBP starting balance against a USD spend
+  // figure produced a nonsensical expected/discrepancy for LBP-tracked
+  // balances, so convert starting/actual to USD too (at the rate in effect
+  // for each one's own date) before doing any arithmetic on them.
+  // Grouped by (paymentMethod, cardId) ONCE, not re-filtered from the full
+  // transaction array once per tracked balance -- that was O(trackedBalances
+  // x all-time-transactions), the one truly unbounded scan in this file
+  // (grows forever with account age, unlike the fixed-iteration-count loops
+  // elsewhere). Each balance's own lookup below only ever touches
+  // transactions that could possibly apply to it.
+  type Tx = (typeof data.transactions)[number];
+  const txByPaymentKey = new Map<string, Tx[]>();
+  for (const t of data.transactions) {
+    const key = `${t.paymentMethod ?? ""}|${t.paymentMethod === "card" ? (t.cardId ?? "") : ""}`;
+    const bucket = txByPaymentKey.get(key);
+    if (bucket) bucket.push(t); else txByPaymentKey.set(key, [t]);
+  }
+  const balanceChecks: DashboardPayload["balanceChecks"] = data.trackedBalances.map((tb) => {
+    const key = `${tb.paymentMethod}|${tb.paymentMethod === "card" ? (tb.cardId ?? "") : ""}`;
+    const relevantTx = (txByPaymentKey.get(key) ?? []).filter((t) => isAfterBalanceBaseline(t, tb));
+    const expectedRaw = rawExpectedFromRelevantTx(tb, relevantTx, toUSDOn);
+    const expected = Math.round(expectedRaw * 100) / 100;
+    const actual = tb.actualBalance != null
+      // CUR-04 (plan J): at the rate on the check's own day, which a later edit can't move; it was the cycle's.
+      ? toUSDOn(tb.actualBalance, tb.currency, localDayOfInstant(tb.actualBalanceDate ?? tb.startingDate))
+      : null;
+    // A transaction logged AFTER the last actual check-in moves `expected`
+    // forward without touching `actual` (a fixed snapshot from whenever the
+    // user last confirmed it) -- comparing actual against today's live
+    // `expected` would flag that as a "mismatch" purely because time (and
+    // new, correctly-logged activity) has passed, not because anything is
+    // actually wrong. Judge the discrepancy against what was expected AS OF
+    // the check-in instead.
+    //
+    // That "as of" figure comes from tb.expectedAtCheckUSD, captured
+    // directly at the moment of confirming (see updateActualBalance in
+    // InputPanel.tsx and ImportStatement.tsx's commit), NOT reconstructed
+    // here by filtering transactions before/after the check date. An
+    // earlier version tried the date-filter approach and it's unreliable
+    // by construction: actualBalanceDate is a full timestamp but a
+    // transaction only stores a date (no time of day), so a same-day
+    // transaction can't be reliably ordered before/after the exact moment
+    // of the check either way.
+    const expectedAsOfCheck = tb.expectedAtCheckUSD ?? expected;
+    const changeSinceCheck = Math.round((expected - expectedAsOfCheck) * 100) / 100;
+    return {
+      id: tb.id, name: tb.name, currency: tb.currency, expected,
+      nowNative: trackedBalanceNow(tb, expectedRaw, data).native,
+      actual, actualDate: tb.actualBalanceDate ?? null,
+      discrepancy: actual != null ? Math.round((actual - expectedAsOfCheck) * 100) / 100 : null,
+      changeSinceCheck,
+      acknowledged: acknowledgementFor(
+        tb,
+        actual != null ? Math.round((actual - expectedAsOfCheck) * 100) / 100 : null,
+        data.periodCloses,
+      ),
+    };
+  });
+
   // ── Net worth ─────────────────────────────────────────────────────
   // Phase 2.6.3a: reuses the same derived efBalance computed above, not a
   // second direct read of data.emergencyFundBalance -- one number, not two
   // that happen to currently agree.
+  // DI-06 (owner, session 30, DECISIONS_PENDING entry 2 (a)): tracked cash and
+  // bank balances are in net worth, each at its current figure
+  // (balanceChecks' nowNative, at today's rate). A pool below zero is owed,
+  // so it counts under liabilities; the total is the same either way.
+  const trackedTodayUSD = balanceChecks.map((b) => toUSD(b.nowNative, b.currency));
   const nwAssets       = efBalance
     // Was toUSD(g.currentAmount, undefined) -- always a no-op conversion
     // (undefined reads as USD), harmless only because every goal has been
     // USD until Phase 1.4 added a currency picker. Passing g.currency here
     // is what the line next to it (a.currency, one line down) already did.
     + data.goals.reduce((s, g) => s + toUSD(goalProgress(g, data), g.currency), 0)
-    + data.assets.reduce((s, a) => s + toUSD(a.value, a.currency), 0);
-  const nwLiabilities = totalDebtBalance;
+    + data.assets.reduce((s, a) => s + toUSD(a.value, a.currency), 0)
+    + trackedTodayUSD.reduce((s, v) => s + Math.max(0, v), 0);
+  const nwLiabilities = totalDebtBalance + trackedTodayUSD.reduce((s, v) => s + Math.max(0, -v), 0);
   const nwTotal       = nwAssets - nwLiabilities;
 
   type NWColor = "jade" | "brass" | "coral" | "mute";
@@ -1068,75 +1195,6 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     })
     .filter((x): x is NonNullable<typeof x> => x !== null)
     .sort((a, b) => a.dueInDays - b.dueInDays); // overdue items have negative dueInDays -- sort first for free, most-overdue first
-
-  // ── Balance reconciliation — "did I forget to log a payment?" ──────
-  // Expected = starting balance minus every transaction on this payment
-  // method since the starting date. Only sees the transaction ledger, so
-  // debt payments and un-"extra"'d recurring charges aren't reflected —
-  // a real gap, not a bug (see TrackedBalance's doc comment). Each
-  // transaction converts at the LBP rate that was in effect *for its own
-  // month*, not today's rate — otherwise updating the rate would silently
-  // shift the expected balance for every LBP transaction ever logged.
-  //
-  // startingBalance/actualBalance are entered (and tb.currency-labeled) in
-  // the balance's own native currency, which can be LBP — but `spent` above
-  // is already normalized to USD, like every other cross-cutting total in
-  // this function. Comparing a raw LBP starting balance against a USD spend
-  // figure produced a nonsensical expected/discrepancy for LBP-tracked
-  // balances, so convert starting/actual to USD too (at the rate in effect
-  // for each one's own date) before doing any arithmetic on them.
-  // Grouped by (paymentMethod, cardId) ONCE, not re-filtered from the full
-  // transaction array once per tracked balance -- that was O(trackedBalances
-  // x all-time-transactions), the one truly unbounded scan in this file
-  // (grows forever with account age, unlike the fixed-iteration-count loops
-  // elsewhere). Each balance's own lookup below only ever touches
-  // transactions that could possibly apply to it.
-  type Tx = (typeof data.transactions)[number];
-  const txByPaymentKey = new Map<string, Tx[]>();
-  for (const t of data.transactions) {
-    const key = `${t.paymentMethod ?? ""}|${t.paymentMethod === "card" ? (t.cardId ?? "") : ""}`;
-    const bucket = txByPaymentKey.get(key);
-    if (bucket) bucket.push(t); else txByPaymentKey.set(key, [t]);
-  }
-  const balanceChecks: DashboardPayload["balanceChecks"] = data.trackedBalances.map((tb) => {
-    const key = `${tb.paymentMethod}|${tb.paymentMethod === "card" ? (tb.cardId ?? "") : ""}`;
-    const relevantTx = (txByPaymentKey.get(key) ?? []).filter((t) => isAfterBalanceBaseline(t, tb));
-    const expected = expectedFromRelevantTx(tb, relevantTx, toUSDOn);
-    const actual = tb.actualBalance != null
-      // CUR-04 (plan J): at the rate on the check's own day, which a later edit can't move; it was the cycle's.
-      ? toUSDOn(tb.actualBalance, tb.currency, localDayOfInstant(tb.actualBalanceDate ?? tb.startingDate))
-      : null;
-    // A transaction logged AFTER the last actual check-in moves `expected`
-    // forward without touching `actual` (a fixed snapshot from whenever the
-    // user last confirmed it) -- comparing actual against today's live
-    // `expected` would flag that as a "mismatch" purely because time (and
-    // new, correctly-logged activity) has passed, not because anything is
-    // actually wrong. Judge the discrepancy against what was expected AS OF
-    // the check-in instead.
-    //
-    // That "as of" figure comes from tb.expectedAtCheckUSD, captured
-    // directly at the moment of confirming (see updateActualBalance in
-    // InputPanel.tsx and ImportStatement.tsx's commit), NOT reconstructed
-    // here by filtering transactions before/after the check date. An
-    // earlier version tried the date-filter approach and it's unreliable
-    // by construction: actualBalanceDate is a full timestamp but a
-    // transaction only stores a date (no time of day), so a same-day
-    // transaction can't be reliably ordered before/after the exact moment
-    // of the check either way.
-    const expectedAsOfCheck = tb.expectedAtCheckUSD ?? expected;
-    const changeSinceCheck = Math.round((expected - expectedAsOfCheck) * 100) / 100;
-    return {
-      id: tb.id, name: tb.name, currency: tb.currency, expected,
-      actual, actualDate: tb.actualBalanceDate ?? null,
-      discrepancy: actual != null ? Math.round((actual - expectedAsOfCheck) * 100) / 100 : null,
-      changeSinceCheck,
-      acknowledged: acknowledgementFor(
-        tb,
-        actual != null ? Math.round((actual - expectedAsOfCheck) * 100) / 100 : null,
-        data.periodCloses,
-      ),
-    };
-  });
 
   // ── Net worth trend — today's value merged into the persisted history ──
   // (Persisting the snapshot back into storage happens in the caller —
