@@ -3843,6 +3843,16 @@ export function isAfterBalanceBaseline(
   return true;
 }
 
+/**
+ * TIME-04 (owner, session 30): the last millisecond of a LOCAL calendar day (YYYY-MM-DD), as an
+ * ISO instant: the next local midnight minus 1 ms, the rule cycleCloseInstant uses for a close. Not
+ * calendarDay.ts's helpers: those are the recurring engine's UTC days.
+ */
+export function localDayEndInstant(day: string): string {
+  const [y, m, d] = day.slice(0, 10).split("-").map(Number);
+  return new Date(new Date(y, m - 1, d + 1).getTime() - 1).toISOString();
+}
+
 /** A Date's LOCAL calendar day as YYYY-MM-DD. */
 export function isoLocalDay(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -3876,7 +3886,11 @@ export function reanchorTrackedBalance(
   // statement date) or as a full instant. `startingAt` needs an instant
   // either way, so a bare date is read as the END of that day: a statement
   // closing balance is true as of the day's close, which correctly places
-  // every transaction dated that day BEFORE the baseline.
+  // every transaction dated that day BEFORE the baseline. TIME-04 (owner,
+  // session 30): the end of that day in LOCAL time, the instant a close uses
+  // (cycleCloseInstant's rule). It was the end of the day in UTC
+  // (T23:59:59.999Z), 02:59 the next morning in Beirut, so an entry typed
+  // after midnight landed on the wrong side.
   //
   // `startingDate` must stay YYYY-MM-DD (its own contract). Phase 2 pins a
   // close to the cycle's END INSTANT, and assigning that instant here
@@ -3891,7 +3905,7 @@ export function reanchorTrackedBalance(
   // existing, tested behaviour (ImportStatement's own case) and not part of
   // 2.4.65. Only the baseline instant is new.
   const at = asOf
-    ? (asOf.length > 10 ? asOf : `${asOf}T23:59:59.999Z`)
+    ? (asOf.length > 10 ? asOf : localDayEndInstant(asOf))
     : new Date().toISOString();
   return {
     ...tb,
