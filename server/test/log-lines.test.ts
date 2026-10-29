@@ -50,6 +50,14 @@ const CASES: { event: string; seed?: () => void; send: () => PromiseLike<unknown
     for (let i = 0; i < 6; i++) await one("wrong");
     return one("right");
   } },
+  // SEC-05 (session 30): one app, since the creation count lives on it; two new copies from one address, then a third refused.
+  { event: "push_denied_copy_limit", send: async () => {
+    const app = createApp();
+    const one = (email: string) => request(app).post("/api/sync/push").set("User-Agent", UA).set("X-Forwarded-For", "203.0.113.9").send({ email, token: "t", data: {} });
+    await one("first-new@example.com");
+    await one("second-new@example.com");
+    return one(A);
+  } },
 ];
 
 /** Everything the process writes to stdout/stderr while `send` runs. */
