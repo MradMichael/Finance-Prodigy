@@ -58,9 +58,9 @@ it("each row is stored as the statement gave it, on the chosen card, paid by car
   expect(patch.transactions![2]).toBe(before);
 });
 
-it("a row already held (same date, amount and description, whatever its case) arrives unticked and isn't imported", async () => {
+it("a row already held on this card (same date, amount and description, whatever its case) arrives unticked and isn't imported (DI-04, session 30: the card is part of the match)", async () => {
   statement();
-  const held = { id: "t0", amount: 46.8, currency: "USD", bucket: "WANTS", description: "BISTRO MARGAUX", date: "2026-10-03" } as StoredTransaction;
+  const held = { id: "t0", amount: 46.8, currency: "USD", bucket: "WANTS", description: "BISTRO MARGAUX", date: "2026-10-03", paymentMethod: "card", cardId: "c-neo" } as StoredTransaction;
   const patch = await importInto(base({ transactions: [held] }), 1);
   expect(patch.transactions!.map((t) => t.description)).toEqual(["Spinneys Achrafieh", "BISTRO MARGAUX"]);
 });
