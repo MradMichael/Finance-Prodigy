@@ -650,13 +650,14 @@ function mergeUnderRule(local: LocalFinancials, server: LocalFinancials, deleted
 
   const goals = mergeBySeen(local.goals ?? [], server.goals ?? [], (g) => g.id, s("goals"), stamp);
   named("goal", goals);
-  // A goal's achievedAt and a debt's paidOffAt are stamped once and never
-  // cleared by a merge: the earliest either side holds stays. Only a person
-  // clears one, and no screen does today.
+  // A goal's achievedAt is stamped once and never cleared by a merge: the
+  // earliest either side holds stays. Only a person clears one, and no screen
+  // does today. A debt's paidOffBeforeLedger (DI-01, session 30: the payoff
+  // date of a debt paid before the ledger) is kept the same way.
   const goalsOut = keepEarliest(goals.items, [...(local.goals ?? []), ...(server.goals ?? [])], "achievedAt");
 
   const debts = mergeBySeen(local.debts ?? [], server.debts ?? [], (d) => d.id, s("debts"), stamp); named("debt", debts);
-  const debtsOut = keepEarliest(debts.items, [...(local.debts ?? []), ...(server.debts ?? [])], "paidOffAt");
+  const debtsOut = keepEarliest(debts.items, [...(local.debts ?? []), ...(server.debts ?? [])], "paidOffBeforeLedger");
   const recurring = mergeBySeen(local.recurring ?? [], server.recurring ?? [], (r) => r.id, s("recurring"), stamp); named("recurring", recurring);
   const assets = mergeBySeen(local.assets ?? [], server.assets ?? [], (a) => a.id, s("assets"), stamp); named("asset", assets);
   const wishlist = mergeBySeen(live(local.wishlist, (w) => w.id, "wishlist"), live(server.wishlist, (w) => w.id, "wishlist"), (w) => w.id, s("wishlist"), stamp); named("wishlist", wishlist);

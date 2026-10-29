@@ -7,7 +7,7 @@ import { useScrollFocus } from "./useScrollFocus";
 import type { LocalFinancials, StoredTransaction, StoredGoal, StoredDebt, StoredRecurring, StoredCard, RecurringFrequency, Currency, PaymentMethod, BudgetRuleKey } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, goalProgress, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, remainingInstallments, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, buildExtraPaymentTx, categoryLabel, categoryIcon, matchCategoryRule, roundMoney, moneyMaxFor, MONEY_MAX_USD, derivedDebtBalance, activeTransactions, softDelete, cycleStartDayOf, syncAllowed, edited, recordDeletion, saveCard as storeCard, makeToUSDOn, rateOn, lbpRateOf, makeToUSDLive } from "../lib/localData";
+import { uid, goalProgress, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, remainingInstallments, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, buildExtraPaymentTx, categoryLabel, categoryIcon, matchCategoryRule, roundMoney, moneyMaxFor, MONEY_MAX_USD, derivedDebtBalance, activeTransactions, softDelete, cycleStartDayOf, syncAllowed, edited, recordDeletion, saveCard as storeCard, makeToUSDOn, rateOn, lbpRateOf, makeToUSDLive, debtPayoff } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker } from "./form/Primitives";
@@ -518,8 +518,8 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   // average and Projections' funding plan (see computeDashboard.ts's
   // goalScores / ProjectionsScreen's openGoals) while keeping it, and its
   // saved amount, around for history -- resuming (clearing pausedAt) is
-  // fully reversible. (A debt's paidOffAt is not like this: once stamped,
-  // nothing in the app clears it, and a merge keeps the earliest stamp.)
+  // fully reversible. (A debt's "paid off" isn't stored at all since DI-01,
+  // session 30: it's derived from its balance, debtPayoff.)
   function toggleGoalPause(goalId: string) {
     update({
       goals: financials.goals.map((g) => g.id !== goalId ? g : edited({
@@ -1800,39 +1800,40 @@ export default function InputPanel({ financials, dashData, onChange, session, on
         </Section>
 
         {/* Debts */}
-        <Section title="Debts" icon="💳" badge={financials.debts.filter((d) => !d.paidOffAt).length} defaultOpen={false}>
+        <Section title="Debts" icon="💳" badge={financials.debts.filter((d) => !debtPayoff(d, financials.transactions, financials).paidOff).length} defaultOpen={false}>
           {financials.debts.map((d) => {
             // Phase 2.6.3a: derived once per row from openingBalance + the
             // linked transaction ledger, not read from the stored `balance`
             // field.
             const balance = derivedDebtBalance(d, financials.transactions, financials);
+            const payoff = debtPayoff(d, financials.transactions, financials); // DI-01 (session 30): from the balance, not a stored flag
             return (
               <div key={d.id}>
                 <div
                   className="rounded-xl px-3 py-2.5 group"
                   style={{
                     background: T.panelSoft,
-                    borderLeft: `3px solid ${d.paidOffAt ? T.jade : T.coral}`,
-                    opacity: d.paidOffAt ? 0.65 : 1,
+                    borderLeft: `3px solid ${payoff.paidOff ? T.jade : T.coral}`,
+                    opacity: payoff.paidOff ? 0.65 : 1,
                   }}
                 >
                     <div className="flex items-start justify-between">
                       <div className="min-w-0 flex-1">
                         <p className="text-sm flex items-center gap-1.5 min-w-0" style={{ color: T.text }}>
                           <span className="truncate">{d.name}</span>
-                          {d.paidOffAt && (
+                          {payoff.paidOff && (
                             <span className="flex-shrink-0 text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full" style={{ background: T.jade + "22", color: T.jade }}>Paid off</span>
                           )}
                         </p>
                         <p className="text-[10px] tabular-nums mt-0.5" style={{ color: T.mute }}>
                           {fmtCur(balance, d.currency)} · {d.apr}% APR · min {fmtCur(d.minPayment, d.currency)}/mo
                         </p>
-                        {(d.openedDate || d.createdAt || d.paidOffAt) && (
+                        {(d.openedDate || d.createdAt || payoff.on) && (
                           <p className="text-[9px] mt-1" style={{ color: T.mute }}>
                             {d.openedDate && <span>Opened {fmtDate(d.openedDate)}</span>}
                             {d.openedDate && d.createdAt && <span> · </span>}
                             {d.createdAt && <span>Added {fmtDate(d.createdAt)}</span>}
-                            {d.paidOffAt && <span style={{ color: T.jade }}> · Paid {fmtDate(d.paidOffAt)}</span>}
+                            {payoff.on && <span style={{ color: T.jade }}> · Paid {fmtDate(payoff.on)}</span>}
                           </p>
                         )}
                       </div>
@@ -1843,7 +1844,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                           className="text-[10px] px-1.5 py-0.5 rounded transition-all hover:opacity-80"
                           style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
                         >✎</button>
-                        {!d.paidOffAt && (
+                        {!payoff.paidOff && (
                           <button
                             onClick={() => onPay(d.id)}
                             aria-label="Record a payment"

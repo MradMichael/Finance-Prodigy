@@ -36,7 +36,7 @@ const v7 = (transactions: object[]) => ({ ...DEFAULT_DATA, schemaVersion: 7, lbp
 const RAW = () => v7([S1, P1, SP1, TR1, TR2, P9, S2, P2, SP2, PURGED, PLAIN]);
 
 it("this code's version is 8", () => {
-  expect(CURRENT_SCHEMA_VERSION).toBe(9); // plan J (session 22) took v9; v8 is still this step
+  expect(CURRENT_SCHEMA_VERSION).toBe(10); // plan J (session 22) took v9, DI-01 (session 30) v10; v8 is still this step
 });
 
 describe("converting a v7 copy that holds slice 1 rows", () => {
@@ -56,7 +56,7 @@ describe("converting a v7 copy that holds slice 1 rows", () => {
     expect(out().foreignEntries).toEqual([
       { id: "sp1", kind: "spend", code: "EUR", amount: 40, date: "2026-10-05", description: "Dinner in Lisbon", category: "dining", tripId: "trip-lis", createdAt: T("2026-10-05", "20"), updatedAt: T("2026-10-05", "20") },
     ]);
-    expect(out().schemaVersion).toBe(9); // through v8, then plan J's v9
+    expect(out().schemaVersion).toBe(10); // through v8, then plan J's v9 and DI-01's v10
   });
 
   it("an exchange that already had a category keeps it", () => {
@@ -87,7 +87,7 @@ it("a v7 copy with no slice 1 rows: only its version changes, and no sheet list 
   const m = migrateFinancials(v7([TR1, TR2, PLAIN]));
   expect(m.transactions).toEqual([TR1, TR2, PLAIN]);
   expect(m).not.toHaveProperty("foreignEntries");
-  expect(m.schemaVersion).toBe(9); // through v8, then plan J's v9
+  expect(m.schemaVersion).toBe(10); // through v8, then plan J's v9 and DI-01's v10
 });
 
 it("rows already in the new shape are untouched", () => {

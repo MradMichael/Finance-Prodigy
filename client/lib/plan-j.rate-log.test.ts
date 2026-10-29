@@ -102,11 +102,11 @@ describe("the log is written at the edit", () => {
 });
 
 describe("J2: schema v9", () => {
-  it("the version is 9", () => expect(CURRENT_SCHEMA_VERSION).toBe(9));
+  it("plan J took v9; the current version is 10 (DI-01, session 30)", () => expect(CURRENT_SCHEMA_VERSION).toBe(10));
   it("a v8 copy gains the log from its cycle history, each entry from its cycle's first day; the history is kept", () => {
     const v8 = { ...DEFAULT_DATA, schemaVersion: 8, cycleStartDay: 27, lbpRate: 89_500, lbpRateHistory: [{ ym: "2026-08", value: 89_500 }, { ym: "2026-09", value: 90_000 }] };
     const m = migrateFinancials(v8);
-    expect(m.schemaVersion).toBe(9);
+    expect(m.schemaVersion).toBe(10); // on through DI-01's v10 (session 30)
     expect(m.lbpRateLog).toEqual([{ from: "2026-08-27", value: 89_500 }, { from: "2026-09-27", value: 90_000 }]);
     expect(m.lbpRateHistory).toEqual(v8.lbpRateHistory);
   });

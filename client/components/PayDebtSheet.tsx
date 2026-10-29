@@ -3,7 +3,7 @@
 import { useState, useRef } from "react";
 import { useDialogFocus } from "./useDialogFocus";
 import type { LocalFinancials, StoredDebt, PaymentMethod, StoredCard } from "../lib/localData";
-import { buildDebtPaymentTx, derivedDebtBalance, derivedEfBalance, moneyEquals, roundMoney, moneyMaxFor, todayISO, toUSD as toUSDShared, edited, saveCard as storeCard, rateOn, lbpRateOf } from "../lib/localData";
+import { buildDebtPaymentTx, derivedDebtBalance, derivedEfBalance, roundMoney, moneyMaxFor, todayISO, toUSD as toUSDShared, saveCard as storeCard, rateOn, lbpRateOf } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, MoneyInput, DateFieldDMY, PaymentMethodPicker } from "./form/Primitives";
 import { fmtCur } from "./screens/shared";
@@ -21,7 +21,8 @@ const BUCKET_META: { value: Bucket; label: string; icon: string }[] = [
  * from InputPanel's Manage tab; DebtsScreen (where a user is actually
  * looking at what they owe) had no way to pay from it at all (usability
  * backlog, 2026-08-29). Ported from InputPanel's former inline payment form
- * and recordDebtPayment, verbatim -- same builder, same paidOffAt logic.
+ * and recordDebtPayment, verbatim -- same builder. (DI-01, session 30: a payment no longer
+ * stamps the debt; "paid off" is derived from its balance, debtPayoff.)
  */
 export default function PayDebtSheet({
   debt, financials, onChange, onClose,
@@ -82,15 +83,7 @@ export default function PayDebtSheet({
       paymentNote: method === "other" && otherNote.trim() ? otherNote.trim() : undefined,
       date: date || todayISO(),
     });
-    const newTransactions = [tx, ...financials.transactions];
-    const newBal = derivedDebtBalance(debt, newTransactions, financials);
-    // Plan H 5b: a payment that pays the debt off is the person's edit to it.
-    const updatedDebts = financials.debts.map((d) => {
-      if (d.id !== debt.id) return d;
-      const paidOffAt = moneyEquals(newBal, 0) ? (d.paidOffAt ?? new Date().toISOString()) : d.paidOffAt;
-      return paidOffAt === d.paidOffAt ? d : edited({ ...d, paidOffAt });
-    });
-    update({ transactions: newTransactions, debts: updatedDebts });
+    update({ transactions: [tx, ...financials.transactions] });
     onClose();
   }
 

@@ -683,7 +683,11 @@ export interface StoredDebt {
   lbpRateAtEntry?: number;
   createdAt: string;     // ISO — when added to ESSA
   openedDate?: string;   // YYYY-MM-DD — when the debt was originally opened
-  paidOffAt?: string;    // ISO — when balance reached 0
+  // DI-01 (owner, session 30): "paid off" is derived (debtPayoff), not stored. The old
+  // paidOffAt flag was migrated away (v9 -> v10); its instant is kept here only for a debt
+  // whose opening balance is already zero -- paid off before the ledger existed, so no
+  // payment can date it. ISO instant; debtPayoff reads it as its local day.
+  paidOffBeforeLedger?: string;
   // Added in schema v4 (Phase 2.6.1) -- required, same reasoning as
   // `currency` above: once migrated (or created fresh), every debt has
   // one, so derivedDebtBalance (2.6.2) can read it without a fallback.
@@ -1219,7 +1223,7 @@ export function recordDeletion(
 // close Phase 1) adds periodCloses. v6 (SYNC-1 step 2) adds edit times and
 // the deletion registry a sync merge needs. v7 (plan H 5a) adds goal opening
 // amounts. v8 (foreign cash, model 2) converts slice 1's pocket rows.
-export const CURRENT_SCHEMA_VERSION = 9;
+export const CURRENT_SCHEMA_VERSION = 10;
 
 // The reference rate a new account starts with, and the fallback used
 // anywhere financials.lbpRate is momentarily absent. Single source of
@@ -1572,6 +1576,23 @@ function addRateLog(d: LocalFinancials): LocalFinancials {
   return { ...d, schemaVersion: 9, lbpRateLog };
 }
 
+/**
+ * DI-01, v9 -> v10 (owner, session 30): the stored "paid off" flag migrated away. Paid off is
+ * now the balance at zero, dated by the payment that reached it (debtPayoff). The flag's
+ * instant is kept, as paidOffBeforeLedger, only where it's the sole record: a debt whose
+ * opening balance is already zero (the v3 -> v4 step set it from a stored balance of 0), so no
+ * payment in the ledger can date the payoff. Everywhere else it's dropped: the ledger dates the
+ * payoff, or the flag was the defect (a debt owed again). Nothing else changes.
+ */
+function movePaidOffFlag(d: LocalFinancials): LocalFinancials {
+  const debts = (d.debts ?? []).map((deb) => {
+    const { paidOffAt, ...rest } = deb as StoredDebt & { paidOffAt?: string };
+    if (paidOffAt === undefined) return deb;
+    return paidOffAt && rest.openingBalance <= 0 && !rest.paidOffBeforeLedger ? { ...rest, paidOffBeforeLedger: paidOffAt } : rest;
+  });
+  return { ...d, schemaVersion: 10, debts };
+}
+
 const MIGRATIONS: { fromVersion: number; migrate: (d: LocalFinancials) => LocalFinancials }[] = [
   { fromVersion: 0, migrate: (d) => ({ ...d, schemaVersion: 1 }) },
   { fromVersion: 1, migrate: addCurrencyAndRate },
@@ -1582,6 +1603,7 @@ const MIGRATIONS: { fromVersion: number; migrate: (d: LocalFinancials) => LocalF
   { fromVersion: 6, migrate: addGoalOpenings },
   { fromVersion: 7, migrate: convertForeignCash },
   { fromVersion: 8, migrate: addRateLog },
+  { fromVersion: 9, migrate: movePaidOffFlag },
 ];
 
 /** Reads the schema version off a raw, not-yet-migrated value -- treats a
@@ -4031,6 +4053,32 @@ export function derivedDebtBalance(debt: StoredDebt, transactions: StoredTransac
     .filter((t) => t.debtId === debt.id && t.deletedAt == null)
     .reduce((s, t) => s + inCurrencyOn(data, t.amount + (t.debtAdjustment ?? 0), t.currency, debt.currency, t.date), 0);
   return roundMoney(Math.max(0, debt.openingBalance - paid));
+}
+
+/**
+ * DI-01 (owner, session 30, DECISIONS_PENDING entry 3 (a)): whether a debt is paid off, and
+ * since when. Paid off means its derived balance is zero (derivedDebtBalance, the figure every
+ * total uses). `on` is the date of the payment that brought it there: the debt's linked,
+ * non-deleted rows walked in date order from the opening balance, each converted as
+ * derivedDebtBalance converts it; the last row that took the balance from above zero to zero
+ * or below dates it (a debt raised above zero again isn't paid off until a row brings it back). A
+ * debt already at zero when the ledger began has no such row: its kept record (paidOffBeforeLedger) dates it, as its
+ * local day, or nothing does (null).
+ */
+export function debtPayoff(debt: StoredDebt, transactions: StoredTransaction[], data: LocalFinancials): { paidOff: boolean; on: string | null } {
+  if (derivedDebtBalance(debt, transactions, data) > 0) return { paidOff: false, on: null };
+  const rows = transactions
+    .filter((t) => t.debtId === debt.id && t.deletedAt == null)
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (a.createdAt ?? "") < (b.createdAt ?? "") ? -1 : (a.createdAt ?? "") > (b.createdAt ?? "") ? 1 : 0));
+  let balance = debt.openingBalance;
+  let on: string | null = null;
+  for (const t of rows) {
+    const before = roundMoney(balance);
+    balance -= inCurrencyOn(data, t.amount + (t.debtAdjustment ?? 0), t.currency, debt.currency, t.date);
+    const after = roundMoney(balance);
+    if (before > 0 && after <= 0) on = t.date;
+  }
+  return { paidOff: true, on: on ?? (debt.paidOffBeforeLedger ? isoLocalDay(new Date(debt.paidOffBeforeLedger)) : null) };
 }
 
 /**

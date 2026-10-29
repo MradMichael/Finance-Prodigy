@@ -71,20 +71,22 @@ describe("both sides changed: the later edit, named", () => {
   });
 });
 
-describe("a debt's paidOffAt is never cleared by a merge (session 6)", () => {
-  // The same protection as a goal's achievedAt. Only a person clears it, and
-  // no screen does today: a merge keeps the earliest stamp either side holds.
-  const paid = debt({ paidOffAt: "2026-10-03T09:00:00.000Z", updatedAt: "2026-10-03T09:00:00.000Z" });
+describe("a debt's paidOffBeforeLedger is never cleared by a merge (session 6; DI-01, session 30)", () => {
+  // The same protection as a goal's achievedAt. Since DI-01 "paid off" is
+  // derived from the balance; what's stored is only the payoff date of a debt
+  // paid before the ledger (the old paidOffAt, kept where it's the sole
+  // record), and a merge keeps the earliest either side holds, as it did.
+  const paid = debt({ paidOffBeforeLedger: "2026-10-03T09:00:00.000Z", updatedAt: "2026-10-03T09:00:00.000Z" });
   const renamed = debt({ name: "Visa card", updatedAt: "2026-10-05T09:00:00.000Z" }); // later, and without it
   const b = base({ debts: [debt()] });
   it("a clash the later rename wins keeps 'Paid', from either side", () => {
     for (const r of [mergeFinancials(base({ debts: [paid] }), base({ debts: [renamed] }), T0, seenOf(b)), mergeFinancials(base({ debts: [renamed] }), base({ debts: [paid] }), T0, seenOf(b))]) {
-      expect(r.data.debts[0]).toMatchObject({ name: "Visa card", paidOffAt: "2026-10-03T09:00:00.000Z" });
+      expect(r.data.debts[0]).toMatchObject({ name: "Visa card", paidOffBeforeLedger: "2026-10-03T09:00:00.000Z" });
     }
   });
   it("two stamps: the earlier stays", () => {
-    const later = debt({ paidOffAt: "2026-10-04T09:00:00.000Z", updatedAt: "2026-10-06T09:00:00.000Z" });
-    expect(mergeFinancials(base({ debts: [paid] }), base({ debts: [later] }), T0, seenOf(b)).data.debts[0].paidOffAt).toBe("2026-10-03T09:00:00.000Z");
+    const later = debt({ paidOffBeforeLedger: "2026-10-04T09:00:00.000Z", updatedAt: "2026-10-06T09:00:00.000Z" });
+    expect(mergeFinancials(base({ debts: [paid] }), base({ debts: [later] }), T0, seenOf(b)).data.debts[0].paidOffBeforeLedger).toBe("2026-10-03T09:00:00.000Z");
   });
 });
 
