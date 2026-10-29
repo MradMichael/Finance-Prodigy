@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useTheme } from "../../contexts/ThemeContext";
 
 const SERIF: React.CSSProperties = { fontFamily: "Spectral, Georgia, serif" };
-const LAST_UPDATED = "12 October 2026";
+const LAST_UPDATED = "29 October 2026"; // INF-02 (session 30): DRAFT, HELD; moves to the merge day
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   const T = useTheme();
@@ -95,6 +95,16 @@ export default function PrivacyPage() {
             report to our own server. The report itself carries nothing that identifies you and never your financial
             data: we log only which ESSA page it was and what was blocked, reduced to the site it came from or a word
             such as &apos;inline&apos;.
+          </p>
+        </Section>
+
+        {/* INF-02 (owner, session 30): DRAFT wording, HELD for the owner's approval. */}
+        <Section title="Error reports">
+          <p>
+            If something goes wrong in ESSA on your device, your browser may send a short report to our own server so
+            we can fix it. It carries nothing that identifies you and never your financial data or your email address:
+            we log only which ESSA page it was, the kind of error, and where in ESSA&apos;s code it happened, with
+            numbers and addresses removed from its message.
           </p>
         </Section>
 

@@ -19,6 +19,7 @@ import sync from "./routes/sync";
 import auth from "./routes/auth";
 import events from "./routes/events";
 import cspReport from "./routes/cspReport";
+import clientErrors from "./routes/clientErrors";
 import { logger } from "./lib/logger";
 
 export function createApp(): express.Express {
@@ -55,6 +56,17 @@ export function createApp(): express.Express {
     message: { error: "Too many requests. Please wait a few minutes and try again." },
   });
   app.use("/api/csp-report", cspReportLimiter, cspReport);
+
+  // INF-02 (owner, session 30): the app's error reports (routes/clientErrors.ts parses its own
+  // 8 KB body). A page sends at most five a load; more than this in 15 minutes is a flood.
+  const clientErrorsLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many requests. Please wait a few minutes and try again." },
+  });
+  app.use("/api/client-errors", clientErrorsLimiter, clientErrors);
 
   // express.json()'s own default limit (100kb) is well under sync.ts's
   // documented 2MB payload cap — without raising it here, any push over
