@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getSession, hasValidSession, updateProfile, deleteAccount, signOut, ensureFirstUserIsAdmin, regenerateRecoveryCode, openKeptCopy } from "../../lib/auth";
@@ -67,6 +67,13 @@ export default function ProfilePage() {
   const [copyPasswords, setCopyPasswords] = useState<Record<string, string>>({});
   const [copyMsgs,      setCopyMsgs]      = useState<Record<string, string>>({});
   useEffect(() => { const s = getSession(); if (s) setKeptCopies(listKeptCopies(s.userId)); }, []);
+
+  // A restore, merge or opened copy reloads to the dashboard a moment later (see handlePull).
+  // The pending reloads are cleared if this page goes first (session 30: one fired after a
+  // test had ended); the dashboard reads the stored data on its own mount either way.
+  const reloadTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const reloadSoon = (ms: number) => { reloadTimers.current.push(setTimeout(() => { window.location.href = "/"; }, ms)); };
+  useEffect(() => () => { reloadTimers.current.forEach(clearTimeout); }, []);
 
   useEffect(() => {
     ensureFirstUserIsAdmin();
@@ -210,7 +217,7 @@ export default function ProfilePage() {
       // edit there would silently overwrite the just-restored data with a
       // merge based on that stale state. A full navigation forces it to
       // remount and re-read the localStorage this just wrote.
-      setTimeout(() => { window.location.href = "/"; }, notRecorded ? 3000 : 700);
+      reloadSoon(notRecorded ? 3000 : 700);
     } else {
       setSyncing(false);
       setSyncMsg("✗ " + result.error);
@@ -249,7 +256,7 @@ export default function ProfilePage() {
     setSyncMsg("✓ Merged. " + (notice.text || "Nothing new from your other device."));
     // Same reload requirement as handlePull -- the dashboard only reads
     // localStorage once, on its own mount.
-    setTimeout(() => { window.location.href = "/"; }, 900);
+    reloadSoon(900);
   }
 
   async function handlePush() {
@@ -356,7 +363,7 @@ export default function ProfilePage() {
     const notice = buildMergeNoticeText(merged.addedFromServer, merged.conflictDetails, named, merged.replacedCloses, merged.nonTransactionDivergence, merged.closedEdits, merged.resetElsewhere);
     say("✓ The copy was merged into your data. " + (notice.text || "It held nothing this device didn't already have.") + " Reloading…");
     // Same reload requirement as handlePull: the dashboard reads the stored data once, on its own mount.
-    setTimeout(() => { window.location.href = "/"; }, 1500);
+    reloadSoon(1500);
   }
 
   async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -403,7 +410,7 @@ export default function ProfilePage() {
       await saveData(restored, session.userId);
       setImportMsg("✓ Data restored from file. Reloading…");
       // Same reload requirement as handlePull — see its own comment.
-      setTimeout(() => { window.location.href = "/"; }, 700);
+      reloadSoon(700);
     } catch (err) {
       // Name the cause. "Couldn't restore that file" blamed the file even when
       // the file was fine and this browser couldn't hold that much (DI-07, and
