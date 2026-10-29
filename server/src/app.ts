@@ -13,6 +13,7 @@ import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { createAccountLimit } from "./lib/accountLimit";
+import { createCopyCreationLimit } from "./lib/copyCreationLimit";
 import { ZodError } from "zod";
 import sync from "./routes/sync";
 import auth from "./routes/auth";
@@ -24,6 +25,8 @@ export function createApp(): express.Express {
   const app = express();
   // SEC-07 (owner, session 25, item 4b; merged in session 28): wrong credentials counted per account, one count per app.
   app.locals.accountLimit = createAccountLimit();
+  // SEC-05 (owner, session 30): new server copies counted per client address, one count per app.
+  app.locals.copyCreationLimit = createCopyCreationLimit();
   // Railway (like most PaaS hosts) puts exactly one reverse proxy in front of
   // this process. Without this, express-rate-limit's default keyGenerator
   // (req.ip) resolves to that proxy's own address for every request — every

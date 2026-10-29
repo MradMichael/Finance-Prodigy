@@ -8,6 +8,7 @@ import { logger } from "../lib/logger";
 import { prisma } from "../lib/prisma";
 import { emailSchema, tokenSchema } from "../lib/validation";
 import { lockedSentence, type AccountLimit } from "../lib/accountLimit";
+import { COPY_LIMIT_SENTENCE, type CopyCreationLimit } from "../lib/copyCreationLimit";
 
 // SEC-07 (owner, session 25, item 4b; amended session 26; merged in session 28): pull, push, relink
 // and delete count wrong credentials per account (lib/accountLimit.ts). A client
@@ -24,6 +25,11 @@ function refuseIfLocked(req: Request, res: Response, email: string): boolean {
   res.status(429).json({ error: lockedSentence(ms), accountLocked: true, retryAfterSeconds: seconds });
   return true;
 }
+
+// SEC-05 (owner, session 30, DECISIONS_PENDING entry 10 (a)): creating a new server copy is limited per
+// client address (lib/copyCreationLimit.ts); pushes to a copy that exists aren't counted.
+const copyCreationLimit = (req: Request): CopyCreationLimit => req.app.locals.copyCreationLimit as CopyCreationLimit;
+class CopyLimitError extends Error {}
 
 const router = Router();
 
@@ -158,9 +164,18 @@ router.post("/push", async (req, res, next) => {
     // first pusher's data. Serializable isolation makes Postgres abort
     // one of two conflicting transactions instead.
     let syncedAt: Date;
+    // SEC-05: a new copy's creation is reserved before it's written and given back if it isn't
+    // (a refusal, a failed write, or another request creating the row first).
+    const client = req.ip ?? "";
+    let reservation = null as number | null; // set inside the transaction below
     try {
       syncedAt = await withTransactionRetry(() => prisma.$transaction(async (tx) => {
         const existing = await tx.userSync.findUnique({ where: { email: normalizedEmail } });
+        if (existing && reservation !== null) { copyCreationLimit(req).release(client, reservation); reservation = null; }
+        if (!existing && reservation === null) {
+          reservation = copyCreationLimit(req).reserve(client);
+          if (reservation === null) throw new CopyLimitError();
+        }
         if (existing?.authTokenHash && !hashesEqual(existing.authTokenHash, tokenHash)) {
           logger.warn("push_denied_token_mismatch", { emailRef: emailRef(normalizedEmail), userAgent: req.header("user-agent") ?? null, lastSyncedAt: existing.syncedAt });
           throw new SyncAuthError();
@@ -197,6 +212,11 @@ router.post("/push", async (req, res, next) => {
         return now;
       }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }));
     } catch (err) {
+      if (reservation !== null) { copyCreationLimit(req).release(client, reservation); reservation = null; }
+      if (err instanceof CopyLimitError) {
+        logger.warn("push_denied_copy_limit", { emailRef: emailRef(normalizedEmail), userAgent: req.header("user-agent") ?? null });
+        return res.status(429).json({ error: COPY_LIMIT_SENTENCE });
+      }
       if (err instanceof SyncAuthError) {
         accountLimit(req).fail(normalizedEmail);
         return res.status(401).json({ error: "Invalid sync credentials for this account.", code: "credentials_refused" });
