@@ -498,7 +498,8 @@ export default function BalanceCheckScreen({
                       )}
                       {check && (
                         <p className="text-[10px]" style={{ color: T.mute }}>
-                          Expected now: <span style={{ color: T.text }}>{(() => { const r = liraRate(tb.currency, check.actualDate, tb.startingDate); return r ? fmtCur(Math.round(check.expected * r), "LBP") : fmtCur(check.expected, "USD"); })()}</span>
+                          {/* DI-06 (session 30): the one current figure, also counted in net worth and holdings. */}
+                          Expected now: <span style={{ color: T.text }}>{fmtCur(check.nowNative, tb.currency === "LBP" ? "LBP" : "USD")}</span>
                         </p>
                       )}
                       <div className="flex gap-2">
