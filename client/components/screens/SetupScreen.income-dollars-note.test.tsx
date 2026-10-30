@@ -1,6 +1,6 @@
 // CUR-03 (owner, session 30, DECISIONS_PENDING entry 4 (a)): income and the
 // safety net stay in dollars, and Setup says so, under the income field.
-// DRAFT wording, HELD for the owner's approval.
+// The wording, drafted in session 30, approved and merged in session 31.
 import { it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import SetupScreen from "./SetupScreen";

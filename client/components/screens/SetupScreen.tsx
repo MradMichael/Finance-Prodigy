@@ -187,7 +187,7 @@ export default function SetupScreen({
             <p className="text-[11px] mt-1.5 px-1" style={{ color: T.mute }}>
               Changing this only affects this {periodNoun(startDay)} onward — a raise or a new job never rewrites how past {periodNoun(startDay)}s were judged. A one-off bonus or gift doesn&apos;t belong here; log it as an Income entry in My Finances instead.
             </p>
-            {/* CUR-03 (owner, session 30, entry 4 (a)): DRAFT wording, HELD for the owner's approval. */}
+            {/* CUR-03 (owner, session 30, entry 4 (a)): wording approved as drafted, merged in session 31; CUR-03 closes as by design. */}
             <p className="text-[11px] mt-1.5 px-1" style={{ color: T.mute }}>
               Income and your safety net are kept in dollars. If you&apos;re paid or save in lira, enter the dollar value at today&apos;s rate, and update it when the rate moves.
             </p>
