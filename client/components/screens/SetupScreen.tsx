@@ -187,6 +187,10 @@ export default function SetupScreen({
             <p className="text-[11px] mt-1.5 px-1" style={{ color: T.mute }}>
               Changing this only affects this {periodNoun(startDay)} onward — a raise or a new job never rewrites how past {periodNoun(startDay)}s were judged. A one-off bonus or gift doesn&apos;t belong here; log it as an Income entry in My Finances instead.
             </p>
+            {/* CUR-03 (owner, session 30, entry 4 (a)): DRAFT wording, HELD for the owner's approval. */}
+            <p className="text-[11px] mt-1.5 px-1" style={{ color: T.mute }}>
+              Income and your safety net are kept in dollars. If you&apos;re paid or save in lira, enter the dollar value at today&apos;s rate, and update it when the rate moves.
+            </p>
             {incomeHistoryDisplay.length > 1 && (
               <div className="mt-3 rounded-xl px-3 py-2.5 space-y-1.5" style={{ background: T.ink, border: `1px solid ${T.line}` }}>
                 <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.mute }}>Income history</p>
