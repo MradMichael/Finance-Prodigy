@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { LOAD_FAILED, LOAD_FAILED_NEXT } from "../lib/loadFailure";
 import FinancialDashboard from "../components/FinancialDashboard";
+import DueReminder from "../components/DueReminder";
 import InputPanel from "../components/InputPanel";
 import TransactionsScreen from "../components/screens/TransactionsScreen";
 import CategoriesScreen from "../components/screens/CategoriesScreen";
@@ -582,13 +583,14 @@ export default function Home() {
   // offer a choice (Overview's quick-confirm), it's left undefined and
   // buildRecurringConfirmLog defaults it to the due date, unchanged from
   // before.
-  async function handleConfirmRecurringPayment(recurringId: string, paidDate?: Date) {
-    if (!financials) return;
-    if (loggingRecurringRef.current.has(recurringId)) return; // already in flight
+  // Session 31: true when the payment was stored (the due-date reminder says "Logged" only then).
+  async function handleConfirmRecurringPayment(recurringId: string, paidDate?: Date): Promise<boolean> {
+    if (!financials) return false;
+    if (loggingRecurringRef.current.has(recurringId)) return false; // already in flight
     const rec = financials.recurring.find((r) => r.id === recurringId);
-    if (!rec) return;
+    if (!rec) return false;
     const target = nextConfirmTarget(rec, financials.transactions, financials, todayCalendarDay());
-    if (!target) return; // nothing left to confirm
+    if (!target) return false; // nothing left to confirm
     const result = buildRecurringConfirmLog(rec, lbpRateOf(financials), target.dueDate, paidDate);
     loggingRecurringRef.current.add(recurringId);
     setLoggingRecurringIds(new Set(loggingRecurringRef.current));
@@ -597,7 +599,7 @@ export default function Home() {
         ...financials,
         transactions: [result.tx, ...financials.transactions],
       });
-      if (!stored) return; // not kept, so never show "Confirmed"
+      if (!stored) return false; // not kept, so never show "Confirmed"
       // Brief "Confirmed" state (2.4.30, finding 3) -- cleared on its own
       // timer, not tied to the next render, so it's visible even though the
       // button's own target has already moved on to the next cycle.
@@ -608,6 +610,7 @@ export default function Home() {
         setJustConfirmedIds((prev) => { const next = new Set(prev); next.delete(recurringId); return next; });
         justConfirmedTimers.current.delete(recurringId);
       }, 1600));
+      return true;
     } finally {
       loggingRecurringRef.current.delete(recurringId);
       setLoggingRecurringIds(new Set(loggingRecurringRef.current));
@@ -902,6 +905,14 @@ export default function Home() {
               <p className="text-sm" style={{ color: T.text }}>{NEWER_BACKUP_MESSAGE}</p>
             </div>
           )}
+          {/* The due-date reminder (owner's request, 2026-08-20; built in session 31): not behind the
+              one-time recurring-model notice or the backup choice prompt. */}
+          <DueReminder
+            renewals={dashboardData.upcomingRenewals}
+            blocked={(!financials.recurringModelNoticeSeen && financials.recurring.some((r) => r.confirmCutoverDate)) || (undecided && !!session && serverHasCopy !== null)}
+            onConfirm={(id) => handleConfirmRecurringPayment(id)}
+            onReview={() => setScreen("recurring")}
+          />
           {screen === "overview"     && <FinancialDashboard data={dashboardData} financials={financials ?? undefined} onNavigate={setScreen} onConfirmRecurring={handleConfirmRecurringPayment} loggingRecurringIds={loggingRecurringIds} justConfirmedIds={justConfirmedIds} />}
           {screen === "budget"       && <BudgetScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
           {screen === "setup"        && <SetupScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
