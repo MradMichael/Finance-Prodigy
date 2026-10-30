@@ -92,7 +92,7 @@ const pushSchema = z.object({
   // -- see the push handler's own comment on why a missing value is treated
   // as "unknown," not "conflicting."
   baseSyncedAt: z.string().datetime().optional(),
-  data: z.record(z.unknown()).refine(
+  data: z.record(z.string(), z.unknown()).refine( // zod 4 (session 30): the key schema is required
     // .length counts UTF-16 code units, not bytes — a payload heavy in
     // multi-byte UTF-8 characters (e.g. Arabic text in transaction notes,
     // a real scenario for this app's target audience) could sail past the
