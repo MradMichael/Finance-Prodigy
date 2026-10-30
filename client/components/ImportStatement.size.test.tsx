@@ -1,7 +1,9 @@
 // TEST-06's gap (session 24, item 9; tests only): statement import at size.
-// Its duplicate check lives in the component (buildReviewRows): each statement
-// row against every existing transaction on date, exact amount and normalised
-// description. At 15,000 existing transactions and a 500-row statement:
+// Its duplicate check lives in the component (matchToCard since DI-04, session
+// 30): each statement row against the existing transactions on the card it's
+// imported to, on date and amount (and normalised description, for "Possible
+// duplicate"). At 15,000 existing transactions (all on that card, so every one
+// is compared) and a 500-row statement:
 // - correctness: the 100 rows already held (spread through the 15,000, the
 //   last at the very end, with a description in another case) arrive unticked
 //   and aren't imported; the other 400 are;
@@ -36,6 +38,7 @@ const NEO: StoredCard = { id: "c-neo", type: "Other", last4: "4242", label: "NEO
 function setUp() {
   const existing: StoredTransaction[] = Array.from({ length: EXISTING }, (_, i) => ({
     id: `t${i}`, amount: 1 + (i % 97), currency: "USD", bucket: "WANTS", description: `shop ${i}`, date: day(i),
+    paymentMethod: "card", cardId: "c-neo", // DI-04 (session 30): held on the card being imported to
   }) as StoredTransaction);
   const rows = Array.from({ length: ROWS }, (_, k) => {
     if (k % 5 === 0) {

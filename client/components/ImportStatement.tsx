@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { useDialogFocus } from "./useDialogFocus";
 import { useScrollFocus } from "./useScrollFocus";
 import type { LocalFinancials, StoredCard, StoredTransaction, TrackedBalance } from "../lib/localData";
-import { uid, todayISO, matchCategoryRule, activeTransactions, reanchorTrackedBalance, MONEY_MAX_USD, saveCard as storeCard, rateOn } from "../lib/localData";
+import { uid, todayISO, matchCategoryRule, activeTransactions, reanchorTrackedBalance, MONEY_MAX_USD, saveCard as storeCard, rateOn, moneyEquals } from "../lib/localData";
 import { trackedBalanceExpected } from "../lib/computeDashboard";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, DateFieldDMY } from "./form/Primitives";
@@ -28,6 +28,8 @@ interface ReviewRow {
   bucket: Bucket;
   category: string;
   isDuplicate: boolean;
+  /** DI-04 (owner, session 30): the same date and amount on this card, with a different description. */
+  possiblySame: boolean;
   /** Session 22, item 1b: the row's Trip as picked; null follows its date (a trip holding it, else none). */
   tripPick: string | null;
 }
@@ -111,7 +113,7 @@ export default function ImportStatement({
       // Phase 2.6.3b: dedup against active transactions only -- a
       // deliberately-deleted entry shouldn't silently suppress a legitimate
       // re-import of the same real bank line.
-      setRows(buildReviewRows(result.transactions, activeTransactions(financials.transactions)));
+      setRows(buildReviewRows(result.transactions));
       setStep("card");
     } catch (e) {
       if (cancelledRef.current || e instanceof CancelledError) return;
@@ -126,14 +128,14 @@ export default function ImportStatement({
     }
   }
 
-  function buildReviewRows(parsed: ParsedTransaction[], existing: StoredTransaction[]): ReviewRow[] {
+  // DI-04 (owner, session 30, DECISIONS_PENDING entry 7 (a)): rows are matched against what's held
+  // on the card they're imported to (matchToCard, when the card is chosen), not here: the card isn't
+  // known yet when the statement is read.
+  function buildReviewRows(parsed: ParsedTransaction[]): ReviewRow[] {
     return parsed.map((t) => {
-      const isDuplicate = existing.some(
-        (e) => e.date === t.date && e.amount === t.amount && normalizeDescription(e.description) === normalizeDescription(t.description),
-      );
       return {
         key: uid(),
-        include: !isDuplicate,
+        include: true,
         date: t.date,
         description: t.description,
         amount: String(t.amount),
@@ -142,10 +144,31 @@ export default function ImportStatement({
         // prior category to protect, so a rule match always fills it in as
         // the starting point (still editable per row before committing).
         category: matchCategoryRule(t.description, financials.categoryRules) ?? "",
-        isDuplicate,
+        isDuplicate: false,
+        possiblySame: false,
         tripPick: null,
       };
     });
+  }
+
+  // DI-04: a row is held already when the chosen card has an active transaction on its date for its
+  // amount (dollars: statement import is dollars only). The same description too (normalized):
+  // "Possible duplicate". A different one: "possibly the same", since the person may have renamed it.
+  // Either starts unticked. A new card whose four digits a held card has is that card (saveCard's rule).
+  // A deleted entry doesn't match: a re-import of a line deliberately deleted comes back in.
+  function matchToCard() {
+    const cardId = cardChoice === "new"
+      ? storeCard(financials.cards, "Other", newCardLast4, new Date(), newCardLabel)?.card.id
+      : cardChoice;
+    const onCard = activeTransactions(financials.transactions)
+      .filter((e) => e.paymentMethod === "card" && e.cardId === cardId && (e.currency ?? "USD") === "USD");
+    setRows((rs) => rs.map((r) => {
+      const amount = parseFloat(r.amount);
+      const same = onCard.filter((e) => e.date === r.date && moneyEquals(e.amount, amount));
+      const isDuplicate = same.some((e) => normalizeDescription(e.description) === normalizeDescription(r.description));
+      const possiblySame = !isDuplicate && same.length > 0;
+      return { ...r, isDuplicate, possiblySame, include: !isDuplicate && !possiblySame };
+    }));
   }
 
   function updateRow(key: string, patch: Partial<ReviewRow>) {
@@ -359,7 +382,7 @@ export default function ImportStatement({
               </div>
             )}
             <PrimaryBtn
-              onClick={() => setStep("review")}
+              onClick={() => { matchToCard(); setStep("review"); }}
               disabled={cardChoice === "new" && !/^\d{4}$/.test(newCardLast4)}
             >
               Continue
@@ -380,7 +403,7 @@ export default function ImportStatement({
                 <div
                   key={r.key}
                   className="rounded-xl p-3"
-                  style={{ background: T.panelSoft, border: `1px solid ${r.isDuplicate ? T.coral : T.line}`, opacity: r.include ? 1 : 0.5 }}
+                  style={{ background: T.panelSoft, border: `1px solid ${r.isDuplicate || r.possiblySame ? T.coral : T.line}`, opacity: r.include ? 1 : 0.5 }}
                 >
                   <div className="flex items-start gap-3">
                     <input
@@ -391,6 +414,12 @@ export default function ImportStatement({
                       {r.isDuplicate && (
                         <p className="text-[10px] font-semibold" style={{ color: T.coral }}>
                           Possible duplicate: same date, amount, and description as a transaction you already have. Left unchecked; check the box above if it&apos;s actually a separate purchase.
+                        </p>
+                      )}
+                      {r.possiblySame && (
+                        // DI-04 (session 30): wording approved by the owner, merged in session 31.
+                        <p className="text-[10px] font-semibold" style={{ color: T.coral }}>
+                          Possibly the same: a transaction on this card has the same date and amount, with a different description. Left unchecked; check the box above if it&apos;s a separate purchase.
                         </p>
                       )}
                       {r.include && !isRowValid(r) && (
