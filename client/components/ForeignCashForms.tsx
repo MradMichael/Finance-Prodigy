@@ -2,7 +2,7 @@
 
 // Foreign cash, model 2: the two forms the Currency screen's panel AND each
 // trip card open (session 20, item 1: one set of form components, no copies).
-// Every sentence here is one the owner has approved (sessions 15 and 19).
+// Every sentence here is one the owner has approved (sessions 15, 19 and 31).
 //   - ExchangeForm: ONE Wants/Travel row for what was paid, naming the euros
 //     received. Its trip defaults to the one whose dates hold the date, else
 //     the next trip (decision 10); a trip card presets its own trip instead.
@@ -16,7 +16,7 @@ import type { Currency, LocalFinancials, PaymentMethod, StoredCard } from "../li
 import { makeToUSDOn, moneyMaxFor, todayISO, saveCard as storeCard, lbpRateOf } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY, CurrencyToggle, PaymentMethodPicker } from "./form/Primitives";
-import { buildExchange, buildForeignEntry, fmtForeign, isValidForeignCode, sheet, sheetCodes } from "../lib/foreignCash";
+import { buildExchange, buildLiraExchange, buildForeignEntry, fmtForeign, isValidForeignCode, sheet, sheetCodes } from "../lib/foreignCash";
 import { suggestedTripId } from "../lib/trips";
 import CategoryOptions from "./form/CategoryOptions";
 
@@ -70,7 +70,15 @@ export function ExchangeForm({ financials, onChange, onDone, presetTripId, idPre
   const exTrip = tripPick ?? suggestedTripId(trips, exDate || todayISO(), { orNext: true }) ?? "";
   const [error, setError] = useState("");
   const codeUpper = code.trim().toUpperCase();
-  const paidUSD = num(paid) > 0 ? toUSD(num(paid), paidCurrency, exDate || todayISO()) : NaN;
+  // CUR-06 (owner, session 30): lira received is a two-currency transfer into a pool, not an exchange
+  // row; paid in dollars. Its words were approved as drafted (merged in session 31).
+  const lira = codeUpper === "LBP";
+  const [toMethod, setToMethod] = useState<PaymentMethod>("cash");
+  const [toCardId, setToCardId] = useState<string | null>(null);
+  const [toNote, setToNote] = useState("");
+  const toCard = toMethod === "card" && toCardId ? cards.find((c) => c.id === toCardId) : undefined;
+  const toWhere = toMethod === "cash" ? "cash" : toMethod === "card" ? (toCard?.label ?? "a card") : (toNote.trim() || "another account");
+  const paidUSD = num(paid) > 0 ? toUSD(num(paid), lira ? "USD" : paidCurrency, exDate || todayISO()) : NaN;
   const ratePreview = paidUSD > 0 && num(received) > 0 && isValidForeignCode(codeUpper)
     ? `You got ${fmtForeign(num(received) / paidUSD, codeUpper)} per $1 (${usd(paidUSD / num(received), 4)} per ${fmtForeign(1, codeUpper).replace(/\.00$/, "")})${paidCurrency === "LBP" ? ", at this period's L£ rate" : ""}.`
     : "";
@@ -83,9 +91,20 @@ export function ExchangeForm({ financials, onChange, onDone, presetTripId, idPre
   }
 
   function save() {
-    if (!isValidForeignCode(codeUpper)) { setError("Use a three-letter currency code other than USD or LBP, like EUR."); return; }
+    if (!lira && !isValidForeignCode(codeUpper)) { setError("Use a three-letter currency code other than USD, like EUR, or LBP for lira."); return; }
     if (!(num(paid) > 0) || !(num(received) > 0)) { setError("Enter both amounts."); return; }
     const card = payMethod === "card" && cardId ? cards.find((c) => c.id === cardId) : undefined;
+    if (lira) {
+      const rows = buildLiraExchange({
+        date: exDate || todayISO(), paid: num(paid),
+        from: { paymentMethod: payMethod, ...(card ? { cardId: card.id, cardLabel: card.label } : {}) },
+        received: num(received),
+        to: { paymentMethod: toMethod, ...(toCard ? { cardId: toCard.id, cardLabel: toCard.label } : {}) },
+      }, lbpRate);
+      onChange({ ...financials, transactions: [...financials.transactions, ...rows] });
+      onDone();
+      return;
+    }
     const row = buildExchange({
       date: exDate || todayISO(), paid: num(paid), paidCurrency,
       from: { paymentMethod: payMethod, ...(card ? { cardId: card.id, cardLabel: card.label } : {}) },
@@ -108,7 +127,7 @@ export function ExchangeForm({ financials, onChange, onDone, presetTripId, idPre
           <Label htmlFor={`${idPrefix}-paid`}>Amount paid</Label>
           <MoneyInput id={`${idPrefix}-paid`} value={paid} onChange={setPaid} placeholder="0" max={moneyMaxFor(paidCurrency, lbpRate)} />
         </div>
-        <div className="flex items-end"><CurrencyToggle value={paidCurrency} onChange={setPaidCurrency} /></div>
+        {!lira && <div className="flex items-end"><CurrencyToggle value={paidCurrency} onChange={setPaidCurrency} /></div>}
       </div>
       <div className="grid grid-cols-2 gap-2">
         <div>
@@ -117,12 +136,17 @@ export function ExchangeForm({ financials, onChange, onDone, presetTripId, idPre
         </div>
         <div>
           <Label htmlFor={`${idPrefix}-received`}>Amount received</Label>
-          <MoneyInput id={`${idPrefix}-received`} value={received} onChange={setReceived} placeholder="0" max={moneyMaxFor("USD", lbpRate)} />
+          <MoneyInput id={`${idPrefix}-received`} value={received} onChange={setReceived} placeholder="0" max={moneyMaxFor(lira ? "LBP" : "USD", lbpRate)} />
         </div>
       </div>
-      <TripSelect id={`${idPrefix}-trip`} value={exTrip} onPick={setTripPick} financials={financials} />
-      {ratePreview && <p className="text-[11px]" style={{ color: T.text }}>{ratePreview}</p>}
-      {paidUSD > 0 && <p className="text-[11px]" style={{ color: T.text }}>{`Counts as Travel spending of ${usd(paidUSD)}.`}</p>}
+      {lira && (
+        <PaymentMethodPicker label="Received into" value={toMethod} onChange={setToMethod} cardId={toCardId} onCardIdChange={setToCardId}
+          otherNote={toNote} onOtherNoteChange={setToNote} cards={cards} onSaveCard={saveCard} />
+      )}
+      {!lira && <TripSelect id={`${idPrefix}-trip`} value={exTrip} onPick={setTripPick} financials={financials} />}
+      {!lira && ratePreview && <p className="text-[11px]" style={{ color: T.text }}>{ratePreview}</p>}
+      {!lira && paidUSD > 0 && <p className="text-[11px]" style={{ color: T.text }}>{`Counts as Travel spending of ${usd(paidUSD)}.`}</p>}
+      {lira && paidUSD > 0 && <p className="text-[11px]" style={{ color: T.text }}>{`Moves ${usd(paidUSD)} into lira ${toWhere}. Not counted as spending.`}</p>}
       <div role="status">{error && <p className="text-[11px]" style={{ color: T.coral }}>{error}</p>}</div>
       <button type="submit" className="w-full py-2 rounded-xl text-sm font-semibold" style={{ background: T.jade, color: T.ink }}>Save exchange</button>
     </form>
