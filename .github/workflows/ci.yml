@@ -29,8 +29,8 @@ jobs:
       run:
         working-directory: client
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
@@ -62,8 +62,8 @@ jobs:
       DATABASE_URL: "postgresql://user:password@localhost:5432/ci_placeholder"
       DIRECT_URL: "postgresql://user:password@localhost:5432/ci_placeholder"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
