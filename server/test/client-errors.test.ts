@@ -63,6 +63,23 @@ describe("INF-02: client error reports", () => {
     expect(res.status).toBe(413);
   });
 
+  // Session 31: the privacy page says "ESSA doesn't record your IP address with it." Whatever the
+  // server writes while handling reports (a valid one, a malformed one, an oversize one, a flood),
+  // no line carries the sender's address, as given or as Express resolves it.
+  it("no line ESSA writes while handling reports carries an IP address", async () => {
+    const app = createApp();
+    const ADDR = ["203.0.113.41", "203.0.113.42", "203.0.113.43", "203.0.113.44"];
+    const { raw } = await logged(async () => {
+      await request(app).post("/api/client-errors").set("X-Forwarded-For", ADDR[0]).send(REPORT);
+      await request(app).post("/api/client-errors").set("X-Forwarded-For", ADDR[1]).send({ ...REPORT, extra: 1 });
+      await request(app).post("/api/client-errors").set("X-Forwarded-For", ADDR[2]).send({ ...REPORT, message: "x".repeat(9000) });
+      for (let i = 0; i < 22; i++) await request(app).post("/api/client-errors").set("X-Forwarded-For", ADDR[3]).send(REPORT);
+    });
+    expect(raw).toContain("client_error"); // premise: lines were written
+    for (const a of ADDR) expect(raw).not.toContain(a);
+    expect(raw).not.toMatch(/127\.0\.0\.1|::ffff:|"ip"|remoteAddress/);
+  });
+
   it("a flood from one client is refused after 20 in 15 minutes, with the existing sentence", async () => {
     const app = createApp();
     for (let i = 0; i < 20; i++) expect((await request(app).post("/api/client-errors").set("X-Forwarded-For", "203.0.113.5").send(REPORT)).status).toBe(204);

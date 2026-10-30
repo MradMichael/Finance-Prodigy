@@ -50,9 +50,9 @@ describe("the backup-off sentence", () => {
   // Moved again by the deletion-records sentence (8 October 2026, page.deletion-records.test.tsx),
   // then by the goal-corrections sentence (9 October 2026, page.goal-corrections.test.tsx),
   // then by the address-check sentence (11 October 2026, page.address-check.test.tsx),
-  // then by travel slice 1's sentences (12 October 2026, page.travel.test.tsx), then INF-02's draft (29 October 2026).
+  // then by travel slice 1's sentences (12 October 2026, page.travel.test.tsx), then INF-02 (30 October 2026).
   it("is dated the day it last changed", () => {
-    expect(text()).toContain("Last updated: 29 October 2026");
+    expect(text()).toContain("Last updated: 30 October 2026");
   });
 });
 

@@ -21,5 +21,5 @@ it("ESSA doesn't fetch exchange rates", () => {
 });
 
 it("is dated the day these sentences shipped", () => {
-  expect(text()).toContain("Last updated: 29 October 2026"); // moved since by INF-02's draft (session 30)
+  expect(text()).toContain("Last updated: 30 October 2026"); // moved since by INF-02 (merged in session 31)
 });
