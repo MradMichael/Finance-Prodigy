@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { reportError } from "../lib/errorReport";
 
 // Catches an error in the ROOT layout itself (e.g. ThemeProvider throwing) —
 // rare, but when it happens the layout that would normally provide the
@@ -11,6 +12,7 @@ import { useEffect } from "react";
 export default function GlobalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
     console.error(error);
+    reportError(error); // INF-02 (session 30): to our own server, scrubbed
   }, [error]);
 
   return (

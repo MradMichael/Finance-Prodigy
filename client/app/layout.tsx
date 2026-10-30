@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { ThemeProvider } from "../contexts/ThemeContext";
 import { THEME_SCRIPT } from "../lib/theme";
+import ErrorReporting from "../components/ErrorReporting";
 
 export const metadata: Metadata = {
   title: "ESSA: Earn Spend Save Achieve",
@@ -50,6 +51,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </div>
           </div>
         </noscript>
+        <ErrorReporting />
         <ThemeProvider>
           {children}
         </ThemeProvider>

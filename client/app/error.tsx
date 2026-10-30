@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { reportError } from "../lib/errorReport";
 import { useTheme } from "../contexts/ThemeContext";
 
 // Catches any render/runtime error in a page or its children and shows a
@@ -11,6 +12,7 @@ export default function Error({ error, reset }: { error: Error & { digest?: stri
 
   useEffect(() => {
     console.error(error);
+    reportError(error); // INF-02 (session 30): to our own server, scrubbed
   }, [error]);
 
   return (
