@@ -3,7 +3,7 @@
 // which the person may have edited. On the card being imported to: the same
 // date and amount, and the same description too, is "Possible duplicate"
 // (the existing sentence); a different description is "possibly the same"
-// (a new label, drafted and HELD). Both start unticked. Matched when the
+// (a new label, drafted in session 30, approved and merged in session 31). Both start unticked. Matched when the
 // card is chosen (Continue), since the rows are read before it.
 import { it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";

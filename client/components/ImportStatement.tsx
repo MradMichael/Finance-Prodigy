@@ -417,7 +417,7 @@ export default function ImportStatement({
                         </p>
                       )}
                       {r.possiblySame && (
-                        // DI-04 (session 30): DRAFT wording, HELD for the owner's approval.
+                        // DI-04 (session 30): wording approved by the owner, merged in session 31.
                         <p className="text-[10px] font-semibold" style={{ color: T.coral }}>
                           Possibly the same: a transaction on this card has the same date and amount, with a different description. Left unchecked; check the box above if it&apos;s a separate purchase.
                         </p>
