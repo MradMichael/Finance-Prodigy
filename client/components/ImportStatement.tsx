@@ -179,6 +179,8 @@ export default function ImportStatement({
     // Hardcoded USD, no rate needed -- statement import doesn't support an
     // LBP source today, so there's no currency to capture a rate against.
     const importedAt = new Date().toISOString();
+    // DI-20 (session 30): this import's id, on each row it brings and on the balance it sets.
+    const importId = uid();
     const newTransactions: StoredTransaction[] = rows
       .filter((r) => r.include && isRowValid(r))
       .map((r) => ({
@@ -191,7 +193,7 @@ export default function ImportStatement({
         paymentMethod: "card" as const,
         cardId: card.id,
         cardLabel: card.label,
-        createdAt: importedAt, updatedAt: importedAt,
+        createdAt: importedAt, updatedAt: importedAt, statementImportId: importId,
         ...(r.category ? { category: r.category } : {}),
         ...(tripOf(r) ? { tripId: tripOf(r) } : {}),
       }));
@@ -242,13 +244,13 @@ export default function ImportStatement({
         tbPatch = reanchorTrackedBalance(
           existingTB, native,
           trackedBalanceExpected(existingTB, patchedFinancials),
-          dayRate, balanceDate,
+          dayRate, balanceDate, importId,
         );
       } else {
         const freshTB: TrackedBalance = {
           id: uid(), name: card.label, paymentMethod: "card", cardId: card.id,
           startingBalance: closingBalance, startingDate: balanceDate, currency: "USD",
-          actualBalance: closingBalance, actualBalanceDate: balanceDate,
+          actualBalance: closingBalance, actualBalanceDate: balanceDate, startingImportId: importId,
         };
         // AUD-02's fix still applies here too -- compute against what was
         // ACTUALLY imported, not assume the raw closing balance.

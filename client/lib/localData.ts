@@ -569,6 +569,12 @@ export interface StoredTransaction {
   // exchange's two rows carry it together. A tag whose trip was deleted is
   // kept, and counts nowhere.
   tripId?: string;
+  /**
+   * DI-20 (owner, session 30): the statement import this row came from. A tracked balance re-anchored
+   * (or started) by that same import carries the id as startingImportId, and isAfterBalanceBaseline
+   * puts the statement's own rows inside its closing balance, whenever they were imported.
+   */
+  statementImportId?: string;
 }
 
 export interface StoredGoal {
@@ -659,6 +665,10 @@ export interface TrackedBalance {
   // day. Falls back to the live expected total when absent (data from
   // before this field existed).
   expectedAtCheckUSD?: number;
+  // DI-20 (owner, session 30): the statement import that set this baseline, when one did. Its own rows
+  // (statementImportId) are inside the baseline. A later re-anchor (a check-in, a close, the next
+  // statement) replaces or clears it.
+  startingImportId?: string;
 }
 
 export interface StoredAsset {
@@ -3834,9 +3844,13 @@ export function retagBucketAmount(
  * boundary-pinned period close would otherwise trigger every cycle.
  */
 export function isAfterBalanceBaseline(
-  t: Pick<StoredTransaction, "date" | "createdAt">,
-  tb: Pick<TrackedBalance, "startingDate" | "startingAt">,
+  t: Pick<StoredTransaction, "date" | "createdAt" | "statementImportId">,
+  tb: Pick<TrackedBalance, "startingDate" | "startingAt" | "startingImportId">,
 ): boolean {
+  // DI-20 (owner, session 30): a statement's own rows are inside its closing balance. They carry the
+  // import's time as createdAt, later than the closing day's end, so the same-day tier below counted
+  // them after it and subtracted them again ($800 read as $750).
+  if (tb.startingImportId && t.statementImportId === tb.startingImportId) return false;
   if (t.date < tb.startingDate) return false;
   if (t.date > tb.startingDate) return true;
   if (t.createdAt && tb.startingAt) return t.createdAt >= tb.startingAt;
@@ -3881,6 +3895,8 @@ function localDayOf(iso: string): string {
 export function reanchorTrackedBalance(
   tb: TrackedBalance, actualBalance: number, expectedAtCheckUSD: number | undefined, lbpRate: number,
   asOf?: string,
+  // DI-20 (session 30): the statement import doing the re-anchoring, if one is. Absent, the mark clears.
+  importId?: string,
 ): TrackedBalance {
   // `asOf` may arrive as a bare date ("2026-09-05", ImportStatement's
   // statement date) or as a full instant. `startingAt` needs an instant
@@ -3907,8 +3923,10 @@ export function reanchorTrackedBalance(
   const at = asOf
     ? (asOf.length > 10 ? asOf : localDayEndInstant(asOf))
     : new Date().toISOString();
+  const { startingImportId: _previousImport, ...rest } = tb; // the previous baseline's mark goes
   return {
-    ...tb,
+    ...rest,
+    ...(importId ? { startingImportId: importId } : {}),
     actualBalance, actualBalanceDate: asOf ?? at, expectedAtCheckUSD,
     startingBalance: actualBalance, startingDate: asOf ? localDayOf(asOf) : todayISO(), startingAt: at,
     ...withRate(tb.currency, lbpRate),
