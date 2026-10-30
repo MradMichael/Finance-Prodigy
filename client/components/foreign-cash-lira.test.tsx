@@ -4,7 +4,7 @@
 // a sheet): lira is a ledger currency and the money stays the person's, so
 // it's a two-currency transfer: out of the paying pool in dollars, into the
 // receiving pool in lira, linked as a transfer's legs are. Not spending. The
-// form's new words are drafts, HELD.
+// form's new words: drafted in session 30, approved and merged in session 31.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";
 import { ExchangeForm } from "./ForeignCashForms";

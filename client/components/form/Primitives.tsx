@@ -593,7 +593,7 @@ export function CardPicker({
 export function PaymentMethodPicker({
   value, onChange, cardId, onCardIdChange, otherNote, onOtherNoteChange, cards, onSaveCard, label = "Payment method",
 }: {
-  /** CUR-06 (session 30): the exchange form's second picker is "Received into" (draft, HELD). */
+  /** CUR-06 (session 30): the exchange form's second picker is "Received into" (approved, merged in session 31). */
   label?: string;
   value: PaymentMethod;
   onChange: (pm: PaymentMethod) => void;

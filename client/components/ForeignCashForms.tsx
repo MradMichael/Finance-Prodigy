@@ -2,7 +2,7 @@
 
 // Foreign cash, model 2: the two forms the Currency screen's panel AND each
 // trip card open (session 20, item 1: one set of form components, no copies).
-// Every sentence here is one the owner has approved (sessions 15 and 19).
+// Every sentence here is one the owner has approved (sessions 15, 19 and 31).
 //   - ExchangeForm: ONE Wants/Travel row for what was paid, naming the euros
 //     received. Its trip defaults to the one whose dates hold the date, else
 //     the next trip (decision 10); a trip card presets its own trip instead.
@@ -71,7 +71,7 @@ export function ExchangeForm({ financials, onChange, onDone, presetTripId, idPre
   const [error, setError] = useState("");
   const codeUpper = code.trim().toUpperCase();
   // CUR-06 (owner, session 30): lira received is a two-currency transfer into a pool, not an exchange
-  // row; paid in dollars. Its words are drafts, HELD.
+  // row; paid in dollars. Its words were approved as drafted (merged in session 31).
   const lira = codeUpper === "LBP";
   const [toMethod, setToMethod] = useState<PaymentMethod>("cash");
   const [toCardId, setToCardId] = useState<string | null>(null);
