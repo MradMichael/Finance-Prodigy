@@ -713,15 +713,20 @@ export default function FinancialDashboard({
         {/* Row 4: goals */}
         <Panel title="Goals & milestones">
           <div className="grid gap-4 sm:grid-cols-2">
-            {goals.map((g) => (
+            {goals.map((g) => {
+              // T5 (session 32 review): paused and achieved first, as the Goals screen's badge reads them
+              // (GoalsScreen.tsx); neither has a schedule to keep.
+              const achieved = !g.paused && g.projection.pctComplete >= 100;
+              const color = g.paused ? T.mute : achieved || g.projection.onTrack ? T.jade : T.brass;
+              return (
               <div key={g.id} className="rounded-xl p-4" style={{ background: T.panelSoft, border: `1px solid ${T.line}` }}>
                 <div className="flex justify-between items-start gap-2">
                   <p className="font-medium">{g.emoji} {g.name}</p>
                   <span
                     className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full whitespace-nowrap"
-                    style={{ border: `1px solid ${g.projection.onTrack ? T.jade : T.brass}`, color: g.projection.onTrack ? T.jade : T.brass }}
+                    style={{ border: `1px solid ${color}`, color }}
                   >
-                    {g.projection.onTrack ? "on pace" : "needs a push"}
+                    {g.paused ? "paused" : achieved ? "achieved!" : g.projection.onTrack ? "on pace" : "needs a push"}
                   </span>
                 </div>
                 <div className="mt-3"><Bar pct={g.projection.pctComplete} color={T.brass} /></div>
@@ -729,11 +734,14 @@ export default function FinancialDashboard({
                   <span style={NUMS}>{fmtCur(g.currentAmount, g.currency)} of {fmtCur(g.targetAmount, g.currency)}</span>
                   <span style={NUMS}>{g.projection.pctComplete.toFixed(0)}%</span>
                 </div>
-                <p className="text-xs mt-2" style={{ color: T.text }}>
-                  <span style={{ ...NUMS, color: T.brass }}>{fmtCur(g.projection.requiredMonthly, g.currency)}/mo</span> keeps this on schedule for {g.projection.targetDateDisplay}
-                </p>
+                {!g.paused && !achieved && (
+                  <p className="text-xs mt-2" style={{ color: T.text }}>
+                    <span style={{ ...NUMS, color: T.brass }}>{fmtCur(g.projection.requiredMonthly, g.currency)}/mo</span> keeps this on schedule for {g.projection.targetDateDisplay}
+                  </p>
+                )}
               </div>
-            ))}
+              );
+            })}
             {goals.length === 0 && (
               <p className="text-sm" style={{ color: T.mute }}>An empty canvas. Add your first milestone and the math starts working for you.</p>
             )}

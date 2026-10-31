@@ -109,7 +109,11 @@ export function allocateGoalCapacity(
     remainingCapacityUSD = Math.max(0, remainingCapacityUSD - allocatedMonthlyRateUSD);
 
     const proj = projectCompletion(g.remainingUSD, allocatedMonthlyRateUSD, asOf);
-    const onSchedule = g.remainingUSD <= 0 || (proj.months !== null && proj.months <= g.months);
+    // T4 (session 32 review): a target already behind asOf (the date this funding starts -- for
+    // Projections, after the safety net and debt) can't be met, whatever the rate. monthsUntil floors it
+    // at 1 month, which read a goal landing a year late as "On track".
+    const targetPassed = new Date(g.targetDate).getTime() < asOf.getTime();
+    const onSchedule = g.remainingUSD <= 0 || (!targetPassed && proj.months !== null && proj.months <= g.months);
     // "not_achievable" specifically means no reprioritization could ever
     // fix it -- this goal's own need exceeds the ENTIRE pool, not just
     // what was left after higher-priority goals. Anything short of that,
