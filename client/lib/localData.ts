@@ -984,6 +984,13 @@ export interface LocalFinancials {
    * should re-arm if the payday is changed again. A boolean does neither.
    */
   cycleStartDayChangedAt?: string;
+  /**
+   * T2 (owner, session 33, DECISIONS_PENDING 13 (b)): the tracked balance the salary is paid into, by id.
+   * Each payday after that balance's baseline day adds the cycle's Setup income to its expected figure
+   * (salaryCreditUSD in computeDashboard.ts); no transaction is written and no income figure moves.
+   * Absent means none. Synced as part of the income setting (SETTING_FIELDS).
+   */
+  salaryIntoBalanceId?: string;
   budgetRule?: BudgetRuleKey;
   budgetCustomNeeds?: number;
   // 2.4.106: set when BudgetScreen's heal effect floors an out-of-range

@@ -727,7 +727,7 @@ const KNOWN_FIELDS = {
   budgetSplitHealedFrom: true, budgetCustomWants: true, customCategories: true, categoryRules: true, wishlist: true,
   recurringModelNoticeSeen: true, syncChoice: true, periodCloses: true, deletedKeys: true, resetAt: true,
   revivedKeys: true, clashRecords: true, transactionClashRecords: true, trips: true, foreignEntries: true,
-  lbpRateLog: true,
+  lbpRateLog: true, salaryIntoBalanceId: true,
 } as const satisfies Record<keyof LocalFinancials, true>;
 
 /** The top-level fields of a copy that this code doesn't know (travel slice 0). */
