@@ -3,6 +3,22 @@
 @tailwind utilities;
 
 /*
+ * WCAG 2.2 SC 2.5.8 (session 32 review, A1): every control is at least 24 x 24 CSS px to tap. Set once
+ * here rather than per button: the review found twenty-odd controls under it (row edit and delete, the
+ * date boxes, the trip links, the priority arrows, the foreign-cash Delete). Range inputs, checkboxes and
+ * radios keep their own sizes.
+ */
+@layer base {
+  button, [role="button"], [role="tab"], [role="switch"], select,
+  input:not([type="hidden"]):not([type="range"]):not([type="checkbox"]):not([type="radio"]) {
+    min-height: 24px;
+  }
+  button, [role="button"], [role="tab"], [role="switch"] {
+    min-width: 24px;
+  }
+}
+
+/*
  * Spectral, served from ESSA's own site (PRIV-01, FB-1c). It used to load from
  * Google's CDN on every page, telling Google each visitor's IP, browser and
  * page. These are the same latin files Google served (v15), so rendering is

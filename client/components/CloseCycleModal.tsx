@@ -102,7 +102,7 @@ export default function CloseCycleModal({
 }) {
   const T = useTheme();
   const dialogRef = useRef<HTMLDivElement>(null);
-  useDialogFocus(dialogRef); // A11Y-02: a named modal dialog, focus in and back
+  useDialogFocus(dialogRef, true, onCancel); // A11Y-02: a named modal dialog, focus in and back; U8 (session 32): Escape cancels it
   const [amounts, setAmounts] = useState<Record<string, string>>({});
   // Pre-filled from the derived figure, so an unchanged row is confirmed by
   // not touching it. Seeded once at mount rather than defaulted at read

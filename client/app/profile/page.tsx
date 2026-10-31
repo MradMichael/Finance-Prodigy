@@ -558,7 +558,7 @@ export default function ProfilePage() {
                     <div className="w-3 h-3 rounded-full opacity-30" style={{ background: accent }} />
                   </div>
                   <p className="text-xs font-semibold" style={{ color: accent }}>{meta.name}</p>
-                  <p className="text-[10px] mt-0.5 opacity-60" style={{ color: accent }}>{meta.desc}</p>
+                  <p className="text-[10px] mt-0.5" style={{ color: accent }}>{meta.desc}</p>
                 </button>
               );
             })}

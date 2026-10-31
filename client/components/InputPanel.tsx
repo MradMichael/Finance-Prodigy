@@ -641,6 +641,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
+            aria-pressed={activeTab === tab.id}
             className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-[11px] font-semibold transition-all"
             style={{
               color: activeTab === tab.id ? T.jade : T.mute,
