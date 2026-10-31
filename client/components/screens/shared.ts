@@ -34,9 +34,18 @@ export const NAV: { key: Screen; label: string; icon: string }[] = [
 
 export const SERIF: CSSProperties = { fontFamily: "Spectral, Georgia, serif" };
 export const NUMS:  CSSProperties = { fontVariantNumeric: "tabular-nums" };
-export const money  = (n: number, d = 0) =>
-  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: d }).format(n);
+// R1/R2 (session 32 review): each format's formatter is built once. Building one per call (new
+// Intl.NumberFormat here, and toLocaleString with options in fmtCur, which builds one internally) cost
+// 481 ms a render at 15,000 entries. Same locale and options, so the same strings.
+const moneyFormats = new Map<number, Intl.NumberFormat>();
+export const money  = (n: number, d = 0) => {
+  let f = moneyFormats.get(d);
+  if (!f) { f = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: d }); moneyFormats.set(d, f); }
+  return f.format(n);
+};
+const LBP_AMOUNT = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+const USD_AMOUNT = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 /** A record's own amount in its own currency -- for a native-currency figure, not a cross-record USD total (use money() for those). */
 export const fmtCur = (amt: number, cur: Currency) => cur === "LBP"
-  ? `L£${amt.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
-  : `$${amt.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  ? `L£${LBP_AMOUNT.format(amt)}`
+  : `$${USD_AMOUNT.format(amt)}`;
