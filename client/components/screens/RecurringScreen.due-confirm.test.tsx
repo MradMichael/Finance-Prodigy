@@ -32,6 +32,11 @@ describe("Recurring says what's due, with Confirm", () => {
     for (const n of ["Internet", "Rent", "Insurance", "Gym"]) expect(within(rowOf(n)).getByRole("button", { name: "Confirm" })).toBeTruthy();
   });
 
+  it("the due line replaces the old overdue badge, so it isn't said twice", () => {
+    show([renewal("gym", "Gym", -6, 1)]);
+    expect(within(rowOf("Gym")).queryByText(/^overdue/)).toBeNull();
+  });
+
   it("Confirm calls the same handler as Renewing soon's, with the item's id", () => {
     const onConfirm = show([renewal("gym", "Gym", -6, 1)]);
     fireEvent.click(within(rowOf("Gym")).getByRole("button", { name: "Confirm" }));
