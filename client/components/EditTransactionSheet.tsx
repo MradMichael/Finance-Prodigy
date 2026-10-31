@@ -112,7 +112,7 @@ export default function EditTransactionSheet({
   );
   const [lbpConfirmAmount, setLbpConfirmAmount] = useState<number | null>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
-  useDialogFocus(sheetRef); // A11Y-02: a named modal dialog, focus in and back
+  useDialogFocus(sheetRef, true, onClose); // A11Y-02: a named modal dialog, focus in and back; U8 (session 32): Escape closes it
   const lbpConfirmRef = useRef<HTMLDivElement>(null);
   useDialogFocus(lbpConfirmRef, lbpConfirmAmount != null); // A11Y-02
 

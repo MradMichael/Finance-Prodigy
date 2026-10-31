@@ -23,7 +23,7 @@ export default function EditGoalSheet({
 }) {
   const T = useTheme();
   const sheetRef = useRef<HTMLDivElement>(null);
-  useDialogFocus(sheetRef); // A11Y-02: a named modal dialog, focus in and back
+  useDialogFocus(sheetRef, true, onClose); // A11Y-02: a named modal dialog, focus in and back; U8 (session 32): Escape closes it
   const update = (patch: Partial<LocalFinancials>) => onChange({ ...financials, ...patch });
 
   const [name,    setName]    = useState(goal.name);

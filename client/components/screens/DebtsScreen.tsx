@@ -136,7 +136,7 @@ export default function DebtsScreen({ financials, dashData, onEdit, onPay }: { f
                           <button
                             onClick={() => onPay(d.id)}
                             aria-label="Record a payment"
-                            className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded transition-all opacity-70 hover:!opacity-100"
+                            className="flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded transition-all hover:opacity-80"
                             style={{ color: T.jade, border: `1px solid ${T.jade}40` }}
                           >pay</button>
                         )}

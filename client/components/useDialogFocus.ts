@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, type RefObject } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 
 const FOCUSABLE = "a[href], button, input, select, textarea, [tabindex]";
 
@@ -16,8 +16,14 @@ const stack: HTMLElement[] = [];
  * Focus goes to the dialog itself (tabIndex -1), so a screen reader announces
  * it by its name and nothing in it is pressed by a stray Enter: the backup
  * prompt's first choice turns backup on. Tab then reaches its controls.
+ *
+ * U8 (session 32 review): with `onEscape`, Escape runs it while this dialog is the topmost -- the sheets
+ * pass the same close their ✕ and Cancel run. Prompts that need a choice (the recovery code, the backup
+ * choice, the recurring notice) pass none, and Escape leaves them open.
  */
-export function useDialogFocus(ref: RefObject<HTMLElement | null>, open = true): void {
+export function useDialogFocus(ref: RefObject<HTMLElement | null>, open = true, onEscape?: () => void): void {
+  const escape = useRef(onEscape);
+  useEffect(() => { escape.current = onEscape; });
   useEffect(() => {
     const dialog = ref.current;
     if (!open || !dialog) return;
@@ -27,6 +33,7 @@ export function useDialogFocus(ref: RefObject<HTMLElement | null>, open = true):
     stack.push(dialog);
 
     function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape" && escape.current && dialog && stack[stack.length - 1] === dialog) { e.preventDefault(); escape.current(); return; }
       if (e.key !== "Tab" || !dialog || stack[stack.length - 1] !== dialog) return;
       const stops = Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE))
         .filter((el) => el.tabIndex >= 0 && !(el as HTMLButtonElement).disabled && !el.closest("[aria-hidden='true']"));
