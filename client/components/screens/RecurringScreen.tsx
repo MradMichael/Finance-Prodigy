@@ -5,8 +5,18 @@ import { nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, remainin
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
 import { calendarDayOf } from "../../lib/calendarDay";
+import type { computeDashboard } from "../../lib/computeDashboard";
 
-export default function RecurringScreen({ financials, onEdit }: { financials: LocalFinancials; onEdit: (id: string) => void }) {
+type Renewal = ReturnType<typeof computeDashboard>["upcomingRenewals"][number];
+
+/**
+ * U2 (owner, session 33, DECISIONS_PENDING 19 (a)): the reminder's "Review" leads here, so each upcoming item
+ * says when it's due, in Renewing soon's words, with Renewing soon's Confirm (the same handler, from the page).
+ */
+export default function RecurringScreen({ financials, onEdit, renewals, onConfirm, loggingIds, justConfirmedIds }: {
+  financials: LocalFinancials; onEdit: (id: string) => void;
+  renewals?: Renewal[]; onConfirm?: (id: string) => unknown; loggingIds?: Set<string>; justConfirmedIds?: Set<string>;
+}) {
   const T    = useTheme();
   const now  = new Date();
   // The recurring engine takes calendar days: today, on this device.
@@ -64,6 +74,7 @@ export default function RecurringScreen({ financials, onEdit }: { financials: Lo
                     const overdue = (target?.overdueCount ?? 0) > 0;
                     const paidThisCycle = target ? isCycleConfirmed(r, target.dueDate, financials.transactions) : false;
                     const remaining = remainingInstallments(r, financials.transactions, financials, today);
+                    const due = renewals?.find((x) => x.id === r.id);
                     return (
                       <div
                         key={r.id}
@@ -74,7 +85,7 @@ export default function RecurringScreen({ financials, onEdit }: { financials: Lo
                         <div className="flex-1">
                           <p className="text-sm flex items-center gap-1.5" style={{ color: T.text }}>
                             {r.name}
-                            {overdue && (
+                            {overdue && !due && (
                               <span className="text-[9px] uppercase tracking-wider" style={{ color: T.coral }}>overdue{target!.overdueCount > 1 ? ` ×${target!.overdueCount}` : ""}</span>
                             )}
                             {!overdue && paidThisCycle && (
@@ -92,6 +103,24 @@ export default function RecurringScreen({ financials, onEdit }: { financials: Lo
                             {r.category && ` · ${categoryIcon(r.category, financials.customCategories)} ${categoryLabel(r.category, financials.customCategories)}`}
                             {remaining && ` · ${remaining.count} left, ends ${fmtDate(remaining.endsOn.toISOString().slice(0, 10))}`}
                           </p>
+                          {due && (
+                            <p className="text-[11px] flex flex-wrap items-center gap-2 mt-1">
+                              <span className="whitespace-nowrap" style={{ color: due.overdueCount > 0 || due.dueInDays <= 2 ? T.coral : T.brass, fontWeight: due.overdueCount > 0 ? 600 : undefined }}>
+                                · {due.overdueCount > 0 ? `${due.overdueCount} overdue` : due.dueInDays === 0 ? "today" : due.dueInDays === 1 ? "tomorrow" : `in ${due.dueInDays}d`}
+                              </span>
+                              {onConfirm && (
+                                <button
+                                  onClick={() => onConfirm(r.id)}
+                                  disabled={loggingIds?.has(r.id)}
+                                  className="text-[10px] font-semibold px-2 py-1 rounded-full transition-all hover:opacity-80 disabled:opacity-40 disabled:hover:opacity-40"
+                                  style={{ background: T.jade + "22", color: T.jade }}
+                                  title={`Confirm this ${r.name} payment`}
+                                >
+                                  {loggingIds?.has(r.id) ? "Confirming…" : justConfirmedIds?.has(r.id) ? "Confirmed ✓" : "Confirm"}
+                                </button>
+                              )}
+                            </p>
+                          )}
                         </div>
                         <p className="text-sm font-medium tabular-nums" style={{ color: BC[bucket] }}>
                           {money(monthly)}/mo
