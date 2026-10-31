@@ -832,7 +832,11 @@ export const CATEGORY_ICON: Record<CategoryKey, string> = Object.fromEntries(
 ) as Record<CategoryKey, string>;
 
 /** `updatedAt` (ISO) is stamped on every edit (SYNC-1 step 2): the later edit wins a merge. */
-export interface CustomCategory { value: string; label: string; icon: string; updatedAt?: string }
+export interface CustomCategory {
+  value: string; label: string; icon: string; updatedAt?: string;
+  /** T9 (owner, session 33, DECISIONS_PENDING 21 (a)): the type an entry in this category usually is ("Usually"). Absent means none. */
+  usualBucket?: "NEEDS" | "WANTS" | "SAVINGS";
+}
 
 /** Built-in categories plus this account's user-created ones, in one combined
  * list -- feeds every category picker so a custom category shows up right
@@ -864,6 +868,18 @@ export function categoryLabel(key: string | undefined, customCategories?: Custom
 export function categoryIcon(key: string | undefined, customCategories?: CustomCategory[]): string {
   if (!key || key === "uncategorized") return "❔";
   return (CATEGORY_ICON as Record<string, string>)[key] ?? customCategories?.find((c) => c.value === key)?.icon ?? "•";
+}
+
+/** T9 (owner, session 33, DECISIONS_PENDING 21 (a)): each built-in category's usual type; "other" has none. */
+const BUILT_IN_USUAL: Record<string, "NEEDS" | "WANTS"> = {
+  groceries: "NEEDS", rent: "NEEDS", utilities: "NEEDS", transport: "NEEDS", health: "NEEDS", insurance: "NEEDS", education: "NEEDS",
+  dining: "WANTS", entertainment: "WANTS", shopping: "WANTS", subscriptions: "WANTS", travel: "WANTS", gifts: "WANTS",
+  ...Object.fromEntries(TRAVEL_CATEGORY_KEYS.map((k) => [k, "WANTS" as const])),
+};
+/** A category's usual type: a built-in's from BUILT_IN_USUAL, a custom one's own `usualBucket`. */
+export function usualBucketOf(key: string | undefined, customCategories?: CustomCategory[]): "NEEDS" | "WANTS" | "SAVINGS" | undefined {
+  if (!key) return undefined;
+  return BUILT_IN_USUAL[key] ?? customCategories?.find((c) => c.value === key)?.usualBucket;
 }
 
 /** `updatedAt` (ISO) is stamped on every edit (SYNC-1 step 2): the later edit wins a merge. */

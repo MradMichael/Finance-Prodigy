@@ -15,6 +15,20 @@ function slugify(name: string): string {
   return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "category";
 }
 
+/** T9 (session 33): "—" and the three spending types, by the names the app already uses. */
+function UsualSelect({ id, value, onChange }: { id: string; value: string; onChange: (v: string) => void }) {
+  const T = useTheme();
+  return (
+    <select id={id} value={value} onChange={(e) => onChange(e.target.value)} className="w-full rounded-xl px-3 py-2.5 text-sm"
+      style={{ background: T.panelSoft, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}>
+      <option value="">—</option>
+      <option value="NEEDS">Needs</option>
+      <option value="WANTS">Wants</option>
+      <option value="SAVINGS">Savings</option>
+    </select>
+  );
+}
+
 export default function CategoriesScreen({
   financials,
   onChange,
@@ -26,6 +40,9 @@ export default function CategoriesScreen({
   const startDay = cycleStartDayOf(financials);
   const [newIcon, setNewIcon] = useState("🏷️");
   const [newName, setNewName] = useState("");
+  // T9 (owner, session 33, DECISIONS_PENDING 21 (a); "Usually" approved): a custom category's usual type.
+  const [newUsual, setNewUsual] = useState("");
+  const [editUsual, setEditUsual] = useState("");
   const [scope, setScope] = useState<"month" | "all">("all");
   const [editingValue, setEditingValue] = useState<string | null>(null);
   const [editIcon, setEditIcon] = useState("");
@@ -58,8 +75,9 @@ export default function CategoriesScreen({
     let value = base, n = 2;
     while (taken.has(value)) { value = `${base}-${n}`; n++; }
     // SYNC-1 step 2: every edit is stamped, so a merge keeps the later one.
-    onChange({ ...financials, customCategories: [...customCategories, { value, label: name, icon: newIcon.trim() || "🏷️", updatedAt: new Date().toISOString() }] });
+    onChange({ ...financials, customCategories: [...customCategories, { value, label: name, icon: newIcon.trim() || "🏷️", updatedAt: new Date().toISOString(), ...(newUsual ? { usualBucket: newUsual as "NEEDS" | "WANTS" | "SAVINGS" } : {}) }] });
     setNewName("");
+    setNewUsual("");
     setNewIcon("🏷️");
   }
 
@@ -69,11 +87,12 @@ export default function CategoriesScreen({
     onChange({ ...financials, customCategories: customCategories.filter((c) => c.value !== value), deletedKeys: recordDeletion(financials, "customCategories", value) });
   }
 
-  function startEdit(c: { value: string; label: string; icon: string }) {
+  function startEdit(c: { value: string; label: string; icon: string; usualBucket?: string }) {
     setEditingValue(c.value);
     setEditTaken(null);
     setEditIcon(c.icon);
     setEditName(c.label);
+    setEditUsual(c.usualBucket ?? "");
   }
 
   // Renaming only ever touches label/icon, never `value` -- value is the key
@@ -87,7 +106,7 @@ export default function CategoriesScreen({
     onChange({
       ...financials,
       customCategories: customCategories.map((c) =>
-        c.value !== editingValue ? c : { ...c, label: name, icon: editIcon.trim() || "🏷️", updatedAt: new Date().toISOString() }
+        c.value !== editingValue ? c : (({ usualBucket: _was, ...rest }) => ({ ...rest, label: name, icon: editIcon.trim() || "🏷️", updatedAt: new Date().toISOString(), ...(editUsual ? { usualBucket: editUsual as "NEEDS" | "WANTS" | "SAVINGS" } : {}) }))(c)
       ),
     });
     setEditingValue(null);
@@ -181,6 +200,10 @@ export default function CategoriesScreen({
               />
             </div>
           </div>
+          <div>
+            <Label htmlFor="new-cat-usual">Usually</Label>
+            <UsualSelect id="new-cat-usual" value={newUsual} onChange={setNewUsual} />
+          </div>
           {nameTaken && <p role="alert" className="text-xs" style={{ color: T.coral }}>There&apos;s already a category called {nameTaken}.</p>}
           <PrimaryBtn onClick={addCategory} color={T.brass} disabled={!newName.trim()}>+ Add category</PrimaryBtn>
         </div>
@@ -208,6 +231,10 @@ export default function CategoriesScreen({
                           onKeyDown={(e) => e.key === "Enter" && saveEdit()}
                         />
                       </div>
+                    </div>
+                    <div>
+                      <Label htmlFor="edit-cat-usual">Usually</Label>
+                      <UsualSelect id="edit-cat-usual" value={editUsual} onChange={setEditUsual} />
                     </div>
                     {editTaken && <p role="alert" className="text-xs" style={{ color: T.coral }}>There&apos;s already a category called {editTaken}.</p>}
                     <div className="flex gap-2">
