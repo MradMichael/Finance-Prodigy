@@ -191,6 +191,22 @@ export default function SetupScreen({
             <p className="text-[11px] mt-1.5 px-1" style={{ color: T.mute }}>
               Income and your safety net are kept in dollars. If you&apos;re paid or save in lira, enter the dollar value at today&apos;s rate, and update it when the rate moves.
             </p>
+            {/* T2 (owner, session 33, DECISIONS_PENDING 13 (b); wording approved): the balance the salary is
+                paid into. Synced and stamped with income (SETTING_FIELDS); "—" is none. */}
+            <label htmlFor="setup-salary-into" className="block text-xs mt-4 mb-1.5" style={{ color: T.mute }}>Salary paid into</label>
+            <select
+              id="setup-salary-into"
+              className="w-full rounded-xl px-4 py-2.5 text-sm"
+              style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
+              value={financials.salaryIntoBalanceId ?? ""}
+              onChange={(e) => update({ salaryIntoBalanceId: e.target.value || undefined, ...settingsEdited(financials, ["income"]) })}
+            >
+              <option value="">—</option>
+              {(financials.trackedBalances ?? []).map((tb) => <option key={tb.id} value={tb.id}>{tb.name}</option>)}
+            </select>
+            <p className="text-[11px] mt-1.5 px-1" style={{ color: T.mute }}>
+              On payday, ESSA adds your salary to this balance. It isn&apos;t counted as extra income.
+            </p>
             {incomeHistoryDisplay.length > 1 && (
               <div className="mt-3 rounded-xl px-3 py-2.5 space-y-1.5" style={{ background: T.ink, border: `1px solid ${T.line}` }}>
                 <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.mute }}>Income history</p>

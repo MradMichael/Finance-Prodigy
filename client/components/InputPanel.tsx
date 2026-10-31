@@ -566,6 +566,9 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   // The recurring engine takes calendar days: today, on this device.
   const today    = calendarDayOf(now);
   const lbpRate  = lbpRateOf(financials);
+  // T1 (session 33): an Income entry within 10% of Setup's monthly income, in dollars at today's rate.
+  const txAmtUSD = txCurrency === "LBP" ? (parseFloat(txAmt) || 0) / lbpRate : (parseFloat(txAmt) || 0);
+  const looksLikeSalary = financials.income > 0 && txAmtUSD > 0 && Math.abs(txAmtUSD - financials.income) <= financials.income * 0.1;
   const toUSD    = makeToUSDLive(financials);
   // Plan J (merged in session 23, bafa688): each row at the rate in effect on its own day, as the dashboard prices it; this screen used today's rate for every row, past ones too.
   const toUSDOn  = makeToUSDOn(financials);
@@ -738,6 +741,17 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                 </button>
               ))}
             </div>
+            {/* T1 (owner, session 33, DECISIONS_PENDING 13; wording approved): Setup's income is the salary. */}
+            {txBucket === "INCOME" && (
+              <p className="text-[10px] mt-1.5 px-1" style={{ color: T.mute }}>
+                Your monthly salary is already counted from Setup. Log only extra income here, like a bonus, a gift or freelance work.
+              </p>
+            )}
+            {txBucket === "INCOME" && looksLikeSalary && (
+              <p role="status" className="text-[11px] mt-1.5 px-1 font-medium" style={{ color: T.brass }}>
+                This looks like your salary, which Setup already counts. Saving it as Income counts it twice.
+              </p>
+            )}
             {txBucket === "TRANSFER" && (
               <p className="text-[10px] mt-1.5 px-1" style={{ color: T.mute }}>
                 For money arriving that isn&apos;t real income — a reimbursement, a repayment. Not counted as

@@ -1,7 +1,7 @@
 import { spentByBucket, spendingEffect, totalSpent } from "./spending";
 import type { LocalFinancials, BudgetRuleKey, StoredDebt, StoredTransaction, StoredRecurring, TrackedBalance, Currency, PeriodCloseAcknowledgement } from "./localData";
 import { goalProgress, acknowledgementFor, historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, LBP_RATE_STALE_DAYS, cycleStartDayOf, valueForMonth, makeToUSDForMonth, makeToUSDOn, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, derivedEfBalance, derivedDebtBalance, activeTransactions, parseLocalDate, isRecurringActive, isAfterBalanceBaseline, calendarDaysSince, lbpRateOf, rateOn } from "./localData";
-import { currentCycleKey, calendarKeyForDate, isInCycle, cycleProgress, cycleBounds, cycleKeyMinus, periodNoun, cycleLabel, type CycleKey, type CalendarKey, type CalendarHistory } from "./period";
+import { currentCycleKey, calendarKeyForDate, isInCycle, cycleProgress, cycleBounds, cycleKeyMinus, cycleKeyForISO, periodNoun, cycleLabel, type CycleKey, type CalendarKey, type CalendarHistory } from "./period";
 import { simulateDebtPayoff, type DebtInput } from "./debtEngine";
 import { calendarDayOf, dayStart } from "./calendarDay";
 
@@ -192,8 +192,31 @@ function expectedFromRelevantTx(
   relevantTx: StoredTransaction[],
   // Plan J (merged in session 23, bafa688): each row and the starting balance at the rate in effect on its own day.
   toUSDOn: (amount: number, currency: string | undefined, day: string) => number,
+  salaryUSD: number,
 ): number {
-  return Math.round(rawExpectedFromRelevantTx(tb, relevantTx, toUSDOn) * 100) / 100;
+  return Math.round(rawExpectedFromRelevantTx(tb, relevantTx, toUSDOn, salaryUSD) * 100) / 100;
+}
+
+/**
+ * T2 (owner, session 33, DECISIONS_PENDING 13 (b)): what "Salary paid into" adds to a balance's expected
+ * figure, in USD -- each payday after the balance's baseline day, through `throughDay`, adds that cycle's
+ * Setup income (incomeHistory, as incomeForMonth reads it). The baseline day itself isn't credited: a
+ * balance entered or closed on payday is taken to hold that day's salary already. A payday is a cycle's
+ * first day under the current payday setting. Required by rawExpectedFromRelevantTx, so no entry point
+ * can leave it out.
+ */
+export function salaryCreditUSD(tb: Pick<TrackedBalance, "id" | "startingDate">, data: LocalFinancials, throughDay: string): number {
+  if (!data.salaryIntoBalanceId || data.salaryIntoBalanceId !== tb.id) return 0;
+  const startDay = cycleStartDayOf(data);
+  let key = cycleKeyForISO(tb.startingDate, startDay);
+  let totalUSD = 0;
+  for (let i = 0; i < 1200; i++) {
+    key = cycleKeyMinus(key, -1);
+    const payday = calendarDayOf(cycleBounds(key, startDay).start);
+    if (payday > throughDay) break;
+    if (payday > tb.startingDate) totalUSD += valueForMonth(data.incomeHistory, key, data.income);
+  }
+  return totalUSD;
 }
 
 /**
@@ -205,6 +228,8 @@ function rawExpectedFromRelevantTx(
   tb: Pick<TrackedBalance, "startingBalance" | "startingDate" | "currency">,
   relevantTx: StoredTransaction[],
   toUSDOn: (amount: number, currency: string | undefined, day: string) => number,
+  // T2 (session 33): salaryCreditUSD for this balance -- money in, raising expected like an INCOME row.
+  salaryUSD: number,
 ): number {
   // INCOME transactions received on this same payment method put money IN,
   // so they subtract from "spent" (raising the expected balance) instead
@@ -219,7 +244,7 @@ function rawExpectedFromRelevantTx(
   // had no way to catch from the code alone.
   const spentOf = relevantTx.reduce((s, t) => s + (t.bucket === "INCOME" || t.bucket === "TRANSFER" ? -1 : 1) * toUSDOn(t.amount, t.currency, t.date), 0);
   const startingUSD = toUSDOn(tb.startingBalance, tb.currency, tb.startingDate);
-  return startingUSD - spentOf;
+  return startingUSD - spentOf + salaryUSD;
 }
 
 /**
@@ -255,7 +280,7 @@ function rawExpectedFromRelevantTx(
  * was typed.
  */
 export function trackedBalanceExpectedAsOf(
-  tb: Pick<TrackedBalance, "paymentMethod" | "cardId" | "startingBalance" | "startingDate" | "startingAt" | "currency">,
+  tb: Pick<TrackedBalance, "id" | "paymentMethod" | "cardId" | "startingBalance" | "startingDate" | "startingAt" | "currency">,
   data: LocalFinancials,
   asOfInstant: string,
 ): number {
@@ -265,7 +290,7 @@ export function trackedBalanceExpectedAsOf(
     const tKey = `${t.paymentMethod ?? ""}|${t.paymentMethod === "card" ? (t.cardId ?? "") : ""}`;
     return tKey === key && isAfterBalanceBaseline(t, tb) && t.date <= cutoff;
   });
-  return expectedFromRelevantTx(tb, relevantTx, makeToUSDOn(data));
+  return expectedFromRelevantTx(tb, relevantTx, makeToUSDOn(data), salaryCreditUSD(tb, data, cutoff));
 }
 
 /** An ISO instant's LOCAL calendar day. Transaction dates are local. */
@@ -274,10 +299,10 @@ function localDayOfInstant(iso: string): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 export function trackedBalanceExpected(
-  tb: Pick<TrackedBalance, "paymentMethod" | "cardId" | "startingBalance" | "startingDate" | "startingAt" | "currency">,
+  tb: Pick<TrackedBalance, "id" | "paymentMethod" | "cardId" | "startingBalance" | "startingDate" | "startingAt" | "currency">,
   data: LocalFinancials,
 ): number {
-  return expectedFromRelevantTx(tb, relevantTxOf(tb, data), makeToUSDOn(data));
+  return expectedFromRelevantTx(tb, relevantTxOf(tb, data), makeToUSDOn(data), salaryCreditUSD(tb, data, calendarDayOf(new Date())));
 }
 
 function relevantTxOf(tb: Pick<TrackedBalance, "paymentMethod" | "cardId" | "startingDate" | "startingAt">, data: LocalFinancials): StoredTransaction[] {
@@ -311,7 +336,7 @@ export function trackedBalanceNow(
 
 /** trackedBalanceNow for a caller outside computeDashboard's loop (the currency screen's holdings). */
 export function trackedBalanceNowOf(tb: TrackedBalance, data: LocalFinancials): { native: number; usdToday: number } {
-  return trackedBalanceNow(tb, rawExpectedFromRelevantTx(tb, relevantTxOf(tb, data), makeToUSDOn(data)), data);
+  return trackedBalanceNow(tb, rawExpectedFromRelevantTx(tb, relevantTxOf(tb, data), makeToUSDOn(data), salaryCreditUSD(tb, data, calendarDayOf(new Date()))), data);
 }
 
 /**
@@ -788,7 +813,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   const balanceChecks: DashboardPayload["balanceChecks"] = data.trackedBalances.map((tb) => {
     const key = `${tb.paymentMethod}|${tb.paymentMethod === "card" ? (tb.cardId ?? "") : ""}`;
     const relevantTx = (txByPaymentKey.get(key) ?? []).filter((t) => isAfterBalanceBaseline(t, tb));
-    const expectedRaw = rawExpectedFromRelevantTx(tb, relevantTx, toUSDOn);
+    const expectedRaw = rawExpectedFromRelevantTx(tb, relevantTx, toUSDOn, salaryCreditUSD(tb, data, calendarDayOf(now)));
     const expected = Math.round(expectedRaw * 100) / 100;
     const actual = tb.actualBalance != null
       // CUR-04 (plan J): at the rate on the check's own day, which a later edit can't move; it was the cycle's.
