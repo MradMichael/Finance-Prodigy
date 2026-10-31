@@ -50,7 +50,10 @@ describe("U3: notices clear the phone's bars", () => {
     expect(save![1]).toMatch(/(^| )top-\[4\.5rem\]( |$)/);
     expect(save![1]).toMatch(/(^| )md:top-4( |$)/);
     for (const name of ["syncRefused", "backupTooLarge", "backupFailed"]) {
-      const block = page.slice(page.indexOf(`{${name} && (`), page.indexOf(`{${name} && (`) + 600);
+      // Session 33 (U3): the backup notice can be dismissed, so its condition gained "&& !backupNoticeDismissed".
+      const at = page.search(new RegExp(`\\{${name}(?: && !\\w+)? && \\(`));
+      expect(at, name).toBeGreaterThan(-1);
+      const block = page.slice(at, at + 600);
       expect(block, name).toMatch(/saveError \? "top-\[11rem\] md:top-\[7\.5rem\]" : "top-\[4\.5rem\] md:top-4"/);
       expect(block, name).not.toMatch(/top: saveError/);
     }

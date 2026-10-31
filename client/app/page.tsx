@@ -195,6 +195,9 @@ export default function Home() {
   // failure and when the browser comes back online. A retry that fails
   // doesn't start a new series; the next edit's failure does.
   const [backupFailed, setBackupFailed] = useState(false);
+  // U3 (owner, session 33, DECISIONS_PENDING 17 (a)): the failed-backup notice, dismissed until a backup succeeds.
+  const [backupNoticeDismissed, setBackupNoticeDismissed] = useState(false);
+  useEffect(() => { if (!backupFailed) setBackupNoticeDismissed(false); }, [backupFailed]);
   // ERR-03 (session 22; approved and merged in session 23, b173718): past the server's 2 MB cap. Retrying can't help,
   // so ERR-02's notice ("ESSA will try again") and retries don't apply.
   const [backupTooLarge, setBackupTooLarge] = useState(false);
@@ -1021,7 +1024,7 @@ export default function Home() {
             </span>
           </div>
         )}
-        {backupFailed && (
+        {backupFailed && !backupNoticeDismissed && (
           <div
             className={`fixed ${saveError ? "top-[11rem] md:top-[7.5rem]" : "top-[4.5rem] md:top-4"} left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50 flex items-start gap-3`}
             style={{ background: T.panel, border: `1px solid ${T.brass}` }}
@@ -1035,6 +1038,14 @@ export default function Home() {
               style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
             >
               Try again
+            </button>
+            <button
+              onClick={() => setBackupNoticeDismissed(true)}
+              aria-label="Dismiss"
+              className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-lg hover:opacity-70 transition-opacity"
+              style={{ color: T.mute }}
+            >
+              ✕
             </button>
           </div>
         )}

@@ -158,13 +158,6 @@ export default function TripsScreen({ financials, onChange }: { financials: Loca
           <p className="text-sm mt-2" style={{ color: T.mute }}>A trip&apos;s budget against what it actually cost, in dollars at what you paid.</p>
         </div>
 
-        <form aria-label="New trip" className="rounded-2xl p-5 space-y-3" style={{ background: T.panel, border: `1px solid ${T.line}` }} onSubmit={(e) => { e.preventDefault(); save(); }}>
-          <p className="text-xs uppercase tracking-widest" style={{ color: T.mute }}>New trip</p>
-          <TripFields idPrefix="trip" testIdPrefix="trip" draft={draft} onDraft={setDraft} financials={financials} />
-          <div role="status">{error && <p className="text-[11px]" style={{ color: T.coral }}>{error}</p>}</div>
-          <button type="submit" className="w-full py-2 rounded-xl text-sm font-semibold" style={{ background: T.jade, color: T.ink }}>Save trip</button>
-        </form>
-
         {trips.length === 0 && <p className="text-sm" style={{ color: T.mute }}>No trips yet.</p>}
 
         {trips.map((trip) => {
@@ -260,6 +253,14 @@ export default function TripsScreen({ financials, onChange }: { financials: Loca
             </section>
           );
         })}
+
+        {/* U7 (session 33): the New trip form after your trips, so they come first on a phone. */}
+        <form aria-label="New trip" className="rounded-2xl p-5 space-y-3" style={{ background: T.panel, border: `1px solid ${T.line}` }} onSubmit={(e) => { e.preventDefault(); save(); }}>
+          <p className="text-xs uppercase tracking-widest" style={{ color: T.mute }}>New trip</p>
+          <TripFields idPrefix="trip" testIdPrefix="trip" draft={draft} onDraft={setDraft} financials={financials} />
+          <div role="status">{error && <p className="text-[11px]" style={{ color: T.coral }}>{error}</p>}</div>
+          <button type="submit" className="w-full py-2 rounded-xl text-sm font-semibold" style={{ background: T.jade, color: T.ink }}>Save trip</button>
+        </form>
       </div>
     </main>
   );

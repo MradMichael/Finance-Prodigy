@@ -656,9 +656,10 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
                       style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
                     >✎</button>
                     <div className="text-right flex-shrink-0">
-                      <p className="text-sm font-medium tabular-nums" style={{ color: BC[t.bucket] }}>{money(toUSDOn(t.amount, t.currency, t.date), 2)}</p>
+                      {/* T8 (session 33): the entry's own currency first, as My Finances shows it; a lira entry's dollars beneath. */}
+                      <p className="text-sm font-medium tabular-nums" style={{ color: BC[t.bucket] }}>{fmtCur(t.amount, t.currency ?? "USD")}</p>
                       {t.currency === "LBP" && (
-                        <p className="text-[10px]" style={{ color: T.mute }}>{fmtCur(t.amount, t.currency)}</p>
+                        <p className="text-[10px]" style={{ color: T.mute }}>{money(toUSDOn(t.amount, t.currency, t.date), 2)}</p>
                       )}
                     </div>
                   </div>

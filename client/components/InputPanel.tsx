@@ -9,7 +9,6 @@ import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
 import { uid, goalProgress, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, remainingInstallments, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, buildExtraPaymentTx, categoryLabel, categoryIcon, matchCategoryRule, usualBucketOf, roundMoney, moneyMaxFor, MONEY_MAX_USD, derivedDebtBalance, activeTransactions, softDelete, cycleStartDayOf, syncAllowed, edited, recordDeletion, saveCard as storeCard, makeToUSDOn, rateOn, lbpRateOf, makeToUSDLive, debtPayoff } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
-import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker } from "./form/Primitives";
 import { fmtCur, money } from "./screens/shared";
 import ImportStatement from "./ImportStatement";
@@ -636,24 +635,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
       className="flex flex-col h-full overflow-y-auto"
       style={{ background: T.panel }}
     >
-      {/* ── Header ──────────────────────────────────────────── */}
-      <div className="px-6 pt-6 pb-5" style={{ borderBottom: `1px solid ${T.line}` }}>
-        <div className="flex items-center gap-2.5 mb-1">
-          <Signet size={28} />
-          <span className="text-lg font-medium" style={{ color: T.text, fontFamily: "Spectral, Georgia, serif" }}>
-            ESSA
-          </span>
-        </div>
-        <p className="text-xs mt-0.5" style={{ color: T.mute }}>
-          Earn · Spend · Save · Achieve
-        </p>
-        {session && (
-          <p className="text-[11px] mt-2 font-medium" style={{ color: T.jade }}>
-            {session.name}&apos;s finances
-          </p>
-        )}
-      </div>
-
+      {/* U10 (session 33): the brand block that repeated the top bar's and the sidebar's is gone. */}
       {/* ── Quick stats strip ───────────────────────────────── */}
       {financials.income > 0 && (
         <div
@@ -1115,7 +1097,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
             </div>
           ) : (
             <>
-              <div ref={monthListScrollRef} className="space-y-2 max-h-72 overflow-y-auto pr-0.5">
+              <div ref={monthListScrollRef} className="space-y-2 md:max-h-72 md:overflow-y-auto pr-0.5" /* U6 (session 33): grows on a phone, a box from md up */>
                 {monthTx.map((tx) => {
                   // Safe again now that TRANSFER is a real TX_BUCKETS member
                   // (2.4.55 sub-phase 3) -- the ?? TRANSFER_META fallback

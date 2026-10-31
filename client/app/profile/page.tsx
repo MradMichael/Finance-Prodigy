@@ -44,6 +44,7 @@ export default function ProfilePage() {
   const [syncMsg,       setSyncMsg]       = useState("");
   const [syncing,       setSyncing]       = useState(false);
   const [pdfDetailed,   setPdfDetailed]   = useState(false);
+  const [advancedOpen,  setAdvancedOpen]  = useState(false);
   const [pdfDateFrom,   setPdfDateFrom]   = useState("");
   const [pdfDateTo,     setPdfDateTo]     = useState("");
   const [downloading,   setDownloading]   = useState<"data" | "pdf" | null>(null);
@@ -653,7 +654,19 @@ export default function ProfilePage() {
             )}
           </div>
 
-          <div className="space-y-4">
+          {/* U9 (owner, session 33; heading approved): the copy-replacing controls, collapsed by default. */}
+          <button
+            type="button"
+            onClick={() => setAdvancedOpen((v) => !v)}
+            aria-expanded={advancedOpen}
+            aria-controls="advanced-sync"
+            className="w-full flex items-center justify-between gap-2 text-left text-xs font-semibold py-1"
+            style={{ color: T.mute }}
+          >
+            <span>Advanced: replace one copy with the other</span>
+            <span aria-hidden="true" style={{ transform: advancedOpen ? "rotate(180deg)" : "none", display: "inline-block" }}>▾</span>
+          </button>
+          <div id="advanced-sync" className={advancedOpen ? "space-y-4" : "hidden space-y-4"}>
             <div>
               <p className="text-xs mb-2" style={{ color: T.mute }}>
                 Merge this device with your other device&apos;s data (both sides&apos; transactions kept, edit conflicts resolved automatically):
