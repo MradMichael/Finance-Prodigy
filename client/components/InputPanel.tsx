@@ -1,13 +1,13 @@
 "use client";
 
 import { spentByBucket, totalSpent } from "../lib/spending";
-import { useState, useRef, type ReactNode } from "react";
+import { useState, useRef, useEffect, type ReactNode } from "react";
 import { useDialogFocus } from "./useDialogFocus";
 import { useScrollFocus } from "./useScrollFocus";
 import type { LocalFinancials, StoredTransaction, StoredGoal, StoredDebt, StoredRecurring, StoredCard, RecurringFrequency, Currency, PaymentMethod, BudgetRuleKey } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, goalProgress, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, remainingInstallments, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, buildExtraPaymentTx, categoryLabel, categoryIcon, matchCategoryRule, roundMoney, moneyMaxFor, MONEY_MAX_USD, derivedDebtBalance, activeTransactions, softDelete, cycleStartDayOf, syncAllowed, edited, recordDeletion, saveCard as storeCard, makeToUSDOn, rateOn, lbpRateOf, makeToUSDLive, debtPayoff } from "../lib/localData";
+import { uid, goalProgress, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, remainingInstallments, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, buildExtraPaymentTx, categoryLabel, categoryIcon, matchCategoryRule, usualBucketOf, roundMoney, moneyMaxFor, MONEY_MAX_USD, derivedDebtBalance, activeTransactions, softDelete, cycleStartDayOf, syncAllowed, edited, recordDeletion, saveCard as storeCard, makeToUSDOn, rateOn, lbpRateOf, makeToUSDLive, debtPayoff } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Signet } from "./EssaBrand";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker } from "./form/Primitives";
@@ -54,6 +54,27 @@ function BuiltWhenOpen({ render }: { render: () => ReactNode }) {
   return <>{render()}</>;
 }
 
+/**
+ * U5 (owner, session 33, DECISIONS_PENDING 14 (a)): the last currency and payment method (and card) an entry
+ * was logged with on this device. A preference kept in this browser only: never in the account's data,
+ * never synced. Anything unreadable, or a card that's gone, falls back to the form's defaults.
+ */
+function rememberedEntry(userId: string | undefined, cards: StoredCard[]): { currency: Currency; paymentMethod: PaymentMethod; cardId: string | null } | null {
+  if (!userId) return null;
+  try {
+    const v = JSON.parse(localStorage.getItem(`essa_entry_last_${userId}`) ?? "null");
+    if (!v || (v.currency !== "USD" && v.currency !== "LBP") || !["cash", "card", "other"].includes(v.paymentMethod)) return null;
+    const cardOk = v.paymentMethod === "card" && typeof v.cardId === "string" && cards.some((c) => c.id === v.cardId);
+    return { currency: v.currency, paymentMethod: v.paymentMethod === "card" && !cardOk ? "cash" : v.paymentMethod, cardId: cardOk ? v.cardId : null };
+  } catch { return null; }
+}
+function rememberEntry(userId: string | undefined, e: { currency: Currency; paymentMethod: PaymentMethod; cardId?: string }): void {
+  if (!userId) return;
+  try {
+    localStorage.setItem(`essa_entry_last_${userId}`, JSON.stringify(e.paymentMethod === "card" && e.cardId ? e : { currency: e.currency, paymentMethod: e.paymentMethod }));
+  } catch { /* a preference: nothing to do if this browser refuses it */ }
+}
+
 export default function InputPanel({ financials, dashData, onChange, session, onConfirmRecurring, loggingRecurringIds, justConfirmedIds, onEdit, onPay }: Props) {
   const T = useTheme();
   const startDay = cycleStartDayOf(financials);
@@ -87,15 +108,26 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   const update = (patch: Partial<LocalFinancials>) => onChange({ ...financials, ...patch });
 
   // Transaction form
+  const [remembered] = useState(() => rememberedEntry(session?.userId, financials.cards ?? []));
   const [txAmt,    setTxAmt]    = useState("");
   const [txBucket, setTxBucket] = useState<TxBucket>("NEEDS");
+  // T9 (owner, session 33, DECISIONS_PENDING 21 (a)): set once a type tile is clicked for this entry.
+  const [bucketTouched, setBucketTouched] = useState(false);
   const [txCategory, setTxCategory] = useState<string>("");
   const [txDesc,   setTxDesc]   = useState("");
+  // T9: until a type is picked for this entry, it follows the category's usual type -- the one chosen, or
+  // the one a rule finds in the description.
+  const effectiveCategory = txCategory || matchCategoryRule(txDesc.trim(), financials.categoryRules) || "";
+  useEffect(() => {
+    if (bucketTouched) return;
+    const usual = usualBucketOf(effectiveCategory, financials.customCategories);
+    if (usual) setTxBucket(usual);
+  }, [effectiveCategory, bucketTouched, financials.customCategories]);
   const [txDate,   setTxDate]   = useState(todayISO());
   // Session 22, item 1b (approved and merged in session 23, 2f5d30c): the Trip follows the date (a spend inside a trip's dates defaults to it) until
   // the person picks one, "No trip" included. Income and transfers default to no trip.
   const [txTripPick, setTxTripPick] = useState<string | null>(null);
-  const [txCurrency,  setTxCurrency]  = useState<Currency>("USD");
+  const [txCurrency,  setTxCurrency]  = useState<Currency>(remembered?.currency ?? "USD");
   // Batch C (dual-currency single transaction, 2026-08-31): one real
   // payment split across both currencies ($10 USD + L£200,000 as one
   // bill). Deliberately excludes EF/debt-linking and the card-add flow's
@@ -105,7 +137,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   const [txSplitMode, setTxSplitMode] = useState(false);
   const [txSplitUSD,  setTxSplitUSD]  = useState("");
   const [txSplitLBP,  setTxSplitLBP]  = useState("");
-  const [txPayMethod, setTxPayMethod] = useState<PaymentMethod>("cash");
+  const [txPayMethod, setTxPayMethod] = useState<PaymentMethod>(remembered?.paymentMethod ?? "cash");
   const [txPayNote,   setTxPayNote]   = useState("");
   const [txAddToEF,   setTxAddToEF]   = useState(false);
   const [txFromEF,    setTxFromEF]    = useState(false);
@@ -115,7 +147,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   // partial amount. Entered in the transaction's own currency, like txAmt
   // itself -- converted to USD at commit, the same way efAmtUSD is.
   const [txEfAmt,     setTxEfAmt]     = useState("");
-  const [txCardId,    setTxCardId]    = useState<string | null>(null);
+  const [txCardId,    setTxCardId]    = useState<string | null>(remembered?.cardId ?? null);
   const [showAddCard, setShowAddCard] = useState(false);
   const [newCardType, setNewCardType] = useState<StoredCard["type"]>("Visa");
   const [newCardLast4, setNewCardLast4] = useState("");
@@ -319,6 +351,9 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     };
     update({ transactions: [tx, ...financials.transactions], ...(withNewCard ? { cards: withNewCard } : {}) });
     setTxAmt(""); setTxDesc(""); setTxPayNote(""); setTxAddToEF(false); setTxFromEF(false); setTxEfAmt(""); setTxCategory(""); setTxTripPick(null);
+    setBucketTouched(false);
+    rememberEntry(session?.userId, { currency: txCurrency, paymentMethod: txPayMethod, cardId });
+    showToast(`Logged ${description}, ${fmtCur(amt, txCurrency)}.`); // U4 (session 33): the reminder's approved text
   }
 
   // Batch C: one real payment, two currency legs, sharing everything except
@@ -353,6 +388,9 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     };
     update({ transactions: [legUSD, legLBP, ...financials.transactions], ...(withNewCard ? { cards: withNewCard } : {}) });
     setTxSplitUSD(""); setTxSplitLBP(""); setTxSplitMode(false); setTxDesc(""); setTxPayNote(""); setTxCategory(""); setTxTripPick(null);
+    setBucketTouched(false);
+    rememberEntry(session?.userId, { currency: txCurrency, paymentMethod: txPayMethod, cardId });
+    showToast(`Logged ${description}, ${fmtCur(amtUSDLeg, "USD")} + ${fmtCur(amtLBPLeg, "LBP")}.`); // U4 (session 33)
   }
 
   function addGoal() {
@@ -727,7 +765,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
               {TX_BUCKETS.map((b) => (
                 <button
                   key={b.value}
-                  onClick={() => setTxBucket(b.value)}
+                  onClick={() => { setTxBucket(b.value); setBucketTouched(true); }}
                   aria-pressed={txBucket === b.value}
                   className="flex flex-col items-center gap-1 py-2.5 rounded-xl text-xs font-medium transition-all duration-150"
                   style={{
@@ -970,6 +1008,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                       <button
                         key={c.id}
                         onClick={() => { setTxCardId(c.id); setShowAddCard(false); }}
+                        aria-pressed={txCardId === c.id}
                         className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-all"
                         style={{
                           background: txCardId === c.id ? T.jade + "22" : T.panelSoft,
