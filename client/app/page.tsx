@@ -944,7 +944,7 @@ export default function Home() {
       <div role="status">
       {mergeNotice && (
         <div
-          className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50 flex items-start gap-3"
+          className="fixed bottom-[4.75rem] md:bottom-4 left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50 flex items-start gap-3"
           style={{ background: T.panel, border: `1px solid ${T.line}` }}
         >
           <span className="text-sm flex-1" style={{ color: T.text }}>
@@ -979,7 +979,7 @@ export default function Home() {
       {saveError && (
         <div
           role="alert"
-          className="fixed top-4 left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50 flex items-start gap-3"
+          className="fixed top-[4.5rem] md:top-4 left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50 flex items-start gap-3"
           style={{ background: T.panel, border: `1px solid ${T.coral}` }}
         >
           <span className="text-sm flex-1" style={{ color: T.text }}>
@@ -1003,8 +1003,8 @@ export default function Home() {
       <div role="status">
         {syncRefused && (
           <div
-            className="fixed left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50"
-            style={{ top: saveError ? "7.5rem" : "1rem", background: T.panel, border: `1px solid ${T.brass}` }}
+            className={`fixed ${saveError ? "top-[11rem] md:top-[7.5rem]" : "top-[4.5rem] md:top-4"} left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50`}
+            style={{ background: T.panel, border: `1px solid ${T.brass}` }}
           >
             {/* SEC-07 amended (session 26, item 2): the owner's wording (session 27). */}
             <span className="text-sm" style={{ color: T.text }}>{SYNC_REFUSED_MESSAGE}</span>
@@ -1012,8 +1012,8 @@ export default function Home() {
         )}
         {backupTooLarge && (
           <div
-            className="fixed left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50"
-            style={{ top: saveError ? "7.5rem" : "1rem", background: T.panel, border: `1px solid ${T.brass}` }}
+            className={`fixed ${saveError ? "top-[11rem] md:top-[7.5rem]" : "top-[4.5rem] md:top-4"} left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50`}
+            style={{ background: T.panel, border: `1px solid ${T.brass}` }}
           >
             {/* ERR-03 (session 22; approved and merged in session 23, b173718) */}
             <span className="text-sm" style={{ color: T.text }}>
@@ -1023,8 +1023,8 @@ export default function Home() {
         )}
         {backupFailed && (
           <div
-            className="fixed left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50 flex items-start gap-3"
-            style={{ top: saveError ? "7.5rem" : "1rem", background: T.panel, border: `1px solid ${T.brass}` }}
+            className={`fixed ${saveError ? "top-[11rem] md:top-[7.5rem]" : "top-[4.5rem] md:top-4"} left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50 flex items-start gap-3`}
+            style={{ background: T.panel, border: `1px solid ${T.brass}` }}
           >
             <span className="text-sm flex-1" style={{ color: T.text }}>
               Your latest changes aren&apos;t backed up yet. They&apos;re safe on this device, and ESSA will try again.

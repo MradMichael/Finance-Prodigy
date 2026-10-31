@@ -155,10 +155,10 @@ export default function ForeignCashPanel({ financials, onChange }: { financials:
             <ul className="space-y-1">
               {s.lines.map((l) => (
                 <li key={l.id} className="text-[11px] tabular-nums flex items-center justify-between gap-2" style={{ color: T.mute }}>
-                  <span>{`${fmtDate(l.date)} · ${l.description}`}</span>
-                  <span className="flex items-center gap-2">
-                    <span style={{ color: l.delta < 0 ? T.text : T.jade }}>{signed(l.delta, c)}</span>
-                    <span>{fmtForeign(l.balance, c)}</span>
+                  <span className="min-w-0">{`${fmtDate(l.date)} · ${l.description}`}</span>
+                  <span className="flex items-center gap-2 flex-shrink-0">
+                    <span className="whitespace-nowrap" style={{ color: l.delta < 0 ? T.text : T.jade }}>{signed(l.delta, c)}</span>
+                    <span className="whitespace-nowrap">{fmtForeign(l.balance, c)}</span>
                     {(l.source === "spend" || l.source === "in") && (
                       <>
                         <button type="button" onClick={() => toggleEdit(l.id)} aria-label="Edit entry" aria-expanded={editing === l.id}
