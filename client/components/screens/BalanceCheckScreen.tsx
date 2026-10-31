@@ -585,7 +585,7 @@ export default function BalanceCheckScreen({
           </p>
           <div>
             <Label htmlFor="new-tb-name">Name</Label>
-            <FocusInput id="new-tb-name" value={tbName} onChange={(e) => setTbName(e.target.value)} placeholder="Cash, Chase Checking…" />
+            <FocusInput id="new-tb-name" value={tbName} onChange={(e) => setTbName(e.target.value)} placeholder="Cash, salary card…" />
           </div>
           <div>
             <Label>Payment method</Label>

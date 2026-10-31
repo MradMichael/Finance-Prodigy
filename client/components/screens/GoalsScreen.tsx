@@ -240,7 +240,7 @@ export default function GoalsScreen({
                           className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full whitespace-nowrap"
                           style={{ border: `1px solid ${g.paused ? T.mute : color}`, color: g.paused ? T.mute : color }}
                         >
-                          {g.paused ? "paused" : pct >= 100 ? "achieved!" : g.projection.onTrack ? "on pace" : "needs push"}
+                          {g.paused ? "paused" : pct >= 100 ? "achieved!" : g.projection.onTrack ? "on pace" : "behind pace"}
                         </span>
                       </div>
                     </div>

@@ -241,7 +241,12 @@ export default function FinancialDashboard({
                 : month.netCashFlow > 0
                 // COPY-07 (session 22; approved and merged in session 23, b173718): income minus spending so far, said so; it read "You kept $X this cycle" from the cycle's first minutes.
                 ? <>You&apos;ve kept <span style={{ color: T.brass }}>{money(month.netCashFlow)}</span> so far this {noun}, {user.name.split(" ")[0]}. Every dollar counts.</>
-                : <>Spending exceeded income by <span style={{ color: T.coral }}>{money(-month.netCashFlow)}</span> this {noun}, {user.name.split(" ")[0]}. The plan below shows the path.</>}
+                // T3 (owner, session 33, DECISIONS_PENDING 15 (a); the owner's sentence): spending is Needs and
+                // Wants. Within income, it was saving that went over, and the headline says so; otherwise the
+                // exceeded figure is spending's alone.
+                : month.needsSpend + month.wantsSpend <= month.income
+                ? <>You spent within your income this {noun}, {user.name.split(" ")[0]}, but saving <span style={{ color: T.jade }}>{money(month.savingsContrib)}</span> took <span style={{ color: T.coral }}>{money(-month.netCashFlow)}</span> more than was left.</>
+                : <>Spending exceeded income by <span style={{ color: T.coral }}>{money(month.needsSpend + month.wantsSpend - month.income)}</span> this {noun}, {user.name.split(" ")[0]}. The plan below shows the path.</>}
             </h1>
           </div>
         </header>
@@ -344,7 +349,8 @@ export default function FinancialDashboard({
           <div className="grid grid-cols-3 gap-3">
             {[
               { label: "Income",  value: money(month.income),        sub: `this ${noun}`,                       color: T.text  },
-              { label: "Spent",   value: money(month.totalSpend),    sub: `${Math.round(month.totalSpend / month.income * 100)}% of income`, color: month.totalSpend > month.income ? T.coral : T.mute },
+              // T3 (owner, session 33; subline approved): Needs and Wants, as the past-month card below counts.
+              { label: "Spent",   value: money(month.needsSpend + month.wantsSpend), sub: `${Math.round((month.needsSpend + month.wantsSpend) / month.income * 100)}% of income, before saving`, color: month.needsSpend + month.wantsSpend > month.income ? T.coral : T.mute },
               { label: "Saved",   value: money(month.savingsContrib), sub: `${month.savingsRatePct.toFixed(1)}% rate`,                       color: T.jade  },
             ].map(({ label, value, sub, color }) => (
               <div key={label} className="rounded-2xl px-4 py-4" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
@@ -726,7 +732,7 @@ export default function FinancialDashboard({
                     className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full whitespace-nowrap"
                     style={{ border: `1px solid ${color}`, color }}
                   >
-                    {g.paused ? "paused" : achieved ? "achieved!" : g.projection.onTrack ? "on pace" : "needs a push"}
+                    {g.paused ? "paused" : achieved ? "achieved!" : g.projection.onTrack ? "on pace" : "behind pace"}
                   </span>
                 </div>
                 <div className="mt-3"><Bar pct={g.projection.pctComplete} color={T.brass} /></div>

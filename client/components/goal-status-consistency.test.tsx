@@ -58,7 +58,7 @@ describe("T5: the Overview's goals say paused and achieved, as the Goals screen 
     const d = base({ goals: [goal({ id: "o", name: "New car", targetAmount: 8000, openingAmount: 3000, currentAmount: 3000, targetDate: "2028-06-30" })] });
     render(<FinancialDashboard data={computeDashboard(d)} financials={d} />);
     const c = card("New car");
-    expect(within(c).getByText(/^(on pace|needs a push)$/)).toBeTruthy();
+    expect(within(c).getByText(/^(on pace|behind pace)$/)).toBeTruthy(); // T7 (session 33): one word, approved
     expect(c.textContent).toMatch(/keeps this on schedule for 30\/06\/2028/);
   });
 });
