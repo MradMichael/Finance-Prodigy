@@ -1,7 +1,7 @@
 "use client";
 
 import { spentByBucket, totalSpent } from "../lib/spending";
-import { useState, useRef } from "react";
+import { useState, useRef, type ReactNode } from "react";
 import { useDialogFocus } from "./useDialogFocus";
 import { useScrollFocus } from "./useScrollFocus";
 import type { LocalFinancials, StoredTransaction, StoredGoal, StoredDebt, StoredRecurring, StoredCard, RecurringFrequency, Currency, PaymentMethod, BudgetRuleKey } from "../lib/localData";
@@ -43,6 +43,15 @@ interface Props {
   onEdit: (kind: "transaction" | "debt" | "recurring" | "goal", id: string) => void;
   /** Opens the shared "record a payment" surface (page.tsx) for a debt -- shared with DebtsScreen. */
   onPay: (debtId: string) => void;
+}
+
+/**
+ * R1 (session 32 review): builds what it renders only when it mounts. Inside a Section, that is only while
+ * the Section is open: History built a row for every past entry on every render, closed, which cost 500 ms
+ * a render at 15,000 entries and 0.65 s per action on a mid-range phone at 1,500.
+ */
+function BuiltWhenOpen({ render }: { render: () => ReactNode }) {
+  return <>{render()}</>;
 }
 
 export default function InputPanel({ financials, dashData, onChange, session, onConfirmRecurring, loggingRecurringIds, justConfirmedIds, onEdit, onPay }: Props) {
@@ -1156,6 +1165,9 @@ export default function InputPanel({ financials, dashData, onChange, session, on
         {(() => {
           const pastTx = activeTx.filter((t) => !isInCycle(t.date, prefix, startDay));
           if (pastTx.length === 0) return null;
+          return (
+            <Section title="History" icon="📚" badge={pastTx.length} defaultOpen={false}>
+              <BuiltWhenOpen render={() => {
           const byMonth: Record<CycleKey, StoredTransaction[]> = {} as Record<CycleKey, StoredTransaction[]>;
           pastTx.forEach((t) => {
             const ym = cycleKeyForISO(t.date, startDay);
@@ -1166,7 +1178,6 @@ export default function InputPanel({ financials, dashData, onChange, session, on
           // keys and get the range form (2.4.120).
           const label = (ym: CycleKey) => cycleLabel(ym, startDay);
           return (
-            <Section title="History" icon="📚" badge={pastTx.length} defaultOpen={false}>
               <div className="space-y-4">
                 {/* Object.keys erases the brand -- it returns string[] whatever
                     the Record says, deliberately, because an object may carry keys
@@ -1235,6 +1246,8 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                   );
                 })}
               </div>
+          );
+              }} />
             </Section>
           );
         })()}
