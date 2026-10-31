@@ -260,7 +260,7 @@ export default function SetupScreen({
         {/* Safety net */}
         <div className="rounded-2xl p-6 space-y-4" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
           <p className="text-xs uppercase tracking-widest font-semibold" style={{ color: T.mute }}>Safety net</p>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4 items-end">
             <div>
               <label htmlFor="ef-target-months" className="block text-xs mb-1.5" style={{ color: T.mute }}>Target (months of essentials)</label>
               <input

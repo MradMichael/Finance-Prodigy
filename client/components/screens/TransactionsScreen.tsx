@@ -641,7 +641,7 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
                         {fmtDate(t.date)} · {BL[t.bucket]}
                         {t.category && ` · ${categoryIcon(t.category)} ${categoryLabel(t.category)}`}
                         {t.cardLabel
-                          ? ` · ${t.cardLabel}`
+                          ? <> · <span className="whitespace-nowrap">{t.cardLabel}</span></>
                           : t.paymentMethod === "cash"
                           ? " · Cash"
                           : t.paymentMethod === "other"

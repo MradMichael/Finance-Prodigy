@@ -433,8 +433,8 @@ export default function FinancialDashboard({
                 >
                   <span>{r.emoji}</span>
                   <span>{r.name}</span>
-                  <span style={{ color: T.mute }}>· {fmtCur(r.amount, r.currency)}</span>
-                  <span style={{ color: overdue || r.dueInDays <= 2 ? T.coral : T.brass, fontWeight: overdue ? 600 : undefined }}>
+                  <span className="whitespace-nowrap" style={{ color: T.mute }}>· {fmtCur(r.amount, r.currency)}</span>
+                  <span className="whitespace-nowrap" style={{ color: overdue || r.dueInDays <= 2 ? T.coral : T.brass, fontWeight: overdue ? 600 : undefined }}>
                     · {overdue ? `${r.overdueCount} overdue` : r.dueInDays === 0 ? "today" : r.dueInDays === 1 ? "tomorrow" : `in ${r.dueInDays}d`}
                   </span>
                   {onConfirmRecurring && (
