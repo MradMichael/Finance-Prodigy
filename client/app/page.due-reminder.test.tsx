@@ -64,6 +64,9 @@ it("the banner's Yes stores exactly what Renewing soon's Confirm stores", async 
 it("Not yet hides it and stores nothing", async () => {
   render(<Home />);
   await screen.findByRole("region", { name: "Payment reminder" }, { timeout: 10000 });
+  // The page stores its monthly snapshot on load. Wait for it, so the count below is Not yet's alone: once on
+  // CI (session 33) its effect was still pending at the click, ran as part of it, and its save was counted.
+  await waitFor(() => expect(saved.some((d) => (d.netWorthHistory ?? []).length > 0)).toBe(true));
   const before = saved.length;
   fireEvent.click(screen.getByRole("button", { name: "Not yet" }));
   expect(screen.queryByRole("region", { name: "Payment reminder" })).toBeNull();
