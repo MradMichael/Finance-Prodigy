@@ -648,6 +648,18 @@ export default function ProjectionsScreen({
                   </p>
                 </div>
               )}
+              {/* DRAFT, HELD (owner, session 33): goals whose target date passes before the plan reaches goals. */}
+              {goalAllocationReport.conflict.passedTargets.length > 0 && (() => {
+                const names = goalAllocationReport.conflict.passedTargets.map((g) => openGoalsWithId.find((x) => x.stored.id === g.id)?.dash.name ?? g.name);
+                const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+                return (
+                  <p className="text-xs mb-3" style={{ color: T.mute }}>
+                    {names.length === 1
+                      ? `${list}'s target date passes before this plan reaches your goals, so no monthly amount here meets it.`
+                      : `${list}'s target dates pass before this plan reaches your goals, so no monthly amount here meets them.`}
+                  </p>
+                );
+              })()}
               <div className="space-y-2">
                 {goalAllocationReport.goals.map((result) => {
                   const dash = openGoalsWithId.find((x) => x.stored.id === result.id)!.dash;

@@ -387,6 +387,7 @@ describe("fastestGoalCompletion — applying surplus capacity instead of discard
         totalRequiredMonthlyRateUSD: 300,
         totalCapacityUSD: 250,
         shortfallUSD: 50,
+        passedTargets: [], // session 33 (held): none of these targets has passed
       },
       goals: [
         { id: "a", name: "Soonest",  status: "achievable",                 remainingUSD: 600,  requiredMonthlyRateUSD: 100, allocatedMonthlyRateUSD: 100, projectedMonths: 6,  projectedDateDisplay: "15/07/2026", shortfallMonthlyRateUSD: 0 },
