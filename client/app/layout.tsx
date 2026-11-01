@@ -3,6 +3,7 @@ import "./globals.css";
 import { ThemeProvider } from "../contexts/ThemeContext";
 import { THEME_SCRIPT } from "../lib/theme";
 import ErrorReporting from "../components/ErrorReporting";
+import UpdateNotice from "../components/UpdateNotice";
 
 export const metadata: Metadata = {
   title: "ESSA: Earn Spend Save Achieve",
@@ -20,10 +21,10 @@ export const viewport: Viewport = {
   themeColor: "#0B1F1E",
 };
 
-// Registers a deliberately no-op-caching service worker (see public/sw.js)
-// purely so the app is installable to a phone home screen — real offline
-// caching is intentionally not part of this, so there's no risk of anyone
-// seeing stale financial data or a stale build after a deploy.
+// Registers the service worker (owner, session 34, decision 26). public/sw.js is generated at build time
+// (sw/build-sw.mjs) and precaches the app shell and the build's files, so the app opens offline. It never
+// caches /api/* or any data, and a new build waits for UpdateNotice's Reload, so nobody is moved to a new
+// build mid-session. Without a built worker (`next dev`) the registration fails quietly.
 const SW_INIT = `if ('serviceWorker' in navigator) { window.addEventListener('load', function () { navigator.serviceWorker.register('/sw.js').catch(function(){}); }); }`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -54,6 +55,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ErrorReporting />
         <ThemeProvider>
           {children}
+          <UpdateNotice />
         </ThemeProvider>
       </body>
     </html>

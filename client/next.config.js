@@ -19,6 +19,8 @@ const nextConfig = {
       { source: "/:path*", headers: securityHeaders({ enforce: process.env.ESSA_CSP_ENFORCE === "1" }) },
       // The self-hosted fonts' file names carry their version, so a year as immutable is safe.
       { source: "/fonts/:file*", headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }] },
+      // Session 34 (decision 26): the worker is generated per build; the browser re-checks it rather than keeping a copy.
+      { source: "/sw.js", headers: [{ key: "Cache-Control", value: "no-cache" }] },
     ];
   },
 };
