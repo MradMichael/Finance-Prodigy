@@ -9,21 +9,11 @@ import Link from "next/link";
 import { LOAD_FAILED, LOAD_FAILED_NEXT } from "../lib/loadFailure";
 import FinancialDashboard from "../components/FinancialDashboard";
 import DueReminder from "../components/DueReminder";
-import InputPanel from "../components/InputPanel";
-import TransactionsScreen from "../components/screens/TransactionsScreen";
-import CategoriesScreen from "../components/screens/CategoriesScreen";
-import GoalsScreen from "../components/screens/GoalsScreen";
-import DebtsScreen from "../components/screens/DebtsScreen";
-import BudgetScreen from "../components/screens/BudgetScreen";
-import SetupScreen from "../components/screens/SetupScreen";
-import RecurringScreen from "../components/screens/RecurringScreen";
-import ProjectionsScreen from "../components/screens/ProjectionsScreen";
-import JourneyScreen from "../components/screens/JourneyScreen";
-import CurrencyScreen from "../components/screens/CurrencyScreen";
-import TripsScreen from "../components/screens/TripsScreen";
-import BalanceCheckScreen from "../components/screens/BalanceCheckScreen";
-import WishlistScreen from "../components/screens/WishlistScreen";
-import StatisticsScreen from "../components/screens/StatisticsScreen";
+// R3 (owner, session 33): every screen but the Overview loads on first use (screens.lazy.tsx).
+import {
+  InputPanel, TransactionsScreen, CategoriesScreen, GoalsScreen, DebtsScreen, BudgetScreen, SetupScreen, RecurringScreen,
+  ProjectionsScreen, JourneyScreen, CurrencyScreen, TripsScreen, BalanceCheckScreen, WishlistScreen, StatisticsScreen, preloadScreens,
+} from "./screens.lazy";
 import Sidebar from "../components/shell/Sidebar";
 import BottomNav from "../components/shell/BottomNav";
 import TopBar from "../components/shell/TopBar";
@@ -194,6 +184,14 @@ export default function Home() {
   // until the next successful one, and retries 1, 5 and 15 minutes after the
   // failure and when the browser comes back online. A retry that fails
   // doesn't start a new series; the next edit's failure does.
+  // R3 (session 33): every screen's code, fetched once the browser is idle after the first paint, so a
+  // screen still opens if the connection drops later in the session.
+  useEffect(() => {
+    const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void };
+    if (w.requestIdleCallback) { const id = w.requestIdleCallback(() => { void preloadScreens(); }, { timeout: 4000 }); return () => w.cancelIdleCallback?.(id); }
+    const id = window.setTimeout(() => { void preloadScreens(); }, 2000);
+    return () => window.clearTimeout(id);
+  }, []);
   const [backupFailed, setBackupFailed] = useState(false);
   // U3 (owner, session 33, DECISIONS_PENDING 17 (a)): the failed-backup notice, dismissed until a backup succeeds.
   const [backupNoticeDismissed, setBackupNoticeDismissed] = useState(false);
