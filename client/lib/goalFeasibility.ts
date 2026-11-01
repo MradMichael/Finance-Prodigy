@@ -1,4 +1,5 @@
 import { projectCompletion } from "./projections";
+import { calendarDayOf } from "./calendarDay";
 
 /**
  * F3 — Goal Feasibility Engine, sub-phase 1: the pure allocation engine.
@@ -80,9 +81,11 @@ export interface GoalAllocationReport {
 /**
  * A target date already behind `asOf` (the date this funding starts). One test for T4's per-goal status
  * and the combined figure's passed goals (session 33), so the two always agree on which goals have passed.
+ * Calendar days on this device (session 34): the target used to be read as UTC midnight against a local start,
+ * so west of UTC a target on the start's own day counted as passed.
  */
 function targetPassedBy(targetDate: string, asOf: Date): boolean {
-  return new Date(targetDate).getTime() < asOf.getTime();
+  return targetDate.slice(0, 10) < calendarDayOf(asOf);
 }
 
 function monthsUntil(targetDate: string, asOf: Date): number {

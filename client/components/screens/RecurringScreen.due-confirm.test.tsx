@@ -23,12 +23,14 @@ function show(renewals: Renewal[], onConfirm = vi.fn(), logging?: Set<string>, c
 const rowOf = (name: string) => screen.getByText(name, { exact: false, selector: "p" }).closest("div.flex.items-center") as HTMLElement;
 
 describe("Recurring says what's due, with Confirm", () => {
+  // Session 34 (owner): on Recurring the due line starts its own line, so it carries no leading "·" (the
+  // Overview's chips keep theirs, mid-line).
   it("due today, tomorrow, in N days, and overdue: the chips' words, and Confirm on each", () => {
     show([renewal("net", "Internet", 0), renewal("rent", "Rent", 1), renewal("ins", "Insurance", 5), renewal("gym", "Gym", -6, 1)]);
-    expect(within(rowOf("Internet")).getByText("· today")).toBeTruthy();
-    expect(within(rowOf("Rent")).getByText("· tomorrow")).toBeTruthy();
-    expect(within(rowOf("Insurance")).getByText("· in 5d")).toBeTruthy();
-    expect(within(rowOf("Gym")).getByText("· 1 overdue")).toBeTruthy();
+    expect(within(rowOf("Internet")).getByText("today")).toBeTruthy();
+    expect(within(rowOf("Rent")).getByText("tomorrow")).toBeTruthy();
+    expect(within(rowOf("Insurance")).getByText("in 5d")).toBeTruthy();
+    expect(within(rowOf("Gym")).getByText("1 overdue")).toBeTruthy();
     for (const n of ["Internet", "Rent", "Insurance", "Gym"]) expect(within(rowOf(n)).getByRole("button", { name: "Confirm" })).toBeTruthy();
   });
 
