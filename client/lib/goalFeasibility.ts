@@ -54,6 +54,12 @@ export interface GoalCapacityConflict {
   totalCapacityUSD: number;
   /** totalRequired - totalCapacity, floored at 0. */
   shortfallUSD: number;
+  /**
+   * DRAFT, HELD (owner, session 33): goals not yet met whose target date is before `asOf` (the date this
+   * funding starts). No monthly amount meets them, so they're left out of totalRequired -- they used to
+   * count their whole remainder as one month's need -- and named apart.
+   */
+  passedTargets: { id: string; name: string }[];
 }
 
 export interface GoalAllocationReport {
@@ -71,6 +77,14 @@ export interface GoalAllocationReport {
  * negative) so an overdue or same-day target doesn't divide by zero or
  * flip sign; matches goalPace's own Math.max(1, rawMs).
  */
+/**
+ * A target date already behind `asOf` (the date this funding starts). One test for T4's per-goal status
+ * and the combined figure's passed goals (session 33), so the two always agree on which goals have passed.
+ */
+function targetPassedBy(targetDate: string, asOf: Date): boolean {
+  return new Date(targetDate).getTime() < asOf.getTime();
+}
+
 function monthsUntil(targetDate: string, asOf: Date): number {
   const rawMonths = Math.round((new Date(targetDate).getTime() - asOf.getTime()) / (30.44 * 24 * 3600 * 1000));
   return Math.max(1, rawMonths);
@@ -88,12 +102,14 @@ export function allocateGoalCapacity(
     return { ...g, remainingUSD, months, requiredMonthlyRateUSD };
   });
 
-  const totalRequiredMonthlyRateUSD = withRates.reduce((s, g) => s + g.requiredMonthlyRateUSD, 0);
+  const passed = (g: (typeof withRates)[number]) => g.remainingUSD > 0 && targetPassedBy(g.targetDate, asOf);
+  const totalRequiredMonthlyRateUSD = withRates.filter((g) => !passed(g)).reduce((s, g) => s + g.requiredMonthlyRateUSD, 0);
   const conflict: GoalCapacityConflict = {
     hasConflict: totalRequiredMonthlyRateUSD > monthlyCapacityUSD,
     totalRequiredMonthlyRateUSD,
     totalCapacityUSD: monthlyCapacityUSD,
     shortfallUSD: Math.max(0, totalRequiredMonthlyRateUSD - monthlyCapacityUSD),
+    passedTargets: withRates.filter(passed).map((g) => ({ id: g.id, name: g.name })),
   };
 
   // Soonest target date first -- the same "quick wins / nearest deadline
@@ -112,7 +128,7 @@ export function allocateGoalCapacity(
     // T4 (session 32 review): a target already behind asOf (the date this funding starts -- for
     // Projections, after the safety net and debt) can't be met, whatever the rate. monthsUntil floors it
     // at 1 month, which read a goal landing a year late as "On track".
-    const targetPassed = new Date(g.targetDate).getTime() < asOf.getTime();
+    const targetPassed = targetPassedBy(g.targetDate, asOf);
     const onSchedule = g.remainingUSD <= 0 || (!targetPassed && proj.months !== null && proj.months <= g.months);
     // "not_achievable" specifically means no reprioritization could ever
     // fix it -- this goal's own need exceeds the ENTIRE pool, not just
