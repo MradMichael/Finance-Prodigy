@@ -14,16 +14,21 @@ import { createElement, useEffect, useState, type ComponentType } from "react";
 
 type Loaded<P> = { default: ComponentType<P> };
 
-function lazyScreen<P extends object>(load: () => Promise<Loaded<P>>) {
+export function lazyScreen<P extends object>(load: () => Promise<Loaded<P>>) {
   let component: ComponentType<P> | null = null;
   let pending: Promise<void> | null = null;
-  const preload = (): Promise<void> => (pending ??= load().then((m) => { component = m.default; }));
+  // A load that fails (offline) is forgotten, so the next time the screen opens it tries again (session 33's
+  // offline live check: the failed attempt was kept, and the screen stayed blank for the session).
+  const preload = (): Promise<void> => (pending ??= load().then(
+    (m) => { component = m.default; },
+    (err) => { pending = null; throw err; },
+  ));
   function LazyScreen(props: P) {
     const [, rerender] = useState(0);
     useEffect(() => {
       if (component) return;
       let live = true;
-      preload().then(() => { if (live) rerender((n) => n + 1); });
+      preload().then(() => { if (live) rerender((n) => n + 1); }, () => {});
       return () => { live = false; };
     }, []);
     return component ? createElement(component, props) : null;
@@ -50,7 +55,10 @@ export const StatisticsScreen = lazyScreen(() => import("../components/screens/S
 
 const ALL = [InputPanel, TransactionsScreen, CategoriesScreen, GoalsScreen, DebtsScreen, BudgetScreen, SetupScreen, RecurringScreen, ProjectionsScreen, JourneyScreen, CurrencyScreen, TripsScreen, BalanceCheckScreen, WishlistScreen, StatisticsScreen];
 
-/** Fetches every screen's code once; safe to call again (each loads once). */
-export function preloadScreens(): Promise<void> {
-  return Promise.all(ALL.map((s) => s.preload())).then(() => undefined);
+/**
+ * Fetches every screen's code once; safe to call again (each loads once). Settles even if some can't load
+ * (offline): those try again when they're opened.
+ */
+export function preloadScreens(list: { preload: () => Promise<void> }[] = ALL): Promise<void> {
+  return Promise.allSettled(list.map((s) => s.preload())).then(() => undefined);
 }
