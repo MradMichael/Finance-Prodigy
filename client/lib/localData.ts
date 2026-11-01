@@ -2940,6 +2940,16 @@ export function nominalMonthlyEquivalent(
   return r.amount * FREQ_MONTHLY[r.frequency];
 }
 
+/**
+ * P3-A (owner, session 33, DECISIONS_PENDING 25): what the recurring items cost each month, in USD at
+ * today's rate -- the nominal cost (nominalMonthlyEquivalent), so a bill just paid still counts. One total,
+ * read by Recurring's "Total committed monthly" and Projections' "free after your commitments".
+ */
+export function committedMonthlyUSD(data: LocalFinancials, asOf: Date = new Date()): number {
+  const toUSDLive = makeToUSDLive(data);
+  return (data.recurring ?? []).reduce((s, r) => s + toUSDLive(nominalMonthlyEquivalent(r, data.transactions, data, asOf), r.currency), 0);
+}
+
 const DAY_FREQ_LENGTH: Partial<Record<RecurringFrequency, number>> = { weekly: 7, biweekly: 14 };
 const MONTH_FREQ_LENGTH: Partial<Record<RecurringFrequency, number>> = {
   monthly: 1, every2months: 2, quarterly: 3, biannually: 6, yearly: 12,

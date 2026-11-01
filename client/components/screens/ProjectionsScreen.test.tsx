@@ -14,7 +14,7 @@
 // budgetPace and its alerts deliberately still judge spend against the
 // rollover-adjusted target -- unchanged, and not what this file covers.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import ProjectionsScreen from "./ProjectionsScreen";
 import { computeDashboard } from "../../lib/computeDashboard";
 import { DEFAULT_DATA, type LocalFinancials } from "../../lib/localData";
@@ -278,9 +278,12 @@ describe("Looking ahead — bounded obligations that free capacity later", () =>
   });
 
   it("an indefinite item never appears — the pair, so the assertion above isn't just 'any recurring item renders'", () => {
+    // Session 33 (P3-A, held): the card now shows whenever income is set, for "Free after your commitments";
+    // an indefinite item still never reads as finishing, and with nothing finishing there's no closing note.
     renderProjections({ recurring: [RENT] });
-    expect(screen.queryByText(/Looking ahead/)).toBeNull();
     expect(screen.queryByText(/Rent finishes/)).toBeNull();
+    expect(screen.queryByText(/free from/)).toBeNull();
+    expect(screen.queryByText(/Nothing below has been brought forward/)).toBeNull();
   });
 
   it("the copy states the plan does NOT account for the step", () => {
@@ -292,8 +295,14 @@ describe("Looking ahead — bounded obligations that free capacity later", () =>
   });
 
   it("the strip is absent entirely when there are no recurring items at all", () => {
-    renderProjections({ recurring: [] });
+    // Session 33 (P3-A, held): with income set, the card holds only the free figure; with none, it's absent.
+    renderProjections({ recurring: [], income: 0 });
     expect(screen.queryByText(/Looking ahead/)).toBeNull();
+    cleanup();
+    renderProjections({ recurring: [] });
+    expect(screen.getByText(/Looking ahead/)).toBeTruthy();
+    expect(screen.queryByText(/finishes/)).toBeNull();
+    expect(screen.queryByText(/Nothing below has been brought forward/)).toBeNull();
   });
 });
 

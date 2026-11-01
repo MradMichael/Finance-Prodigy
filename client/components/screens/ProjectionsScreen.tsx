@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
-import { BUDGET_RULES, goalProgress, moneyEquals, capacityFreedFrom, isRecurringActive, toUSD as toUSDShared, cycleStartDayOf, lbpRateOf } from "../../lib/localData";
+import { BUDGET_RULES, goalProgress, moneyEquals, capacityFreedFrom, committedMonthlyUSD, isRecurringActive, toUSD as toUSDShared, cycleStartDayOf, lbpRateOf } from "../../lib/localData";
 import { dateFmt, toDebtInputs, type computeDashboard } from "../../lib/computeDashboard";
 import { simulateDebtPayoff, addMonths, type DebtInput } from "../../lib/debtEngine";
 import { projectCompletion } from "../../lib/projections";
@@ -127,8 +127,11 @@ export default function ProjectionsScreen({
     .filter((o): o is typeof o & { freed: Date } => o.freed !== null)
     .sort((a, b) => a.freed.getTime() - b.freed.getTime());
 
+  // DRAFT, HELD (owner, session 33, P3-A): the base is what's free after your commitments -- Setup income
+  // less the recurring items' monthly cost -- so each step reads as what's free from then.
+  const freeNowUSD = financials.income - committedMonthlyUSD(financials, capacityNow);
   const capacitySeries = capacityByMonth(
-    0,
+    freeNowUSD,
     boundedObligations.map<RecurringCapacityInput>((o) => ({
       id: o.r.id,
       monthlyAmountUSD: o.monthlyAmountUSD,
@@ -142,7 +145,9 @@ export default function ProjectionsScreen({
   // quietly omits one reads as "this is all of them".
   const capacitySteps = boundedObligations.filter((o) => o.freed <= capacityHorizonEnd);
   const capacityStepsBeyondHorizon = boundedObligations.length - capacitySteps.length;
-  const totalFreedInHorizon = capacitySeries[CAPACITY_HORIZON_MONTHS].capacityUSD;
+  const totalFreedInHorizon = capacitySeries[CAPACITY_HORIZON_MONTHS].capacityUSD - freeNowUSD;
+  // What's free from each step's month: the base plus everything freed by then.
+  const freeFrom = (freed: Date) => freeNowUSD + boundedObligations.filter((o) => o.freed <= freed).reduce((s, o) => s + o.monthlyAmountUSD, 0);
   const monthYear = (d: Date) => d.toLocaleDateString("en-GB", { month: "short", year: "numeric", timeZone: "UTC" });
   const openGoals = goals.filter((g) => g.projection.pctComplete < 100 && !g.paused);
   const totalGoalsRemaining = openGoals.reduce((s, g) => {
@@ -492,18 +497,28 @@ export default function ProjectionsScreen({
             frees up and when, say plainly that the plan doesn't count it,
             and stop there. Making the plan actually spend it is a separate,
             much larger change (approach B) and an open product decision. */}
-        {capacitySteps.length > 0 && (
+        {(capacitySteps.length > 0 || financials.income > 0) && (
           <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
             <p className="text-xs uppercase tracking-widest mb-2" style={{ color: T.mute }}>Looking ahead</p>
+            {/* DRAFT, HELD (owner, session 33, P3-A) */}
+            {financials.income > 0 && (
+              <div className="mb-3">
+                <p className="text-sm tabular-nums" style={{ color: T.text }}>{`Free after your commitments: ${money(freeNowUSD)}/mo.`}</p>
+                <p className="text-[11px]" style={{ color: T.mute }}>Your monthly income in Setup, less what your recurring items cost each month.</p>
+              </div>
+            )}
             <div className="space-y-1.5">
               {capacitySteps.map((o) => (
-                <div key={o.r.id} className="flex items-center justify-between gap-3 text-sm">
+                <div key={o.r.id} className="flex flex-wrap items-center justify-between gap-x-3 text-sm">
                   <span style={{ color: T.text }}>
                     {o.r.emoji ? `${o.r.emoji} ` : ""}{o.r.name} finishes
                   </span>
                   <span className="tabular-nums flex-shrink-0" style={{ color: T.jade }}>
                     +{money(o.monthlyAmountUSD)}/mo from {monthYear(o.freed)}
                   </span>
+                  {financials.income > 0 && (
+                    <span className="basis-full text-[11px] tabular-nums" style={{ color: T.mute }}>{`${money(freeFrom(o.freed))}/mo free from ${monthYear(o.freed)}`}</span>
+                  )}
                 </div>
               ))}
             </div>
@@ -517,9 +532,12 @@ export default function ProjectionsScreen({
                 {capacityStepsBeyondHorizon === 1 ? "One more finishes" : `${capacityStepsBeyondHorizon} more finish`} beyond {CAPACITY_HORIZON_MONTHS / 12} years and {capacityStepsBeyondHorizon === 1 ? "isn't" : "aren't"} shown.
               </p>
             )}
-            <p className="text-[11px] mt-3 pt-3" style={{ color: T.mute, borderTop: `1px solid ${T.line}` }}>
-              This is what changes in your commitments, not in the plan below — that uses the single monthly amount you set above for every month, including these. Nothing below has been brought forward to account for it.
-            </p>
+            {/* P3-A (session 33): the card now shows with nothing finishing, and then there's no change to describe. */}
+            {capacitySteps.length > 0 && (
+              <p className="text-[11px] mt-3 pt-3" style={{ color: T.mute, borderTop: `1px solid ${T.line}` }}>
+                This is what changes in your commitments, not in the plan below — that uses the single monthly amount you set above for every month, including these. Nothing below has been brought forward to account for it.
+              </p>
+            )}
           </div>
         )}
 

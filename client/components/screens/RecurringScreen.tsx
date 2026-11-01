@@ -1,7 +1,7 @@
 "use client";
 
 import type { LocalFinancials } from "../../lib/localData";
-import { nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, remainingInstallments, FREQ_LABELS, categoryLabel, categoryIcon, fmtDate, makeToUSDLive } from "../../lib/localData";
+import { committedMonthlyUSD, nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, remainingInstallments, FREQ_LABELS, categoryLabel, categoryIcon, fmtDate, makeToUSDLive } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
 import { calendarDayOf } from "../../lib/calendarDay";
@@ -31,7 +31,7 @@ export default function RecurringScreen({ financials, onEdit, renewals, onConfir
   // math elsewhere uses. Otherwise this number (and every row's price below)
   // dips to $0 the moment a bill gets logged as paid, making an active
   // subscription look cancelled until next cycle.
-  const totalMonthly = financials.recurring.reduce((s, r) => s + toUSD(nominalMonthlyEquivalent(r, financials.transactions, financials, now), r.currency), 0);
+  const totalMonthly = committedMonthlyUSD(financials, now); // P3-A (session 33): the one total, shared with Projections
 
   const buckets = (["NEEDS","WANTS","SAVINGS"] as const).map((b) => ({
     bucket: b,
