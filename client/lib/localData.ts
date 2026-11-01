@@ -1007,6 +1007,12 @@ export interface LocalFinancials {
    * Absent means none. Synced as part of the income setting (SETTING_FIELDS).
    */
   salaryIntoBalanceId?: string;
+  /**
+   * DRAFT, HELD (owner, session 33, P3-B): where the plan puts money freed when a bounded obligation ends.
+   * Absent or "goals": to the goals stage, from the month it frees up; "none": kept out (the plan as before).
+   * Synced with the budget setting (SETTING_FIELDS).
+   */
+  freedMoneyTo?: "goals" | "none";
   budgetRule?: BudgetRuleKey;
   budgetCustomNeeds?: number;
   // 2.4.106: set when BudgetScreen's heal effect floors an out-of-range

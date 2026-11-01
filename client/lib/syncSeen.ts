@@ -35,7 +35,7 @@ export interface SeenMap { v: 1; kinds: Partial<Record<SeenKind, Record<string, 
 export const SETTING_FIELDS: Record<SettingKey, readonly (keyof LocalFinancials)[]> = {
   income: ["income", "salaryIntoBalanceId"], // T2 (session 33): where the salary is paid, merged and stamped with it
   lbpRate: ["lbpRate", "lbpRateUpdatedAt"],
-  budget: ["budgetRule", "budgetCustomNeeds", "budgetCustomWants", "budgetSplitHealedAt", "budgetSplitHealedFrom"],
+  budget: ["budgetRule", "budgetCustomNeeds", "budgetCustomWants", "budgetSplitHealedAt", "budgetSplitHealedFrom", "freedMoneyTo"], // P3-B (held)
   payday: ["cycleStartDay", "cycleStartDayChangedAt"],
   efTarget: ["emergencyFundTargetMonths"],
 };
