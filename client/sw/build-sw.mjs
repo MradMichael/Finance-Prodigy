@@ -5,6 +5,7 @@
 //   node sw/build-sw.mjs            (run by `npm run build`)
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 /** Pages precached as the app shell: prerendered at build, filled in on the device, so they hold no data. */
@@ -21,14 +22,20 @@ function walk(dir, base = dir) {
   });
 }
 
+/** Session 35: a short hash of a file's bytes, so the next build's worker can tell an unchanged file. */
+const hashOf = (file) => crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex").slice(0, 16);
+
 /** @param {{ nextDir: string, publicDir: string }} dirs */
 export function buildManifest({ nextDir, publicDir }) {
   const build = fs.readFileSync(path.join(nextDir, "BUILD_ID"), "utf8").trim();
-  const files = [
-    ...walk(path.join(nextDir, "static")).map((p) => `/_next/static/${p}`),
-    ...walk(publicDir).map((p) => `/${p}`).filter((u) => !NEVER.has(u) && !u.startsWith("/api/") && !u.startsWith("/admin")),
-  ].sort();
-  return { build, pages: PAGES, files };
+  /** @type {[string, string][]} url, file on disk */
+  const listed = [
+    ...walk(path.join(nextDir, "static")).map((p) => [`/_next/static/${p}`, path.join(nextDir, "static", p)]),
+    ...walk(publicDir).map((p) => [`/${p}`, path.join(publicDir, p)]).filter(([u]) => !NEVER.has(u) && !u.startsWith("/api/") && !u.startsWith("/admin")),
+  ];
+  const files = listed.map(([u]) => u).sort();
+  const hashes = Object.fromEntries(listed.map(([u, f]) => [u, hashOf(f)]));
+  return { build, pages: PAGES, files, hashes };
 }
 
 /** @param {{ manifest: { build: string, pages: string[], files: string[] } | null, kill: boolean, templateDir: string }} opts */

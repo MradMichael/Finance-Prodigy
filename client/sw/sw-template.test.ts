@@ -44,9 +44,9 @@ function sandbox({ caches: existing = [] as string[], failing = [] as string[] }
   return { listeners, cacheMap, caches, fetch, fetched, self, Request };
 }
 
-function load(kill = false, opts?: Parameters<typeof sandbox>[0]) {
+function load(kill = false, opts?: Parameters<typeof sandbox>[0], manifest: object = MANIFEST) {
   const sb = sandbox(opts);
-  const src = renderWorker({ manifest: kill ? null : MANIFEST, kill, templateDir });
+  const src = renderWorker({ manifest: kill ? null : (manifest as typeof MANIFEST), kill, templateDir });
   vm.runInNewContext(src, { self: sb.self, caches: sb.caches, fetch: sb.fetch, Request: sb.Request, Response, URL, Promise, console });
   const fire = async (type: string, extra: Record<string, unknown> = {}) => {
     let waited: Promise<unknown> | undefined; let responded: Promise<Response> | undefined;
@@ -64,7 +64,8 @@ describe("install", () => {
     const { waited } = await w.fire("install");
     await waited;
     const cache = w.cacheMap.get("essa-static-b1")!;
-    expect([...cache.store.keys()].sort()).toEqual([`${ORIGIN}/`, `${ORIGIN}/_next/static/chunks/main.js`, `${ORIGIN}/icon-192.png`, `${ORIGIN}/profile`]);
+    // Session 35: plus the build's list of hashes, kept for the next deploy.
+    expect([...cache.store.keys()].sort()).toEqual([`${ORIGIN}/`, `${ORIGIN}/__essa/manifest`, `${ORIGIN}/_next/static/chunks/main.js`, `${ORIGIN}/icon-192.png`, `${ORIGIN}/profile`]);
     expect(w.fetch.mock.calls.every(([r]) => (r as { cache?: string }).cache === "reload")).toBe(true);
   });
 
@@ -146,6 +147,61 @@ describe("taking over", () => {
     expect(w.self.skipWaiting).not.toHaveBeenCalled();
     await w.fire("message", { data: { type: "SKIP_WAITING" } });
     expect(w.self.skipWaiting).toHaveBeenCalled();
+  });
+});
+
+// Session 35 (owner): across deploys, a file whose content hasn't changed is copied from the previous cache, not
+// downloaded again; only changed files and the app shell (the pages) are fetched.
+describe("reuse across deploys", () => {
+  const NEXT = {
+    build: "b2", pages: ["/"],
+    files: ["/_next/static/chunks/main.js", "/icon-192.png", "/_next/static/chunks/new.js"],
+    hashes: { "/_next/static/chunks/main.js": "1111111111111111", "/icon-192.png": "2222222222222222", "/_next/static/chunks/new.js": "3333333333333333" },
+  };
+  const previous = (w: ReturnType<typeof load>, hashes: Record<string, string>) => {
+    const old = new FakeCache();
+    old.store.set(`${ORIGIN}/_next/static/chunks/main.js`, new Response("main, as built last time"));
+    old.store.set(`${ORIGIN}/icon-192.png`, new Response("the old icon"));
+    old.store.set(`${ORIGIN}/__essa/manifest`, new Response(JSON.stringify(hashes)));
+    w.cacheMap.set("essa-static-b1", old);
+  };
+
+  it("an unchanged file is copied, body and all; a changed one, a new one and the pages are fetched", async () => {
+    const w = load(false, {}, NEXT);
+    previous(w, { "/_next/static/chunks/main.js": "1111111111111111", "/icon-192.png": "9999999999999999" });
+    await (await w.fire("install")).waited;
+    expect(w.fetched.sort()).toEqual([`${ORIGIN}/`, `${ORIGIN}/_next/static/chunks/new.js`, `${ORIGIN}/icon-192.png`]);
+    const cache = w.cacheMap.get("essa-static-b2")!;
+    expect(await (await cache.match("/_next/static/chunks/main.js"))!.text()).toBe("main, as built last time");
+    expect(await (await cache.match("/icon-192.png"))!.text()).toBe("body of /icon-192.png");
+  });
+
+  it("the new cache keeps its own list of hashes for the next deploy", async () => {
+    const w = load(false, {}, NEXT);
+    await (await w.fire("install")).waited;
+    const meta = await w.cacheMap.get("essa-static-b2")!.match("/__essa/manifest");
+    expect(JSON.parse(await meta!.text())).toEqual(NEXT.hashes);
+  });
+
+  it("with no previous cache, everything is fetched, as before", async () => {
+    const w = load(false, {}, NEXT);
+    await (await w.fire("install")).waited;
+    expect(w.fetched.length).toBe(4);
+  });
+
+  it("a previous cache without a list of hashes is never trusted", async () => {
+    const w = load(false, {}, NEXT);
+    const old = new FakeCache();
+    old.store.set(`${ORIGIN}/_next/static/chunks/main.js`, new Response("unknown provenance"));
+    w.cacheMap.set("essa-static-b1", old);
+    await (await w.fire("install")).waited;
+    expect(w.fetched).toContain(`${ORIGIN}/_next/static/chunks/main.js`);
+  });
+
+  it("the list of hashes is never answered to a page", async () => {
+    const w = load(false, {}, NEXT);
+    await (await w.fire("install")).waited;
+    expect((await w.get("/__essa/manifest")).responded).toBeUndefined();
   });
 });
 

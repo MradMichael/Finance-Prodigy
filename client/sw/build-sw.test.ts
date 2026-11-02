@@ -55,6 +55,19 @@ describe("the precache list", () => {
   it("the build's ID", () => {
     expect(manifest().build).toBe("b1d-42");
   });
+
+  // Session 35 (owner): a file whose content hasn't changed is kept from the previous cache. Every listed file
+  // carries a hash of its bytes, so the next build's worker can tell.
+  it("a content hash for every listed file, changing only when the file's bytes change", () => {
+    const one = manifest();
+    expect(Object.keys(one.hashes).sort()).toEqual([...one.files].sort());
+    for (const h of Object.values(one.hashes)) expect(h).toMatch(/^[0-9a-f]{16}$/);
+    put("public/icon-192.png", "x"); // same bytes again
+    expect(manifest().hashes["/icon-192.png"]).toBe(one.hashes["/icon-192.png"]);
+    put("public/icon-192.png", "a new icon");
+    expect(manifest().hashes["/icon-192.png"]).not.toBe(one.hashes["/icon-192.png"]);
+    expect(manifest().hashes["/_next/static/chunks/main-abc.js"]).toBe(one.hashes["/_next/static/chunks/main-abc.js"]);
+  });
 });
 
 describe("the worker", () => {
