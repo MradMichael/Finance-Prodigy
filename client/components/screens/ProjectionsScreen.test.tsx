@@ -287,7 +287,9 @@ describe("Looking ahead — bounded obligations that free capacity later", () =>
   });
 
   it("the copy states the plan does NOT account for the step", () => {
-    renderProjections({ recurring: [UNI] });
+    // Session 33 (P3-B, held): true when freed money is kept out of the plan; by default it now goes to goals,
+    // and the closing line says so (p3b-freed-to-goals.test.tsx).
+    renderProjections({ recurring: [UNI], freedMoneyTo: "none" });
     const note = screen.getByText(/Nothing below has been brought forward/);
     expect(note.textContent).toMatch(/not in the plan below/);
     // And it must not promise the opposite anywhere in the strip.

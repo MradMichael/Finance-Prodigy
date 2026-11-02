@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
-import { BUDGET_RULES, goalProgress, moneyEquals, capacityFreedFrom, committedMonthlyUSD, isRecurringActive, toUSD as toUSDShared, cycleStartDayOf, lbpRateOf } from "../../lib/localData";
+import { settingsEdited, BUDGET_RULES, goalProgress, moneyEquals, capacityFreedFrom, committedMonthlyUSD, isRecurringActive, toUSD as toUSDShared, cycleStartDayOf, lbpRateOf } from "../../lib/localData";
 import { dateFmt, toDebtInputs, type computeDashboard } from "../../lib/computeDashboard";
 import { simulateDebtPayoff, addMonths, type DebtInput } from "../../lib/debtEngine";
 import { projectCompletion } from "../../lib/projections";
-import { allocateGoalCapacity, fastestGoalCompletion, capacityByMonth, type GoalCapacityInput, type GoalAllocationReport, type GoalFastestReport, type GoalFeasibilityStatus, type RecurringCapacityInput } from "../../lib/goalFeasibility";
+import { allocateGoalCapacity, allocateGoalCapacityScheduled, fastestGoalCompletion, capacityByMonth, type GoalCapacityInput, type GoalAllocationReport, type GoalFastestReport, type GoalFeasibilityStatus, type RecurringCapacityInput } from "../../lib/goalFeasibility";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, NUMS, money } from "./shared";
 import { periodNoun } from "../../lib/period";
@@ -65,10 +65,12 @@ function PaceRow({ label, months, dateDisplay, color, T }: { label: string; mont
 }
 
 export default function ProjectionsScreen({
-  financials, dashData,
+  financials, dashData, onChange,
 }: {
   financials: LocalFinancials;
   dashData: ReturnType<typeof computeDashboard>;
+  /** P3-B (held): stores "Freed money goes to". Read-only callers may leave it out. */
+  onChange?: (d: LocalFinancials) => void;
 }) {
   const T = useTheme();
   const noun = periodNoun(cycleStartDayOf(financials));
@@ -127,7 +129,7 @@ export default function ProjectionsScreen({
     .filter((o): o is typeof o & { freed: Date } => o.freed !== null)
     .sort((a, b) => a.freed.getTime() - b.freed.getTime());
 
-  // DRAFT, HELD (owner, session 33, P3-A): the base is what's free after your commitments -- Setup income
+  // Approved in session 34 (owner, session 33, P3-A): the base is what's free after your commitments -- Setup income
   // less the recurring items' monthly cost -- so each step reads as what's free from then.
   const freeNowUSD = financials.income - committedMonthlyUSD(financials, capacityNow);
   const capacitySeries = capacityByMonth(
@@ -289,7 +291,12 @@ export default function ProjectionsScreen({
       // Debt have already finished (the !feasible guard above), so by
       // definition the FULL testAmount/mo is free for goals at this point
       // -- the same assumption the old single-pool call already made.
-      const report = allocateGoalCapacity(goalCapacityInputs, testAmount, startDate);
+      // Approved in session 34 (owner, session 33, P3-B): by default, from each month an obligation frees up, its amount
+      // joins the goals' monthly amount (the safety net and debt keep the amount set: "keep").
+      const freedToGoals = financials.freedMoneyTo !== "none" && boundedObligations.length > 0;
+      const report = freedToGoals
+        ? allocateGoalCapacityScheduled(goalCapacityInputs, (m) => testAmount + boundedObligations.filter((o) => o.freed <= addMonths(startDate, m)).reduce((s, o) => s + o.monthlyAmountUSD, 0), startDate)
+        : allocateGoalCapacity(goalCapacityInputs, testAmount, startDate);
       goalAllocationReport = report;
       goalsStageStartDate = startDate;
       if (report.goals.length === 0) {
@@ -500,7 +507,7 @@ export default function ProjectionsScreen({
         {(capacitySteps.length > 0 || financials.income > 0) && (
           <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
             <p className="text-xs uppercase tracking-widest mb-2" style={{ color: T.mute }}>Looking ahead</p>
-            {/* DRAFT, HELD (owner, session 33, P3-A) */}
+            {/* Approved in session 34 (owner, session 33, P3-A) */}
             {financials.income > 0 && (
               <div className="mb-3">
                 <p className="text-sm tabular-nums" style={{ color: T.text }}>{`Free after your commitments: ${money(freeNowUSD)}/mo.`}</p>
@@ -532,11 +539,28 @@ export default function ProjectionsScreen({
                 {capacityStepsBeyondHorizon === 1 ? "One more finishes" : `${capacityStepsBeyondHorizon} more finish`} beyond {CAPACITY_HORIZON_MONTHS / 12} years and {capacityStepsBeyondHorizon === 1 ? "isn't" : "aren't"} shown.
               </p>
             )}
-            {/* P3-A (session 33): the card now shows with nothing finishing, and then there's no change to describe. */}
             {capacitySteps.length > 0 && (
-              <p className="text-[11px] mt-3 pt-3" style={{ color: T.mute, borderTop: `1px solid ${T.line}` }}>
-                This is what changes in your commitments, not in the plan below — that uses the single monthly amount you set above for every month, including these. Nothing below has been brought forward to account for it.
+              <>
+              {/* P3-B (owner, session 33; wording approved in session 34). Shown only when something finishes (P3-A's rule). */}
+              <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${T.line}` }}>
+                <label htmlFor="freed-money-to" className="block text-[11px] mb-1" style={{ color: T.mute }}>Freed money goes to</label>
+                <select
+                  id="freed-money-to"
+                  value={financials.freedMoneyTo === "none" ? "none" : "goals"}
+                  onChange={(e) => onChange?.({ ...financials, freedMoneyTo: e.target.value as "goals" | "none", ...settingsEdited(financials, ["budget"]) })}
+                  className="w-full rounded-xl px-3 py-2 text-sm"
+                  style={{ background: T.panelSoft, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
+                >
+                  <option value="goals">Goals</option>
+                  <option value="none">Keep it out of the plan</option>
+                </select>
+              </div>
+              <p className="text-[11px] mt-3" style={{ color: T.mute }}>
+                {financials.freedMoneyTo === "none"
+                  ? "This is what changes in your commitments, not in the plan below — that uses the single monthly amount you set above for every month, including these. Nothing below has been brought forward to account for it."
+                  : "From each month above, what frees up goes to your goals in the plan below."}
               </p>
+              </>
             )}
           </div>
         )}
@@ -666,7 +690,7 @@ export default function ProjectionsScreen({
                   </p>
                 </div>
               )}
-              {/* DRAFT, HELD (owner, session 33): goals whose target date passes before the plan reaches goals. */}
+              {/* Approved in session 34 (owner, session 33): goals whose target date passes before the plan reaches goals. */}
               {goalAllocationReport.conflict.passedTargets.length > 0 && (() => {
                 const names = goalAllocationReport.conflict.passedTargets.map((g) => openGoalsWithId.find((x) => x.stored.id === g.id)?.dash.name ?? g.name);
                 const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;

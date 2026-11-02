@@ -1,4 +1,4 @@
-// HELD (owner, session 33: "fix; draft any wording and hold that item"). Projections' combined goal figure
+// Approved in session 34 (owner, session 33: "fix; draft any wording and hold that item"). Projections' combined goal figure
 // summed each goal's required rate, and a goal whose target passes before the goals stage starts counted
 // its whole remainder as one month's need ($5,469/mo on the review's account). Such goals leave the sum
 // and are reported apart, for their own drafted line.

@@ -1,4 +1,4 @@
-// HELD (owner, session 33): Projections names the goals whose target date passes before the plan reaches
+// Approved in session 34 (owner, session 33): Projections names the goals whose target date passes before the plan reaches
 // them, in a drafted line, and leaves them out of the combined figure.
 import { it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";

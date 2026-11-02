@@ -55,7 +55,7 @@ export interface GoalCapacityConflict {
   /** totalRequired - totalCapacity, floored at 0. */
   shortfallUSD: number;
   /**
-   * DRAFT, HELD (owner, session 33): goals not yet met whose target date is before `asOf` (the date this
+   * Approved in session 34 (owner, session 33): goals not yet met whose target date is before `asOf` (the date this
    * funding starts). No monthly amount meets them, so they're left out of totalRequired -- they used to
    * count their whole remainder as one month's need -- and named apart.
    */
@@ -156,6 +156,43 @@ export function allocateGoalCapacity(
   });
 
   return { conflict, goals: results };
+}
+
+/**
+ * Approved in session 34 (owner, session 33, P3-B: "keep -- freed money goes to goals by default, changeable"):
+ * allocateGoalCapacity with a monthly capacity that can step up -- `capacityAt(m)` for month m from `asOf`
+ * (an obligation ending). Each month, each goal (soonest target first) takes up to its required rate from
+ * what higher-priority goals leave, a finished goal's share included: the closed form's rule applied month by
+ * month, so a flat schedule gives allocateGoalCapacity's answer exactly. Status and the conflict use month 0's
+ * capacity, as the closed form uses its one.
+ */
+export function allocateGoalCapacityScheduled(goals: GoalCapacityInput[], capacityAt: (month: number) => number, asOf: Date): GoalAllocationReport {
+  const base = allocateGoalCapacity(goals, capacityAt(0), asOf);
+  const HORIZON_MONTHS = 1200;
+  const saved = base.goals.map(() => 0);
+  const done: (number | null)[] = base.goals.map((r) => (r.remainingUSD <= 0 ? 0 : null));
+  for (let m = 0; m < HORIZON_MONTHS && done.some((d) => d === null); m++) {
+    let left = capacityAt(m);
+    base.goals.forEach((r, i) => {
+      const take = r.remainingUSD <= 0 ? 0 : Math.max(0, Math.min(r.requiredMonthlyRateUSD, left));
+      left = Math.max(0, left - take);
+      if (done[i] === null) { saved[i] += take; if (saved[i] >= r.remainingUSD - 1e-6) done[i] = m + 1; }
+    });
+  }
+  const input = new Map(goals.map((g) => [g.id, g]));
+  return {
+    conflict: base.conflict,
+    goals: base.goals.map((r, i) => {
+      const months = done[i];
+      // projectCompletion(months, 1) is `months` from asOf, dated the way every other row here is.
+      const proj = months === null ? { months: null, dateDisplay: null } : projectCompletion(months, 1, asOf);
+      const g = input.get(r.id)!;
+      const targetPassed = new Date(g.targetDate).getTime() < asOf.getTime();
+      const onSchedule = r.remainingUSD <= 0 || (!targetPassed && proj.months !== null && proj.months <= monthsUntil(g.targetDate, asOf));
+      const status: GoalFeasibilityStatus = onSchedule ? "achievable" : r.requiredMonthlyRateUSD > capacityAt(0) ? "not_achievable" : "achievable_with_adjustment";
+      return { ...r, status, projectedMonths: proj.months, projectedDateDisplay: proj.dateDisplay, shortfallMonthlyRateUSD: onSchedule ? 0 : r.requiredMonthlyRateUSD - r.allocatedMonthlyRateUSD };
+    }),
+  };
 }
 
 export interface GoalFastestResult {

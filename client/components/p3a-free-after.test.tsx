@@ -1,4 +1,4 @@
-// HELD (owner, session 33, DECISIONS_PENDING 25: P3-A, base = Setup income − recurring commitments; wording
+// Approved in session 34 (owner, session 33, DECISIONS_PENDING 25: P3-A, base = Setup income − recurring commitments; wording
 // drafted): Projections' "Looking ahead" says what's free after your commitments, now and from each month an
 // obligation ends. One committed-monthly total, shared with Recurring's.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
