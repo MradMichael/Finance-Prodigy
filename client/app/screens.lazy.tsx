@@ -4,8 +4,9 @@
  * R3 (owner, session 33, DECISIONS_PENDING 23 (a), "yes if no wording"): the screens other than the
  * Overview, loaded on first use instead of with the first page. Every one of them is fetched once the
  * browser is idle after the first paint (preloadScreens, called from the page), so navigating mid-session
- * still works if the connection drops. Caching in sw.js stays a non-goal (the roadmap; Phase 7). A screen
- * not loaded yet renders nothing for that moment -- no loading text.
+ * still works if the connection drops. Held in session 33 until the service worker cached; since session 34
+ * (decision 26) it precaches every file the build wrote, these screens included, so a fresh install opens
+ * each of them offline too. A screen not loaded yet renders nothing for that moment -- no loading text.
  *
  * Under vitest this module is swapped for screens.sync.tsx (vitest.config.ts), which imports the same
  * screens directly, so the page tests keep rendering a screen the moment it's chosen.
