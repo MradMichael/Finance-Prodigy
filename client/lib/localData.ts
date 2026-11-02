@@ -1008,7 +1008,7 @@ export interface LocalFinancials {
    */
   salaryIntoBalanceId?: string;
   /**
-   * DRAFT, HELD (owner, session 33, P3-B): where the plan puts money freed when a bounded obligation ends.
+   * Approved in session 34 (owner, session 33, P3-B): where the plan puts money freed when a bounded obligation ends.
    * Absent or "goals": to the goals stage, from the month it frees up; "none": kept out (the plan as before).
    * Synced with the budget setting (SETTING_FIELDS).
    */

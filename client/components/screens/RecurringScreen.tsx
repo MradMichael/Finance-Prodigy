@@ -33,7 +33,7 @@ export default function RecurringScreen({ financials, onEdit, renewals, onConfir
   // subscription look cancelled until next cycle.
   const totalMonthly = committedMonthlyUSD(financials, now); // P3-A (session 33): the one total, shared with Projections
 
-  // DRAFT, HELD (owner, session 33, P3-C with U2): the next 12 months of commitments. An item counts in a
+  // Approved in session 34 (owner, session 33, P3-C with U2): the next 12 months of commitments. An item counts in a
   // month from its start date until capacityFreedFrom (an end date, or a total paid off) -- the same rule
   // Projections' "Looking ahead" uses -- at its nominal monthly cost, in USD at today's rate.
   const freedDayOf = new Map(financials.recurring.map((r) => [r.id, capacityFreedFrom(r, financials.transactions, financials, today)?.toISOString().slice(0, 10) ?? null]));
@@ -148,7 +148,7 @@ export default function RecurringScreen({ financials, onEdit, renewals, onConfir
               </div>
             ))}
 
-            {/* DRAFT, HELD (owner, session 33, P3-C) */}
+            {/* Approved in session 34 (owner, session 33, P3-C) */}
             <div className="rounded-2xl px-5 py-4" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
               <h2 className="text-xs uppercase tracking-widest mb-3" style={{ color: T.mute }}>The next 12 months</h2>
               <ul className="space-y-1.5">

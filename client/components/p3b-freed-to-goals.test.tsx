@@ -1,4 +1,4 @@
-// HELD (owner, session 33, P3-B; wording drafted): when an obligation ends, its amount goes to goals in the
+// Approved in session 34 (owner, session 33, P3-B; wording drafted): when an obligation ends, its amount goes to goals in the
 // plan by default; "Keep it out of the plan" keeps today's dates. The safety net and debt keep the amount set.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent, within } from "@testing-library/react";

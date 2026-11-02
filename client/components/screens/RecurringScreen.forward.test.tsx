@@ -1,4 +1,4 @@
-// HELD (owner, session 33, DECISIONS_PENDING 19 and 25: P3-C, built with U2; wording drafted): Recurring
+// Approved in session 34 (owner, session 33, DECISIONS_PENDING 19 and 25: P3-C, built with U2; wording drafted): Recurring
 // shows the next 12 months of commitments -- what's committed each month, and what starts or ends in it.
 // "Ends" is capacityFreedFrom's month, Projections' own source.
 import { it, expect, vi, beforeEach, afterEach } from "vitest";

@@ -1,4 +1,4 @@
-// HELD (owner, session 33, P3-B: "keep -- freed money goes to goals by default, changeable"): the goals
+// Approved in session 34 (owner, session 33, P3-B: "keep -- freed money goes to goals by default, changeable"): the goals
 // allocation with a monthly capacity that steps up when an obligation ends. The closed form's rule applied
 // month by month, so a flat schedule gives allocateGoalCapacity's answer exactly.
 import { describe, it, expect } from "vitest";

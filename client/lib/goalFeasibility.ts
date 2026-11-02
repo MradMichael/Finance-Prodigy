@@ -55,7 +55,7 @@ export interface GoalCapacityConflict {
   /** totalRequired - totalCapacity, floored at 0. */
   shortfallUSD: number;
   /**
-   * DRAFT, HELD (owner, session 33): goals not yet met whose target date is before `asOf` (the date this
+   * Approved in session 34 (owner, session 33): goals not yet met whose target date is before `asOf` (the date this
    * funding starts). No monthly amount meets them, so they're left out of totalRequired -- they used to
    * count their whole remainder as one month's need -- and named apart.
    */
@@ -159,7 +159,7 @@ export function allocateGoalCapacity(
 }
 
 /**
- * DRAFT, HELD (owner, session 33, P3-B: "keep -- freed money goes to goals by default, changeable"):
+ * Approved in session 34 (owner, session 33, P3-B: "keep -- freed money goes to goals by default, changeable"):
  * allocateGoalCapacity with a monthly capacity that can step up -- `capacityAt(m)` for month m from `asOf`
  * (an obligation ending). Each month, each goal (soonest target first) takes up to its required rate from
  * what higher-priority goals leave, a finished goal's share included: the closed form's rule applied month by

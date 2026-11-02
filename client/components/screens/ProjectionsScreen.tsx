@@ -129,7 +129,7 @@ export default function ProjectionsScreen({
     .filter((o): o is typeof o & { freed: Date } => o.freed !== null)
     .sort((a, b) => a.freed.getTime() - b.freed.getTime());
 
-  // DRAFT, HELD (owner, session 33, P3-A): the base is what's free after your commitments -- Setup income
+  // Approved in session 34 (owner, session 33, P3-A): the base is what's free after your commitments -- Setup income
   // less the recurring items' monthly cost -- so each step reads as what's free from then.
   const freeNowUSD = financials.income - committedMonthlyUSD(financials, capacityNow);
   const capacitySeries = capacityByMonth(
@@ -291,7 +291,7 @@ export default function ProjectionsScreen({
       // Debt have already finished (the !feasible guard above), so by
       // definition the FULL testAmount/mo is free for goals at this point
       // -- the same assumption the old single-pool call already made.
-      // DRAFT, HELD (owner, session 33, P3-B): by default, from each month an obligation frees up, its amount
+      // Approved in session 34 (owner, session 33, P3-B): by default, from each month an obligation frees up, its amount
       // joins the goals' monthly amount (the safety net and debt keep the amount set: "keep").
       const freedToGoals = financials.freedMoneyTo !== "none" && boundedObligations.length > 0;
       const report = freedToGoals
@@ -507,7 +507,7 @@ export default function ProjectionsScreen({
         {(capacitySteps.length > 0 || financials.income > 0) && (
           <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
             <p className="text-xs uppercase tracking-widest mb-2" style={{ color: T.mute }}>Looking ahead</p>
-            {/* DRAFT, HELD (owner, session 33, P3-A) */}
+            {/* Approved in session 34 (owner, session 33, P3-A) */}
             {financials.income > 0 && (
               <div className="mb-3">
                 <p className="text-sm tabular-nums" style={{ color: T.text }}>{`Free after your commitments: ${money(freeNowUSD)}/mo.`}</p>
@@ -690,7 +690,7 @@ export default function ProjectionsScreen({
                   </p>
                 </div>
               )}
-              {/* DRAFT, HELD (owner, session 33): goals whose target date passes before the plan reaches goals. */}
+              {/* Approved in session 34 (owner, session 33): goals whose target date passes before the plan reaches goals. */}
               {goalAllocationReport.conflict.passedTargets.length > 0 && (() => {
                 const names = goalAllocationReport.conflict.passedTargets.map((g) => openGoalsWithId.find((x) => x.stored.id === g.id)?.dash.name ?? g.name);
                 const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
