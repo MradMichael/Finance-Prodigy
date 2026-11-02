@@ -74,6 +74,9 @@ function rememberEntry(userId: string | undefined, e: { currency: Currency; paym
   } catch { /* a preference: nothing to do if this browser refuses it */ }
 }
 
+/** This month on a phone shows this many entries until "Show all" (HELD, owner, session 34). */
+const PHONE_MONTH_ROWS = 20;
+
 export default function InputPanel({ financials, dashData, onChange, session, onConfirmRecurring, loggingRecurringIds, justConfirmedIds, onEdit, onPay }: Props) {
   const T = useTheme();
   const startDay = cycleStartDayOf(financials);
@@ -112,6 +115,8 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   const [txBucket, setTxBucket] = useState<TxBucket>("NEEDS");
   // T9 (owner, session 33, DECISIONS_PENDING 21 (a)): set once a type tile is clicked for this entry.
   const [bucketTouched, setBucketTouched] = useState(false);
+  // HELD (owner, session 34; "Show all" drafted): below md, This month shows its first PHONE_MONTH_ROWS entries.
+  const [showAllMonth, setShowAllMonth] = useState(false);
   const [txCategory, setTxCategory] = useState<string>("");
   const [txDesc,   setTxDesc]   = useState("");
   // T9: until a type is picked for this entry, it follows the category's usual type -- the one chosen, or
@@ -1098,14 +1103,14 @@ export default function InputPanel({ financials, dashData, onChange, session, on
           ) : (
             <>
               <div ref={monthListScrollRef} className="space-y-2 md:max-h-72 md:overflow-y-auto pr-0.5" /* U6 (session 33): grows on a phone, a box from md up */>
-                {monthTx.map((tx) => {
+                {monthTx.map((tx, i) => {
                   // Safe again now that TRANSFER is a real TX_BUCKETS member
                   // (2.4.55 sub-phase 3) -- the ?? TRANSFER_META fallback
                   // this replaced (2.4.56) is no longer reachable.
                   const b = TX_BUCKETS.find((b) => b.value === tx.bucket)!;
                   const divergence = cycleMonthDivergence(tx, financials.recurring ?? [], startDay);
                   return (
-                    <div key={tx.id}>
+                    <div key={tx.id} data-month-entry className={!showAllMonth && i >= PHONE_MONTH_ROWS ? "max-md:hidden" : undefined}>
                         <div
                           className="flex items-center justify-between rounded-xl px-3 py-2.5 group"
                           style={{ background: T.panelSoft, borderLeft: `3px solid ${b.color}` }}
@@ -1183,6 +1188,15 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                   );
                 })}
               </div>
+              {!showAllMonth && monthTx.length > PHONE_MONTH_ROWS && (
+                <button
+                  onClick={() => setShowAllMonth(true)}
+                  className="md:hidden w-full text-xs font-semibold px-3 py-2 rounded-xl hover:opacity-90"
+                  style={{ background: T.panelSoft, color: T.text, border: `1px solid ${T.line}` }}
+                >
+                  Show all
+                </button>
+              )}
               <div
                 className="flex justify-between text-xs px-3 py-2 rounded-xl"
                 style={{ background: T.ink, color: T.mute }}
