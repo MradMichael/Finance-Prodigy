@@ -1,5 +1,5 @@
-// HELD (owner, session 34: "This month on a phone: latest 20 with 'Show all' (draft the label if new; hold only
-// that)"). "Show all" is new wording, drafted and held. Below md, My Finances' This month shows its first 20
+// Owner, session 34 ("This month on a phone: latest 20 with 'Show all'"); the label approved in session 35.
+// Below md, My Finances' This month shows its first 20
 // entries (the list is newest entered first) and "Show all" for the rest; from md up nothing changes.
 import { it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";

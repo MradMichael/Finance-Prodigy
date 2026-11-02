@@ -74,7 +74,7 @@ function rememberEntry(userId: string | undefined, e: { currency: Currency; paym
   } catch { /* a preference: nothing to do if this browser refuses it */ }
 }
 
-/** This month on a phone shows this many entries until "Show all" (HELD, owner, session 34). */
+/** This month on a phone shows this many entries until "Show all" (owner, session 34; label approved in session 35). */
 const PHONE_MONTH_ROWS = 20;
 
 export default function InputPanel({ financials, dashData, onChange, session, onConfirmRecurring, loggingRecurringIds, justConfirmedIds, onEdit, onPay }: Props) {
@@ -115,7 +115,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   const [txBucket, setTxBucket] = useState<TxBucket>("NEEDS");
   // T9 (owner, session 33, DECISIONS_PENDING 21 (a)): set once a type tile is clicked for this entry.
   const [bucketTouched, setBucketTouched] = useState(false);
-  // HELD (owner, session 34; "Show all" drafted): below md, This month shows its first PHONE_MONTH_ROWS entries.
+  // Owner, session 34 (label approved in session 35): below md, This month shows its first PHONE_MONTH_ROWS entries.
   const [showAllMonth, setShowAllMonth] = useState(false);
   const [txCategory, setTxCategory] = useState<string>("");
   const [txDesc,   setTxDesc]   = useState("");
