@@ -34,6 +34,14 @@ describe("the combined goal figure", () => {
     expect(r.goals.find((g) => g.id === "After")!.status).toBe("achievable");
   });
 
+  it("a target on the stage's own first day hasn't passed, in every time zone (calendar days, session 34)", () => {
+    // The target was read as UTC midnight and the start as local midnight, so west of UTC a goal due on the
+    // start day counted as passed. Both are calendar days now.
+    const r = allocateGoalCapacity([goal("On the day", { targetDate: "2027-12-01" })], 100000, STAGE_START);
+    expect(r.conflict.passedTargets).toEqual([]);
+    expect(r.goals[0].status).toBe("achievable");
+  });
+
   it("a complete goal past its date isn't listed (nothing left to meet)", () => {
     const r = allocateGoalCapacity([goal("Phone", { currentAmountUSD: 1000, targetDate: "2026-06-01" })], 660, STAGE_START);
     expect(r.conflict.passedTargets).toEqual([]);

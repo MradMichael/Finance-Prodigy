@@ -122,7 +122,7 @@ export default function RecurringScreen({ financials, onEdit, renewals, onConfir
                           {due && (
                             <p className="text-[11px] flex flex-wrap items-center gap-2 mt-1">
                               <span className="whitespace-nowrap" style={{ color: due.overdueCount > 0 || due.dueInDays <= 2 ? T.coral : T.brass, fontWeight: due.overdueCount > 0 ? 600 : undefined }}>
-                                · {due.overdueCount > 0 ? `${due.overdueCount} overdue` : due.dueInDays === 0 ? "today" : due.dueInDays === 1 ? "tomorrow" : `in ${due.dueInDays}d`}
+                                {due.overdueCount > 0 ? `${due.overdueCount} overdue` : due.dueInDays === 0 ? "today" : due.dueInDays === 1 ? "tomorrow" : `in ${due.dueInDays}d`}
                               </span>
                               {onConfirm && (
                                 <button
