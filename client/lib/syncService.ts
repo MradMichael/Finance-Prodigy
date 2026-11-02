@@ -373,10 +373,15 @@ export async function pullFromServer(
     const res = await fetch("/api/sync/pull", {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
+      // Session 34: ask for "no copy" as a 200, so the browser doesn't log a 404 as an error. An older server
+      // ignores the field and still answers 404, read below as before.
+      body: JSON.stringify({ email, quietMissing: true }),
       signal: AbortSignal.timeout(timeoutMs),
     });
     const json = await parseJsonSafe(res);
+    if (res.ok && json?.ok === false && json?.notFound === true) {
+      return { ok: false, error: "No data on server yet. Push first.", notFound: true };
+    }
     // 2.4.22: a bare 404 status alone isn't enough to conclude "no account
     // for this email" -- that's also what a platform-level 404 (routing
     // misconfiguration, proxy error page, unmigrated deploy) looks like from

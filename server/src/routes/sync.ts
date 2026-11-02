@@ -109,6 +109,9 @@ const pushSchema = z.object({
 // request logs, a body is not. See the pull route below for the transition.
 const pullEmailSchema = z.object({
   email: emailSchema,
+  // Session 34: a client that asks gets "no copy" as 200 { ok: false, notFound: true }, because a browser logs
+  // every 404 as a console error. Without it, the 404 below, as before.
+  quietMissing: z.boolean().optional(),
 });
 
 const relinkSchema = z.object({
@@ -273,7 +276,7 @@ router.post("/push", async (req, res, next) => {
 // refused, not served.
 const pull: RequestHandler = async (req, res, next) => {
   try {
-    const { email } = pullEmailSchema.parse(req.body);
+    const { email, quietMissing } = pullEmailSchema.parse(req.body);
     const auth = req.header("authorization") ?? "";
     const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
     tokenSchema.parse(token);
@@ -288,6 +291,7 @@ const pull: RequestHandler = async (req, res, next) => {
     const record = await prisma.userSync.findUnique({ where: { email } });
     if (!record) {
       logger.warn("pull_denied_no_record", meta);
+      if (quietMissing) return res.json({ ok: false, notFound: true });
       return res.status(404).json({ error: "No sync data found for this account." });
     }
     if (!record.authTokenHash) {
