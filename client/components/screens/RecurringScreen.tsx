@@ -1,7 +1,7 @@
 "use client";
 
 import type { LocalFinancials } from "../../lib/localData";
-import { committedMonthlyUSD, nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, remainingInstallments, FREQ_LABELS, categoryLabel, categoryIcon, fmtDate, makeToUSDLive } from "../../lib/localData";
+import { capacityFreedFrom, committedMonthlyUSD, FREQ_MONTHLY, nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, remainingInstallments, FREQ_LABELS, categoryLabel, categoryIcon, fmtDate, makeToUSDLive } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
 import { calendarDayOf } from "../../lib/calendarDay";
@@ -32,6 +32,22 @@ export default function RecurringScreen({ financials, onEdit, renewals, onConfir
   // dips to $0 the moment a bill gets logged as paid, making an active
   // subscription look cancelled until next cycle.
   const totalMonthly = committedMonthlyUSD(financials, now); // P3-A (session 33): the one total, shared with Projections
+
+  // DRAFT, HELD (owner, session 33, P3-C with U2): the next 12 months of commitments. An item counts in a
+  // month from its start date until capacityFreedFrom (an end date, or a total paid off) -- the same rule
+  // Projections' "Looking ahead" uses -- at its nominal monthly cost, in USD at today's rate.
+  const freedDayOf = new Map(financials.recurring.map((r) => [r.id, capacityFreedFrom(r, financials.transactions, financials, today)?.toISOString().slice(0, 10) ?? null]));
+  const forward = Array.from({ length: 12 }, (_, i) => {
+    const first = calendarDayOf(new Date(now.getFullYear(), now.getMonth() + i, 1));
+    const next = calendarDayOf(new Date(now.getFullYear(), now.getMonth() + i + 1, 1));
+    const active = financials.recurring.filter((r) => { const f = freedDayOf.get(r.id); return r.startDate < next && (f === null || f === undefined || f > first); });
+    return {
+      label: new Date(now.getFullYear(), now.getMonth() + i, 1).toLocaleDateString("en-GB", { month: "short", year: "numeric" }),
+      committedUSD: active.reduce((s, r) => s + toUSD(r.amount * FREQ_MONTHLY[r.frequency], r.currency), 0),
+      starts: financials.recurring.filter((r) => r.startDate >= first && r.startDate < next).map((r) => r.name),
+      ends: financials.recurring.filter((r) => { const f = freedDayOf.get(r.id); return !!f && f >= first && f < next; }).map((r) => r.name),
+    };
+  });
 
   const buckets = (["NEEDS","WANTS","SAVINGS"] as const).map((b) => ({
     bucket: b,
@@ -131,6 +147,21 @@ export default function RecurringScreen({ financials, onEdit, renewals, onConfir
                 </div>
               </div>
             ))}
+
+            {/* DRAFT, HELD (owner, session 33, P3-C) */}
+            <div className="rounded-2xl px-5 py-4" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
+              <h2 className="text-xs uppercase tracking-widest mb-3" style={{ color: T.mute }}>The next 12 months</h2>
+              <ul className="space-y-1.5">
+                {forward.map((m) => (
+                  <li key={m.label} className="text-sm">
+                    <span className="tabular-nums" style={{ color: T.text }}>{`${m.label}: ${money(m.committedUSD)} committed`}</span>
+                    {[...m.starts.map((n) => `${n} starts`), ...m.ends.map((n) => `${n} ends`)].map((c) => (
+                      <span key={c} className="block text-[11px]" style={{ color: T.brass }}>{c}</span>
+                    ))}
+                  </li>
+                ))}
+              </ul>
+            </div>
           </>
         )}
       </div>
