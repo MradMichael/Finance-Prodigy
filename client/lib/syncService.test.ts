@@ -169,7 +169,7 @@ describe("pullFromServer", () => {
     expect(url).toBe("/api/sync/pull");
     expect(opts.method).toBe("POST");
     expect(opts.headers["Content-Type"]).toBe("application/json");
-    expect(JSON.parse(opts.body)).toEqual({ email: "a@test.com" });
+    expect(JSON.parse(opts.body)).toEqual({ email: "a@test.com", quietMissing: true }); // session 34: the quiet "no copy" answer
   });
 
   it("passes through hasRecoveryCode from the server response (defaulting to false if absent, never crashing on an older/malformed response)", async () => {

@@ -59,7 +59,7 @@ describe("fetchAndMerge", () => {
     const [url, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
     expect(url).toBe("/api/sync/pull");
     expect((init.headers as Record<string, string>).Authorization).toBe("Bearer tok");
-    expect(JSON.parse(init.body as string)).toEqual({ email: "u1@example.com" });
+    expect(JSON.parse(init.body as string)).toEqual({ email: "u1@example.com", quietMissing: true }); // session 34: the quiet "no copy" answer
   });
 
   it("does not record the sync time: the server's copy of the fields that don't merge was not taken", async () => {
