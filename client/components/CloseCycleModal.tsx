@@ -114,8 +114,20 @@ export default function CloseCycleModal({
   const [acked, setAcked] = useState<Record<string, boolean>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
 
-  const amountOf = (id: string) => parseFloat((amounts[id] ?? "").replace(/,/g, ""));
   const round2 = (x: number) => Math.round(x * 100) / 100;
+  // Owner, session 35 (T6's close part; its note approved the same session). A dollar Cash balance also takes the lira you
+  // have, added at the rate this close converts at (lbpRateAtClose, the closing period's own: 2.4.134), to the
+  // cent. Either field may be empty, not both.
+  const [liraAmounts, setLiraAmounts] = useState<Record<string, string>>({});
+  const takesLira = (tb: TrackedBalance) => tb.paymentMethod === "cash" && (tb.currency ?? "USD") === "USD";
+  const amountOf = (id: string) => {
+    const raw = (amounts[id] ?? "").replace(/,/g, "").trim();
+    const tb = rows.find((r) => r.tb.id === id)?.tb;
+    const liraRaw = tb && takesLira(tb) ? (liraAmounts[id] ?? "").replace(/,/g, "").trim() : "";
+    if (liraRaw === "") return parseFloat(raw);
+    const dollars = raw === "" ? 0 : parseFloat(raw);
+    return round2(dollars + parseFloat(liraRaw) / lbpRateAtClose);
+  };
 
   // THREE figures, and keeping them apart is the whole of this fix.
   //
@@ -235,6 +247,17 @@ export default function CloseCycleModal({
                   placeholder="What you actually have"
                   max={moneyMaxFor(r.tb.currency, lbpRateAtClose)}
                 />
+                {takesLira(r.tb) && (
+                  <div>
+                    <MoneyInput
+                      value={liraAmounts[r.tb.id] ?? ""}
+                      onChange={(v) => { setLiraAmounts((p) => ({ ...p, [r.tb.id]: v })); setAcked((p) => ({ ...p, [r.tb.id]: false })); }}
+                      placeholder="Lira you have now (L£)"
+                      max={moneyMaxFor("LBP", lbpRateAtClose)}
+                    />
+                    <p className="text-[10px] mt-1" style={{ color: T.mute }}>Added to the dollars at the rate for the period being closed.</p>
+                  </div>
+                )}
                 {r.recordedOnly && (
                   <p className="text-[10px]" style={{ color: T.brass }}>
                     Recorded only. Your baseline for this account is already later than this cycle,
