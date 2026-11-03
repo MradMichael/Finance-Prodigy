@@ -247,6 +247,24 @@ function mergeCloses(local: PeriodClose[], server: PeriodClose[], at: string): {
 }
 
 /**
+ * Session 38 (the sync proof): closes live on this device that the merged copy
+ * holds superseded by the OTHER device's merge (so not in this merge's
+ * `replaced`), each with the close that stands. Without it, a device whose
+ * later close reached the server first was undone without a word. Once the
+ * merged copy is stored, the close isn't live here, so it's said once.
+ */
+function supersededElsewhere(liveHere: Set<string>, merged: PeriodClose[], replaced: ReplacedClose[]): ReplacedClose[] {
+  const thisMerge = new Set(replaced.map((r) => closeKey(r.superseded)));
+  const out: ReplacedClose[] = [];
+  for (const m of merged) {
+    if (!m.supersededAt || !liveHere.has(closeKey(m)) || thisMerge.has(closeKey(m))) continue;
+    const standing = merged.find((c) => spanKey(c) === spanKey(m) && !c.reopenedAt && !c.supersededAt);
+    if (standing) out.push({ superseded: m, standing });
+  }
+  return out;
+}
+
+/**
  * For one device's copy: undo every close the merge marked reopened or
  * superseded but that this copy still holds live, using the reopen rule
  * (undoCloseEffects). Later closes first, so each undo sees the state it
@@ -287,7 +305,7 @@ export interface MergeFinancialsResult {
   /** Each side's transactions after the close undos, for naming what a conflict overrode. */
   localTransactions: LocalFinancials["transactions"];
   serverTransactions: LocalFinancials["transactions"];
-  /** Closes that were live on THIS device and lost to another device's earlier close of the same cycle. */
+  /** Closes that were live on THIS device and lost to another device's earlier close of the same cycle (session 38: undone in this merge or in the other device's). */
   supersededFromLocal: ReplacedClose[];
   /** Item 7 (owner): the other device's one-sided edits to transactions inside a closed cycle, for the notice (owner-approved wording, session 9). */
   closedEdits: ClosedEdit[];
@@ -830,7 +848,7 @@ export function mergeFinancials(localIn: LocalFinancials, serverIn: LocalFinanci
     transactions,
     localTransactions: localU.transactions,
     serverTransactions: serverU.transactions,
-    supersededFromLocal: replaced.filter((r) => liveLocally.has(closeKey(r.superseded))),
+    supersededFromLocal: [...replaced.filter((r) => liveLocally.has(closeKey(r.superseded))), ...supersededElsewhere(liveLocally, closes, replaced)],
     closedEdits,
     resetElsewhere: resetClearedHere(localIn, serverIn, data),
   };

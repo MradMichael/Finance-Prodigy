@@ -191,6 +191,22 @@ describe("period closes merge record by record", () => {
     expect(mergeFinancials(phone, laptop, NOW).supersededFromLocal).toEqual([]);
   });
 
+  // Session 38 (the sync proof): the laptop's later close reached the server
+  // first, so the PHONE's merge undid it. The laptop then fetches a copy that
+  // already holds its close undone: it's told which close stands, the same
+  // sentence, and only once.
+  it("the device whose close was replaced is told even when the other device's merge replaced it, once", () => {
+    const phone = closeOn(base({ trackedBalances: [CASH] }), "2026-09-27T08:00:00.000Z", 398.6);
+    const laptop = closeOn(base({ trackedBalances: [CASH] }), "2026-09-27T09:30:00.000Z", 401.15);
+    const asPhone = mergeFinancials(phone, laptop, NOW); // the phone merges the two closes
+    expect(asPhone.supersededFromLocal).toEqual([]); // its own close stands
+    const LATER = new Date(NOW.getTime() + 60_000);
+    const asLaptop = mergeFinancials(laptop, asPhone.data, LATER);
+    expect(asLaptop.supersededFromLocal.map((s) => [s.superseded.closedAt, s.standing.closedAt])).toEqual([["2026-09-27T09:30:00.000Z", "2026-09-27T08:00:00.000Z"]]);
+    // Stored, the laptop's close isn't live any more: the next merge says nothing.
+    expect(mergeFinancials(asLaptop.data, asPhone.data, LATER).supersededFromLocal).toEqual([]);
+  });
+
   it("the replaced close's correction row is removed; the standing close's stays", () => {
     const phone = closeOn(base({ trackedBalances: [CASH] }), "2026-09-27T08:00:00.000Z", 398.6, { efDelta: -45.25 });
     const laptop = closeOn(base({ trackedBalances: [CASH] }), "2026-09-27T09:30:00.000Z", 401.15, { efDelta: -38.9 });
