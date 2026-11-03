@@ -25,6 +25,8 @@ export const SEEN_KINDS = [
   "foreignEntries",
   // Plan J (merged in session 23, bafa688): the rate log, by its day.
   "lbpRateLog",
+  // Session 38, HELD for the owner's words: tracked balances, by id, so a check-in on both devices is told.
+  "trackedBalances",
 ] as const;
 export type SeenKind = (typeof SEEN_KINDS)[number];
 
@@ -93,6 +95,7 @@ export function keyedRecords(d: LocalFinancials, kind: SeenKind): Map<string, un
     case "wishlist": return byId(d.wishlist);
     case "trips": return byId(d.trips);
     case "foreignEntries": return byId(d.foreignEntries);
+    case "trackedBalances": return byId(d.trackedBalances);
     case "categoryRules": return byId(d.categoryRules);
     case "customCategories": return new Map((d.customCategories ?? []).map((c) => [c.value, c as unknown]));
     case "settings": return new Map(SETTING_KEYS.map((k) => [k, settingValue(d, k) as unknown]));

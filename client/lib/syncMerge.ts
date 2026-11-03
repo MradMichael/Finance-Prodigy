@@ -282,7 +282,7 @@ function applyMergedUndos(side: LocalFinancials, merged: PeriodClose[]): LocalFi
 /** The fields mergeFinancials combines; every other field is this device's copy. */
 export const MERGED_FIELDS = [
   "transactions", "trackedBalances", "wishlist", "customCategories", "categoryRules", "periodCloses", "deletedKeys", "revivedKeys",
-  "clashRecords", "transactionClashRecords", "trips", "foreignEntries",
+  "clashRecords", "transactionClashRecords", "balanceClashRecords", "trips", "foreignEntries",
 ] as const satisfies readonly (keyof LocalFinancials)[];
 
 /**
@@ -436,7 +436,7 @@ function withoutDeleted(d: LocalFinancials, deleted: DeletedKeys | undefined, re
 
 /** A two-sided change the fingerprint rule settled by edit time (plan H 5b), for the notice to name. */
 export type MergeClash =
-  | { kind: "goal" | "debt" | "recurring" | "asset" | "wishlist" | "trip" | "foreignEntry" | "category" | "rule"; name: string; later: boolean }
+  | { kind: "goal" | "debt" | "recurring" | "asset" | "wishlist" | "trip" | "foreignEntry" | "category" | "rule" | "trackedBalance"; name: string; later: boolean }
   | { kind: "setting"; setting: SettingKey; kept: unknown; other: unknown }
   // Item 7 (owner, session 8): a transaction both devices changed, as a clash
   // record only, so the overridden device is told in the approved transaction
@@ -457,6 +457,32 @@ export const CLASH_RECORD_DAYS = 30;
 
 /** A clash as the merge found it: the kept and other versions, fingerprinted for the record's id. */
 interface Settled { clash: MergeClash; key: string; kept: string; other: string }
+
+/**
+ * Session 38, HELD for the owner's words: tracked balances both devices changed
+ * since this device's last sync, judged against its record as the rule judges
+ * everything else (a check-in on one side only is no clash). The kept one is
+ * the one mergeTrackedBalances keeps (the later check-in); this only reports
+ * it. `later`: the two differ in when they were checked, so the kept one is
+ * the later; otherwise the content tie-break picked it.
+ */
+function balancesBothChanged(local: TrackedBalance[], server: TrackedBalance[], seen: Record<string, string>, tombstones: DeletedKeys | undefined, revived: RevivedKeys | undefined): Settled[] {
+  const gone = deletedKeySet(tombstones?.trackedBalances, revived?.trackedBalances);
+  const serverById = new Map(server.map((s) => [s.id, s]));
+  const out: Settled[] = [];
+  for (const l of local) {
+    const s = serverById.get(l.id);
+    if (!s || gone.has(l.id)) continue;
+    const fl = fingerprint(l), fs = fingerprint(s);
+    if (fl === fs) continue;
+    const base = seen[l.id];
+    if (base !== undefined && (fl === base || fs === base)) continue; // one side only
+    const winner = pickTrackedBalance(l, s), loser = winner === l ? s : l;
+    const later = (l.startingAt ?? "") !== (s.startingAt ?? "") || (l.actualBalanceDate ?? "") !== (s.actualBalanceDate ?? "");
+    out.push({ clash: { kind: "trackedBalance", name: winner.name, later }, key: l.id, kept: fingerprint(winner), other: fingerprint(loser) });
+  }
+  return out;
+}
 
 /** Both copies' records and this merge's, once each (the earliest stays), none older than CLASH_RECORD_DAYS, oldest first. */
 function mergeClashRecords(a: ClashRecord[] | undefined, b: ClashRecord[] | undefined, fresh: ClashRecord[], now: Date): ClashRecord[] {
@@ -744,7 +770,7 @@ const KNOWN_FIELDS = {
   cycleStartDayChangedAt: true, budgetRule: true, budgetCustomNeeds: true, budgetSplitHealedAt: true,
   budgetSplitHealedFrom: true, budgetCustomWants: true, customCategories: true, categoryRules: true, wishlist: true,
   recurringModelNoticeSeen: true, syncChoice: true, periodCloses: true, deletedKeys: true, resetAt: true,
-  revivedKeys: true, clashRecords: true, transactionClashRecords: true, trips: true, foreignEntries: true,
+  revivedKeys: true, clashRecords: true, transactionClashRecords: true, balanceClashRecords: true, trips: true, foreignEntries: true,
   lbpRateLog: true, salaryIntoBalanceId: true, freedMoneyTo: true,
 } as const satisfies Record<keyof LocalFinancials, true>;
 
@@ -817,6 +843,11 @@ export function mergeFinancials(localIn: LocalFinancials, serverIn: LocalFinanci
   const clashRecords = mergeClashRecords(local.clashRecords, server.clashRecords, (ruled?.records ?? []).filter(notReset), now);
   // Item 7: transactions' records apart, where older code doesn't look.
   const transactionClashRecords = mergeClashRecords(local.transactionClashRecords, server.transactionClashRecords, txRecords, now);
+  // Session 38, HELD: tracked balances both devices checked in, apart again (older code words every clashRecords entry).
+  const balanceSettled = seen?.kinds.trackedBalances ? balancesBothChanged(localU.trackedBalances ?? [], serverU.trackedBalances ?? [], seen.kinds.trackedBalances, deletedKeys, revivedKeys) : [];
+  const balanceClashRecords = mergeClashRecords(local.balanceClashRecords, server.balanceClashRecords, balanceSettled.map((x): ClashRecord => ({
+    ...x.clash, key: x.key, at, id: fingerprint({ kind: x.clash.kind, key: x.key, kept: x.kept, other: x.other }),
+  })), now);
   // The reset this copy carries: the server's when it has one (a new reset is taken), else this device's. No clocks.
   const resetAt = serverIn.resetAt ?? localIn.resetAt;
   const merged: LocalFinancials = {
@@ -839,12 +870,13 @@ export function mergeFinancials(localIn: LocalFinancials, serverIn: LocalFinanci
     ...(cards ? { cards: cards.cards } : {}),
     clashRecords: clashRecords.length ? clashRecords : undefined,
     transactionClashRecords: transactionClashRecords.length ? transactionClashRecords : undefined,
+    balanceClashRecords: balanceClashRecords.length ? balanceClashRecords : undefined,
     ...(resetAt ? { resetAt } : {}),
   };
   const data = resetHere ? withResetSettings(merged, localIn, serverIn, seen) : merged;
   return {
     data,
-    clashes: (ruled?.clashes ?? []).filter(notReset),
+    clashes: [...(ruled?.clashes ?? []).filter(notReset), ...balanceSettled.map((x) => x.clash)],
     transactions,
     localTransactions: localU.transactions,
     serverTransactions: serverU.transactions,

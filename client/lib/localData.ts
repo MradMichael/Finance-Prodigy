@@ -1094,6 +1094,14 @@ export interface LocalFinancials {
    * (lib/clashNotice.ts).
    */
   transactionClashRecords?: ClashRecord[];
+  /**
+   * Session 38, HELD for the owner's words: the same, for tracked balances both
+   * devices checked in. Kept apart from clashRecords for the reason
+   * transactions' are: older code words every clashRecords entry and has no
+   * noun for a tracked balance; it ignores this field. Pruned the same way
+   * (lib/syncMerge.ts); read with clashRecords (lib/clashNotice.ts).
+   */
+  balanceClashRecords?: ClashRecord[];
   // Travel slice 2 (merged in session 19, 15d791f): trips (lib/trips.ts), merged like the wishlist.
   trips?: StoredTrip[];
   // Foreign cash, model 2 (merged in session 19, 15d791f): the sheets' entries that aren't ledger
