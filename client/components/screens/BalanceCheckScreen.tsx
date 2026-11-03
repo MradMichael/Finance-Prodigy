@@ -238,6 +238,9 @@ export default function BalanceCheckScreen({
   }));
 
   const [actualInputs, setActualInputs] = useState<Record<string, string>>({});
+  // T6 (owner, session 35; label approved): a dollar Cash balance also takes the lira you have.
+  const [liraInputs, setLiraInputs] = useState<Record<string, string>>({});
+  const takesLira = (tb: TrackedBalance) => tb.paymentMethod === "cash" && (tb.currency ?? "USD") === "USD";
   const [tbName, setTbName] = useState("");
   const [tbMethod, setTbMethod] = useState<PaymentMethod>("cash");
   const [tbCardId, setTbCardId] = useState("");
@@ -270,12 +273,18 @@ export default function BalanceCheckScreen({
   }
 
   function updateActualBalance(id: string) {
-    const amt = parseFloat((actualInputs[id] ?? "").replace(/,/g, ""));
-    if (isNaN(amt)) return;
-    // 2.4.42: replacing a previous check destroys the last real snapshot, so
-    // it is worth confirming -- but only when there IS one to lose.
     const tb = tracked.find((t) => t.id === id);
     if (!tb) return;
+    // T6 (session 35): counted = the dollars plus the lira at today's rate (the rate this check-in re-anchors
+    // with), to the cent. Either field may be empty, not both; stored as before, one dollar figure.
+    const liraRaw = takesLira(tb) ? (liraInputs[id] ?? "").replace(/,/g, "").trim() : "";
+    const dollarsRaw = (actualInputs[id] ?? "").replace(/,/g, "").trim();
+    const dollars = dollarsRaw === "" && liraRaw !== "" ? 0 : parseFloat(dollarsRaw);
+    const lira = liraRaw === "" ? 0 : parseFloat(liraRaw);
+    if (isNaN(dollars) || isNaN(lira)) return;
+    const amt = liraRaw === "" ? dollars : Math.round((dollars + lira / lbpRate) * 100) / 100;
+    // 2.4.42: replacing a previous check destroys the last real snapshot, so
+    // it is worth confirming -- but only when there IS one to lose.
     if (tb.actualBalance != null && !confirm(`Replace your last check (${fmtCur(tb.actualBalance, tb.currency)} on ${fmtDate(tb.actualBalanceDate ?? "")}) with this new figure? This also resets the tracking baseline to today, so past drift won't keep affecting future checks. The old figure won't be recoverable.`)) {
       return;
     }
@@ -290,6 +299,7 @@ export default function BalanceCheckScreen({
         t.id !== id ? t : reanchorTrackedBalance(t, amt, expectedNow, lbpRate)),
     });
     setActualInputs((prev) => ({ ...prev, [id]: "" }));
+    setLiraInputs((prev) => ({ ...prev, [id]: "" }));
   }
 
   function deleteTrackedBalance(id: string) {
@@ -510,6 +520,17 @@ export default function BalanceCheckScreen({
                             placeholder="What you actually have now"
                             max={moneyMaxFor(tb.currency, lbpRate)}
                           />
+                          {takesLira(tb) && (
+                            <div className="mt-2">
+                              <MoneyInput
+                                value={liraInputs[tb.id] ?? ""}
+                                onChange={(v) => setLiraInputs((prev) => ({ ...prev, [tb.id]: v }))}
+                                placeholder="Lira you have now (L£)"
+                                max={moneyMaxFor("LBP", lbpRate)}
+                              />
+                              <p className="text-[10px] mt-1" style={{ color: T.mute }}>Added to the dollars at today&apos;s rate.</p>
+                            </div>
+                          )}
                         </div>
                         <button
                           onClick={() => updateActualBalance(tb.id)}
