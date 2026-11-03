@@ -115,7 +115,7 @@ export default function CloseCycleModal({
   const [notes, setNotes] = useState<Record<string, string>>({});
 
   const round2 = (x: number) => Math.round(x * 100) / 100;
-  // HELD (owner, session 35: T6's close part; its note is drafted). A dollar Cash balance also takes the lira you
+  // Owner, session 35 (T6's close part; its note approved the same session). A dollar Cash balance also takes the lira you
   // have, added at the rate this close converts at (lbpRateAtClose, the closing period's own: 2.4.134), to the
   // cent. Either field may be empty, not both.
   const [liraAmounts, setLiraAmounts] = useState<Record<string, string>>({});

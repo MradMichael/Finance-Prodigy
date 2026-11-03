@@ -1,4 +1,4 @@
-// HELD (owner, session 35: T6's close part; the note is new wording, drafted). At the close a dollar Cash
+// Owner, session 35 (T6's close part; the note approved the same session). At the close a dollar Cash
 // balance takes the lira you have too, converted at the rate the close uses (the closing period's own rate,
 // not today's: 2.4.134). The field reuses the approved "Lira you have now (L£)"; the note beneath is drafted:
 // "Added to the dollars at the rate for the period being closed."
