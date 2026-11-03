@@ -114,6 +114,15 @@ describe("the notice", () => {
     );
   });
 
+  // Session 38, HELD for the owner's words: the device whose close stood. True
+  // on any device, since a device can't tell which device made which close.
+  it("the other close's undoing is told plainly, true on any device (drafted, held)", () => {
+    const { text } = buildMergeNoticeText(0, [], [], [{ cycleLabel: "27 Aug – 26 Sep 2026", standingClosedAt: "2026-09-27T08:00:00.000Z", undoneClosedAt: "2026-09-27T09:30:00.000Z" }]);
+    expect(text).toBe(
+      `Two devices closed 27 Aug – 26 Sep 2026. The earlier close, made on 27/09/2026, ${localHM("2026-09-27T08:00:00.000Z")}, stands; the later one, made on 27/09/2026, ${localHM("2026-09-27T09:30:00.000Z")}, was undone, and any note written on it stays visible under Close history on Balance Check.`,
+    );
+  });
+
   // Q26 (owner, session 22): the moment's day reads DD/MM/YYYY, as every full date does, in local
   // time. (It used the cycle label's month names; the cycle label beside it keeps them.)
   it("the close's moment reads DD/MM/YYYY, in local time", () => {

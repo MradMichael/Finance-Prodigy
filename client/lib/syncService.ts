@@ -475,7 +475,12 @@ export interface MergeConflictDetail {
 }
 
 /** A close made on THIS device that lost to another device's earlier close of the same cycle (SYNC-1 step 2). */
-export interface ReplacedCloseNotice { cycleLabel: string; standingClosedAt: string }
+/**
+ * A close two devices made, as the notice tells it. `undoneClosedAt` (session
+ * 38, HELD for the owner's words): this device's close stood, and the other
+ * close, made at that moment, was undone.
+ */
+export interface ReplacedCloseNotice { cycleLabel: string; standingClosedAt: string; undoneClosedAt?: string }
 
 export type MergeAndPushResult =
   // mergedData is on the server, not yet on this device: store it, then recordMergeStored. If the store fails, record nothing.
@@ -599,10 +604,17 @@ function describeMerge(result: MergeFinancialsResult): { conflictDetails: MergeC
     const loser = JSON.stringify(winner) === JSON.stringify(localOriginal) ? serverOriginal : localOriginal;
     return { winner, loser };
   });
-  const replacedCloses = result.supersededFromLocal.map((r) => ({
-    cycleLabel: cycleLabelLong(r.standing.cycleKey, r.standing.startDayAtClose),
-    standingClosedAt: r.standing.closedAt,
-  }));
+  const replacedCloses: ReplacedCloseNotice[] = [
+    ...result.supersededFromLocal.map((r) => ({
+      cycleLabel: cycleLabelLong(r.standing.cycleKey, r.standing.startDayAtClose),
+      standingClosedAt: r.standing.closedAt,
+    })),
+    ...result.closesUndoneElsewhere.map((r) => ({
+      cycleLabel: cycleLabelLong(r.standing.cycleKey, r.standing.startDayAtClose),
+      standingClosedAt: r.standing.closedAt,
+      undoneClosedAt: r.superseded.closedAt,
+    })),
+  ];
   return { conflictDetails, replacedCloses };
 }
 
@@ -850,8 +862,10 @@ export function buildMergeNoticeText(
       : "",
     // DI-11 (owner's wording, 2026-10-07): the undone close's note is shown in
     // the account's Close history on Balance Check, so the notice says where.
-    ...replacedCloses.map((r) =>
-      `Two devices closed ${r.cycleLabel}. The earlier close, made on another device on ${closeMomentLabel(r.standingClosedAt)}, stands; this device's close was undone, and any note you wrote on it stays visible under Close history on Balance Check.`),
+    ...replacedCloses.map((r) => r.undoneClosedAt
+      // Session 38, HELD for the owner's words: this device's close stood.
+      ? `Two devices closed ${r.cycleLabel}. The earlier close, made on ${closeMomentLabel(r.standingClosedAt)}, stands; the later one, made on ${closeMomentLabel(r.undoneClosedAt)}, was undone, and any note written on it stays visible under Close history on Balance Check.`
+      : `Two devices closed ${r.cycleLabel}. The earlier close, made on another device on ${closeMomentLabel(r.standingClosedAt)}, stands; this device's close was undone, and any note you wrote on it stays visible under Close history on Balance Check.`),
   ].filter(Boolean);
   return sentences.length ? { text: sentences.join(" "), showReviewLink } : { text: "", showReviewLink: false };
 }
