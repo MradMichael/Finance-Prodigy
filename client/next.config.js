@@ -6,7 +6,8 @@ const nextConfig = {
     return [
       {
         source: "/api/:path*",
-        destination: `${process.env.API_URL ?? "http://localhost:4000"}/api/:path*`,
+        // `||`, not `??` (session 37): an empty API_URL counts as unset, so /api is never rewritten onto itself.
+        destination: `${process.env.API_URL || "http://localhost:4000"}/api/:path*`,
       },
     ];
   },
