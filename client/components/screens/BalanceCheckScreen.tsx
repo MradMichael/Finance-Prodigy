@@ -528,7 +528,7 @@ export default function BalanceCheckScreen({
                                 placeholder="Lira you have now (L£)"
                                 max={moneyMaxFor("LBP", lbpRate)}
                               />
-                              <p className="text-[10px] mt-1" style={{ color: T.mute }}>Added to the dollars at today's rate.</p>
+                              <p className="text-[10px] mt-1" style={{ color: T.mute }}>Added to the dollars at today&apos;s rate.</p>
                             </div>
                           )}
                         </div>
