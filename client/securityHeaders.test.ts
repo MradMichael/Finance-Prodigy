@@ -1,10 +1,11 @@
 // FB-1c (SEC-03): the response headers every production page carries.
 //
-// Phase 1 ships the content policy as REPORT-ONLY, to be enforced after 7
+// Phase 1 shipped the content policy as REPORT-ONLY, to be enforced after 7
 // days AND once the report tab, a statement import and a service-worker load
-// have each run in real use (owner, 2026-10-06). From the first deploy,
-// though, a small policy is ENFORCED: framing, <base> and plugins, which
-// nothing legitimate uses. So are nosniff and no-referrer.
+// have each run in real use (owner, 2026-10-06). Phase 2 enforces it; the
+// switch back is ESSA_CSP_REPORT_ONLY=1 at build. Either way a small policy
+// is ENFORCED: framing, <base> and plugins, which nothing legitimate uses.
+// So are nosniff and no-referrer.
 //
 // 'unsafe-inline' is in script-src, deliberately: Next.js puts 5 inline
 // scripts on every page, with content that changes per page and per build,
@@ -57,30 +58,35 @@ const FULL = {
 
 afterEach(() => vi.unstubAllEnvs());
 
-describe("production, phase 1 (report-only)", () => {
-  it("enforces framing, <base> and plugins from the first deploy", async () => {
+// FB-1c phase 2 (session 5, held): enforced by default in production.
+// ESSA_CSP_REPORT_ONLY=1 at build time is the way back to phase 1 without a
+// code change.
+const ROLLBACK = { NODE_ENV: "production", ESSA_CSP_REPORT_ONLY: "1" };
+
+describe("production, phase 2: the full policy is enforced", () => {
+  it("as one header, every directive exactly, with no report-only copy", async () => {
     const rs = await rules({ NODE_ENV: "production" });
-    expect(header(rs, "/:path*", "Content-Security-Policy")).toEqual(["frame-ancestors 'none'; base-uri 'none'; object-src 'none'"]);
-    expect(header(rs, "/:path*", "X-Frame-Options")).toEqual(["DENY"]);
+    const csp = header(rs, "/:path*", "Content-Security-Policy");
+    expect(csp).toHaveLength(1);
+    expect(directives(csp[0])).toEqual(FULL);
+    expect(header(rs, "/:path*", "Content-Security-Policy-Report-Only")).toEqual([]);
   });
 
-  it("reports, without blocking, against the full policy, every directive exactly", async () => {
+  it("still reports what it blocks, to our own server", async () => {
     const rs = await rules({ NODE_ENV: "production" });
-    const [ro] = header(rs, "/:path*", "Content-Security-Policy-Report-Only");
-    expect(directives(ro)).toEqual(FULL);
     expect(header(rs, "/:path*", "Reporting-Endpoints")).toEqual(['csp="/api/csp-report"']);
   });
 
-  it("sends nosniff and no referrer (owner, 2026-10-06)", async () => {
+  it("keeps framing closed, nosniff and no referrer", async () => {
     const rs = await rules({ NODE_ENV: "production" });
+    expect(header(rs, "/:path*", "X-Frame-Options")).toEqual(["DENY"]);
     expect(header(rs, "/:path*", "X-Content-Type-Options")).toEqual(["nosniff"]);
     expect(header(rs, "/:path*", "Referrer-Policy")).toEqual(["no-referrer"]);
   });
 
-  it("allows no other site, no eval, and no wildcard anywhere", async () => {
-    const rs = await rules({ NODE_ENV: "production" });
-    const all = rs.flatMap((r) => r.headers).filter((h) => h.key.startsWith("Content-Security-Policy")).map((h) => h.value).join(" ");
-    expect(all).not.toMatch(/https?:|\*|unsafe-eval|data:|blob:|googleapis|gstatic/);
+  it("the old phase-2 switch changes nothing: enforced either way", async () => {
+    const plain = await rules({ NODE_ENV: "production" });
+    expect(await rules({ NODE_ENV: "production", ESSA_CSP_ENFORCE: "1" })).toEqual(plain);
   });
 
   it("serves the self-hosted font files for a year, as immutable (their names carry the version)", async () => {
@@ -89,13 +95,34 @@ describe("production, phase 1 (report-only)", () => {
   });
 });
 
-describe("production, phase 2 (ESSA_CSP_ENFORCE=1)", () => {
-  it("enforces the full policy as one header, with no report-only copy", async () => {
-    const rs = await rules({ NODE_ENV: "production", ESSA_CSP_ENFORCE: "1" });
-    const csp = header(rs, "/:path*", "Content-Security-Policy");
-    expect(csp).toHaveLength(1);
-    expect(directives(csp[0])).toEqual(FULL);
-    expect(header(rs, "/:path*", "Content-Security-Policy-Report-Only")).toEqual([]);
+describe("rollback (ESSA_CSP_REPORT_ONLY=1): phase 1, report-only", () => {
+  it("enforces framing, <base> and plugins, as from the first deploy", async () => {
+    const rs = await rules(ROLLBACK);
+    expect(header(rs, "/:path*", "Content-Security-Policy")).toEqual(["frame-ancestors 'none'; base-uri 'none'; object-src 'none'"]);
+    expect(header(rs, "/:path*", "X-Frame-Options")).toEqual(["DENY"]);
+  });
+
+  it("reports, without blocking, against the full policy, every directive exactly", async () => {
+    const rs = await rules(ROLLBACK);
+    const [ro] = header(rs, "/:path*", "Content-Security-Policy-Report-Only");
+    expect(directives(ro)).toEqual(FULL);
+    expect(header(rs, "/:path*", "Reporting-Endpoints")).toEqual(['csp="/api/csp-report"']);
+  });
+
+  it("sends nosniff and no referrer (owner, 2026-10-06)", async () => {
+    const rs = await rules(ROLLBACK);
+    expect(header(rs, "/:path*", "X-Content-Type-Options")).toEqual(["nosniff"]);
+    expect(header(rs, "/:path*", "Referrer-Policy")).toEqual(["no-referrer"]);
+  });
+});
+
+describe("either way", () => {
+  it("allows no other site, no eval, and no wildcard anywhere", async () => {
+    for (const env of [{ NODE_ENV: "production" }, ROLLBACK]) {
+      const rs = await rules(env);
+      const all = rs.flatMap((r) => r.headers).filter((h) => h.key.startsWith("Content-Security-Policy")).map((h) => h.value).join(" ");
+      expect(all).not.toMatch(/https?:|\*|unsafe-eval|data:|blob:|googleapis|gstatic/);
+    }
   });
 });
 

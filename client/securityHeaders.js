@@ -1,15 +1,16 @@
 /**
  * The security headers every production page carries (FB-1c, SEC-03).
  *
- * PHASE 1 (now): the full content policy is REPORT-ONLY. Violations go to our
- * own server (/api/csp-report, logged as page path plus blocked origin or
- * keyword). It's enforced in phase 2, after 7 days AND once the report tab, a
- * statement import and a service-worker load have each run in real use
- * (owner, 2026-10-06). Phase 2 is ESSA_CSP_ENFORCE=1 locally; in production
- * it's a change to this file.
+ * PHASE 2 (now): the full content policy is ENFORCED in production. What it
+ * blocks is still reported to our own server (/api/csp-report, logged as page
+ * path plus blocked origin or keyword). Phase 1 ran it REPORT-ONLY from the
+ * first deploy; the owner's gate for this switch (2026-10-06): after 7 days
+ * AND once the report tab, a statement import and a service-worker load have
+ * each run in real use. The way back without a code change:
+ * ESSA_CSP_REPORT_ONLY=1 at build time restores phase 1.
  *
- * ENFORCED FROM THE FIRST DEPLOY: frame-ancestors, base-uri and object-src,
- * which nothing legitimate here uses, plus X-Frame-Options (older browsers),
+ * ENFORCED EITHER WAY: frame-ancestors, base-uri and object-src, which
+ * nothing legitimate here uses, plus X-Frame-Options (older browsers),
  * nosniff, and no-referrer.
  *
  * 'unsafe-inline' IN script-src IS DELIBERATE, AND ITS LIMIT IS REAL. Next.js
