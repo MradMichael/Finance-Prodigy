@@ -734,7 +734,8 @@ export default function ProjectionsScreen({
                           </span>
                         </div>
                       )}
-                      {result.shortfallMonthlyRateUSD > 0 && (
+                      {/* Session 35 (owner): not for a goal whose target has passed -- the line above says no monthly amount meets it. */}
+                      {result.shortfallMonthlyRateUSD > 0 && !goalAllocationReport.conflict.passedTargets.some((g) => g.id === result.id) && (
                         <p className="text-[11px] mt-1" style={{ color: T.mute }}>
                           Needs {money(result.shortfallMonthlyRateUSD)}/mo more to hit its own target date at this priority.
                         </p>

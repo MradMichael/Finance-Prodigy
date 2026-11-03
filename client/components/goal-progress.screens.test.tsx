@@ -50,7 +50,9 @@ it("Projections plans from the computed figure: the same goal stored either way 
     const expected = document.body.textContent;
     cleanup();
     render(<ProjectionsScreen financials={newStyle} dashData={computeDashboard(newStyle)} />);
-    expect(expected).toContain("Needs $4,800/mo more"); // premise: the plan's numbers depend on what's saved ($5,400 with nothing saved)
+    // Premise: the screen's numbers depend on what's saved (0% with nothing saved). Session 35: this Laptop's
+    // target passes before the plan reaches it, so its "Needs $4,800/mo more" line is no longer shown.
+    expect(expected).toContain("10% saved");
     expect(document.body.textContent).toBe(expected);
   } finally { vi.useRealTimers(); }
 });
