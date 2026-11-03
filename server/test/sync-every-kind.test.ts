@@ -48,13 +48,14 @@ interface Kind {
   edit?: (d: D, key: string, v: number, at: Date) => D;
   del?: (d: D, key: string, at: Date) => D;
   /** Cases the app has no action for, with the reason. */
-  none?: Partial<Record<"add" | "edit" | "delete" | "both", string>>;
+  none?: Partial<Record<"add" | "edit" | "delete" | "both" | "bothLater", string>>;
   /**
-   * Cases known to fail today, held for the owner's wording (session 38):
-   * run as `it.fails`, so the suite stays green and turns red the day the fix
-   * lands. The fix flips its row back to a plain case.
+   * Telling known to fail today, per device (session 38): each runs as
+   * `it.fails`, so the suite stays green and turns red the day its fix lands;
+   * the fix flips that row back to a plain case. The "one result" half of the
+   * case stays a plain case throughout.
    */
-  held?: Partial<Record<"add" | "edit" | "delete" | "both", string>>;
+  held?: Partial<Record<"both" | "bothLater", Partial<Record<"A" | "B", string>>>>;
 }
 
 const iso = (at: Date) => at.toISOString();
@@ -148,7 +149,7 @@ const KINDS: Kind[] = [
     },
     // InputPanel.deleteAsset
     del: (d, key) => ({ ...d, assets: (d.assets ?? []).filter((a) => a.id !== key), deletedKeys: recordDeletion(d, "assets", key) }),
-    none: { edit: "an asset is added and removed, never edited", both: "an asset is never edited" },
+    none: { edit: "an asset is added and removed, never edited", both: "an asset is never edited", bothLater: "an asset is never edited" },
   },
   {
     name: "cards",
@@ -160,7 +161,7 @@ const KINDS: Kind[] = [
       const saved = saveCard(d.cards ?? [], "Visa", "4242", at)!;
       return { data: { ...d, cards: saved.cards }, key: saved.card.id };
     },
-    none: { edit: "a card is only ever added (no screen edits one)", delete: "no screen deletes a card", both: "a card is never edited (both devices adding the same card is checked below)" },
+    none: { edit: "a card is only ever added (no screen edits one)", delete: "no screen deletes a card", both: "a card is never edited (both devices adding the same card is checked below)", bothLater: "a card is never edited" },
   },
   {
     name: "categories",
@@ -189,7 +190,7 @@ const KINDS: Kind[] = [
     },
     // CategoriesScreen.deleteRule
     del: (d, key) => ({ ...d, categoryRules: (d.categoryRules ?? []).filter((r) => r.id !== key), deletedKeys: recordDeletion(d, "categoryRules", key) }),
-    none: { edit: "a rule is added and deleted, never edited", both: "a rule is never edited" },
+    none: { edit: "a rule is added and deleted, never edited", both: "a rule is never edited", bothLater: "a rule is never edited" },
   },
   {
     name: "tracked balances",
@@ -205,7 +206,10 @@ const KINDS: Kind[] = [
     edit: (d, key, v, at) => ({ ...d, trackedBalances: (d.trackedBalances ?? []).map((t) => (t.id !== key ? t : reanchorTrackedBalance(t, 180 + v, undefined, rate(d), iso(at)))) }),
     // BalanceCheckScreen.deleteTrackedBalance
     del: (d, key) => ({ ...d, trackedBalances: (d.trackedBalances ?? []).filter((t) => t.id !== key), deletedKeys: recordDeletion(d, "trackedBalances", key) }),
-    held: { both: "the later check-in is kept on both, but neither device is told" },
+    held: {
+      both: { A: "the later check-in is kept, but this device isn't told", B: "the later check-in is kept, but this device isn't told" },
+      bothLater: { A: "the later check-in is kept, but this device isn't told", B: "the later check-in is kept, but this device isn't told" },
+    },
   },
   {
     name: "period closes",
@@ -241,7 +245,16 @@ const KINDS: Kind[] = [
       return next;
     },
     none: { delete: "a close is reopened (the edit case), never deleted" },
-    held: { both: "the earlier close stands on both and the device whose close was undone is told; the other device isn't" },
+    // Its one edit is a reopen, so "both edit" is both devices reopening the
+    // same close: the earlier reopen is kept, and what a person sees (the
+    // close reopened) is the same on both. No clash is named for that today:
+    // the merge names one only when what the devices hold differs to a
+    // person (owner, session 6). Left for the owner. Two devices CLOSING the
+    // same cycle is the real conflict: its own cases are below.
+    held: {
+      both: { A: "both devices reopened it; no clash is named for the same change on both", B: "both devices reopened it; no clash is named for the same change on both" },
+      bothLater: { A: "both devices reopened it; no clash is named for the same change on both", B: "both devices reopened it; no clash is named for the same change on both" },
+    },
   },
   {
     name: "trips",
@@ -341,14 +354,16 @@ const unrelated = (name: string) => (d: D) => {
   return { ...d, wishlist: [...(d.wishlist ?? []), { id: uid(), name, emoji: "✨", price: 1, currency: "USD" as const, priority: "low" as const, createdAt: now, updatedAt: now }] };
 };
 
-const CASE = { add: "add on A → on B", edit: "edit on B → on A", delete: "delete on A → gone on B, stays gone", both: "both edit → one result, both told" } as const;
+const CASE = {
+  add: "add on A → on B", edit: "edit on B → on A", delete: "delete on A → gone on B, stays gone",
+  both: "both edit, the earlier edit synced first → one result, both told",
+  bothLater: "both edit, the later edit synced first → one result, both told",
+} as const;
 
 for (const k of KINDS) {
   describe(k.name, () => {
     const run = (c: keyof typeof CASE, body: () => Promise<void>) =>
-      k.none?.[c] ? it.skip(`${k.name} | ${CASE[c]} | no such action: ${k.none[c]}`, body)
-        : k.held?.[c] ? it.fails(`${k.name} | ${CASE[c]} | HELD, fails today: ${k.held[c]}`, body, 60_000)
-          : it(`${k.name} | ${CASE[c]}`, body, 60_000);
+      k.none?.[c] ? it.skip(`${k.name} | ${CASE[c]} | no such action: ${k.none[c]}`, body) : it(`${k.name} | ${CASE[c]}`, body, 60_000);
 
     run("add", async () => {
       if (k.prepare) await k.prepare(A, B);
@@ -397,38 +412,98 @@ for (const k of KINDS) {
       expect(await onServer(k, key)).toBeUndefined();
     });
 
-    const both = async (check: { result: boolean; told: boolean }) => {
+    /**
+     * A edits first (at 10 s), B later (at 20 s), neither hearing of the other.
+     * `laterFirst`: B's later edit reaches the server first and A's push is
+     * the one refused and merged; otherwise A's lands first and B merges. The
+     * order a person happens to sync in mustn't change the outcome.
+     */
+    const both = async (laterFirst: boolean, check: { result: boolean; told: readonly ("A" | "B")[] }) => {
       const key = await shared(k);
       await A.edit((d) => k.edit!(d, key, 1, at(10)));
       await B.edit((d) => k.edit!(d, key, 2, at(20)));
       const editedOnA = await find(A, k, key), editedOnB = await find(B, k, key);
-      const toldA0 = await A.sync(); // lands: nothing newer on the server
-      const toldB = await B.sync(); // refused, merged, pushed
-      const toldA = await A.open(); // takes the merged copy
-      await B.open(); await A.open(); // and settles
+      const toldA: string[] = [], toldB: string[] = [];
+      const [first, second, firstTold, secondTold] = laterFirst ? [B, A, toldB, toldA] : [A, B, toldA, toldB];
+      firstTold.push(await first.sync()); // lands: nothing newer on the server
+      secondTold.push(await second.sync()); // refused, merged, pushed
+      firstTold.push(await first.open()); // takes the merged copy
+      secondTold.push(await second.open()); firstTold.push(await first.open()); // and settles
       const onA = await find(A, k, key), onB = await find(B, k, key), server = await onServer(k, key);
       if (check.result) {
         same(onA, onB);
         same(server, onA);
         expect([stableStringify(editedOnA), stableStringify(editedOnB)]).toContain(stableStringify(onA)); // one of the two edits, not a third thing
       }
-      if (check.told) {
-        const name = k.told(onA);
-        for (const [who, text] of [["A", `${toldA0}\n${toldA}`], ["B", toldB]] as const) {
-          if (name === null) expect(text.trim(), `${who} told`).not.toBe("");
-          else expect(text, `${who} told`).toContain(name);
-        }
+      const name = k.told(onA);
+      for (const [who, said] of [["A", toldA], ["B", toldB]] as const) {
+        if (!check.told.includes(who)) continue;
+        const text = said.join("\n");
+        if (name === null) expect(text.trim(), `${who} told`).not.toBe("");
+        else expect(text, `${who} told`).toContain(name);
       }
     };
-    if (k.none?.both) run("both", async () => {});
-    else if (k.held?.both) {
-      // Split, so the half that passes today stays a plain case: only the
-      // telling is the known failure.
-      it(`${k.name} | ${CASE.both} | one result on both`, () => both({ result: true, told: false }), 60_000);
-      it.fails(`${k.name} | ${CASE.both} | both told | HELD, fails today: ${k.held.both}`, () => both({ result: false, told: true }), 60_000);
-    } else run("both", () => both({ result: true, told: true }));
+    for (const c of ["both", "bothLater"] as const) {
+      const laterFirst = c === "bothLater";
+      const held = k.held?.[c];
+      if (k.none?.[c]) run(c, async () => {});
+      else if (held) {
+        // Split, so what passes today stays a plain case: the one result, and
+        // each device's telling on its own; only a known failure is it.fails.
+        it(`${k.name} | ${CASE[c]} | one result on both`, () => both(laterFirst, { result: true, told: [] }), 60_000);
+        for (const who of ["A", "B"] as const) {
+          const why = held[who];
+          if (why) it.fails(`${k.name} | ${CASE[c]} | ${who} told | HELD, fails today: ${why}`, () => both(laterFirst, { result: false, told: [who] }), 60_000);
+          else it(`${k.name} | ${CASE[c]} | ${who} told`, () => both(laterFirst, { result: false, told: [who] }), 60_000);
+        }
+      } else run(c, () => both(laterFirst, { result: true, told: ["A", "B"] }));
+    }
   });
 }
+
+/**
+ * Two devices close the same cycle before either hears of the other: the
+ * earlier close stands and the later one is undone (SYNC-1 step 2's rule). In
+ * either order of syncing: one result on both devices and the server; the
+ * device whose close was undone is told (the approved sentence); and the
+ * device whose close stood.
+ */
+describe("period closes, both close the same cycle", () => {
+  const closes = KINDS.find((k) => k.name === "period closes")!;
+  const bothClose = async (laterFirst: boolean) => {
+    await closes.prepare!(A, B);
+    await A.edit((d) => closes.add!(d, at(10)).data); // the earlier close
+    await B.edit((d) => closes.add!(d, at(20)).data); // the later one
+    const toldA: string[] = [], toldB: string[] = [];
+    const [first, second, firstTold, secondTold] = laterFirst ? [B, A, toldB, toldA] : [A, B, toldA, toldB];
+    firstTold.push(await first.sync());
+    secondTold.push(await second.sync());
+    firstTold.push(await first.open());
+    secondTold.push(await second.open()); firstTold.push(await first.open());
+    const a = await A.data(), b = await B.data(), s = await A.serverCopy();
+    return { a, b, s, toldA: toldA.join("\n"), toldB: toldB.join("\n") };
+  };
+  const sorted = (d: D) => [...(d.periodCloses ?? [])].sort((x, y) => periodCloseKey(x).localeCompare(periodCloseKey(y)));
+  for (const laterFirst of [false, true]) {
+    const order = laterFirst ? "the later close synced first" : "the earlier close synced first";
+    it(`period closes | both close the same cycle, ${order} | one result on both`, async () => {
+      const r = await bothClose(laterFirst);
+      same(sorted(r.a), sorted(r.b));
+      same(sorted(r.s), sorted(r.a));
+      same(r.a.trackedBalances, r.b.trackedBalances);
+      const live = sorted(r.a).filter((c) => !c.reopenedAt && !c.supersededAt);
+      expect(live.map((c) => c.closedAt)).toEqual([iso(at(10))]); // the earlier stands
+    }, 60_000);
+    // The undone device's approved sentence. Reached when it merges the two
+    // closes itself; not when the other device's merge undid its close.
+    const undone = async () => { expect((await bothClose(laterFirst)).toldB).toContain("this device's close was undone"); };
+    if (laterFirst) it.fails(`period closes | both close the same cycle, ${order} | B told (its close was undone) | FAILS today: its close was undone by the other device's merge, and the approved sentence isn't reached`, undone, 60_000);
+    else it(`period closes | both close the same cycle, ${order} | B told (its close was undone)`, undone, 60_000);
+    it.fails(`period closes | both close the same cycle, ${order} | A told (its close stood) | HELD, fails today: nothing tells the device whose close stood`, async () => {
+      expect((await bothClose(laterFirst)).toldA.trim()).not.toBe("");
+    }, 60_000);
+  }
+});
 
 describe("cards", () => {
   it("cards | both add the same card → one card on both", async () => {
