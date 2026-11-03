@@ -497,7 +497,8 @@ describe("period closes, both close the same cycle", () => {
     // The undone device's approved sentence. Reached when it merges the two
     // closes itself; not when the other device's merge undid its close.
     const undone = async () => { expect((await bothClose(laterFirst)).toldB).toContain("this device's close was undone"); };
-    if (laterFirst) it.fails(`period closes | both close the same cycle, ${order} | B told (its close was undone) | FAILS today: its close was undone by the other device's merge, and the approved sentence isn't reached`, undone, 60_000);
+    // Session 38, fix C: told in either order.
+    if (laterFirst) it(`period closes | both close the same cycle, ${order} | B told (its close was undone)`, undone, 60_000);
     else it(`period closes | both close the same cycle, ${order} | B told (its close was undone)`, undone, 60_000);
     it.fails(`period closes | both close the same cycle, ${order} | A told (its close stood) | HELD, fails today: nothing tells the device whose close stood`, async () => {
       expect((await bothClose(laterFirst)).toldA.trim()).not.toBe("");
