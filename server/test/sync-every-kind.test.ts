@@ -506,7 +506,7 @@ describe("period closes, both close the same cycle", () => {
     // Session 38, fix C: told in either order.
     if (laterFirst) it(`period closes | both close the same cycle, ${order} | B told (its close was undone)`, undone, 60_000);
     else it(`period closes | both close the same cycle, ${order} | B told (its close was undone)`, undone, 60_000);
-    // Session 38, held fix B: told in either order.
+    // Session 38, fix B (approved, session 39): told in either order.
     it(`period closes | both close the same cycle, ${order} | A told (its close stood)`, async () => {
       expect((await bothClose(laterFirst)).toldA.trim()).not.toBe("");
     }, 60_000);

@@ -114,9 +114,9 @@ describe("the notice", () => {
     );
   });
 
-  // Session 38, HELD for the owner's words: the device whose close stood. True
+  // Session 38 (sentence approved as drafted, session 39): the device whose close stood. True
   // on any device, since a device can't tell which device made which close.
-  it("the other close's undoing is told plainly, true on any device (drafted, held)", () => {
+  it("the other close's undoing is told plainly, true on any device (approved, session 39)", () => {
     const { text } = buildMergeNoticeText(0, [], [], [{ cycleLabel: "27 Aug – 26 Sep 2026", standingClosedAt: "2026-09-27T08:00:00.000Z", undoneClosedAt: "2026-09-27T09:30:00.000Z" }]);
     expect(text).toBe(
       `Two devices closed 27 Aug – 26 Sep 2026. The earlier close, made on 27/09/2026, ${localHM("2026-09-27T08:00:00.000Z")}, stands; the later one, made on 27/09/2026, ${localHM("2026-09-27T09:30:00.000Z")}, was undone, and any note written on it stays visible under Close history on Balance Check.`,

@@ -265,7 +265,7 @@ function supersededElsewhere(liveHere: Set<string>, merged: PeriodClose[], repla
 }
 
 /**
- * Session 38, HELD for the owner's words: the other side of supersededElsewhere.
+ * Session 38 (approved, session 39): the other side of supersededElsewhere.
  * Another device's close that lost to the close live on THIS device, each with
  * that standing close: undone in this merge (the other close arrived live), or
  * arriving already undone by the other device's merge. A close this device
@@ -325,7 +325,7 @@ export interface MergeFinancialsResult {
   serverTransactions: LocalFinancials["transactions"];
   /** Closes that were live on THIS device and lost to another device's earlier close of the same cycle (session 38: undone in this merge or in the other device's). */
   supersededFromLocal: ReplacedClose[];
-  /** Session 38, HELD for the owner's words: another device's close undone because the close live on THIS device is earlier. */
+  /** Session 38 (approved, session 39): another device's close undone because the close live on THIS device is earlier. */
   closesUndoneElsewhere: ReplacedClose[];
   /** Item 7 (owner): the other device's one-sided edits to transactions inside a closed cycle, for the notice (owner-approved wording, session 9). */
   closedEdits: ClosedEdit[];

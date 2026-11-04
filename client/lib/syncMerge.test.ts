@@ -207,7 +207,7 @@ describe("period closes merge record by record", () => {
     expect(mergeFinancials(asLaptop.data, asPhone.data, LATER).supersededFromLocal).toEqual([]);
   });
 
-  // Session 38, HELD for the owner's words: the device whose close STOOD is
+  // Session 38 (approved, session 39): the device whose close STOOD is
   // told too, whichever device's merge undid the other close, and once.
   it("the device whose close stood is told the other close was undone, in either order, once", () => {
     const phone = closeOn(base({ trackedBalances: [CASH] }), "2026-09-27T08:00:00.000Z", 398.6); // the earlier close
