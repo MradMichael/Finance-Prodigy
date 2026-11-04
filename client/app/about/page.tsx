@@ -5,28 +5,18 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useTheme } from "../../contexts/ThemeContext";
 import { Signet } from "../../components/EssaBrand";
+import { THEMES } from "../../lib/theme";
 
 const SERIF = { fontFamily: "Spectral, Georgia, serif" };
 const OWNER_EMAIL = "mmrad1998@gmail.com";
 
 // ─── FAQ DATA ────────────────────────────────────────────────────────────────
+// Session 41 (owner, item B): where data lives, encryption, backup and using
+// more than one device are answered by the Privacy Policy and Trust & Security
+// pages only (linked above the FAQ). Copies of those answers here had gone
+// false ("Nothing is sent anywhere unless you explicitly use 'Push to
+// database'"; "encrypted with your password"). Don't add them back here.
 const FAQ: { q: string; a: string }[] = [
-  {
-    q: "Where is my data stored?",
-    a: "All your financial data lives encrypted in your browser's localStorage using AES-256-GCM. Nothing is sent anywhere unless you explicitly use the 'Push to database' feature.",
-  },
-  {
-    q: "How secure is the encryption?",
-    a: "Your data is encrypted with AES-GCM 256-bit using a random key generated for your account, never derived directly from your password. That key is locked two ways: once by your password, once by a one-time recovery code shown at sign-up (PBKDF2, 120,000 iterations). It's never stored unlocked, only held in sessionStorage while you're logged in.",
-  },
-  {
-    q: "What happens if I clear my browser data?",
-    a: "Your data will be lost unless you pushed it to the database first. Use Profile → Database sync → Push before clearing browser storage.",
-  },
-  {
-    q: "Can I use ESSA on multiple devices?",
-    a: "Yes. Push your data from one device (Profile → Database sync → Push), then pull it on another (Profile → Database sync → Restore from database). Both devices just need to be able to reach ESSA itself.",
-  },
   {
     q: "What currencies are supported?",
     a: "USD and LBP (Lebanese Pound). Set your LBP rate on the Currency screen and all amounts are converted automatically.",
@@ -47,14 +37,14 @@ const FAQ: { q: string; a: string }[] = [
 
 // ─── FEATURES ────────────────────────────────────────────────────────────────
 const FEATURES = [
-  { icon: "🔒", title: "AES-256 encrypted", body: "Your data is encrypted with your password before being stored." },
   { icon: "📊", title: "Financial health score", body: "Track five pillars: savings, needs, safety net, debt, and goals." },
   { icon: "🎯", title: "Goal tracking", body: "Set goals with target dates and contribute funds over time." },
   { icon: "🔄", title: "Recurring payments", body: "Model subscriptions, loans, and any periodic expense or income." },
   { icon: "💳", title: "Payment methods", body: "Track cash vs card (Visa, Mastercard, Amex) per transaction." },
   { icon: "🌍", title: "Multi-currency", body: "USD + LBP with a configurable exchange rate." },
   { icon: "☁️", title: "Database sync", body: "Back up to Postgres (Neon) and restore on any device." },
-  { icon: "🎨", title: "3 themes", body: "Ledger (green), Midnight (navy), and Obsidian (black)." },
+  // Read from THEMES, so a theme added later can't leave this stale (it said "3 themes" while there were 6).
+  { icon: "🎨", title: `${Object.values(THEMES).length} themes`, body: `${Object.values(THEMES).map((t) => t.name).join(", ")}.` },
 ];
 
 // ─── COMPONENT ───────────────────────────────────────────────────────────────
@@ -130,7 +120,7 @@ export default function AboutPage() {
             className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs"
             style={{ background: T.jade + "18", color: T.jade, border: `1px solid ${T.jade}30` }}
           >
-            Version 1.0 · offline-first, encrypted
+            Version 1.0
           </div>
         </section>
 
@@ -155,6 +145,11 @@ export default function AboutPage() {
         {/* FAQ */}
         <section>
           <h2 className="text-base font-semibold mb-4" style={{ ...SERIF, color: T.text }}>Frequently asked questions</h2>
+          <p className="text-sm leading-relaxed mb-4" style={{ color: T.mute }}>
+            For where your data is stored, how it&apos;s encrypted, backup, and using ESSA on more than one device, see the{" "}
+            <Link href="/privacy" className="underline hover:opacity-80" style={{ color: T.text }}>Privacy Policy</Link> and{" "}
+            <Link href="/security" className="underline hover:opacity-80" style={{ color: T.text }}>Trust &amp; Security</Link>.
+          </p>
           <div className="space-y-2">
             {FAQ.map((item, i) => (
               <div
@@ -205,9 +200,6 @@ export default function AboutPage() {
             >
               ✉ {OWNER_EMAIL}
             </a>
-            <p className="text-[11px]" style={{ color: T.mute }}>
-              This app is offline-first and does not connect to any external servers unless you configure a local database.
-            </p>
           </div>
         </section>
 
@@ -307,9 +299,6 @@ export default function AboutPage() {
         <footer className="text-center pt-4 pb-8">
           <p className="text-[11px]" style={{ color: T.mute }}>
             ESSA, built with Next.js, Tailwind, and Recharts.
-          </p>
-          <p className="text-[10px] mt-1" style={{ color: T.mute }}>{/* A11Y-01: was T.mute at 50%, 2.2:1 */}
-            Your data never leaves your device without your permission.
           </p>
           <p className="text-[10px] mt-3">
             <Link href="/terms" className="underline hover:opacity-80" style={{ color: T.mute }}>Terms of Service</Link>
