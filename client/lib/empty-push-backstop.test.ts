@@ -98,6 +98,31 @@ describe("pushing an empty account", () => {
   });
 });
 
+// Session 39 (owner): a device whose only change is deletion records isn't
+// empty to this backstop. Its last record deleted, its deletions upload without
+// the ask (found by the sync proof, session 38: the deletion was withheld
+// unless the person said OK). An account with nothing at all still asks.
+describe("pushing a copy whose only data is deletion records", () => {
+  const ONLY_DELETIONS = { ...DEFAULT_DATA, deletedKeys: { wishlist: [{ key: "w1", deletedAt: "2026-11-04T09:00:00.000Z" }] } } as LocalFinancials;
+
+  it("over a backup that has data: uploads, nothing asked, nothing read first", async () => {
+    serverCopy = WITH_DATA;
+    const r = await pushToServer("u1@example.com", ONLY_DELETIONS);
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(r.ok).toBe(true);
+    expect(pushes).toEqual([ONLY_DELETIONS]);
+    expect(vi.mocked(fetch).mock.calls.map((c) => c[0])).toEqual(["/api/sync/push"]);
+  });
+
+  it("an empty list of records is no deletion: the ask stays", async () => {
+    serverCopy = WITH_DATA;
+    confirmSpy.mockReturnValue(false);
+    await pushToServer("u1@example.com", { ...DEFAULT_DATA, deletedKeys: { wishlist: [] } } as LocalFinancials);
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(pushes).toEqual([]);
+  });
+});
+
 describe("pushing an account with data", () => {
   it("never reads the server first, never asks", async () => {
     serverCopy = WITH_DATA;
