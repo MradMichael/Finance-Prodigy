@@ -98,11 +98,15 @@ describe("pushToServer", () => {
     expect(result).toEqual({ ok: false, error: "Invalid sync credentials for this account." });
   });
 
+  // Session 41 (owner): a 200 that isn't our reply says so with the approved
+  // server-problem sentence (it said "malformed"); still distinct from
+  // unreachable, and still no crash.
   it("reports a malformed 200 response distinctly, instead of crashing or claiming the server is unreachable", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ notSyncedAt: true }) }));
     const result = await pushToServer("a@test.com", DEFAULT_DATA);
     expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/malformed/i);
+    expect(result.error).toBe("The server had a problem (error 200). Try again in a minute.");
+    expect(result.unreachable).toBeUndefined();
   });
 
   it("reports a network failure (fetch throws) as unreachable, not as a crash", async () => {
