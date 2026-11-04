@@ -309,6 +309,22 @@ Two devices each log a different transaction between syncs; both survive after e
 
 ---
 
+## Phase 2.8 — Goal progress derived from the ledger (finishes plan H 5a)
+
+**Status (updated 2026-11-04, session 41):** core built and merged as plan H 5a; the rest is planned, not started. **Not marked complete** (Rule 6). The owner's live check of 5a on the real account isn't recorded in this document: UNKNOWN.
+
+**Already merged (plan H 5a, merge `72de874`, 2026-10-09; `59db917`, `55d566a`, `b087902`):** goal progress = `openingAmount` + the goal's live contributions and corrections (`goalProgress`, `client/lib/localData.ts`). Schema v6→v7 (`addGoalOpenings`) sets `openingAmount` so progress equals the stored total on upgrade day. Edit Goal's "Saved" writes a $0 correction row carrying `goalAmount` (`buildGoalCorrectionTx`). `currentAmount` is no longer written after a goal is created. This is the "goal `currentAmount` derivation [2.4.57]" item in the 2026-09-02 sequencing note below.
+
+**Still open (session 41 plan; owner's answers the same day):**
+- Achievement is still a stored flag (`achievedAt`, three writers), not derived. To be derived like `debtPayoff`, dated by the latest crossing still standing. Readers disagree today (session 41, LB1); a merge restores a cleared one (LB2).
+- Concurrent goal corrections double-apply on merge (LB3, the 2.4.58 class): detection, built once for EF, debt and goal.
+- Withdrawals don't exist: to be a $0 row with a negative `goalAmount`, moving nothing in the budget.
+- `achievedAt` is dual-written for one release; retiring `currentAmount` waits for the owner's confirmation that every device is updated.
+
+**SAFE STOP** per sub-phase. Nothing beyond 5a is approved to build yet.
+
+---
+
 ## Phase 2 — Cohort launch
 
 **Not a development phase.** Owner-executed.
@@ -558,7 +574,7 @@ Phase 9  Generalized currency  — unscheduled, Phase-1-sized, not before cohort
 
 **Critical path to launch: Phase 0 → Phase 1 → real-device check → ship.** Everything after Phase 2 waits on evidence from real users.
 
-**Note (2026-09-02): the diagram above predates several completed phases (2.6, 2.6.4, 2.7 are all merged and live; Phase 9 was re-split into 9-N, approved before cohort) and is not being rewritten here — not in scope for this note.** Current sequencing authority is `docs/AUDIT_2026-08.md`'s Amendment 13: the owner reframed the launch goal from "pre-cohort polish" to "daily-use completeness" (never needing a spreadsheet or mental arithmetic to correct a number ESSA shows), triggering a full re-triage. Approved build order, ahead of Phase 9-N and the deferred backlog above: (1) TRANSFER retag sign bug [2.4.56], (2) Balance Check re-anchoring [2.4.53], (3) reimbursement repayment quick-entry [2.4.55 remainder], (4) goal `currentAmount` derivation [2.4.57, scope before building], (5) Overview past-month view [scope before building], (6) cross-device non-transaction merge detection [2.4.52, detection-only]. The original 9-item pre-cohort queue, Phase 9-N, and F4-F7 stay explicitly logged, not abandoned, sequenced behind this list.
+**Note (2026-09-02): the diagram above predates several completed phases (2.6, 2.6.4, 2.7 are all merged and live; Phase 9 was re-split into 9-N, approved before cohort) and is not being rewritten here — not in scope for this note.** Current sequencing authority is `docs/AUDIT_2026-08.md`'s Amendment 13: the owner reframed the launch goal from "pre-cohort polish" to "daily-use completeness" (never needing a spreadsheet or mental arithmetic to correct a number ESSA shows), triggering a full re-triage. Approved build order, ahead of Phase 9-N and the deferred backlog above: (1) TRANSFER retag sign bug [2.4.56], (2) Balance Check re-anchoring [2.4.53], (3) reimbursement repayment quick-entry [2.4.55 remainder], (4) goal `currentAmount` derivation [2.4.57, scope before building; **core built and merged as plan H 5a, 2026-10-09 — see Phase 2.8 for what remains**], (5) Overview past-month view [scope before building], (6) cross-device non-transaction merge detection [2.4.52, detection-only]. The original 9-item pre-cohort queue, Phase 9-N, and F4-F7 stay explicitly logged, not abandoned, sequenced behind this list.
 
 ---
 
