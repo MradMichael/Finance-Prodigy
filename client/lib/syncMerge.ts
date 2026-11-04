@@ -265,6 +265,24 @@ function supersededElsewhere(liveHere: Set<string>, merged: PeriodClose[], repla
 }
 
 /**
+ * Session 38 (approved, session 39): the other side of supersededElsewhere.
+ * Another device's close that lost to the close live on THIS device, each with
+ * that standing close: undone in this merge (the other close arrived live), or
+ * arriving already undone by the other device's merge. A close this device
+ * already holds isn't new, so once stored it's said once.
+ */
+function undoneElsewhere(liveHere: Set<string>, heldHere: Set<string>, merged: PeriodClose[], replaced: ReplacedClose[]): ReplacedClose[] {
+  const out = replaced.filter((r) => !liveHere.has(closeKey(r.superseded)) && liveHere.has(closeKey(r.standing)));
+  const thisMerge = new Set(replaced.map((r) => closeKey(r.superseded)));
+  for (const m of merged) {
+    if (!m.supersededAt || heldHere.has(closeKey(m)) || thisMerge.has(closeKey(m))) continue;
+    const standing = merged.find((c) => spanKey(c) === spanKey(m) && !c.reopenedAt && !c.supersededAt);
+    if (standing && liveHere.has(closeKey(standing))) out.push({ superseded: m, standing });
+  }
+  return out;
+}
+
+/**
  * For one device's copy: undo every close the merge marked reopened or
  * superseded but that this copy still holds live, using the reopen rule
  * (undoCloseEffects). Later closes first, so each undo sees the state it
@@ -307,6 +325,8 @@ export interface MergeFinancialsResult {
   serverTransactions: LocalFinancials["transactions"];
   /** Closes that were live on THIS device and lost to another device's earlier close of the same cycle (session 38: undone in this merge or in the other device's). */
   supersededFromLocal: ReplacedClose[];
+  /** Session 38 (approved, session 39): another device's close undone because the close live on THIS device is earlier. */
+  closesUndoneElsewhere: ReplacedClose[];
   /** Item 7 (owner): the other device's one-sided edits to transactions inside a closed cycle, for the notice (owner-approved wording, session 9). */
   closedEdits: ClosedEdit[];
   /** Session 10, item 2: another device's "Reset all data", when this merge cleared something this device held (an item, or a setting: session 11). */
@@ -881,6 +901,7 @@ export function mergeFinancials(localIn: LocalFinancials, serverIn: LocalFinanci
     localTransactions: localU.transactions,
     serverTransactions: serverU.transactions,
     supersededFromLocal: [...replaced.filter((r) => liveLocally.has(closeKey(r.superseded))), ...supersededElsewhere(liveLocally, closes, replaced)],
+    closesUndoneElsewhere: undoneElsewhere(liveLocally, new Set((local.periodCloses ?? []).map(closeKey)), closes, replaced),
     closedEdits,
     resetElsewhere: resetClearedHere(localIn, serverIn, data),
   };

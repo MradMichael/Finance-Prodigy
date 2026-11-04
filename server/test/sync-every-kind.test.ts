@@ -56,6 +56,12 @@ interface Kind {
    * case stays a plain case throughout.
    */
   held?: Partial<Record<"both" | "bothLater", Partial<Record<"A" | "B", string>>>>;
+  /**
+   * "Both edit" cases decided by the owner as not told, with the reason: the
+   * case asserts one result on both devices and the server, and that neither
+   * device's notice says anything.
+   */
+  notTold?: Partial<Record<"both" | "bothLater", string>>;
 }
 
 const iso = (at: Date) => at.toISOString();
@@ -244,13 +250,13 @@ const KINDS: Kind[] = [
     none: { delete: "a close is reopened (the edit case), never deleted" },
     // Its one edit is a reopen, so "both edit" is both devices reopening the
     // same close: the earlier reopen is kept, and what a person sees (the
-    // close reopened) is the same on both. No clash is named for that today:
-    // the merge names one only when what the devices hold differs to a
-    // person (owner, session 6). Left for the owner. Two devices CLOSING the
-    // same cycle is the real conflict: its own cases are below.
-    held: {
-      both: { A: "both devices reopened it; no clash is named for the same change on both", B: "both devices reopened it; no clash is named for the same change on both" },
-      bothLater: { A: "both devices reopened it; no clash is named for the same change on both", B: "both devices reopened it; no clash is named for the same change on both" },
+    // close reopened) is the same on both. Decided (owner, session 39): not
+    // told, the result being the same for both (the merge names a clash only
+    // when what the devices hold differs to a person, session 6). Two devices
+    // CLOSING the same cycle is the real conflict: its own cases are below.
+    notTold: {
+      both: "both devices reopened it: the same result for both (owner, session 39)",
+      bothLater: "both devices reopened it: the same result for both (owner, session 39)",
     },
   },
   {
@@ -353,8 +359,8 @@ const unrelated = (name: string) => (d: D) => {
 
 const CASE = {
   add: "add on A → on B", edit: "edit on B → on A", delete: "delete on A → gone on B, stays gone",
-  both: "both edit, the earlier edit synced first → one result, both told",
-  bothLater: "both edit, the later edit synced first → one result, both told",
+  both: "both edit, the earlier edit synced first",
+  bothLater: "both edit, the later edit synced first",
 } as const;
 
 for (const k of KINDS) {
@@ -415,7 +421,7 @@ for (const k of KINDS) {
      * the one refused and merged; otherwise A's lands first and B merges. The
      * order a person happens to sync in mustn't change the outcome.
      */
-    const both = async (laterFirst: boolean, check: { result: boolean; told: readonly ("A" | "B")[] }) => {
+    const both = async (laterFirst: boolean, check: { result: boolean; told: readonly ("A" | "B")[]; notTold?: boolean }) => {
       const key = await shared(k);
       await A.edit((d) => k.edit!(d, key, 1, at(10)));
       await B.edit((d) => k.edit!(d, key, 2, at(20)));
@@ -434,8 +440,9 @@ for (const k of KINDS) {
       }
       const name = k.told(onA);
       for (const [who, said] of [["A", toldA], ["B", toldB]] as const) {
-        if (!check.told.includes(who)) continue;
         const text = said.join("\n");
+        if (check.notTold) expect(text.trim(), `${who} not told`).toBe("");
+        if (!check.told.includes(who)) continue;
         if (name === null) expect(text.trim(), `${who} told`).not.toBe("");
         else expect(text, `${who} told`).toContain(name);
       }
@@ -444,7 +451,9 @@ for (const k of KINDS) {
       const laterFirst = c === "bothLater";
       const held = k.held?.[c];
       if (k.none?.[c]) run(c, async () => {});
-      else if (held) {
+      else if (k.notTold?.[c]) {
+        it(`${k.name} | ${CASE[c]} → one result, neither told by design: ${k.notTold[c]}`, () => both(laterFirst, { result: true, told: [], notTold: true }), 60_000);
+      } else if (held) {
         // Split, so what passes today stays a plain case: the one result, and
         // each device's telling on its own; only a known failure is it.fails.
         it(`${k.name} | ${CASE[c]} | one result on both`, () => both(laterFirst, { result: true, told: [] }), 60_000);
@@ -453,7 +462,7 @@ for (const k of KINDS) {
           if (why) it.fails(`${k.name} | ${CASE[c]} | ${who} told | HELD, fails today: ${why}`, () => both(laterFirst, { result: false, told: [who] }), 60_000);
           else it(`${k.name} | ${CASE[c]} | ${who} told`, () => both(laterFirst, { result: false, told: [who] }), 60_000);
         }
-      } else run(c, () => both(laterFirst, { result: true, told: ["A", "B"] }));
+      } else it(`${k.name} | ${CASE[c]} → one result, both told`, () => both(laterFirst, { result: true, told: ["A", "B"] }), 60_000);
     }
   });
 }
@@ -497,7 +506,8 @@ describe("period closes, both close the same cycle", () => {
     // Session 38, fix C: told in either order.
     if (laterFirst) it(`period closes | both close the same cycle, ${order} | B told (its close was undone)`, undone, 60_000);
     else it(`period closes | both close the same cycle, ${order} | B told (its close was undone)`, undone, 60_000);
-    it.fails(`period closes | both close the same cycle, ${order} | A told (its close stood) | HELD, fails today: nothing tells the device whose close stood`, async () => {
+    // Session 38, fix B (approved, session 39): told in either order.
+    it(`period closes | both close the same cycle, ${order} | A told (its close stood)`, async () => {
       expect((await bothClose(laterFirst)).toldA.trim()).not.toBe("");
     }, 60_000);
   }

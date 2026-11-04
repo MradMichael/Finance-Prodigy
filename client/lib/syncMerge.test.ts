@@ -207,6 +207,27 @@ describe("period closes merge record by record", () => {
     expect(mergeFinancials(asLaptop.data, asPhone.data, LATER).supersededFromLocal).toEqual([]);
   });
 
+  // Session 38 (approved, session 39): the device whose close STOOD is
+  // told too, whichever device's merge undid the other close, and once.
+  it("the device whose close stood is told the other close was undone, in either order, once", () => {
+    const phone = closeOn(base({ trackedBalances: [CASH] }), "2026-09-27T08:00:00.000Z", 398.6); // the earlier close
+    const laptop = closeOn(base({ trackedBalances: [CASH] }), "2026-09-27T09:30:00.000Z", 401.15); // the later one
+    const pairs = (r: ReturnType<typeof mergeFinancials>) => r.closesUndoneElsewhere.map((s) => [s.superseded.closedAt, s.standing.closedAt]);
+    const laterUndone = [["2026-09-27T09:30:00.000Z", "2026-09-27T08:00:00.000Z"]];
+    const LATER = new Date(NOW.getTime() + 60_000);
+    // The laptop's close reached the server first: the phone's merge undoes it.
+    const asPhone = mergeFinancials(phone, laptop, NOW);
+    expect(pairs(asPhone)).toEqual(laterUndone);
+    expect(pairs(mergeFinancials(asPhone.data, asPhone.data, LATER))).toEqual([]); // stored: once
+    // The phone's reached it first: the laptop's merge undoes its own (its own sentence says so), then the phone fetches.
+    const asLaptop = mergeFinancials(laptop, phone, NOW);
+    expect(pairs(asLaptop)).toEqual([]);
+    const phoneFetches = mergeFinancials(phone, asLaptop.data, LATER);
+    expect(pairs(phoneFetches)).toEqual(laterUndone);
+    expect(phoneFetches.supersededFromLocal).toEqual([]); // the phone's close wasn't undone
+    expect(pairs(mergeFinancials(phoneFetches.data, asLaptop.data, LATER))).toEqual([]); // stored: once
+  });
+
   it("the replaced close's correction row is removed; the standing close's stays", () => {
     const phone = closeOn(base({ trackedBalances: [CASH] }), "2026-09-27T08:00:00.000Z", 398.6, { efDelta: -45.25 });
     const laptop = closeOn(base({ trackedBalances: [CASH] }), "2026-09-27T09:30:00.000Z", 401.15, { efDelta: -38.9 });
