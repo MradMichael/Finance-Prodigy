@@ -459,7 +459,7 @@ export const CLASH_RECORD_DAYS = 30;
 interface Settled { clash: MergeClash; key: string; kept: string; other: string }
 
 /**
- * Session 38, HELD for the owner's words: tracked balances both devices changed
+ * Session 38 (approved, session 39): tracked balances both devices changed
  * since this device's last sync, judged against its record as the rule judges
  * everything else (a check-in on one side only is no clash). The kept one is
  * the one mergeTrackedBalances keeps (the later check-in); this only reports
@@ -843,7 +843,7 @@ export function mergeFinancials(localIn: LocalFinancials, serverIn: LocalFinanci
   const clashRecords = mergeClashRecords(local.clashRecords, server.clashRecords, (ruled?.records ?? []).filter(notReset), now);
   // Item 7: transactions' records apart, where older code doesn't look.
   const transactionClashRecords = mergeClashRecords(local.transactionClashRecords, server.transactionClashRecords, txRecords, now);
-  // Session 38, HELD: tracked balances both devices checked in, apart again (older code words every clashRecords entry).
+  // Session 38 (approved, session 39): tracked balances both devices checked in, apart again (older code words every clashRecords entry).
   const balanceSettled = seen?.kinds.trackedBalances ? balancesBothChanged(localU.trackedBalances ?? [], serverU.trackedBalances ?? [], seen.kinds.trackedBalances, deletedKeys, revivedKeys) : [];
   const balanceClashRecords = mergeClashRecords(local.balanceClashRecords, server.balanceClashRecords, balanceSettled.map((x): ClashRecord => ({
     ...x.clash, key: x.key, at, id: fingerprint({ kind: x.clash.kind, key: x.key, kept: x.kept, other: x.other }),

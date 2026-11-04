@@ -25,7 +25,7 @@ export const SEEN_KINDS = [
   "foreignEntries",
   // Plan J (merged in session 23, bafa688): the rate log, by its day.
   "lbpRateLog",
-  // Session 38, HELD for the owner's words: tracked balances, by id, so a check-in on both devices is told.
+  // Session 38 (approved, session 39): tracked balances, by id, so a check-in on both devices is told.
   "trackedBalances",
 ] as const;
 export type SeenKind = (typeof SEEN_KINDS)[number];

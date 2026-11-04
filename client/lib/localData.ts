@@ -1095,7 +1095,7 @@ export interface LocalFinancials {
    */
   transactionClashRecords?: ClashRecord[];
   /**
-   * Session 38, HELD for the owner's words: the same, for tracked balances both
+   * Session 38 (approved, session 39): the same, for tracked balances both
    * devices checked in. Kept apart from clashRecords for the reason
    * transactions' are: older code words every clashRecords entry and has no
    * noun for a tracked balance; it ignores this field. Pruned the same way

@@ -1,4 +1,4 @@
-// Session 38 (the sync proof), HELD for the owner's words: a tracked balance
+// Session 38 (the sync proof; sentences approved as drafted, session 39): a tracked balance
 // both devices checked in since their last sync. The later check-in is kept,
 // as before (SYNC-1 step 2); now the merge also records it, so each device
 // says it once, the one whose check-in was overridden included (plan H 5d).
@@ -63,7 +63,7 @@ describe("a tracked balance both devices checked in", () => {
   });
 });
 
-describe("its sentences, the approved ones with the noun drafted for it (HELD)", () => {
+describe("its sentences, the approved ones with its own noun (approved, session 39)", () => {
   it("the later check-in", () => {
     expect(clashSentence({ kind: "trackedBalance", name: "Wallet", later: true })).toBe('Both devices changed the tracked balance "Wallet" — kept the later change.');
   });
