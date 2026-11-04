@@ -136,6 +136,20 @@ describe("editing a trip", () => {
     expect(editTrip(data([]), "trip-lis", { ...p, budgetUSD: -1 })).toEqual({ ok: false, reason: "budget" });
   });
 
+  // Travel map plan, Phase 0 (owner-approved): a field the edit form doesn't set (a newer
+  // version's cities and notes, say) stays through an edit. It used to be dropped: the trip was
+  // rebuilt from the form's fields only, so a device on this code would wipe what newer code wrote.
+  it("keeps a field this code doesn't set; the fields it sets are still replaced", () => {
+    const newer = { ...LISBON, stops: [{ id: "s1", countryCode: "PT", city: "Lisbon" }], notes: "Fado night" } as StoredTrip;
+    const r = editTrip(data([], [newer]), "trip-lis", { ...p, name: "Lisbon and Porto" }, new Date("2026-10-20T08:00:00.000Z"));
+    if (!r.ok) throw new Error("refused");
+    expect(r.data.trips).toEqual([{
+      id: "trip-lis", name: "Lisbon and Porto", startDate: "2026-11-02", endDate: "2026-11-09", budgetUSD: 1200,
+      createdAt: LISBON.createdAt, updatedAt: "2026-10-20T08:00:00.000Z",
+      stops: [{ id: "s1", countryCode: "PT", city: "Lisbon" }], notes: "Fado night",
+    }]); // categoryBudgetsUSD is a field the form sets: cleared there, so gone here
+  });
+
   it("leaves other trips alone, and doesn't bring back a trip that's gone", () => {
     const rome: StoredTrip = { ...LISBON, id: "trip-rome", name: "Rome" };
     const r = editTrip(data([], [LISBON, rome]), "trip-lis", { ...p, budgetUSD: 900 });

@@ -18,6 +18,20 @@ const trip = (id: string, name: string, budgetUSD: number, updatedAt: string): S
 const d = (trips: StoredTrip[], extra: Partial<LocalFinancials> = {}) => ({ ...DEFAULT_DATA, trips, ...extra }) as LocalFinancials;
 const LISBON = trip("t1", "Lisbon", 1200, "2026-10-12T09:00:00.000Z");
 
+// Travel map plan, Phase 0: a field inside a trip that this code doesn't know rides through
+// both merge paths whole (pins what the engine already does; the trip is merged as one record).
+describe("a trip's own fields this code doesn't know", () => {
+  const newer = { ...trip("t1", "Lisbon", 1200, "2026-10-13T09:00:00.000Z"), stops: [{ id: "s1", countryCode: "PT" }], notes: "n" } as StoredTrip;
+  it("survive a merge before a device has a record of a last sync, from either side", () => {
+    expect(mergeFinancials(d([newer]), d([LISBON]), T0).data.trips).toEqual([newer]);
+    expect(mergeFinancials(d([LISBON]), d([newer]), T0).data.trips).toEqual([newer]);
+  });
+  it("survive a merge under the fingerprint rule, when only the other device changed the trip", () => {
+    const base = d([LISBON]);
+    expect(mergeFinancials(base, d([newer]), T0, seenOf(base)).data.trips).toEqual([newer]);
+  });
+});
+
 describe("before a device has a record of a last sync", () => {
   it("both devices' trips are kept", () => {
     const merged = mergeFinancials(d([LISBON]), d([trip("t2", "Rome", 800, "2026-10-12T10:00:00.000Z")]), T0).data;
