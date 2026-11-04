@@ -185,8 +185,19 @@ function overwriteWarningMessage(sourceLabel: string): string {
 // there falls into the same catch block as a genuine network failure below,
 // misreporting "server unreachable" when it actually responded, just not
 // with JSON. Parsing separately keeps those two failure modes distinct.
-async function parseJsonSafe(res: Response): Promise<{ error?: string; [key: string]: unknown } | null> {
+// Session 40 (owner, urgent): `error` is unknown, not a string. Our server only
+// ever sends text there, but a platform answering in its place (Vercel's proxy
+// when it can't reach the server, or the host with no service running) can send
+// an object, which Profile printed as "✗ [object Object]". errorText is the one
+// way a call reads it.
+async function parseJsonSafe(res: Response): Promise<{ [key: string]: unknown } | null> {
   try { return await res.json(); } catch { return null; }
+}
+
+/** The response's own message when it is one (non-empty text); else the call's approved fallback. */
+function errorText(json: { [key: string]: unknown } | null, fallback: string): string {
+  const e = json?.error;
+  return typeof e === "string" && e.trim() !== "" ? e : fallback;
 }
 
 export async function pushToServer(
@@ -229,11 +240,11 @@ export async function pushToServer(
     });
     const json = await parseJsonSafe(res);
     if (res.status === 409 && json?.code === "stale_push") {
-      return { ok: false, conflict: true, error: json?.error ?? "Server data has changed since your last sync." };
+      return { ok: false, conflict: true, error: errorText(json, "Server data has changed since your last sync.") };
     }
     if (isSizeRefusal(res.status, json)) return { ok: false, tooLarge: true, error: BACKUP_TOO_LARGE };
-    if (res.status === 401 && json?.code === "credentials_refused") return { ok: false, credentialsRefused: true, error: json.error ?? "Invalid sync credentials for this account." };
-    if (!res.ok) return { ok: false, error: json?.error ?? serverTrouble(res.status) };
+    if (res.status === 401 && json?.code === "credentials_refused") return { ok: false, credentialsRefused: true, error: errorText(json, "Invalid sync credentials for this account.") };
+    if (!res.ok) return { ok: false, error: errorText(json, serverTrouble(res.status)) };
     // A 200 with no/malformed JSON body (proxy glitch, truncated response)
     // is a real but different failure from "couldn't reach the server at
     // all" — report it as such instead of falling through to json!.syncedAt
@@ -354,7 +365,7 @@ export async function relinkSync(
       signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
     });
     const json = await parseJsonSafe(res);
-    if (!res.ok) return { ok: false, error: json?.error ?? serverTrouble(res.status) };
+    if (!res.ok) return { ok: false, error: errorText(json, serverTrouble(res.status)) };
     return { ok: true };
   } catch {
     return { ok: false, unreachable: true, error: UNREACHABLE };
@@ -403,8 +414,8 @@ export async function pullFromServer(
     }
     // SEC-07 (session 25, item 4b; merged in session 28): a locked account's refusal carries the server's sentence and a flag.
     if (res.status === 429 && json?.accountLocked === true && typeof json.error === "string") return { ok: false, error: json.error, accountLocked: true };
-    if (res.status === 401 && json?.code === "credentials_refused") return { ok: false, credentialsRefused: true, error: json.error ?? "Invalid sync credentials for this account." };
-    if (!res.ok) return { ok: false, error: json?.error ?? serverTrouble(res.status) };
+    if (res.status === 401 && json?.code === "credentials_refused") return { ok: false, credentialsRefused: true, error: errorText(json, "Invalid sync credentials for this account.") };
+    if (!res.ok) return { ok: false, error: errorText(json, serverTrouble(res.status)) };
     if (json === null || typeof json.syncedAt !== "string" || !("data" in json)) {
       return { ok: false, error: "Server responded, but the response was malformed. Try again." };
     }
@@ -1006,7 +1017,10 @@ export async function deleteFromServer(email: string, token: string): Promise<Sy
       signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
     });
     const json = await parseJsonSafe(res);
-    if (!res.ok) return json?.error ? { ok: false, error: json.error } : { ok: false, serverStatus: res.status, error: serverTrouble(res.status) };
+    if (!res.ok) {
+      const text = errorText(json, "");
+      return text ? { ok: false, error: text } : { ok: false, serverStatus: res.status, error: serverTrouble(res.status) };
+    }
     return { ok: true };
   } catch {
     return { ok: false, unreachable: true, error: UNREACHABLE }; // ERR-05 (session 23, item 6; approved and merged in session 24, 070f457)
