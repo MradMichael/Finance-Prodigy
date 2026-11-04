@@ -206,10 +206,7 @@ const KINDS: Kind[] = [
     edit: (d, key, v, at) => ({ ...d, trackedBalances: (d.trackedBalances ?? []).map((t) => (t.id !== key ? t : reanchorTrackedBalance(t, 180 + v, undefined, rate(d), iso(at)))) }),
     // BalanceCheckScreen.deleteTrackedBalance
     del: (d, key) => ({ ...d, trackedBalances: (d.trackedBalances ?? []).filter((t) => t.id !== key), deletedKeys: recordDeletion(d, "trackedBalances", key) }),
-    held: {
-      both: { A: "the later check-in is kept, but this device isn't told", B: "the later check-in is kept, but this device isn't told" },
-      bothLater: { A: "the later check-in is kept, but this device isn't told", B: "the later check-in is kept, but this device isn't told" },
-    },
+    // Session 38, held fix A: told on both devices, in either order.
   },
   {
     name: "period closes",

@@ -44,7 +44,8 @@ async function take(userId: string | undefined, data: LocalFinancials, now: Date
   if (!userId || typeof window === "undefined") return [];
   const cutoff = now.getTime() - CLASH_RECORD_DAYS * DAY;
   // Item 7: transactions' records live in their own field (older code's list stays theirs).
-  const live = [...(data.clashRecords ?? []), ...(data.transactionClashRecords ?? [])].filter((r) => Date.parse(r.at) >= cutoff);
+  // Session 38 (approved, session 39): tracked balances' records in theirs.
+  const live = [...(data.clashRecords ?? []), ...(data.transactionClashRecords ?? []), ...(data.balanceClashRecords ?? [])].filter((r) => Date.parse(r.at) >= cutoff);
   if (live.length === 0) return [];
   const shown = await loadShown(userId);
   const fresh = live.filter((r) => !(r.id in shown))

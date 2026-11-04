@@ -888,6 +888,7 @@ const CLASH_NOUNS = {
   wishlist: "the wishlist item", category: "the category", rule: "the category rule",
   trip: "the trip", // travel slice 2 (merged in session 19, 15d791f): approved in session 17
   foreignEntry: "the foreign cash entry", // foreign cash, model 2: approved in session 19
+  trackedBalance: "the tracked balance", // session 38: drafted; approved as drafted, session 39
 } as const;
 
 /**
