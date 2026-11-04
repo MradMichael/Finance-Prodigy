@@ -9,7 +9,8 @@
     "dev": "node node_modules/ts-node-dev/lib/bin.js --transpile-only --respawn src/index.ts",
     "build": "prisma generate && tsc",
     "start": "node dist/index.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "typecheck:tests": "tsc -p tsconfig.tests.json"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts",
