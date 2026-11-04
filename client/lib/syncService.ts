@@ -1,7 +1,7 @@
 "use client";
 
 import type { LocalFinancials, StoredTransaction, SettingKey } from "./localData";
-import { isEmptyFinancials, isFromNewerVersion, migrateIfOlder, schemaVersionOf, CURRENT_SCHEMA_VERSION, BUDGET_RULES } from "./localData";
+import { isEmptyFinancials, isFromNewerVersion, migrateIfOlder, schemaVersionOf, CURRENT_SCHEMA_VERSION, BUDGET_RULES, DELETED_COLLECTIONS } from "./localData";
 import { mergeFinancials, stableStringify, unknownFieldsOf, MERGED_FIELDS, RULE_FIELDS, type MergeFinancialsResult, type MergeClash } from "./syncMerge";
 import { cycleLabelLong, dayLabel } from "./period";
 import { getSyncToken } from "./crypto";
@@ -107,6 +107,17 @@ export const EMPTY_PUSH_DECLINED = "Not uploaded: your backup on the server has 
  * has data. No copy, an empty one, or a read that fails (the push would
  * fail the same way) is no reason to ask.
  */
+/**
+ * Session 39 (owner): a copy carrying any deletion record isn't empty to the
+ * backstop below. It shows this device had data and removed it (its last
+ * record deleted), so its deletions upload without the ask. A stale push is
+ * still refused by the server and merged, so nothing another device added is
+ * lost. isEmptyFinancials itself is unchanged for its other callers.
+ */
+function holdsDeletions(data: LocalFinancials): boolean {
+  return DELETED_COLLECTIONS.some((c) => (data.deletedKeys?.[c] ?? []).length > 0);
+}
+
 async function emptyOverwriteAllowed(email: string): Promise<boolean> {
   const pulled = await pullFromServer(email);
   // Travel slice 0: a backup from newer code is never written over by this code.
@@ -190,7 +201,7 @@ export async function pushToServer(
   if (!token) return { ok: false, error: "Not signed in. Sign in again to sync." };
   // Travel slice 0: a copy this device read from newer code isn't this code's to upload.
   if (isFromNewerVersion(data)) return { ok: false, newerVersion: true };
-  if (!allowEmptyOverwrite && isEmptyFinancials(data) && !(await emptyOverwriteAllowed(email))) {
+  if (!allowEmptyOverwrite && isEmptyFinancials(data) && !holdsDeletions(data) && !(await emptyOverwriteAllowed(email))) {
     return { ok: false, declined: true, error: EMPTY_PUSH_DECLINED };
   }
   // Registers this account's recovery-derived token server-side (if one

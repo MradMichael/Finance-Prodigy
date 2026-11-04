@@ -528,6 +528,35 @@ describe("cards", () => {
   }, 60_000);
 });
 
+/**
+ * Session 39 (owner): an account with nothing else. Its only record deleted on
+ * one device, the deletion reaches the other, and neither device is asked the
+ * empty-backup question: a device whose only change is deletion records isn't
+ * empty to that backstop.
+ */
+describe("an account with nothing else, its only record deleted", () => {
+  it("the deletion reaches the other device, and neither is asked anything", async () => {
+    const email = `sync.proof.only.${++accounts}@example.invalid`;
+    const C = new Device("C", email), E = new Device("E", email);
+    await C.signUpAndBackUp(PASSWORD); // nothing entered: no income, no records
+    await E.signInElsewhere(PASSWORD);
+    const wishlist = KINDS.find((k) => k.name === "wishlist")!;
+    let key = "";
+    await C.edit((d) => { const r = wishlist.add!(d, at(1)); key = r.key; return r.data; });
+    await C.sync();
+    await E.open();
+    expect(await find(E, wishlist, key)).toBeDefined();
+    await C.edit((d) => wishlist.del!(d, key, at(10))); // its only record
+    await C.sync();
+    await E.open();
+    expect(await find(C, wishlist, key)).toBeUndefined();
+    expect(await find(E, wishlist, key)).toBeUndefined();
+    expect(wishlist.list(await C.serverCopy()).find((i) => wishlist.key(i) === key)).toBeUndefined();
+    expect(C.prompts).toEqual([]);
+    expect(E.prompts).toEqual([]);
+  }, 60_000);
+});
+
 describe("no prompts", () => {
   it("none of these flows asked the person anything", async () => {
     expect(A.prompts).toEqual([]);
