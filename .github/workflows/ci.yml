@@ -70,6 +70,9 @@ jobs:
           cache-dependency-path: server/package-lock.json
       - run: npm ci
       - run: npm run build
+      # Session 39 (owner): the sync proof's test files, type-checked. The
+      # build covers src only; these also import the client's sync code.
+      - run: npm run typecheck:tests
       # Server tests (audit 2.4.156). They never reach a database: the setup
       # file refuses any DATABASE_URL/DIRECT_URL other than the placeholder
       # above, pins both to it before Prisma can load an .env, and replaces

@@ -1,0 +1,15 @@
+{
+  // Session 39 (owner): the sync proof's files, type-checked in CI (the server
+  // job's "typecheck:tests"). The build's own tsconfig covers src only; these
+  // files also import the client's sync code, which uses browser storage and
+  // crypto, hence the DOM library. tsc follows their imports into src/ and
+  // ../client/lib. No output.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "rootDir": "..",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"]
+  },
+  "include": ["test/sync-every-kind.test.ts", "test/support/twoDevices.ts"]
+}
