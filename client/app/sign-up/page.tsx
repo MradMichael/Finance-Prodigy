@@ -145,7 +145,9 @@ export default function SignUpPage() {
       </p>
 
       <p className="text-[10px] mt-2 text-center max-w-xs" style={{ color: T.mute }}>
-        Each account&apos;s data is stored separately. Your records are private to you.
+        {/* Session 41 (item C): was "Your records are private to you.", true of this browser's copy only. */}
+        Each account&apos;s data is stored separately, encrypted in this browser. If you turn on backup, the copy on
+        our server is not end-to-end encrypted: the server can read it.
       </p>
 
       {recoveryCode && <RecoveryCodeModal code={recoveryCode} onContinue={finishSignUp} />}

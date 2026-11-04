@@ -94,7 +94,10 @@ export default function RecoverPage() {
       </div>
 
       <p className="text-[10px] mt-8 text-center max-w-xs" style={{ color: T.mute }}>
-        No recovery code saved? There&apos;s no other way back into an account&apos;s data. That&apos;s the tradeoff for it being encrypted only you can unlock.
+        {/* Session 41 (item C): was "...for it being encrypted only you can unlock.", true of this browser's copy only. */}
+        No recovery code saved? There&apos;s no other way back into an account&apos;s data. That&apos;s the tradeoff for
+        this browser&apos;s copy being encrypted so only you can unlock it. If backup is on, the copy on our server is
+        not end-to-end encrypted: the server can read it.
       </p>
       <p className="text-[10px] mt-2 text-center max-w-xs" style={{ color: T.mute }}>
         Resetting your password does not sign you out on other devices — sign out there separately.
