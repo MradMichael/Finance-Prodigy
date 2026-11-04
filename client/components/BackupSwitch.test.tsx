@@ -15,6 +15,17 @@ describe("BackupSwitch", () => {
     expect(text).toMatch(/recovery code only works on this device/i);
   });
 
+  // LB0 (session 41): "off" can mean a copy was KEPT on the server (off-keep).
+  // The switch can't tell which, so its text must be true either way: never
+  // "stays in this browser only" unconditionally.
+  it("off: never claims the data is in this browser only, and says a kept copy stays readable on the server", () => {
+    render(<BackupSwitch on={false} busy={false} onChoose={vi.fn()} />);
+    const text = (document.body.textContent ?? "").replace(/\s+/g, " ");
+    expect(text).not.toMatch(/stays in this browser only/i);
+    expect(text).toMatch(/kept the existing copy, it stays on our server/i);
+    expect(text).toMatch(/server can read it/i);
+  });
+
   it("turning on is one act", () => {
     const onChoose = vi.fn();
     render(<BackupSwitch on={false} busy={false} onChoose={onChoose} />);
