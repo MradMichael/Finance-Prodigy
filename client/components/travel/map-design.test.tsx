@@ -215,3 +215,17 @@ describe("5. desktop: the map wide, the sheet below it", () => {
     expect(sheet.className).toMatch(/\bsm:static\b/);
   });
 });
+
+// 6. "Countries visited (N)" is hidden when N is 0 (owner); "Planned (N)" still lists planned-only countries.
+describe("6. no \"Countries visited (0)\"", () => {
+  it("only planned trips: no visited heading, and \"Planned (1)\" with Japan", async () => {
+    await panel([JAPAN_PLANNED]);
+    expect(screen.queryByRole("heading", { name: /^Countries visited/ })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Planned (1)" })).toBeTruthy();
+  });
+
+  it("with visited countries the heading shows, as before", async () => {
+    await panel([EUROPE]);
+    expect(screen.getByRole("heading", { name: "Countries visited (3)" })).toBeTruthy();
+  });
+});
