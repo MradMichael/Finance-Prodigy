@@ -303,6 +303,19 @@ export default function AboutPage() {
           </div>
         </section>
 
+        {/* Travel map plan, Phase 1b (wording APPROVED, owner 2026-11-05): the map and place data's credit. GeoNames'
+            licence, CC BY 4.0, requires it; Natural Earth is public domain, credited as a courtesy. */}
+        <section>
+          <h2 className="text-base font-semibold mb-4" style={{ ...SERIF, color: T.text }}>Map and place data</h2>
+          <p className="text-sm leading-relaxed" style={{ color: T.mute }}>
+            Country shapes: Natural Earth (public domain), via world-atlas. City names and locations: GeoNames (
+            <a href="https://www.geonames.org/" rel="noopener noreferrer" className="underline" style={{ color: T.brass }}>geonames.org</a>
+            ), licensed under{" "}
+            <a href="https://creativecommons.org/licenses/by/4.0/" rel="noopener noreferrer" className="underline" style={{ color: T.brass }}>Creative Commons Attribution 4.0</a>
+            .
+          </p>
+        </section>
+
         {/* Footer */}
         <footer className="text-center pt-4 pb-8">
           <p className="text-[11px]" style={{ color: T.mute }}>
