@@ -16,6 +16,7 @@ import {currentCycleKey, cycleKeyForISO, isInCycle, periodNoun, cycleLabel, type
 import { calendarDayOf } from "../lib/calendarDay";
 import CategoryOptions from "./form/CategoryOptions";
 import { suggestedTripId } from "../lib/trips";
+import RateAgeChip from "./RateAgeChip";
 
 type Bucket = "NEEDS" | "WANTS" | "SAVINGS";
 // Transactions (not recurring items) can also be logged as one-off INCOME --
@@ -947,6 +948,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
             <div>
               <Label>Currency</Label>
               <CurrencyToggle value={txCurrency} onChange={setTxCurrency} />
+              {txCurrency === "LBP" && <RateAgeChip updatedAt={financials.lbpRateUpdatedAt} rate={lbpRate} />}
             </div>
           )}
 
