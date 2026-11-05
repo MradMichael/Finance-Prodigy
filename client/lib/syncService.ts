@@ -246,12 +246,12 @@ export async function pushToServer(
     if (isSizeRefusal(res.status, json)) return { ok: false, tooLarge: true, error: BACKUP_TOO_LARGE };
     if (res.status === 401 && json?.code === "credentials_refused") return { ok: false, credentialsRefused: true, error: errorText(json, "Invalid sync credentials for this account.") };
     if (!res.ok) return { ok: false, error: errorText(json, serverTrouble(res.status)) };
-    // A 200 with no/malformed JSON body (proxy glitch, truncated response)
-    // is a real but different failure from "couldn't reach the server at
-    // all" — report it as such instead of falling through to json!.syncedAt
-    // and throwing, which the outer catch would then relabel as offline.
+    // A 200 that isn't our reply (a login page reached through a redirect, a
+    // proxy glitch, a truncated body) is a real but different failure from
+    // "couldn't reach the server at all". Session 41 (owner): it says so with the
+    // approved server-problem sentence, as any answer not from our server does.
     if (json === null || typeof json.syncedAt !== "string") {
-      return { ok: false, error: "Server responded, but the response was malformed. Try again." };
+      return { ok: false, error: serverTrouble(res.status) };
     }
     if (record) {
       // Session 8 (merged session 9): outside the network's catch, which read a storage
@@ -335,11 +335,13 @@ export async function probeServerCopy(email: string): Promise<ServerCopyProbe> {
       signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
     });
     const json = await parseJsonSafe(res);
+    // Session 41 (owner): only our server's own answers mean something here: its
+    // sentence for no copy, its sentence for no credentials, its marker for a
+    // wrong password. Anything else (Vercel's login wall, a proxy) is unreachable.
     const apiError = json !== null && typeof json.error === "string" ? json.error : null;
-    if (res.status === 404 && apiError !== null) return { kind: "none" };
-    if (res.status === 401 && apiError !== null) {
-      return apiError.includes("no sync credentials registered") ? { kind: "unregistered" } : { kind: "wrong-password" };
-    }
+    if (res.status === 404 && apiError?.includes("No sync data found")) return { kind: "none" };
+    if (res.status === 401 && apiError?.includes("no sync credentials registered")) return { kind: "unregistered" };
+    if (res.status === 401 && json?.code === "credentials_refused") return { kind: "wrong-password" };
     if (res.ok && json !== null && typeof json.syncedAt === "string") return { kind: "copy", hasRecoveryCode: json.hasRecoveryCode === true };
     return { kind: "unreachable" };
   } catch {
@@ -418,7 +420,7 @@ export async function pullFromServer(
     if (res.status === 401 && json?.code === "credentials_refused") return { ok: false, credentialsRefused: true, error: errorText(json, "Invalid sync credentials for this account.") };
     if (!res.ok) return { ok: false, error: errorText(json, serverTrouble(res.status)) };
     if (json === null || typeof json.syncedAt !== "string" || !("data" in json)) {
-      return { ok: false, error: "Server responded, but the response was malformed. Try again." };
+      return { ok: false, error: serverTrouble(res.status) }; // not our reply (session 41)
     }
     return { ok: true, data: json.data as LocalFinancials, syncedAt: json.syncedAt, hasRecoveryCode: json.hasRecoveryCode === true };
   } catch {

@@ -46,7 +46,9 @@ const COPY: Answer = { status: 200, body: { ok: true, data: { income: 1 }, synce
 const COPY_NO_CODE: Answer = { status: 200, body: { ok: true, data: { income: 1 }, syncedAt: "2026-10-05T08:00:00.000Z", hasRecoveryCode: false } };
 const NONE: Answer = { status: 404, body: { error: "No sync data found for this account." } };
 const PLATFORM_404: Answer = { status: 404 };
-const WRONG_PASSWORD: Answer = { status: 401, body: { error: "Invalid sync credentials for this account." } };
+// The server's real reply to a wrong token carries its marker (server/src/routes/sync.ts; since
+// 20 October). Session 41: the recovery-code check reads a wrong password only from it.
+const WRONG_PASSWORD: Answer = { status: 401, body: { error: "Invalid sync credentials for this account.", code: "credentials_refused" } };
 const UNREGISTERED: Answer = { status: 401, body: { error: "This account has no sync credentials registered yet. Push from an updated client first." } };
 const RELINK_OK: Answer = { status: 200, body: { ok: true } };
 const RELINK_REFUSED: Answer = { status: 401, body: { error: "Could not verify ownership of this account's sync data." } };
