@@ -5,15 +5,19 @@
 // (France, Italy, then France again is three rows); each holds its cities. A
 // country is picked by name; a city is picked from the one bundled file or
 // typed. A typed city the file holds (accents aside) takes its spelling and
-// point; one it doesn't is kept as typed, with no point. "Place on map" comes
-// with the map (Phase 1c). Nothing here writes a trip: stopsOf hands buildTrip
-// what the rows say, and buildTrip checks it.
+// point; one it doesn't is kept as typed. Phase 1c (D14): such a city can be
+// given a point with "Place on map", a tap on the map (PlacePicker, loaded only
+// by a dynamic import, so the trip forms carry no map code). Nothing here
+// writes a trip: stopsOf hands buildTrip what the rows say, and buildTrip
+// checks it.
+import { useEffect, useState, type ComponentType } from "react";
 import { useTheme } from "../../contexts/ThemeContext";
 import { Label, FocusInput } from "../form/Primitives";
 import { countryName, findCity, foldName, searchCities, searchCountries, type CityRow } from "../../lib/places";
 import type { TripStop, TripStopInput } from "../../lib/trips";
 
-export interface CityDraft { key: string; id?: string; name: string; point?: { lat: number; lon: number } }
+/** `placed`: the point came from a tap (Place on map), not from the list, so correcting the name keeps it. */
+export interface CityDraft { key: string; id?: string; name: string; point?: { lat: number; lon: number }; placed?: boolean }
 export interface PlaceDraft { key: string; id?: string; countryCode?: string; countryText: string; cities: CityDraft[] }
 /** The city file as the screen holds it: not asked for yet, loading, there, or failed. */
 export interface CitiesState { rows: CityRow[] | null; failed: boolean }
@@ -63,6 +67,7 @@ export function stopsOf(places: PlaceDraft[], rows: CityRow[] | null): TripStopI
 }
 
 const TAP = { minHeight: 44 } as const;
+type PickerProps = { countryCode: string; onPoint: (lat: number, lon: number) => void };
 
 export default function StopFields({ idPrefix, places, onPlaces, cities, needCities }: {
   idPrefix: string; places: PlaceDraft[]; onPlaces: (p: PlaceDraft[]) => void; cities: CitiesState; needCities: () => void;
@@ -72,6 +77,15 @@ export default function StopFields({ idPrefix, places, onPlaces, cities, needCit
   const setCity = (i: number, k: number, patch: Partial<CityDraft>) =>
     setPlace(i, { cities: places[i].cities.map((c, j) => (j === k ? { ...c, ...patch } : c)) });
   const pill = { background: T.ink, border: `1px solid ${T.line}`, color: T.text };
+  // Place on map: one city's picker open at a time (its row's key), its code fetched the first time.
+  const [placing, setPlacing] = useState<string | null>(null);
+  const [Picker, setPicker] = useState<ComponentType<PickerProps> | null>(null);
+  useEffect(() => {
+    if (!placing || Picker) return;
+    let live = true;
+    import("./PlacePicker").then((m) => { if (live) setPicker(() => m.default); }, () => { if (live) setPlacing(null); });
+    return () => { live = false; };
+  }, [placing, Picker]);
 
   return (
     <div className="space-y-3">
@@ -112,13 +126,15 @@ export default function StopFields({ idPrefix, places, onPlaces, cities, needCit
             const typed = c.name.trim();
             const offered = cities.rows && typed && !c.point ? searchCities(cities.rows, p.countryCode!, typed) : [];
             const notListed = cities.rows && typed && !c.point && !findCity(cities.rows, p.countryCode!, typed);
+            // A typed city with no point from the list (it isn't there, or the list didn't load), or one placed by a tap.
+            const canPlace = !!typed && (c.placed || (!c.point && (!cities.rows || !findCity(cities.rows, p.countryCode!, typed))));
             return (
               <div key={c.key}>
                 <div className="flex items-end gap-2">
                   <div className="flex-1">
                     <Label htmlFor={`${idPrefix}-city-${c.key}`}>City</Label>
                     <FocusInput id={`${idPrefix}-city-${c.key}`} value={c.name} placeholder="Type a city" autoComplete="off" onFocus={needCities}
-                      onChange={(e) => setCity(i, k, { name: e.target.value, point: undefined })} />
+                      onChange={(e) => setCity(i, k, c.placed ? { name: e.target.value } : { name: e.target.value, point: undefined })} />
                   </div>
                   <button type="button" onClick={() => setPlace(i, { cities: p.cities.filter((_, j) => j !== k) })} {...(typed ? { "aria-label": `Remove ${typed}` } : {})}
                     className="text-xs underline px-2" style={{ ...TAP, color: T.mute }}>Remove</button>
@@ -132,7 +148,21 @@ export default function StopFields({ idPrefix, places, onPlaces, cities, needCit
                     ))}
                   </ul>
                 )}
-                {notListed && <p className="text-[11px] mt-1" style={{ color: T.mute }}>Not in the list. It&apos;ll be saved as you typed it, but won&apos;t appear on the map.</p>}
+                {notListed && <p className="text-[11px] mt-1" style={{ color: T.mute }}>Not in the list. It&apos;ll be saved as you typed it. Use Place on map to show it on the map.</p>}
+                {canPlace && placing !== c.key && (
+                  <button type="button" onClick={() => setPlacing(c.key)} className="text-xs underline" style={{ ...TAP, color: T.mute }}>Place on map</button>
+                )}
+                {placing === c.key && (
+                  <div className="space-y-2 mt-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs" style={{ color: T.text }}>{`Tap the map where ${typed} is.`}</p>
+                      <button type="button" onClick={() => setPlacing(null)} className="text-xs underline px-2" style={{ ...TAP, color: T.mute }}>Cancel</button>
+                    </div>
+                    {Picker
+                      ? <Picker countryCode={p.countryCode!} onPoint={(lat, lon) => { setCity(i, k, { point: { lat, lon }, placed: true }); setPlacing(null); }} />
+                      : <div className="w-full rounded-xl animate-pulse" style={{ aspectRatio: "960 / 468", background: T.panelSoft, border: `1px solid ${T.line}` }} />}
+                  </div>
+                )}
               </div>
             );
           })}

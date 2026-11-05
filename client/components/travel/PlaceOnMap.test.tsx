@@ -8,7 +8,7 @@
 //   - A city picked from the list has its point already: no button.
 //   - The picker's map is a dynamic import: StopFields never imports it.
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, within, waitFor } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import TripsScreen from "../screens/TripsScreen";
@@ -43,7 +43,8 @@ const save = () => fireEvent.click(form().getByRole("button", { name: "Save trip
 /** A tap in the middle of the drawn map (mocked to 480 × 234 px). */
 async function tapMiddle() {
   vi.spyOn(SVGSVGElement.prototype, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, width: 480, height: 234, right: 480, bottom: 234, x: 0, y: 0, toJSON: () => ({}) });
-  const svg = await screen.findByTestId("place-map").then((el) => el.querySelector("svg")!);
+  const box = await screen.findByTestId("place-map");
+  const svg = await waitFor(() => { const el = box.querySelector("svg"); if (!el) throw new Error("the map hasn't drawn yet"); return el; });
   fireEvent.click(svg, { clientX: 240, clientY: 117 });
 }
 

@@ -24,16 +24,30 @@ const MARKER_PX = 4; // a city marker's radius
 const DRAG_PX = 5; // further than this is a drag, not a tap
 const MIN_WIDTH = 24; // the closest zoom, in SVG units
 
-export default function TravelMap({ world, trips, today, onCountry, onPoint, selected }: {
+export default function TravelMap({ world, trips, today, onCountry, onPoint, selected, fitTo }: {
   world: World; trips: StoredTrip[]; today: string;
   onCountry?: (code: string) => void;
   /** Place on map: a tap gives back its lon/lat (WGS84 degrees) instead of naming a country. */
   onPoint?: (lon: number, lat: number) => void;
   selected?: string | null;
+  /** Open fitted to these countries (Place on map: the row's country); the whole world otherwise. */
+  fitTo?: string[];
 }) {
   const T = useTheme();
   const full: Box = { x: 0, y: 0, width: world.width, height: world.height };
-  const [view, setView] = useState<Box>(full);
+  const aspect = world.width / world.height;
+  /** A view of this width centred on (cx, cy), clamped inside the world. */
+  const viewAt = (cx: number, cy: number, width: number): Box => {
+    if (width >= world.width) return full;
+    const w = Math.max(MIN_WIDTH, width), h = w / aspect;
+    return { x: Math.min(world.width - w, Math.max(0, cx - w / 2)), y: Math.min(world.height - h, Math.max(0, cy - h / 2)), width: w, height: h };
+  };
+  /** The view round these countries, at the map's shape, with a margin. */
+  const fitted = (codes: string[]): Box => {
+    const b = world.bounds(codes);
+    return viewAt(b.x + b.width / 2, b.y + b.height / 2, Math.max(b.width, b.height * aspect) * 1.2);
+  };
+  const [view, setView] = useState<Box>(() => (fitTo?.length ? fitted(fitTo) : full));
   const svgRef = useRef<SVGSVGElement>(null);
   const drag = useRef<{ x: number; y: number; view: Box; moved: boolean } | null>(null);
   // The map's drawn width in CSS px, measured after layout and on resize (a phone's until then), so the tap
@@ -57,19 +71,8 @@ export default function TravelMap({ world, trips, today, onCountry, onPoint, sel
   const markers = useMemo(() => cityMarkers(trips, today), [trips, today]);
   const stateOf = (code: string | null) => (code && visitedSet.has(code) ? "visited" : code && plannedSet.has(code) ? "planned" : "none");
 
-  const aspect = world.width / world.height;
-  /** A view of this width centred on (cx, cy), clamped inside the world. */
-  const viewAt = (cx: number, cy: number, width: number): Box => {
-    if (width >= world.width) return full;
-    const w = Math.max(MIN_WIDTH, width), h = w / aspect;
-    return { x: Math.min(world.width - w, Math.max(0, cx - w / 2)), y: Math.min(world.height - h, Math.max(0, cy - h / 2)), width: w, height: h };
-  };
   const zoom = (by: number) => setView((v) => viewAt(v.x + v.width / 2, v.y + v.height / 2, v.width * by));
-  function showMine() {
-    const b = world.bounds([...visited, ...planned]);
-    const width = Math.max(b.width, b.height * aspect) * 1.2; // a margin round them, at the map's shape
-    setView(viewAt(b.x + b.width / 2, b.y + b.height / 2, width));
-  }
+  const showMine = () => setView(fitted([...visited, ...planned]));
 
   /** SVG units per CSS px, at the map's drawn width (a phone's, before the first layout). */
   const rect = () => svgRef.current?.getBoundingClientRect();
