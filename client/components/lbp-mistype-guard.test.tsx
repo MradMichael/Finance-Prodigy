@@ -109,3 +109,40 @@ describe("the edit sheet", () => {
     expect(onChange).toHaveBeenCalledTimes(1);
   });
 });
+
+// Session 42 (owner, item 2, answer 8): the split entry's lira leg skipped the
+// check. Not intentional; it now asks like the single-currency entry does.
+describe("the split entry's lira leg", () => {
+  const split = (usd: string, lbp: string) => {
+    fireEvent.click(screen.getByRole("button", { name: /Split across USD and LBP\?/ }));
+    fireEvent.change(document.getElementById("tx-split-usd")!, { target: { value: usd } });
+    fireEvent.change(document.getElementById("tx-split-lbp")!, { target: { value: lbp } });
+    add();
+  };
+
+  it("$10 + L£400 asks first and stores neither leg until answered; 'No, save it' stores both", () => {
+    render(<Harness initial={start()} />);
+    split("10", "400");
+    expect(screen.getByRole("dialog", DIALOG)).toBeTruthy();
+    expect(latest.transactions).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: /No, save it as 400 LBP/ }));
+    expect(latest.transactions).toHaveLength(2);
+    expect(latest.transactions.map((t) => [t.amount, t.currency]).sort()).toEqual([[10, "USD"], [400, "LBP"]]);
+    expect(latest.transactions[0].linkedPaymentId).toBe(latest.transactions[1].linkedPaymentId);
+  });
+
+  it("'Let me fix the currency' stores neither leg and keeps the split form", () => {
+    render(<Harness initial={start()} />);
+    split("10", "400");
+    fireEvent.click(screen.getByRole("button", { name: "Let me fix the currency" }));
+    expect(latest.transactions).toHaveLength(0);
+    expect(document.getElementById("tx-split-lbp")).toBeTruthy();
+  });
+
+  it("$10 + L£500 is stored without asking", () => {
+    render(<Harness initial={start()} />);
+    split("10", "500");
+    expect(screen.queryByRole("dialog", DIALOG)).toBeNull();
+    expect(latest.transactions).toHaveLength(2);
+  });
+});
