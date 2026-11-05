@@ -3,7 +3,7 @@
 import { totalSpent } from "../../lib/spending";
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
-import { historizedRecurringContribution, moneyEquals, activeTransactions, LBP_RATE_STALE_DAYS, cycleStartDayOf, calendarDaysSince, recordRateEdit, lbpRateOf, makeToUSDLive } from "../../lib/localData";
+import { historizedRecurringContribution, moneyEquals, activeTransactions, LBP_RATE_STALE_DAYS, cycleStartDayOf, calendarDaysSince, recordRateEdit, confirmRate, lbpRateOf, makeToUSDLive } from "../../lib/localData";
 import { computeHoldingsByCurrency } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
@@ -33,18 +33,39 @@ const LBP_RATE_MAX = 10_000_000;
 // LBP is volatile enough that a stale rate silently undermines the app's
 // one real differentiator (accurate dual-currency tracking) — surface it
 // instead of letting it quietly go out of date unnoticed.
-function RateStaleness({ updatedAt }: { updatedAt?: string }) {
+//
+// Rate staleness, phase 1 (owner-approved 2026-11-05): the warning carries
+// its own answer. "Still L£X per $1" is confirmRate -- the check time moves,
+// nothing else does -- so a rate that hasn't moved costs one tap rather than
+// a retype. Shown wherever the warning is (3 days on); a rate never edited
+// stays silent (owner's answer 3), so it has nothing to confirm either.
+function RateStaleness({ updatedAt, rate, onConfirm, justConfirmed }: { updatedAt?: string; rate: number; onConfirm: () => void; justConfirmed: boolean }) {
   const T = useTheme();
   if (!updatedAt) return null;
   const days = calendarDaysSince(updatedAt); // COPY-08: calendar days, like the Overview alert
-  if (days < 3) return null; // recently updated — no need to nag
+  if (days < 3) {
+    // Said only on the visit the tap happened, so it reads as the answer to it.
+    return justConfirmed ? (
+      <p className="text-[11px] mt-1.5 px-1" style={{ color: T.mute }}>Rate confirmed today.</p>
+    ) : null; // recently updated — no need to nag
+  }
   const stale = days >= LBP_RATE_STALE_DAYS;
   const color = stale ? T.coral : T.brass;
   const label = `${days} days ago`; // never 1 (unreachable, gated above at days < 3)
   return (
-    <p className="text-[11px] mt-1.5 px-1 font-medium" style={{ color }}>
-      ⚠ Rate last updated {label}{stale ? ". LBP moves fast, double-check it's still accurate" : ""}.
-    </p>
+    <div className="mt-1.5 px-1 space-y-2">
+      <p className="text-[11px] font-medium" style={{ color }}>
+        ⚠ Rate last updated {label}{stale ? ". LBP moves fast, double-check it's still accurate" : ""}.
+      </p>
+      <button
+        type="button"
+        onClick={onConfirm}
+        className="w-full sm:w-auto min-h-[44px] rounded-xl px-4 text-sm font-medium"
+        style={{ background: "transparent", border: `1px solid ${color}`, color }}
+      >
+        Still {fmtCur(rate, "LBP")} per $1 — confirm
+      </button>
+    </div>
   );
 }
 
@@ -57,6 +78,11 @@ export default function CurrencyScreen({ financials, onChange }: { financials: L
   // display back mid-entry and make a rate impossible to type; bounds are
   // applied once, on blur, against the finished value.
   const [lbpRateInput, setLbpRateInput] = useState<string | null>(null);
+  const [justConfirmed, setJustConfirmed] = useState(false);
+  function confirmLbpRate() {
+    onChange(confirmRate(financials));
+    setJustConfirmed(true);
+  }
   function commitLbpRate(raw: string) {
     const parsed = parseFloat(raw);
     // An empty or unparseable field is discarded, never committed and never
@@ -70,6 +96,7 @@ export default function CurrencyScreen({ financials, onChange }: { financials: L
     if (!isNaN(parsed) && clamped !== lbpRate) {
       // Plan J (merged in session 23, bafa688): the edit goes in the dated log too (recordRateEdit), so entries keep their own day's rate.
       onChange(recordRateEdit(financials, clamped));
+      setJustConfirmed(false); // an edit, not a confirm: "confirmed today" would misdescribe it
     }
     setLbpRateInput(null);
   }
@@ -148,7 +175,7 @@ export default function CurrencyScreen({ financials, onChange }: { financials: L
           <p className="text-[11px] mt-1.5 px-1" style={{ color: T.mute }}>
             Used to convert L£ amounts to $ across the app. Every figure on this page depends on it.
           </p>
-          <RateStaleness updatedAt={financials.lbpRateUpdatedAt} />
+          <RateStaleness updatedAt={financials.lbpRateUpdatedAt} rate={lbpRate} onConfirm={confirmLbpRate} justConfirmed={justConfirmed} />
         </div>
 
         {/* Foreign cash (model 2): the sheets */}
