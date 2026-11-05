@@ -13,7 +13,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildWorld } from "./worldMap";
+import { buildWorld, TERRITORIES } from "./worldMap";
 
 const read = (f: string) => JSON.parse(readFileSync(join(__dirname, "..", "public", "geo", f), "utf8"));
 const world = buildWorld(read("countries-110m.json"), read("countries.json"));
@@ -29,7 +29,8 @@ describe("pieces", () => {
     expect(fr.map((p) => p.index)).toEqual([0, 1, 2]);
     expect(world.roles("FR")[0]).toBe("mainland");
     expect(world.pieces.every((p) => p.d.startsWith("M"))).toBe(true);
-    expect(new Set(world.pieces.map((p) => p.code)).size).toBe(177); // every shape, the two without a code included (null)
+    expect(new Set(world.pieces.map((p) => p.code).filter(Boolean)).size).toBe(175); // every coded shape
+    expect(world.pieces.some((p) => p.code === null)).toBe(true); // and the two no trip can name
   });
 
   it("France: Paris on the mainland, Corsica home, French Guiana overseas", () => {
@@ -52,6 +53,17 @@ describe("pieces", () => {
   });
 });
 
+describe("groups", () => {
+  it("home pieces are group 0; overseas pieces near each other share a group: Hawaii's islands one, Alaska another", () => {
+    const g = world.groups("US"), at = (lon: number, lat: number) => g[world.locate("US", lon, lat)!];
+    expect(at(-74, 40.71)).toBe(0);
+    expect(at(-157.86, 21.31)).toBe(at(-155.09, 19.72)); // Honolulu, Hilo
+    expect(at(-157.86, 21.31)).not.toBe(at(-149.9, 61.22)); // Hawaii is not Alaska
+    expect(at(-149.9, 61.22)).toBeGreaterThan(0);
+    expect(world.groups("FR")).toEqual([0, 1, 0]); // by area: mainland, French Guiana (83,000 km²), Corsica (8,700 km²)
+  });
+});
+
 describe("locating a point", () => {
   it("a coastal city just outside the coarse outline still counts (50 km of slack); open sea is no piece", () => {
     expect(roleAt("FR", 7.27, 43.7)).toBe("mainland"); // Nice
@@ -61,8 +73,17 @@ describe("locating a point", () => {
 
   it("a territory with no shape of its own is the piece of its parent's shape that holds its point", () => {
     expect(world.territory("GF")).toEqual({ code: "FR", index: world.locate("FR", -52.33, 4.94) });
-    expect(world.territory("SJ")).toEqual({ code: "NO", index: world.locate("NO", 15.63, 78.22) });
+    const sj = world.territory("SJ")!; // GeoNames' point for Svalbard lands on one of its islands, not Longyearbyen's
+    expect(sj.code).toBe("NO");
+    expect(world.groups("NO")[sj.index]).toBe(world.groups("NO")[world.locate("NO", 15.63, 78.22)!]);
     expect(world.territory("FR")).toBeNull(); // has its own shape
     expect(world.territory("MT")).toBeNull(); // a dot, inside no other country's shape
+    expect(world.territory("SG")).toBeNull(); // not a territory: never Malaysia's piece, however close
+  });
+
+  it("the territory list is scripts/build-geo.mjs's", () => {
+    const script = readFileSync(join(__dirname, "..", "scripts", "build-geo.mjs"), "utf8");
+    const block = /const TERRITORIES = \{([\s\S]*?)\};/.exec(script)![1];
+    expect([...block.matchAll(/^\s+([A-Z]{2}):/gm)].map((m) => m[1])).toEqual([...TERRITORIES]);
   });
 });
