@@ -17,6 +17,7 @@ import { calendarDayOf } from "../lib/calendarDay";
 import CategoryOptions from "./form/CategoryOptions";
 import { suggestedTripId } from "../lib/trips";
 import RateAgeChip from "./RateAgeChip";
+import { looksLikeMistypedLbp } from "../lib/entryGuards";
 
 type Bucket = "NEEDS" | "WANTS" | "SAVINGS";
 // Transactions (not recurring items) can also be logged as one-off INCOME --
@@ -291,7 +292,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   function addTransaction() {
     const amt = parseFloat(txAmt);
     if (!amt || amt <= 0) return;
-    if (txCurrency === "LBP" && amt < 500) {
+    if (looksLikeMistypedLbp(amt, txCurrency)) {
       setLbpConfirm({ amount: amt, proceed: commitTransaction });
       return;
     }
