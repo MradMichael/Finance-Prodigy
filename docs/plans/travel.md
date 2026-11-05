@@ -2,7 +2,7 @@
 
 An extension of the existing Trips screen (`client/lib/trips.ts`, `client/components/screens/TripsScreen.tsx`): a world map of the countries visited, a sheet of the trips in a country, city markers, and the trip list grouped by year. Read with `docs/CLAUDE_CODE_BRIEF.md`, which stays the authority on standards and standing rules.
 
-**Status (2026-11-05):** Phase 0 and Phase 1a are built, merged and verified live by the owner. **Phase 1b is merged at `2077aa4`** (owner-approved). **Phase 1c is merged at `06b4bec`** (owner: preview checked, CI green). **Phase 1, the travel map, is complete.** A **map design pass** (owner, 2026-11-05) is in progress on `claude/travel-map-design` (not merged). Phase 2 has no plan yet.
+**Status (2026-11-05):** Phase 0 and Phase 1a are built, merged and verified live by the owner. **Phase 1b is merged at `2077aa4`** (owner-approved). **Phase 1c is merged at `06b4bec`** (owner: preview checked, CI green). **Phase 1, the travel map, is complete.** A **map design pass** (owner, 2026-11-05) is built on `claude/travel-map-design` and **NOT merged**: it waits for the owner's review of the before/after screenshots. Phase 2 has no plan yet.
 
 **Rule 8:** the status line above and the phase status lines below change in the same commit as the work that changes them.
 
@@ -36,6 +36,12 @@ An extension of the existing Trips screen (`client/lib/trips.ts`, `client/compon
 | D14 | **"Place on map" is in Phase 1c,** not 1b (owner, 2026-11-05): placing a typed city needs the map. In 1b, a city picked from the list (or typed exactly as the list writes it, accents aside) gets its point; any other typed city gets none until 1c. |
 | D15 | **Trips opens on Map once any trip has a country; otherwise on List**, as Trips always has (owner, 2026-11-05): an account whose trips have no countries isn't shown an empty map over its trip cards. |
 | D16 | **Under the map:** "Countries visited (N)", N counting visited countries only; below it "Planned (N)", the countries with only planned trips, by name (owner, 2026-11-05). A country with both is under "Countries visited" only. The map picture is hidden from screen readers; these lists are their route. |
+| D17 | **The map opens fitted to the visited countries** (the "Show my countries" view), on what lights of them (D20); the whole world only when nothing is visited (owner, design pass). Planned-only countries aren't part of the opening view; "Show my countries" still fits visited and planned. |
+| D18 | **Visited countries stand out:** a strong brass fill (`brass70`, brass at 0xB0), 3:1 on unvisited land in every theme, with a thin ink outline so neighbouring visited countries stay apart. Planned keeps its dashed brass outline on plain land (owner, design pass). |
+| D19 | **Small-country dots only for visited or planned countries,** drawn larger than a city marker so their brass shows round a city in them (owner, design pass). |
+| D20 | **Overseas pieces: rule B at 650 km** (owner, design pass). A country's largest piece is its mainland; pieces within 650 km of the mainland, or of another home piece, are home; the rest are overseas, and overseas pieces within 650 km of each other form a group (Hawaii; Alaska; Svalbard). Per trip and country, the groups holding its cities' points light (50 km of slack for coarse coasts); if none of its stops there has a point, the home group lights. Groups add up across trips. A territory with no shape of its own (French Guiana GF, Svalbard SJ, and the other TERRITORIES) lights its parent's group that holds its point, and tapping that piece opens the territory. 650 km, not the 500 first proposed: measured, 500 made Peninsular Malaysia (603 km from Borneo) overseas. |
+| D21 | **Desktop:** in Map view the map breaks out of Trips' 768 px column to the main area's width, capped at 1,152 px (`max-w-6xl`); a country's sheet opens below the map at its width, its trips in two columns; phones keep the bottom sheet (owner, design pass). |
+| D22 | **"Countries visited (N)" is hidden when N is 0** (owner, design pass; replaces 1c's "(0)" heading). |
 
 ---
 
@@ -236,6 +242,43 @@ Cut from `main` at `a476736`. Every new string is APPROVED wording (§5). Pushed
 
 ---
 
+### Map design pass. Built on `claude/travel-map-design`, NOT merged.
+
+Owner's brief (2026-11-05), six problems, plus one found in the screenshots. Cut from `main` at `45ee52e`; pushed after every commit; failing test before each change. Decisions D17-D22.
+
+| # | What | Commits (RED, GREEN) |
+|---|---|---|
+| 0 | Status line (rule 8) | `2db0ee5` |
+| 1 | Opens fitted to the visited countries (D17) | `2fa225e`, `74cc78a` |
+| 2 | Strong visited fill, `brass70` token, ink outline (D18) | `e0827ca`, `b78c9f7` |
+| 3 | Dots only for visited or planned small countries (D19) | `f735410`, `1e6030d` |
+| 3b | A dot shows round a city marker in it (found in the screenshots: Valletta's marker hid Malta's dot) | `a550aa8`, `bdd1ad1` |
+| 4a | Pieces, roles, groups, locate, territory in `lib/worldMap.ts` (D20) | `3c8f598`, `4cab47a` |
+| 4b | `litPieces` in `lib/travel.ts`; one path per piece (D20) | `94f65b0`, `34e01c5` |
+| 4c | The opening view and "Show my countries" fit what lights (a Cayenne-only France trip opens on French Guiana) | `30b6581`, `1c36bb5` |
+| 5 | Desktop: map wide, sheet below (D21) | `02eaf36`, `810f731` |
+| 6 | No "Countries visited (0)" (D22) | `eeaf8ca`, `78f61af` |
+
+**Measured, not assumed:**
+- Contrast, from the theme tokens, all 6 themes: the visited fill on unvisited land 3.2-6.0:1 (was 1.3-1.6); the ink outline on the fill 3.9-6.9:1; the city markers' ink halo on the fill 3.9:1 and up; planned brass on land 6.2:1 and up.
+- Rule B on the 110m data: France's French Guiana (6,517 km), the US's Alaska (824 km) and Hawaii, Norway's Svalbard (681 km) are overseas; Corsica, Japan's, Canada's and Indonesia's islands, Russia's Franz Josef Land (517 km) and Peninsular Malaysia (603 km) are home. Indonesia's Papua is home (the islands chain within 650 km), contrary to an edge case first guessed before measuring. Countries with an overseas piece: FR, US, NO.
+- Classifying every country at once took 406 ms here, so pieces are classified per country on first use and kept.
+
+**Tests changed on purpose:** 1c's visited-border, dot, path-count and "(0)" tests now describe the new design; the old contrast block now checks what is drawn. Each change is named in its GREEN commit.
+
+**Results:** client **3,039 passed** (UTC), **3,051 passed** under `TZ=Asia/Beirut`; `tsc` and lint 0. Production build passes; the Overview's first load is 291 kB before and after (no growth).
+
+**Screenshots** (before = `main` at `45ee52e`, after = this branch; a temporary harness page rendering the real `TripsScreen` with demo trips in a 220 px-sidebar shell, never committed): 375 px, 375 px with France's sheet, 1440 px with France's sheet in Ivory and in Ledger.
+
+**Owner's review before merging:**
+- The map opens on your visited countries; with only planned trips, on the whole world.
+- Visited countries are clearly brass; planned ones dashed; no dots scattered over the oceans; Malta a brass ring round Valletta.
+- A Paris trip doesn't light French Guiana; a Honolulu trip lights Hawaii only.
+- Desktop: the map spans the main area; France's sheet opens below it.
+- Only planned trips: no "Countries visited" heading.
+
+---
+
 ## 4. Planned
 
 Nothing more is planned for Phase 1, which is complete (1c merged at `06b4bec`). Phase 2 and the open items are in §7.
@@ -314,8 +357,12 @@ All of 10–15 and 8's 1c line are now in use. Item 12's line also serves the Pl
   - Found in 1b and deliberately not changed there; it's not part of 1c either.
 - **Left after 1c (none blocks the merge):**
   - **Pinch to zoom isn't built:** zoom is "+"/"−" and drag. Two-finger pinch is a possible later addition, with no new wording.
-  - **"Countries visited (0)":** an account with only planned trips sees that heading over an empty list, then "Planned (1)". This was a judgement call (the heading's meaning stays steady), easy to change.
+  - ~~"Countries visited (0)"~~: resolved by the design pass (D22).
   - **The picker's failure line:** if the map can't load while placing a city, the picker shows item 12, "…They're all in the list.". The words were approved for the Map view; they're true here too, but read a little oddly in a form.
+- **Left after the design pass (none blocks a merge):**
+  - **Two left edges on desktop:** in Map view the header and the New trip form keep the centred 768 px column while the map spans 1,152 px (D21 as approved). The usual wide-figure pattern; aligning them is a small change if wanted.
+  - **`World.shapes` is now unused** outside one test (the map draws `pieces` since 4b). Left in place, not removed unasked.
+  - **A small country's ring can sit off-centre** round its city (Valletta is not Malta's centroid): true geography, not a bug.
 - **Risks carried from 1b and 1c:**
   - 368 KB over Lebanese mobile data the first time a form needs the city list, and again after each deploy (above);
   - small countries hard to tap at 375 px (hence the dots and the list);
