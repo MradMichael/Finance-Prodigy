@@ -6,10 +6,11 @@
 // from scripts/build-geo.mjs; this test is what keeps them in step.
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { COUNTRY_CODES } from "./countryCodes";
 
 type Row = [code: string, numeric: string | null, lat: number, lon: number];
-const file = JSON.parse(readFileSync(new URL("../public/geo/countries.json", import.meta.url), "utf8")) as { fields: string[]; rows: Row[] };
+const file = JSON.parse(readFileSync(join(__dirname, "..", "public", "geo", "countries.json"), "utf8")) as { fields: string[]; rows: Row[] };
 const byCode = new Map(file.rows.map((r) => [r[0], r]));
 
 describe("the country list", () => {
