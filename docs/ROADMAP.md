@@ -462,6 +462,8 @@ Taken after a read-only app-readiness assessment (2026-11-04). The plan is websi
 
 **Who owns what:** the install prompt, storage persistence and offline hardening belong to a separate PWA session. The mobile-correctness pass (16 px inputs, 44 px tap targets) belongs to the session that recorded this note.
 
+**Own-work finding (Rule 17), from the 2026-11-04 assessment.** This has no audit number because the audit document isn't in the repository; the owner assigns one when copying it in. The first 375 px sweep (Playwright, a new empty account) reported figures for all 16 screens, but it measured the Overview 16 times. The blocking backup-choice prompt (`SyncChoicePrompt`) covered the bottom navigation, so every navigation click failed, and the script logged "nav fail" and measured the screen it was still on. This was caught from those log lines and a screenshot, before anything was reported. A re-run that first chose "Keep it off" measured each screen, and only those figures were reported. **Lesson:** a sweep that navigates must check it arrived on the screen it names before measuring it. A failed click that is logged and then ignored produces plausible numbers for the wrong screen.
+
 **SAFE STOP.**
 
 ---
