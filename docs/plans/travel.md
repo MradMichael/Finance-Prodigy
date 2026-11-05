@@ -2,7 +2,7 @@
 
 An extension of the existing Trips screen (`client/lib/trips.ts`, `client/components/screens/TripsScreen.tsx`): a world map of the countries visited, a sheet of the trips in a country, city markers, and the trip list grouped by year. Read with `docs/CLAUDE_CODE_BRIEF.md`, which stays the authority on standards and standing rules.
 
-**Status (2026-11-05):** Phase 0 and Phase 1a are built, merged and verified live by the owner. **Phase 1b is merged at `2077aa4`** (owner-approved). Phase 1c is planned and its wording approved; its build is not yet approved. Phase 2 has no plan yet.
+**Status (2026-11-05):** Phase 0 and Phase 1a are built, merged and verified live by the owner. **Phase 1b is merged at `2077aa4`** (owner-approved). **Phase 1c is approved and in progress** on `claude/travel-1c` (not merged). Phase 2 has no plan yet.
 
 **Rule 8:** the status line above and the phase status lines below change in the same commit as the work that changes them.
 
@@ -154,7 +154,7 @@ Cut fresh from `main` at `46c9a0b`. Every new string is the owner's APPROVED wor
 
 ### Phase 1c: the map
 
-**Status: planned, wording approved, build not yet approved.** Cut fresh from `main` after 1b merges.
+**Status: approved, in progress** on `claude/travel-1c`, cut from `main` at `a476736`.
 
 **Files:** `components/travel/TravelMap.tsx`, `components/travel/CountrySheet.tsx`, `components/travel/StopFields.tsx` ("Place on map", D14), the dependencies `d3-geo` and `topojson-client`, `public/geo/countries-110m.json`.
 
