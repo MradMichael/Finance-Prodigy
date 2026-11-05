@@ -3,6 +3,11 @@
 // sentence was addressed to a developer, and neither said that backup is opt-in or that the server copy
 // can be read by the server (the Privacy page says both). It now says both, in the owner's words, with a
 // link to the Privacy page.
+//
+// Owner's decisions (2026-11-05, later round): the note matches the sign-up page's caveat, at the same
+// size (text-xs) in the main text colour, not muted; and the link is a block on its own line with a tap
+// area at least 44 px tall. Compared against the rendered sign-up caveat, not a copy of its classes, so
+// the two can't drift apart. Measured live at 375 px too: jsdom does no layout.
 import { it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 
@@ -12,9 +17,12 @@ vi.mock("../../lib/auth", () => ({
   signIn: vi.fn(),
   updateDevicePassword: vi.fn(),
   restartDeviceFromServer: vi.fn(),
+  signUp: vi.fn(),
 }));
+vi.mock("../../lib/syncService", () => ({ checkEmailExists: vi.fn(async () => false), markAutoPulled: vi.fn() }));
 
 import SignInPage from "./page";
+import SignUpPage from "../sign-up/page";
 import { ThemeProvider } from "../../contexts/ThemeContext";
 
 afterEach(cleanup);
@@ -38,4 +46,32 @@ it("no longer tells the user to connect a database", () => {
 it("links to the Privacy page as 'How your data is stored'", () => {
   render(<ThemeProvider><SignInPage /></ThemeProvider>);
   expect(screen.getByRole("link", { name: "How your data is stored" }).getAttribute("href")).toBe("/privacy");
+});
+
+/** The <p> whose text includes `fragment`, after rendering `page`. */
+function paragraphWith(page: React.ReactElement, fragment: string): HTMLParagraphElement {
+  const { container } = render(<ThemeProvider>{page}</ThemeProvider>);
+  const p = [...container.querySelectorAll("p")].find((el) => (el.textContent ?? "").replace(/\s+/g, " ").includes(fragment));
+  if (!p) throw new Error(`no paragraph with "${fragment}"`);
+  return p as HTMLParagraphElement;
+}
+
+it("is the same size and colour as the sign-up page's caveat, not muted small print", () => {
+  const signUp = paragraphWith(<SignUpPage />, "the server can read it");
+  const signUpColour = signUp.style.color;
+  const signUpMuted = paragraphWith(<SignUpPage />, "By creating an account").style.color;
+  cleanup();
+  const signIn = paragraphWith(<SignInPage />, "the server can read it");
+  expect(signIn.className).toContain("text-xs");
+  expect(signIn.className).not.toContain("text-[10px]");
+  expect(signIn.style.color).toBe(signUpColour);
+  expect(signIn.style.color).not.toBe(signUpMuted);
+});
+
+it("puts 'How your data is stored' on its own line, at least 44 px tall to tap", () => {
+  const caveat = paragraphWith(<SignInPage />, "the server can read it");
+  const link = screen.getByRole("link", { name: "How your data is stored" });
+  expect(caveat.contains(link)).toBe(false);
+  expect(link.className).toMatch(/(^|\s)(block|flex)(\s|$)/);
+  expect(parseFloat(link.style.minHeight)).toBeGreaterThanOrEqual(44);
 });
