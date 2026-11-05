@@ -56,6 +56,9 @@ export function buildTrip(p: { name: string; startDate: string; endDate: string;
  * time stay and its edit time moves, so the sync merge sees an ordinary
  * change. Rows aren't touched, so every tag stays. A trip that's gone
  * (deleted on another device) isn't brought back.
+ * Travel map plan, Phase 0 (owner-approved): a field the form doesn't set
+ * (one newer code wrote: a trip's cities, its notes) is kept. The fields it
+ * does set are replaced, and one it leaves out (no category budgets) is gone.
  */
 export function editTrip(data: LocalFinancials, tripId: string, p: Parameters<typeof buildTrip>[0], now: Date = new Date()):
   { ok: true; data: LocalFinancials } | { ok: false; reason: "name" | "dates" | "budget" } {
@@ -64,7 +67,8 @@ export function editTrip(data: LocalFinancials, tripId: string, p: Parameters<ty
   const r = buildTrip(p, now);
   if (!r.ok) return r;
   const { id: _new, createdAt: _created, ...fields } = r.trip;
-  const trip: StoredTrip = { id: old.id, ...fields, createdAt: old.createdAt };
+  const { name: _n, startDate: _s, endDate: _e, budgetUSD: _b, categoryBudgetsUSD: _c, updatedAt: _u, ...kept } = old;
+  const trip: StoredTrip = { ...kept, id: old.id, ...fields, createdAt: old.createdAt };
   return { ok: true, data: { ...data, trips: (data.trips ?? []).map((t) => (t.id === tripId ? trip : t)) } };
 }
 
