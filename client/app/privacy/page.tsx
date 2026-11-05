@@ -79,7 +79,11 @@ export default function PrivacyPage() {
             features that could query trends across your own data. <strong style={{ color: T.text }}>That stopped in
             September 2026: no decomposed copy is written any more.</strong> Copies made before it stopped are still on
             our database. They were never shared externally, nothing in the app ever read them back, and deleting
-            your account removes them along with the sync backup itself.
+            your account normally removes them along with the sync backup itself.
+            {/* LB6 (session 42): owner-approved caveat, until 2.4.132 steps 2-3. */}
+            {" "}One known exception: for some accounts whose backup copy was already gone, some of these older
+            copies were left behind, and deleting the account in the app can&apos;t reach them. Until we&apos;ve
+            removed them, email us and we&apos;ll delete them by hand.
           </p>
           <p>
             Separately, Profile → Help improve ESSA is a toggle, <strong style={{ color: T.text }}>on by default but a real opt-out</strong>,
@@ -115,7 +119,7 @@ export default function PrivacyPage() {
           </p>
           <p>
             <strong style={{ color: T.text }}>If backup was ever on for your account</strong>, including automatically before 28 September 2026, deleting your account
-            also removes that backup copy (and anything derived from it) from our server automatically, on a
+            also removes that backup copy (and anything derived from it, apart from the exception under Internal analytics) from our server automatically, on a
             best-effort basis. If you&apos;re offline at the moment you delete, or the server is unreachable, that
             part won&apos;t complete. Email us and we&apos;ll remove it by hand.
           </p>
