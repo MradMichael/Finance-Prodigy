@@ -81,7 +81,7 @@ describe("loading the city file", () => {
 
 // Like 2.4.165's email rule (lib/no-address-in-urls.test.ts): a URL lands in the host's request logs.
 describe("no place a person went is ever put in a URL", () => {
-  const ROOT = process.cwd(); // vitest runs from client/
+  const ROOT = join(__dirname, ".."); // client/, wherever the run was started from
   const sources = (dir: string): string[] => readdirSync(dir).flatMap((name) => {
     const p = join(dir, name);
     if (statSync(p).isDirectory()) return sources(p);
