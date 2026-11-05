@@ -126,6 +126,33 @@ describe("notice only, nothing set aside", () => {
     expect(r.clashes).toEqual([expect.objectContaining({ how: "crossed", key: "goal:g1", kept: 600, moved: 50, result: 650 })]);
   });
 
+  // 2.8.5e: the direction each crossed movement is named by, re-derived from
+  // real rows (moved = balance with the other device's rows - without them).
+  it("9b. directions from real rows: contribution up, payment down, deposit up, withdrawal down; two kinds at once: mixed", () => {
+    const row = (o: Partial<StoredTransaction>) => ({ id: "m", currency: "USD", description: "x", date: "2026-11-05", createdAt: at("10:00"), updatedAt: at("10:00"), ...o }) as StoredTransaction;
+    const goal = settle(copy([row({ amount: 50, bucket: "SAVINGS", goalId: "g1" })]), copy([goalFix("l", "10:05", 600, 500)])).clashes[0];
+    expect(goal).toMatchObject({ moved: 50, movedCount: 1, movedDirection: "up" });
+    const debt = settle(copy([row({ amount: 100, bucket: "NEEDS", debtId: "d1" })]), copy([debtFix("l", "10:05", 5200, 5000)])).clashes[0];
+    expect(debt).toMatchObject({ moved: -100, movedCount: 1, movedDirection: "down", result: 5100 });
+    const deposit = settle(copy([row({ amount: 200, bucket: "SAVINGS", efAmount: 200 })]), copy([efFix("l", "10:05", 900, 1000)])).clashes[0];
+    expect(deposit).toMatchObject({ moved: 200, movedDirection: "up", result: 1100 });
+    const withdrawal = settle(copy([row({ amount: 300, bucket: "NEEDS", efAmount: -300 })]), copy([efFix("l", "10:05", 900, 1000)])).clashes[0];
+    expect(withdrawal).toMatchObject({ moved: -300, movedDirection: "down", result: 600 });
+    const mixed = settle(copy([row({ id: "m1", amount: 200, bucket: "SAVINGS", efAmount: 200 }), row({ id: "m2", amount: 300, bucket: "NEEDS", efAmount: -300 })]), copy([efFix("l", "10:05", 900, 1000)])).clashes[0];
+    expect(mixed).toMatchObject({ moved: -100, movedCount: 2, movedDirection: "mixed", result: 800 });
+  });
+
+  it("9c. the other way, from real rows: a debt row that raises it is up; a goal row that lowers it is down; changes that cancel out aren't reported", () => {
+    const row = (o: Partial<StoredTransaction>) => ({ id: "m", currency: "USD", description: "x", date: "2026-11-05", createdAt: at("10:00"), updatedAt: at("10:00"), ...o }) as StoredTransaction;
+    const debtUp = settle(copy([row({ amount: -100, bucket: "TRANSFER", debtId: "d1" })]), copy([debtFix("l", "10:05", 5200, 5000)])).clashes[0];
+    expect(debtUp).toMatchObject({ moved: 100, movedDirection: "up", result: 5300 });
+    const goalDown = settle(copy([row({ amount: -50, bucket: "TRANSFER", goalId: "g1" })]), copy([goalFix("l", "10:05", 600, 500)])).clashes[0];
+    expect(goalDown).toMatchObject({ moved: -50, movedDirection: "down", result: 550 });
+    const cancel = settle(copy([row({ id: "m1", amount: 200, bucket: "SAVINGS", efAmount: 200 }), row({ id: "m2", amount: 200, bucket: "NEEDS", efAmount: -200 })]), copy([efFix("l", "10:05", 900, 1000)]));
+    expect(derivedEfBalance(cancel.data)).toBe(900); // exactly what the correction stated
+    expect(cancel.clashes).toEqual([]);
+  });
+
   it("10. a clash that includes a period close's row: nothing set aside, a notice", () => {
     const closeRow = efFix("p", "10:00", 900, 1000);
     const phone = copy([closeRow], { periodCloses: [{ cycleKey: "2026-10", emergencyFund: { expectedUSD: 1000, countedUSD: 900, deltaUSD: -100, transactionId: "p" } } as never] });

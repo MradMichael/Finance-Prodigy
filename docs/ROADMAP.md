@@ -317,7 +317,7 @@ Two devices each log a different transaction between syncs; both survive after e
 
 **Still open (session 41 plan; owner's answers the same day):**
 - LB1, LB2: goal achievement to be derived like `debtPayoff`, dated by the latest crossing still standing (2.8.1–2.8.4, `docs/plans/phase-2.8.md`).
-- LB3: **2.8.5a–d built, held** (owner-approved rule, session 42), for the safety net, debts and goals alike.
+- LB3: **2.8.5a–d built, held** (owner-approved rule, session 42), for the safety net, debts and goals alike. **2.8.5e** (notice wording): approved and built, session 43.
 - Withdrawals don't exist: to be a $0 row with a negative `goalAmount`, moving nothing in the budget.
 - `achievedAt` is dual-written for one release; retiring `currentAmount` waits for the owner's confirmation that every device is updated.
 
