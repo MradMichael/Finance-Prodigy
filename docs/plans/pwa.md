@@ -1,19 +1,26 @@
 # ESSA as an installable app (PWA): plan, decisions, status
 
-**Branch:** `claude/ecstatic-pascal-9307tx`, pushed, **not merged**. `main` is untouched by this work.
-**Written:** 2026-11-05, at the close of the build session, for whoever picks this up next.
+**Branch:** `claude/ecstatic-pascal-9307tx`, **merged to `main` at `f5b82bc`** (2026-11-05; a merge commit, not squashed).
+**Written:** 2026-11-05, at the close of the build session; updated after the merge, for whoever picks this up next.
 **Authority:** `docs/CLAUDE_CODE_BRIEF.md` (rules 1–18, §6.5) and `docs/ROADMAP.md` (Phase 7, F6) still govern.
 This file records one feature's plan and the owner's decisions; it does not replace either.
 
 ## SAFE STOP state
 
-The branch is consistent and shippable as it stands: P1, P2, P3 and P5 are built and pushed. P4 is not started.
-Each commit passes its touched tests and `tsc` on its own, except `96903fd` (fails `tsc` with two unused test
-declarations; fixed by the very next commit, `d9e875f`). Full suite at `d4c0f99`: 2,729 passed, 13 skipped
-(330 files); lint and `tsc` clean.
+`main` is consistent and shippable: P1, P2, P3 and P5 are merged at `f5b82bc`. P4 is not started.
+- **On the merged tree** (onto `63ceb95`): `tsc` and lint clean; full client suite 2,831 passed, 13 skipped
+  (343 files); production build clean.
+- **On the branch:** each commit passes its touched tests and `tsc` on its own, except `96903fd` (fails `tsc`
+  with two unused test declarations; fixed by the very next commit, `d9e875f`).
 
-**Rule 6:** no phase here is complete until the owner confirms it on a real phone. The phone checklist below
-has not been reported back yet.
+**Rule 6:** no phase here is complete until the owner confirms it on a real phone.
+
+| Device | Result (2026-11-05) |
+|---|---|
+| **iPhone** | **NOT TESTED** (no iPhone available). The storage question below is open, and P4's iPhone warning stays conditional on it. |
+| **Android** | **Pending, Samsung on production.** Samsung with Chrome, on production after the merge. |
+
+**Problems found:** none reported yet.
 
 ## What already existed before this work (verified in code, 2026-11-04)
 
@@ -31,11 +38,11 @@ has not been reported back yet.
 
 | Phase | What | Status |
 |---|---|---|
-| P1 | Manifest, icons, iPhone page settings | Built and pushed. Awaiting phone check |
-| P2 | Standalone display, safe areas, status bar colour follows theme | Built and pushed. Awaiting phone check |
-| P3 | Honest offline wording, storage persistence in Profile | Built and pushed, **except the sign-in note** (see below). Awaiting phone check |
+| P1 | Manifest, icons, iPhone page settings | Merged (`f5b82bc`). Phone check pending, Samsung on production; iPhone not tested |
+| P2 | Standalone display, safe areas, status bar colour follows theme | Merged (`f5b82bc`). Phone check pending, Samsung on production; iPhone not tested |
+| P3 | Honest offline wording, storage persistence in Profile | Merged (`f5b82bc`), **except the sign-in note** (see below). Phone check pending, Samsung on production; iPhone not tested |
 | P4 | "Install ESSA" in Profile | **Not started.** Gated (see below) |
-| P5 | Version and "Check for updates" in Profile | Built and pushed. Awaiting phone check |
+| P5 | Version and "Check for updates" in Profile | Merged (`f5b82bc`). Phone check pending, Samsung on production; iPhone not tested |
 
 ### Commits (from `git log origin/main..HEAD`)
 
@@ -90,11 +97,17 @@ has not been reported back yet.
 
 ## What's left
 
-1. **The owner's phone checklist** (below), on the branch preview. Not reported back yet.
-2. **The iPhone storage result.** With backup off, does the home-screen app see the account created in
-   Safari? This decides P4's warning wording. Widely reported, not verified here: iPhone home-screen apps keep
-   storage separate from Safari.
-3. **P4: "Install ESSA" in Profile.** Not started. Gated on LB3, LB6 and item 2. Plan as approved in outline:
+The owner is continuing these locally.
+
+1. **Samsung results, to add here.** The checklist below, on a Samsung with Chrome, on production (P1, P2, P3,
+   P5). Record what was seen, and any problems, in this file and in the SAFE STOP table above.
+2. **The iPhone storage result: NOT TESTED** (no iPhone available). With backup off, does the home-screen app
+   see the account created in Safari? This decides P4's iPhone warning. Widely reported, not verified here:
+   iPhone home-screen apps keep storage separate from Safari. The other iPhone items in the checklist are
+   untested too.
+3. **P4: "Install ESSA" in Profile.** Not started. Gated on LB3, LB6 and item 2. (`main` at `4733cd5` has a
+   Privacy-page deletion caveat for LB6; whether that meets the gate is the owner's call.) Plan as approved in
+   outline:
    - A `beforeinstallprompt` listener in the layout (cancels the browser's own mini-bar, keeps the event).
    - A pure `installMode()` returning `prompt` | `ios-instructions` | `installed` | `unsupported`.
    - A card in App info:
@@ -103,11 +116,12 @@ has not been reported back yet.
      - Already installed: says so.
      - Otherwise: nothing.
    - Never a popup. Wording goes to the owner before any commit.
-4. **The sign-in offline note.** Drafted, not built, waiting for the other session's sign-in branch to merge:
+4. **The sign-in offline note.** Drafted, not built. The other session's sign-in work is now merged
+   (`63ceb95`), so it can go ahead once the wording is approved:
    "You're offline. On a device you've signed in on before, your password works without a connection.
    Signing in on a new device needs one." Not yet approved as final.
-5. **ROADMAP Phase 7 status (rule 8).** Not updated, because the other session owns those lines. Once that
-   branch merges, Phase 7 should name this branch and its state. Until then the ROADMAP doesn't mention it.
+5. **ROADMAP Phase 7 status (rule 8).** Updated in the same commit as this update: it names P1, P2, P3 and
+   P5 as merged at `f5b82bc`, phone checks pending, and P4 and the sign-in note as not built.
 
 ## Known limits, not fixed (rule 16)
 
@@ -149,11 +163,19 @@ has not been reported back yet.
    test files. Fixed in `d9e875f`; `96903fd` is the one commit on the branch that fails `tsc` alone.
 5. **Leak test that couldn't fail.** `useOnline`'s first unmount test would have passed with a leaking
    listener. Replaced before commit with one confirmed to fail.
+6. **Untrue claim in the pushed merge commit.** `f5b82bc`'s message says the phases were "phone-checked by
+   the owner on the branch preview before this merge." That came from a message whose results were still
+   template placeholders. The owner has since confirmed: iPhone NOT TESTED, Android pending (Samsung on
+   production), no problems reported yet. The message can't be changed on `main`; this file and the ROADMAP
+   status line are the record.
+7. **First merge attempt went stale.** Made onto `1169e8b`, it was refused at push because `main` had moved
+   (`63ceb95`) during the checks. It was discarded unpushed and redone; `main` was fetched again before
+   pushing.
 
-## Phone checklist (branch preview, throwaway account; delete it afterwards, rule 9)
+## Phone checklist
 
-If installing doesn't appear on the preview, deployment protection is probably blocking the manifest. Check on
-production after merge instead (Q4).
+Now run on **production** after the merge (Q4's fallback): a Samsung with Chrome. iPhone not available. Use a
+throwaway account and delete it afterwards (rule 9). Record results in "What's left", item 1.
 
 **P1:**
 - The icon isn't clipped in the Android launcher shape.
