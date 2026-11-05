@@ -41,7 +41,7 @@ export default function TopBar({ session, onProfile, onSignOut, syncStatus }: { 
 
   return (
     <header
-      className="flex items-center justify-between px-4 py-2.5 flex-shrink-0 md:hidden"
+      className="flex items-center justify-between px-4 pt-[calc(0.625rem+env(safe-area-inset-top))] pb-2.5 flex-shrink-0 md:hidden"
       style={{ background: T.panel, borderBottom: `1px solid ${T.line}` }}
     >
       <div className="flex items-center gap-2">

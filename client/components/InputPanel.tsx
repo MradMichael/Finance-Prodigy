@@ -2158,7 +2158,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
 
     {actionMsg && (
       <div
-        className="fixed bottom-[4.75rem] md:bottom-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl text-xs font-medium shadow-lg"
+        className="fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom))] md:bottom-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl text-xs font-medium shadow-lg"
         style={{ background: T.panel, border: `1px solid ${T.jade}50`, color: T.text }}
       >
         <span style={{ color: T.jade }}>✓</span> {actionMsg}

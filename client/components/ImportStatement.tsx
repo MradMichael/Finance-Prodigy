@@ -8,7 +8,7 @@ import { uid, todayISO, matchCategoryRule, activeTransactions, reanchorTrackedBa
 import { trackedBalanceExpected } from "../lib/computeDashboard";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, DateFieldDMY } from "./form/Primitives";
-import { extractPositionedText, TooManyPagesError, CancelledError, LoadTimeoutError } from "../lib/statementImport/pdfText";
+import { extractPositionedText, readerNeedsNetwork, TooManyPagesError, CancelledError, LoadTimeoutError } from "../lib/statementImport/pdfText";
 import {
   parseNeoStatement, normalizeDescription, guessAccountLast4,
   type ParsedTransaction, type Bucket,
@@ -16,6 +16,9 @@ import {
 import { guessBucket } from "../lib/statementImport/categorize";
 import CategoryOptions from "./form/CategoryOptions";
 import { suggestedTripId } from "../lib/trips";
+
+/** PWA P3, owner-approved wording (2026-11-05): a statement can't be read for want of a connection. */
+export const IMPORT_NEEDS_NETWORK = "Reading a statement needs an internet connection right now. Connect, then try again. Nothing was imported.";
 
 type Step = "pick" | "parsing" | "error" | "card" | "review";
 
@@ -86,6 +89,13 @@ export default function ImportStatement({
   async function handleFile(file: File) {
     setStep("parsing");
     setError(null);
+    // PWA P3: offline without the saved reader, say so before reading anything (it would fail, blaming the file).
+    if (await readerNeedsNetwork()) {
+      if (cancelledRef.current) return;
+      setError(IMPORT_NEEDS_NETWORK);
+      setStep("error");
+      return;
+    }
     try {
       const items = await extractPositionedText(file, () => cancelledRef.current);
       if (cancelledRef.current) return;
@@ -121,6 +131,10 @@ export default function ImportStatement({
         setError("This PDF is too long to be a bank statement. Double-check it's the right file.");
       } else if (e instanceof LoadTimeoutError) {
         setError("This file took too long to open. It may be corrupted. Try re-exporting the statement PDF and uploading it again.");
+      } else if (await readerNeedsNetwork()) {
+        // PWA P3: the connection went while reading; the file isn't the problem.
+        if (cancelledRef.current) return;
+        setError(IMPORT_NEEDS_NETWORK);
       } else {
         setError("Couldn't read this PDF. Make sure it's a real statement file, not a scanned image.");
       }

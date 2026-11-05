@@ -38,6 +38,7 @@ import EditGoalSheet from "../components/EditGoalSheet";
 import PayDebtSheet from "../components/PayDebtSheet";
 import EditTransactionSheet from "../components/EditTransactionSheet";
 import { todayCalendarDay } from "../lib/calendarDay";
+import OfflineNotice, { backupRetriesOnReconnect } from "../components/OfflineNotice";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HOME
@@ -842,7 +843,7 @@ export default function Home() {
         {loadFailed ? (
           <div
             role="alert"
-            className="fixed bottom-4 left-1/2 -translate-x-1/2 max-w-sm w-[calc(100%-2rem)] rounded-2xl px-5 py-4 text-center shadow-2xl"
+            className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 max-w-sm w-[calc(100%-2rem)] rounded-2xl px-5 py-4 text-center shadow-2xl"
             style={{ background: T.panel, border: `1px solid ${T.coral}` }}
           >
             <p className="text-sm" style={{ color: T.text }}>{LOAD_FAILED}</p>
@@ -862,7 +863,7 @@ export default function Home() {
           </div>
         ) : loadingTooLong && (
           <div
-            className="fixed bottom-4 left-1/2 -translate-x-1/2 max-w-sm w-[calc(100%-2rem)] rounded-2xl px-5 py-4 text-center shadow-2xl"
+            className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 max-w-sm w-[calc(100%-2rem)] rounded-2xl px-5 py-4 text-center shadow-2xl"
             style={{ background: T.panel, border: `1px solid ${T.line}` }}
           >
             <p className="text-sm" style={{ color: T.text }}>This is taking longer than expected.</p>
@@ -888,6 +889,8 @@ export default function Home() {
       {/* A11Y-03: the sync status, in the indicator's own long labels, for a
           screen reader; the dot alone says nothing to one. */}
       <span role="status" className="sr-only">{syncStatus !== "idle" ? syncStatusLongLabel(syncStatus) : ""}</span>
+      {/* PWA P3 (owner-approved wording, 2026-11-05): while the device is offline. */}
+      <OfflineNotice backsUp={backupRetriesOnReconnect({ backupOn, syncRefused, newerBackup, backupTooLarge })} />
 
       {/* Body row */}
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
@@ -945,7 +948,7 @@ export default function Home() {
       <div role="status">
       {mergeNotice && (
         <div
-          className="fixed bottom-[4.75rem] md:bottom-4 left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50 flex items-start gap-3"
+          className="fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom))] md:bottom-4 left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50 flex items-start gap-3"
           style={{ background: T.panel, border: `1px solid ${T.line}` }}
         >
           <span className="text-sm flex-1" style={{ color: T.text }}>
@@ -980,7 +983,7 @@ export default function Home() {
       {saveError && (
         <div
           role="alert"
-          className="fixed top-[4.5rem] md:top-4 left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50 flex items-start gap-3"
+          className="fixed top-[calc(4.5rem+env(safe-area-inset-top))] md:top-4 left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50 flex items-start gap-3"
           style={{ background: T.panel, border: `1px solid ${T.coral}` }}
         >
           <span className="text-sm flex-1" style={{ color: T.text }}>
@@ -1004,7 +1007,7 @@ export default function Home() {
       <div role="status">
         {syncRefused && (
           <div
-            className={`fixed ${saveError ? "top-[11rem] md:top-[7.5rem]" : "top-[4.5rem] md:top-4"} left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50`}
+            className={`fixed ${saveError ? "top-[calc(11rem+env(safe-area-inset-top))] md:top-[7.5rem]" : "top-[calc(4.5rem+env(safe-area-inset-top))] md:top-4"} left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50`}
             style={{ background: T.panel, border: `1px solid ${T.brass}` }}
           >
             {/* SEC-07 amended (session 26, item 2): the owner's wording (session 27). */}
@@ -1013,7 +1016,7 @@ export default function Home() {
         )}
         {backupTooLarge && (
           <div
-            className={`fixed ${saveError ? "top-[11rem] md:top-[7.5rem]" : "top-[4.5rem] md:top-4"} left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50`}
+            className={`fixed ${saveError ? "top-[calc(11rem+env(safe-area-inset-top))] md:top-[7.5rem]" : "top-[calc(4.5rem+env(safe-area-inset-top))] md:top-4"} left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50`}
             style={{ background: T.panel, border: `1px solid ${T.brass}` }}
           >
             {/* ERR-03 (session 22; approved and merged in session 23, b173718) */}
@@ -1024,7 +1027,7 @@ export default function Home() {
         )}
         {backupFailed && !backupNoticeDismissed && (
           <div
-            className={`fixed ${saveError ? "top-[11rem] md:top-[7.5rem]" : "top-[4.5rem] md:top-4"} left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50 flex items-start gap-3`}
+            className={`fixed ${saveError ? "top-[calc(11rem+env(safe-area-inset-top))] md:top-[7.5rem]" : "top-[calc(4.5rem+env(safe-area-inset-top))] md:top-4"} left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50 flex items-start gap-3`}
             style={{ background: T.panel, border: `1px solid ${T.brass}` }}
           >
             <span className="text-sm flex-1" style={{ color: T.text }}>

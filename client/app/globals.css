@@ -16,6 +16,15 @@
   button, [role="button"], [role="tab"], [role="switch"] {
     min-width: 24px;
   }
+  /*
+   * PWA P2 (owner-approved, 2026-11-05): with viewport-fit=cover a phone in landscape puts its notch over one
+   * side of the page; every page clears it here rather than each page root. Top and bottom are padded by the
+   * shell itself (TopBar, BottomNav, the pinned notices), so the full-height home screen doesn't overflow.
+   */
+  body {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
 }
 
 /*

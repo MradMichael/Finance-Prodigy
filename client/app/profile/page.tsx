@@ -22,6 +22,8 @@ import type { LocalFinancials } from "../../lib/localData";
 import { LOAD_FAILED, LOAD_FAILED_NEXT } from "../../lib/loadFailure";
 import { isAnalyticsOptedIn, setAnalyticsOptIn } from "../../lib/analytics";
 import { useTheme, useThemeControl } from "../../contexts/ThemeContext";
+import StorageKeep from "../../components/StorageKeep";
+import VersionCheck from "../../components/VersionCheck";
 import { THEMES, type ThemeKey } from "../../lib/theme";
 import Field from "../../components/form/Field";
 import { DateFieldDMY } from "../../components/form/Primitives";
@@ -739,6 +741,8 @@ export default function ProfilePage() {
             <span>Trust &amp; Security</span>
             <span style={{ color: T.mute }}>→</span>
           </Link>
+          {/* PWA P5 (owner-approved, 2026-11-05): which version this device runs, and a check for a newer one. */}
+          <VersionCheck />
         </div>
 
         {/* Your data */}
@@ -837,6 +841,9 @@ export default function ProfilePage() {
               </div>
             )}
           </div>
+
+          {/* PWA P3 (owner-approved, 2026-11-05): what this browser says about keeping the data, and the ask. */}
+          <StorageKeep />
         </div>
 
         {/* Analytics opt-in */}

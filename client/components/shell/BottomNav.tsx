@@ -56,7 +56,7 @@ export default function BottomNav({ screen, setScreen }: { screen: Screen; setSc
           ))}
         </div>
       )}
-      <nav className="flex items-center justify-around px-1 py-2" style={{ background: T.panel, borderTop: `1px solid ${T.line}` }}>
+      <nav className="flex items-center justify-around px-1 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]" style={{ background: T.panel, borderTop: `1px solid ${T.line}` }}>
         {FIXED.map((key) => {
           const { label, icon } = NAV.find((n) => n.key === key)!;
           const active = screen === key;
