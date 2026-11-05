@@ -229,3 +229,15 @@ describe("6. no \"Countries visited (0)\"", () => {
     expect(screen.getByRole("heading", { name: "Countries visited (3)" })).toBeTruthy();
   });
 });
+
+// 3b (found in the screenshots): a small country's dot was the same size as a city marker, so Valletta's marker
+// hid Malta's brass dot entirely. A visited or planned dot is drawn larger, so its brass shows round the marker.
+describe("3b. a small country's dot shows round a city marker in it", () => {
+  it("Malta's dot is larger than Valletta's marker", () => {
+    const MALTA = trip("mt", "2025-01-01", [{ id: "v", countryCode: "MT", city: "Valletta", lat: 35.9, lon: 14.51 }]);
+    const { container } = render(<ThemeProvider><TravelMap world={WORLD} trips={[MALTA]} today={TODAY} /></ThemeProvider>);
+    const dot = Number(container.querySelector('circle[data-dot="MT"]')!.getAttribute("r"));
+    const marker = Number(container.querySelector('circle[data-city="Valletta"]')!.getAttribute("r"));
+    expect(dot).toBeGreaterThan(marker * 1.5);
+  });
+});
