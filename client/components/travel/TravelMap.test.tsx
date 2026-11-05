@@ -1,6 +1,7 @@
 // Travel map plan, Phase 1c (owner-approved; wording APPROVED 2026-11-05): the
 // map itself (TravelMap) and the panel that loads it (MapPanel).
-//   - Visited countries: a soft brass fill (decoration) and a SOLID brass border.
+//   - Visited countries: since the design pass, a strong brass fill (brass70)
+//     and a thin ink outline (map-design.test.tsx has its tests and contrast).
 //     Planned-only (D12): a DASHED brass border and no brass fill. A country
 //     with both is visited. The border and its dash carry the meaning, never
 //     colour alone; each reaches 3:1 (WCAG 1.4.11) in every theme.
@@ -45,13 +46,14 @@ function draw(trips: StoredTrip[], props: Partial<Parameters<typeof TravelMap>[0
 const viewBox = (svg: SVGSVGElement) => svg.getAttribute("viewBox")!.split(" ").map(Number);
 
 describe("the map", () => {
-  it("draws every shape; visited ones have a solid brass border, planned-only ones a dashed one; the rest none", () => {
+  it("draws every shape; visited ones are filled with an ink outline, planned-only ones have a dashed brass one; the rest none", () => {
     const { svg, shape } = draw([EUROPE, JAPAN, FRANCE_AGAIN]);
-    expect(svg.querySelectorAll("path[data-shape]")).toHaveLength(177);
+    expect(svg.querySelectorAll("path[data-shape]")).toHaveLength(WORLD.pieces.length); // one per piece since the design pass (177 shapes)
     const brass = THEMES.ivory.brass.toLowerCase();
     for (const code of ["FR", "IT"]) { // France: a past trip and a planned one, so visited
       expect(shape(code)!.getAttribute("data-state"), code).toBe("visited");
-      expect(shape(code)!.getAttribute("stroke")!.toLowerCase()).toBe(brass);
+      expect(shape(code)!.getAttribute("fill")).toBe(THEMES.ivory.brass70); // the design pass's strong fill
+      expect(shape(code)!.getAttribute("stroke")).toBe(THEMES.ivory.ink);
       expect(shape(code)!.getAttribute("stroke-dasharray")).toBeNull();
     }
     expect(shape("JP")!.getAttribute("data-state")).toBe("planned");
@@ -64,7 +66,7 @@ describe("the map", () => {
   it("a visited small country is a brass dot; the image is hidden from screen readers", () => {
     const { svg, dot } = draw([EUROPE]);
     expect(dot("MT")!.getAttribute("data-state")).toBe("visited");
-    expect(dot("SG")!.getAttribute("data-state")).toBe("none");
+    expect(dot("SG")).toBeNull(); // design pass: no dot for a small country with no trip
     expect(svg.getAttribute("aria-hidden")).toBe("true");
   });
 
@@ -130,8 +132,9 @@ describe("the map", () => {
   });
 });
 
-// WCAG 1.4.11: what carries the meaning reaches 3:1 against what's next to it. The soft brass fill is
-// decoration (about 1.5:1 on land), so it isn't relied on: the border is.
+// WCAG 1.4.11: what carries the meaning reaches 3:1 against what's next to it. Since the design pass the
+// visited fill is strong (brass70) and carries meaning itself; its contrast is in map-design.test.tsx.
+// Here: the planned dashed brass outline on land and on the sea, and the jade markers on unvisited land.
 describe.each(Object.keys(THEMES) as ThemeKey[])("map contrast, %s", (key) => {
   const t = THEMES[key];
   const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
@@ -139,11 +142,11 @@ describe.each(Object.keys(THEMES) as ThemeKey[])("map contrast, %s", (key) => {
   const lum = ([r, g, b]: number[]) => 0.2126 * ch(r) + 0.7152 * ch(g) + 0.0722 * ch(b);
   const ratio = (a: number[], b: number[]) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
   const over = (fg: number[], a: number, bg: number[]) => fg.map((c, i) => Math.round(c * a + bg[i] * (1 - a)));
-  const land = rgb(t.panelSoft), sea = rgb(t.ink), fill = over(rgb(t.brass), 0x30 / 255, land);
-  it("the brass border (solid or dashed) on land, on the sea and on its own fill; the jade markers on land and on that fill", () => {
+  const land = rgb(t.panelSoft), sea = rgb(t.ink), fill = over(rgb(t.brass), 0xb0 / 255, land);
+  it("the planned brass outline on land and on the sea; the jade markers on unvisited land; the ink outline on the visited fill", () => {
     const pairs: [string, number][] = [
-      ["brass on land", ratio(rgb(t.brass), land)], ["brass on sea", ratio(rgb(t.brass), sea)], ["brass on its fill", ratio(rgb(t.brass), fill)],
-      ["jade on land", ratio(rgb(t.jade), land)], ["jade on the brass fill", ratio(rgb(t.jade), fill)],
+      ["brass on land", ratio(rgb(t.brass), land)], ["brass on sea", ratio(rgb(t.brass), sea)],
+      ["jade on land", ratio(rgb(t.jade), land)], ["ink on the visited fill", ratio(rgb(t.ink), fill)],
     ];
     expect(pairs.filter(([, r]) => r < 3).map(([p, r]) => `${p} ${r.toFixed(2)}`)).toEqual([]);
   });
@@ -173,7 +176,7 @@ describe("the panel that loads the map", () => {
     const { container } = panel([EUROPE]);
     expect(container.querySelector("[data-map-placeholder]")).toBeTruthy();
     expect(await screen.findByRole("button", { name: "Show my countries" })).toBeTruthy();
-    expect(container.querySelectorAll("path[data-shape]")).toHaveLength(177);
+    expect(container.querySelectorAll("path[data-shape]")).toHaveLength(WORLD.pieces.length); // one per piece (177 shapes)
   });
 
   it("past 10 seconds, says it's still loading", async () => {

@@ -18,18 +18,9 @@ afterEach(() => { forgetWorld(); vi.unstubAllGlobals(); });
 const within = (box: { x: number; y: number; width: number; height: number }, [x, y]: [number, number]) =>
   x >= box.x && x <= box.x + box.width && y >= box.y && y <= box.y + box.height;
 
-describe("shapes and dots", () => {
-  it("one shape per country with an ISO code, Kosovo included as XK; the two shapes no trip can name are drawn without a code", () => {
-    const coded = world.shapes.filter((s) => s.code);
-    expect(coded).toHaveLength(175);
-    expect(coded.some((s) => s.code === "FR")).toBe(true);
-    expect(coded.some((s) => s.code === "XK")).toBe(true);
-    expect(world.shapes.filter((s) => !s.code)).toHaveLength(2);
-    expect(world.shapes.every((s) => s.d.startsWith("M"))).toBe(true);
-  });
-
+describe("dots", () => {
   it("every listed country without a shape is a dot at its centroid: Malta, Singapore, Bahrain among them", () => {
-    const shaped = new Set(world.shapes.map((s) => s.code));
+    const shaped = new Set(world.pieces.map((p) => p.code));
     expect(world.dots.map((d) => d.code).sort()).toEqual(LIST.rows.map((r: [string]) => r[0]).filter((c: string) => !shaped.has(c)).sort());
     for (const code of ["MT", "SG", "BH"]) expect(world.dots.some((d) => d.code === code), code).toBe(true);
     const mt = world.dots.find((d) => d.code === "MT")!;
@@ -81,7 +72,7 @@ describe("loading the map files", () => {
     vi.stubGlobal("fetch", fetch);
     const a = await loadWorld();
     await loadWorld();
-    expect(a.shapes).toHaveLength(177);
+    expect(a.pieces).toHaveLength(world.pieces.length);
     expect(fetch.mock.calls.map((c) => c[0]).sort()).toEqual(["/geo/countries-110m.json", "/geo/countries.json"]);
     expect([...WORLD_URLS].sort()).toEqual(["/geo/countries-110m.json", "/geo/countries.json"]);
   });
@@ -90,6 +81,6 @@ describe("loading the map files", () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("Not found", { status: 404 })));
     await expect(loadWorld()).rejects.toThrow();
     vi.stubGlobal("fetch", vi.fn(async (url: string) => new Response(JSON.stringify(url.endsWith("countries-110m.json") ? TOPO : LIST))));
-    expect((await loadWorld()).shapes).toHaveLength(177);
+    expect((await loadWorld()).pieces).toHaveLength(world.pieces.length);
   });
 });

@@ -242,7 +242,9 @@ export default function TripsScreen({ financials, onChange }: { financials: Loca
 
   return (
     <main className="min-h-screen px-4 py-8 md:px-10" style={{ background: T.ink }}>
-      <div className="max-w-3xl mx-auto space-y-6">
+      {/* Design pass, 5b (owner, after the screenshots): in Map view the header and the toggle line up with the
+          wide map (max-w-6xl); in List view they keep the 768 px column with the cards. */}
+      <div className={`${view === "map" ? "max-w-6xl" : "max-w-3xl"} mx-auto space-y-6`}>
         <div>
           <p className="text-[10px] uppercase tracking-widest" style={{ color: T.mute }}>ESSA</p>
           <h1 className="text-3xl mt-1" style={SERIF}>Trips</h1>
@@ -253,15 +255,23 @@ export default function TripsScreen({ financials, onChange }: { financials: Loca
           <button type="button" aria-pressed={view === "map"} onClick={() => setView("map")} className="px-4 rounded-xl text-sm font-semibold" style={seg(view === "map")}>Map</button>
           <button type="button" aria-pressed={view === "list"} onClick={() => setView("list")} className="px-4 rounded-xl text-sm font-semibold" style={seg(view === "list")}>List</button>
         </div>
+      </div>
 
-        {view === "map" && (Panel ? <Panel trips={trips} today={today} onAddTrip={addTrip} onShowTrip={showTrip} />
+      {/* Design pass, 5 (owner, 2026-11-05): in Map view the map breaks out of the 768 px column to the main
+          area's width, capped at max-w-6xl; the header above and the cards and forms below keep the column. */}
+      {view === "map" && (
+        <div className="max-w-6xl mx-auto mt-6">
+        {Panel ? <Panel trips={trips} today={today} onAddTrip={addTrip} onShowTrip={showTrip} />
           : panelFailed ? (
             <div role="status" className="rounded-2xl p-5 space-y-3" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
               <p className="text-sm" style={{ color: T.text }}>Couldn&apos;t load the map. Your trips are safe. They&apos;re all in the list.</p>
               <button type="button" onClick={() => setPanelAttempt((n) => n + 1)} className="px-4 rounded-xl text-sm font-semibold" style={{ background: T.jade, color: T.ink, minHeight: 44 }}>Try again</button>
             </div>
-          ) : <div className="w-full rounded-xl animate-pulse" style={{ aspectRatio: "960 / 468", background: T.panelSoft, border: `1px solid ${T.line}` }} />)}
+          ) : <div className="w-full rounded-xl animate-pulse" style={{ aspectRatio: "960 / 468", background: T.panelSoft, border: `1px solid ${T.line}` }} />}
+        </div>
+      )}
 
+      <div className="max-w-3xl mx-auto space-y-6 mt-6">
         {view === "list" && trips.length === 0 && <p className="text-sm" style={{ color: T.mute }}>No trips yet.</p>}
 
         {view === "list" && years.map(([year, inYear]) => (

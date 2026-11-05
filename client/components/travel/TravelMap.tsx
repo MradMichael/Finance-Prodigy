@@ -3,10 +3,14 @@
 // Travel map plan, Phase 1c (owner-approved; wording APPROVED 2026-11-05): the
 // world map, drawn from lib/worldMap.ts. Loaded only with the Map view or
 // "Place on map" (a dynamic import), never with the Trips screen's own code.
-//   - Visited (a trip there has started; D12): a soft brass fill, decoration
-//     only, and a SOLID brass border. Planned-only: a DASHED brass border and no
-//     brass fill. The border and its dash carry the meaning, not colour.
-//   - Countries without a 110m shape are dots, each with a 44 px tap area.
+//   - Visited (a trip there has started; D12): a strong brass fill (brass70,
+//     3:1 on unvisited land in every theme; design pass, owner 2026-11-05) with
+//     a thin ink outline, so neighbouring visited countries stay apart.
+//     Planned-only: a DASHED brass outline on plain land. Fill and dash carry the
+//     meaning together, never colour alone.
+//   - Countries without a 110m shape are dots, each with a 44 px tap area:
+//     only the visited or planned ones (design pass), so the oceans aren't
+//     scattered with every island nation.
 //   - City markers: jade with an ink halo; planned ones hollow and dashed.
 //   - "+" / "−" (read "Zoom in" / "Zoom out"), drag to move, "Show my countries".
 //   - The picture is hidden from screen readers: the country lists below it
@@ -16,11 +20,12 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "../../contexts/ThemeContext";
 import type { World, Box } from "../../lib/worldMap";
-import { cityMarkers, visitedCountries } from "../../lib/travel";
+import { cityMarkers, litPieces, visitedCountries } from "../../lib/travel";
 import type { StoredTrip } from "../../lib/trips";
 
 const TAP_PX = 44; // a dot's tap area, across
 const MARKER_PX = 4; // a city marker's radius
+const DOT_PX = 7; // a small country's dot: larger than a city marker, so its brass shows round a city in it (design pass, 3b)
 const DRAG_PX = 5; // further than this is a drag, not a tap
 const MIN_WIDTH = 24; // the closest zoom, in SVG units
 
@@ -35,6 +40,8 @@ export default function TravelMap({ world, trips, today, onCountry, onPoint, sel
 }) {
   const T = useTheme();
   const full: Box = { x: 0, y: 0, width: world.width, height: world.height };
+  // Design pass, 4 (rule B): which pieces light, and whose sheet each opens. Before the opening view, which fits them.
+  const lit = useMemo(() => litPieces(world, trips, today), [world, trips, today]);
   const aspect = world.width / world.height;
   /** A view of this width centred on (cx, cy), clamped inside the world. */
   const viewAt = (cx: number, cy: number, width: number): Box => {
@@ -42,9 +49,21 @@ export default function TravelMap({ world, trips, today, onCountry, onPoint, sel
     const w = Math.max(MIN_WIDTH, width), h = w / aspect;
     return { x: Math.min(world.width - w, Math.max(0, cx - w / 2)), y: Math.min(world.height - h, Math.max(0, cy - h / 2)), width: w, height: h };
   };
-  /** The view round these countries, at the map's shape, with a margin. */
+  /**
+   * The view round these countries, at the map's shape, with a margin. Design pass, 4c: round what lights
+   * of each (litPieces: a Cayenne-only France trip is French Guiana), else its mainland or dot.
+   */
   const fitted = (codes: string[]): Box => {
-    const b = world.bounds(codes);
+    const boxes: Box[] = [];
+    for (const code of codes) {
+      const mine = [...lit].filter(([, l]) => l.code === code).map(([key]) => { const [c, i] = key.split("#"); return world.pieceBox(c, Number(i)); }).filter((x): x is Box => !!x);
+      const own = world.bounds([code]);
+      if (mine.length) boxes.push(...mine);
+      if (!mine.length || world.territory(code)) if (own.width < world.width) boxes.push(own); // a territory: its dot too
+    }
+    if (!boxes.length) return full;
+    const x0 = Math.min(...boxes.map((x) => x.x)), y0 = Math.min(...boxes.map((x) => x.y));
+    const b = { x: x0, y: y0, width: Math.max(...boxes.map((x) => x.x + x.width)) - x0, height: Math.max(...boxes.map((x) => x.y + x.height)) - y0 };
     return viewAt(b.x + b.width / 2, b.y + b.height / 2, Math.max(b.width, b.height * aspect) * 1.2);
   };
   const [view, setView] = useState<Box>(() => (fitTo?.length ? fitted(fitTo) : full));
@@ -69,6 +88,7 @@ export default function TravelMap({ world, trips, today, onCountry, onPoint, sel
   const visitedSet = useMemo(() => new Set(visited), [visited]);
   const plannedSet = useMemo(() => new Set(planned), [planned]);
   const markers = useMemo(() => cityMarkers(trips, today), [trips, today]);
+
   const stateOf = (code: string | null) => (code && visitedSet.has(code) ? "visited" : code && plannedSet.has(code) ? "planned" : "none");
 
   const zoom = (by: number) => setView((v) => viewAt(v.x + v.width / 2, v.y + v.height / 2, v.width * by));
@@ -123,25 +143,31 @@ export default function TravelMap({ world, trips, today, onCountry, onPoint, sel
           className="block w-full h-full touch-none select-none" style={{ cursor: onPoint ? "crosshair" : "grab" }}
           onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onClick={onSvgClick}>
           <path d={world.outline} fill={T.ink} />
-          {world.shapes.map((s, i) => {
-            const state = stateOf(s.code);
+          {/* One path per piece (design pass, 4): a piece lights by rule B (litPieces), and opens the sheet of
+              the country that lit it, else of its own. */}
+          {world.pieces.map((p, i) => {
+            const l = p.code ? lit.get(`${p.code}#${p.index}`) : undefined;
+            const state = l?.state ?? "none";
+            const opens = l?.code ?? p.code;
+            const chosen = !!opens && selected === opens;
             return (
-              <path key={s.code ?? `u${i}`} d={s.d} data-shape="" {...(s.code ? { "data-code": s.code } : {})} data-state={state}
-                fill={state === "visited" ? T.brass30 : T.panelSoft}
-                stroke={state === "none" ? T.line : T.brass}
-                strokeWidth={state === "none" ? 0.5 : selected === s.code ? 2.5 : border.strokeWidth}
+              <path key={p.code ? `${p.code}#${p.index}` : `u${i}`} d={p.d} data-shape="" {...(p.code ? { "data-code": p.code, "data-piece": p.index } : {})} data-state={state}
+                fill={state === "visited" ? T.brass70 : T.panelSoft}
+                stroke={chosen ? T.text : state === "none" ? T.line : state === "visited" ? T.ink : T.brass}
+                strokeWidth={chosen ? 2.5 : state === "none" ? 0.5 : state === "visited" ? 0.75 : border.strokeWidth}
                 vectorEffect="non-scaling-stroke"
                 {...(state === "planned" ? { strokeDasharray: dash } : {})}
-                onClick={country(s.code)} />
+                onClick={country(opens)} />
             );
           })}
           {world.dots.map((d) => {
             const state = stateOf(d.code);
+            if (state === "none") return null;
             return (
               <g key={d.code}>
-                <circle data-dot={d.code} data-state={state} cx={d.x} cy={d.y} r={(state === "none" ? 1.5 : 4) * k}
-                  fill={state === "visited" ? T.brass30 : state === "planned" ? T.panelSoft : T.line}
-                  stroke={state === "none" ? "none" : T.brass} {...(state === "none" ? {} : border)}
+                <circle data-dot={d.code} data-state={state} cx={d.x} cy={d.y} r={DOT_PX * k}
+                  fill={state === "visited" ? T.brass70 : T.panelSoft}
+                  stroke={state === "visited" ? T.ink : T.brass} {...border}
                   {...(state === "planned" ? { strokeDasharray: dash } : {})} />
                 <circle data-hit={d.code} cx={d.x} cy={d.y} r={(TAP_PX / 2) * k} fill="transparent" onClick={country(d.code)} />
               </g>

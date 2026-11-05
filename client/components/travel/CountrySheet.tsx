@@ -2,7 +2,8 @@
 
 // Travel map plan, Phase 1c (owner-approved; wording APPROVED 2026-11-05): a
 // country's sheet, opened from the map or the lists under it. A bottom sheet on
-// a phone, a panel beside the map on a wider screen. The country's name; its
+// a phone; from sm up, below the map at its width, its trips in two columns
+// (design pass, 5). The country's name; its
 // trips newest first (lib/travel.ts), each with its dates (DD/MM/YYYY, as the
 // app shows dates), "Planned" for a trip that hasn't started (D12), and its
 // cities there. A trip's name shows its card in the List. "✕" (read "Close")
@@ -33,7 +34,7 @@ export default function CountrySheet({ code, trips, today, onClose, onShowTrip }
         <h3 ref={heading} tabIndex={-1} className="text-lg outline-none" style={{ fontFamily: "Spectral, Georgia, serif", color: T.text }}>{name}</h3>
         <button type="button" onClick={onClose} aria-label="Close" className="text-lg leading-none" style={{ color: T.mute, minWidth: 44, minHeight: 44 }}>✕</button>
       </div>
-      <ul className="space-y-3">
+      <ul className="space-y-3 sm:space-y-0 sm:grid sm:grid-cols-2 sm:gap-x-6 sm:gap-y-3">
         {rows.map(({ trip, cities, planned }) => (
           <li key={trip.id} className="space-y-0.5">
             <button type="button" onClick={() => onShowTrip(trip.id)} className="text-sm underline text-left" style={{ color: T.text, minHeight: 44 }}>{trip.name}</button>

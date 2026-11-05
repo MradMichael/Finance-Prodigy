@@ -9,6 +9,8 @@ export interface ThemeColors {
   jade10: string; jade15: string; jade20: string; jade22: string;
   jade25: string; jade28: string; jade30: string;
   brass18: string; brass20: string; brass30: string; brass40: string;
+  /** Travel map design pass: a visited country's fill (brass at 0xB0), 3:1 on unvisited land in every theme. */
+  brass70: string;
   coral18: string; coral30: string; coral40: string;
 }
 
@@ -28,6 +30,7 @@ function build(c: Base): ThemeColors {
     jade30:  a(c.jade,  "30"),
     brass18: a(c.brass, "18"), brass20: a(c.brass, "20"),
     brass30: a(c.brass, "30"), brass40: a(c.brass, "40"),
+    brass70: a(c.brass, "B0"),
     coral18: a(c.coral, "18"), coral30: a(c.coral, "30"),
     coral40: a(c.coral, "40"),
   };
