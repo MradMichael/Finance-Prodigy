@@ -22,8 +22,6 @@ export interface World {
   height: number;
   /** The Earth's outline, for the sea. */
   outline: string;
-  /** One per shape; `code` is null for the two no trip can name (N. Cyprus, Somaliland). */
-  shapes: { code: string | null; d: string }[];
   /** The listed countries without a shape, at their centroid. */
   dots: { code: string; x: number; y: number }[];
   project: (lon: number, lat: number) => [number, number];
@@ -99,14 +97,16 @@ export function buildWorld(topo: unknown, list: ListFile): World {
   const byNumeric = new Map(list.rows.filter((r) => r[1]).map((r) => [r[1]!, r[0]]));
 
   const main = new Map<string, Polygon>();
-  const shapes: World["shapes"] = [];
+  // The codes that have a shape (a listed country without one is a dot). Design pass: the per-shape paths are
+  // gone; the map draws pieces.
+  const shaped = new Set<string | null>();
   const pieces: World["pieces"] = [];
   const polysBy = new Map<string, Polygon[]>();
   for (const f of fc.features) {
     const code = f.id != null ? byNumeric.get(String(f.id).padStart(3, "0")) ?? null : f.properties.name === "Kosovo" ? "XK" : null;
     const d = path(f);
     if (!d) continue;
-    shapes.push({ code, d });
+    shaped.add(code);
     const poly = code ? largestPolygon(f.geometry) : null;
     if (code && poly) main.set(code, poly);
     // Its pieces, largest first, so index 0 is the mainland.
@@ -117,7 +117,6 @@ export function buildWorld(topo: unknown, list: ListFile): World {
     if (code) polysBy.set(code, polys);
   }
   const project = (lon: number, lat: number) => projection([lon, lat]) as [number, number];
-  const shaped = new Set(shapes.map((s) => s.code));
   const dots = list.rows.filter((r) => !shaped.has(r[0])).map(([code, , lat, lon]) => { const [x, y] = project(lon, lat); return { code, x, y }; });
   const dotBy = new Map(dots.map((d) => [d.code, d]));
 
@@ -199,7 +198,7 @@ export function buildWorld(topo: unknown, list: ListFile): World {
       const [[x0, y0], [x1, y1]] = path.bounds(pg);
       return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
     },
-    width: WIDTH, height, outline: path(sphere) ?? "", shapes, dots, project,
+    width: WIDTH, height, outline: path(sphere) ?? "", dots, project,
     invert: (x, y) => {
       const p = projection.invert?.([x, y]);
       if (!p || !Number.isFinite(p[0]) || !Number.isFinite(p[1]) || Math.abs(p[0]) > 180 || Math.abs(p[1]) > 90) return null;
