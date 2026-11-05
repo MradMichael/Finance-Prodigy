@@ -2,7 +2,8 @@
 //
 // The field, RateStaleness, both bounds and commitLbpRate move UNCHANGED --
 // draft state, commit on blur, 100..10,000,000, and lbpRateUpdatedAt stamped
-// only when a real number is committed. These tests pin that behaviour at its
+// only when a real number is committed -- and, since C6 (2026-11-05), only
+// when it differs from the stored rate. These tests pin that behaviour at its
 // new home, and pin that Setup no longer offers a second editable copy: two
 // writers for one value, both stamping "just verified", would make the
 // staleness indicator report on whichever surface was touched last.
@@ -109,13 +110,59 @@ describe("the rate field now lives on the Currency screen — bounds", () => {
 
   it("does not enforce bounds mid-typing -- a real rate's own prefixes must remain typable", async () => {
     const user = userEvent.setup();
-    const { onChange } = renderCurrency();
+    // Starts at 95,000 (C6, 2026-11-05): typing the stored rate is no change
+    // and commits nothing, so the rate typed here must differ from it.
+    const { onChange } = renderCurrency({ lbpRate: 95_000 });
     await user.clear(rateField());
     await user.type(rateField(), "89500"); // passes through "8", "89", "895" -- all below the floor
     expect(onChange).not.toHaveBeenCalled();
     expect(rateField()).toHaveValue(89500);
     await user.tab();
     expect(committedRate(onChange)).toBe(89_500);
+  });
+});
+
+// C6 (rate staleness plan, owner-approved 2026-11-05): tapping into the rate
+// field and out again stamped lbpRateUpdatedAt ("just updated") with the
+// rate untouched -- the field's own value is the live rate, so blur
+// committed it. Now only a changed value is an edit; "still correct" is
+// confirmRate's job (the Confirm button), not an accident of focus.
+describe("C6: leaving the rate field unchanged is not an edit", () => {
+  it("focus then blur, nothing typed: no onChange, so nothing is stamped", async () => {
+    const user = userEvent.setup();
+    const { onChange } = renderCurrency({ lbpRateUpdatedAt: daysAgo(20) });
+    await user.click(rateField());
+    await user.tab();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("clearing and retyping the same rate: no onChange either -- the value did not change", async () => {
+    const user = userEvent.setup();
+    const { onChange } = renderCurrency({ lbpRateUpdatedAt: daysAgo(20) });
+    await user.clear(rateField());
+    await user.type(rateField(), "89500");
+    await user.tab();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("a value that clamps to the current rate is not a change either", async () => {
+    const user = userEvent.setup();
+    const { onChange } = renderCurrency({ lbpRate: 100, lbpRateUpdatedAt: daysAgo(20) });
+    await user.clear(rateField());
+    await user.type(rateField(), "5"); // clamps up to the floor, 100: the stored rate
+    await user.tab();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("a real change still commits and stamps", async () => {
+    const user = userEvent.setup();
+    const { onChange } = renderCurrency({ lbpRateUpdatedAt: daysAgo(20) });
+    await user.clear(rateField());
+    await user.type(rateField(), "90000");
+    await user.tab();
+    expect(committedRate(onChange)).toBe(90_000);
+    const stamp = (onChange.mock.calls[0][0] as LocalFinancials).lbpRateUpdatedAt!;
+    expect(Math.abs(Date.now() - new Date(stamp).getTime())).toBeLessThan(5_000);
   });
 });
 

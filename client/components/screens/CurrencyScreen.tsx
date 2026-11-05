@@ -61,8 +61,13 @@ export default function CurrencyScreen({ financials, onChange }: { financials: L
     const parsed = parseFloat(raw);
     // An empty or unparseable field is discarded, never committed and never
     // stamped as "just updated" -- a rejected edit must not read as verified.
-    if (!isNaN(parsed)) {
-      const clamped = Math.min(LBP_RATE_MAX, Math.max(LBP_RATE_MIN, parsed));
+    // C6 (2026-11-05): nor is an unchanged one. The field shows the live rate,
+    // so tapping in and out committed it and stamped "just updated" with
+    // nothing checked; and recordRateEdit would advance the edit time, which
+    // orders a two-device clash. Only a changed value is an edit -- "still
+    // correct" is confirmRate's job.
+    const clamped = Math.min(LBP_RATE_MAX, Math.max(LBP_RATE_MIN, parsed));
+    if (!isNaN(parsed) && clamped !== lbpRate) {
       // Plan J (merged in session 23, bafa688): the edit goes in the dated log too (recordRateEdit), so entries keep their own day's rate.
       onChange(recordRateEdit(financials, clamped));
     }
