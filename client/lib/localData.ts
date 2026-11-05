@@ -972,7 +972,7 @@ export interface LocalFinancials {
   lbpRateLog?: { from: string; value: number; at?: string }[];
   /** Same idea as incomeHistory/lbpRateHistory, for the resolved budget-rule percentages — otherwise switching budget rules silently rewrites what every past month "should have saved" (budgetRollover) and which past months count toward a savings streak. */
   budgetRuleHistory?: CycleHistory<{ needs: number; wants: number; savings: number }>;
-  /** ISO timestamp of the last time `lbpRate` was actually edited — powers the staleness indicator in SetupScreen (day-level precision; lbpRateHistory above only tracks month granularity). Absent on accounts predating this field, or if the rate has never been edited since. */
+  /** ISO timestamp of the last time `lbpRate` was edited (recordRateEdit) or confirmed unchanged (confirmRate) — powers the staleness indicator on CurrencyScreen and the `rate-stale` alert (day-level precision; lbpRateHistory above only tracks month granularity). Absent on accounts predating this field, or if the rate has never been edited since. */
   lbpRateUpdatedAt?: string;
   /**
    * Plan H 5b: when a person last changed each setting (SETTING_KEYS). Stamped
@@ -1310,8 +1310,9 @@ export const MONEY_MAX_USD = 100_000_000;
 /**
  * Days without a rate edit before the LBP rate counts as stale.
  *
- * Shared by CurrencyScreen's RateStaleness indicator and computeDashboard's
- * `rate-stale` alert. One constant rather than two 14s, because the alert
+ * Read through rateAge (lib/rateAge.ts), the one function that applies it,
+ * by CurrencyScreen's RateStaleness indicator, computeDashboard's
+ * `rate-stale` alert and the entry form's RateAgeChip. One constant rather than two 14s, because the alert
  * exists precisely to say the same thing as the indicator on a screen the
  * user is more likely to be looking at -- two literals that mean "the same
  * threshold" and can drift apart is the shape this project keeps logging.
@@ -2732,6 +2733,26 @@ export function recordRateEdit(d: LocalFinancials, value: number, now: Date = ne
   const inEffect = covered || cycleStart >= from ? [] : [{ from: cycleStart, value: rateOn(d, isoLocalDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1))), at }];
   const lbpRateLog = [...inEffect, ...(d.lbpRateLog ?? []).filter((e) => e.from !== from), { from, value, at }].sort((a, b) => a.from.localeCompare(b.from));
   return { ...d, lbpRate: value, lbpRateUpdatedAt: at, lbpRateLog, ...settingsEdited(d, ["lbpRate"], at) };
+}
+
+/**
+ * Rate staleness, phase 1 (owner-approved 2026-11-05): "the rate is still
+ * correct". Stamps lbpRateUpdatedAt and nothing else -- the rate, the dated
+ * log and settingsUpdatedAt stay as they are.
+ *
+ * Not recordRateEdit(d, sameValue): that advances settingsUpdatedAt.lbpRate
+ * and writes today's log entry with a later `at`, so a confirm on one phone
+ * beat a real change made earlier the same day on another, and the merged
+ * rate came back as the old value (probe; lib/confirm-rate.test.ts). Leaving
+ * the edit time alone means a real change always wins a two-sided clash
+ * (owner's answer 1); the stamp is still part of the setting's fingerprint
+ * (syncSeen SETTING_FIELDS), so a confirm on one device alone still syncs.
+ *
+ * No undo, deliberately: it changes no figure, only how long the staleness
+ * warning stays quiet.
+ */
+export function confirmRate(d: LocalFinancials, now: Date = new Date()): LocalFinancials {
+  return { ...d, lbpRateUpdatedAt: now.toISOString() };
 }
 
 /**

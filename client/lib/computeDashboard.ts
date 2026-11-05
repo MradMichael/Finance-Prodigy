@@ -1,9 +1,10 @@
 import { spentByBucket, spendingEffect, totalSpent } from "./spending";
 import type { LocalFinancials, BudgetRuleKey, StoredDebt, StoredTransaction, StoredRecurring, TrackedBalance, Currency, PeriodCloseAcknowledgement } from "./localData";
-import { goalProgress, acknowledgementFor, historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, LBP_RATE_STALE_DAYS, cycleStartDayOf, valueForMonth, makeToUSDForMonth, makeToUSDOn, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, derivedEfBalance, derivedDebtBalance, activeTransactions, parseLocalDate, isRecurringActive, isAfterBalanceBaseline, calendarDaysSince, lbpRateOf, rateOn } from "./localData";
+import { goalProgress, acknowledgementFor, historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, cycleStartDayOf, valueForMonth, makeToUSDForMonth, makeToUSDOn, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, derivedEfBalance, derivedDebtBalance, activeTransactions, parseLocalDate, isRecurringActive, isAfterBalanceBaseline, lbpRateOf, rateOn } from "./localData";
 import { currentCycleKey, calendarKeyForDate, isInCycle, cycleProgress, cycleBounds, cycleKeyMinus, cycleKeyForISO, periodNoun, cycleLabel, type CycleKey, type CalendarKey, type CalendarHistory } from "./period";
 import { simulateDebtPayoff, type DebtInput } from "./debtEngine";
 import { calendarDayOf, dayStart } from "./calendarDay";
+import { rateAge } from "./rateAge";
 
 interface Projection {
   pctComplete: number; monthsRemaining: number; requiredMonthly: number;
@@ -1272,12 +1273,12 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
   // exists because rate editing moved off Setup: without it the warning
   // would only be visible on the screen a user opens when they are already
   // thinking about the rate, which is when it is least likely to be stale.
-  if (data.lbpRateUpdatedAt) {
-    // COPY-08: calendar days, as "N days" reads -- not floored 24-hour periods.
-    const daysSinceRateEdit = calendarDaysSince(data.lbpRateUpdatedAt, now);
-    if (daysSinceRateEdit >= LBP_RATE_STALE_DAYS) {
-      alerts.push({ id: "rate-stale", severity: "warning", message: `LBP rate hasn't been updated in ${daysSinceRateEdit} days`, screen: "currency" });
-    }
+  // Phase 3 commit 1: rateAge says how old the rate is and when that is stale,
+  // the same function the indicator reads (calendar days, COPY-08; never
+  // edited is null, so nothing fires).
+  const rateAgeNow = rateAge(data.lbpRateUpdatedAt, now);
+  if (rateAgeNow?.level === "stale") {
+    alerts.push({ id: "rate-stale", severity: "warning", message: `LBP rate hasn't been updated in ${rateAgeNow.ageDays} days`, screen: "currency" });
   }
   for (const bc of balanceChecks) {
     // Matches the same "meaningful" threshold as a rounding/timing blip vs
