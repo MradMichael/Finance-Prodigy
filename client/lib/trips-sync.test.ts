@@ -7,7 +7,7 @@
 // over from the server (slice 0's rule 1 is for code that doesn't know it).
 import { describe, it, expect } from "vitest";
 import { DEFAULT_DATA, recordDeletion, resetFinancials, type LocalFinancials, type StoredTransaction } from "./localData";
-import { mergeFinancials, unknownFieldsOf } from "./syncMerge";
+import { mergeFinancials, restoreFromExport, unknownFieldsOf } from "./syncMerge";
 import { seenOf } from "./syncSeen";
 import { clashSentence } from "./syncService";
 import { editTrip, type StoredTrip } from "./trips";
@@ -29,6 +29,70 @@ describe("a trip's own fields this code doesn't know", () => {
   it("survive a merge under the fingerprint rule, when only the other device changed the trip", () => {
     const base = d([LISBON]);
     expect(mergeFinancials(base, d([newer]), T0, seenOf(base)).data.trips).toEqual([newer]);
+  });
+});
+
+// Travel map plan, Phase 1a: a trip's countries and cities sync inside the trip, through the
+// trip merge unchanged. Conflicts are settled per whole trip, not per field.
+describe("a trip's countries and cities", () => {
+  const P = { name: "Lisbon", startDate: "2026-11-02", endDate: "2026-11-09", budgetUSD: 1200 };
+  const at = (iso: string) => new Date(iso);
+  const edit = (from: LocalFinancials, p: Partial<Parameters<typeof editTrip>[2]>, when: string) => {
+    const r = editTrip(from, "t1", { ...P, ...p }, at(when));
+    if (!r.ok) throw new Error(r.reason);
+    return r.data;
+  };
+  const before = d([LISBON]);
+
+  it("change what the merge records as last seen, with nothing else changed", () => {
+    const withStops = { ...LISBON, stops: [{ id: "s1", countryCode: "PT", city: "Lisbon" }] } as StoredTrip; // same edit time
+    expect(seenOf(d([withStops])).kinds.trips!.t1).not.toBe(seenOf(before).kinds.trips!.t1);
+  });
+
+  it("an edit that sends them stores them (the merge carries what editTrip wrote)", () => {
+    const after = edit(before, { stops: [{ countryCode: "PT", city: "Lisbon" }] }, "2026-10-13T09:00:00.000Z");
+    expect(after.trips![0].stops?.map((s) => s.city)).toEqual(["Lisbon"]);
+  });
+
+  it("edited on one device only are taken, whichever side", () => {
+    const after = edit(before, { stops: [{ countryCode: "PT", city: "Lisbon" }, { countryCode: "PT", city: "Porto" }] }, "2026-10-13T09:00:00.000Z");
+    for (const [here, there] of [[after, before], [before, after]]) {
+      const m = mergeFinancials(here, there, T0, seenOf(before));
+      expect(m.data.trips).toEqual(after.trips);
+      expect(m.clashes).toEqual([]);
+    }
+  });
+
+  it("edited on both devices: the later edit's whole trip is kept, and the trip is named", () => {
+    const here = edit(before, { stops: [{ countryCode: "PT", city: "Porto" }] }, "2026-10-13T09:00:00.000Z");
+    const there = edit(before, { notes: "Fado" }, "2026-10-14T09:00:00.000Z");
+    const r = mergeFinancials(here, there, T0, seenOf(before));
+    expect(r.data.trips).toEqual(there.trips); // the stops edited here are not kept: one record, one winner
+    expect(r.clashes.map(clashSentence)).toEqual(['Both devices changed the trip "Lisbon" — kept the later change.']);
+  });
+
+  it("go with a deleted trip, on both devices", () => {
+    const withStops = edit(before, { stops: [{ countryCode: "PT", city: "Lisbon" }] }, "2026-10-13T09:00:00.000Z");
+    const gone = d([], { deletedKeys: recordDeletion(withStops, "trips", "t1", at("2026-10-20T00:00:00.000Z")) });
+    expect(mergeFinancials(gone, withStops, T0).data.trips ?? []).toEqual([]);
+    expect(mergeFinancials(withStops, gone, T0, seenOf(withStops)).data.trips ?? []).toEqual([]);
+  });
+
+  it("are cleared by a reset, and come back with a restore from a file", () => {
+    const withStops = edit(before, { stops: [{ countryCode: "PT", city: "Lisbon", lat: 38.72, lon: -9.14 }] }, "2026-10-13T09:00:00.000Z");
+    const reset = resetFinancials(withStops, at("2026-11-01T00:00:00.000Z"));
+    expect(mergeFinancials(withStops, reset, T0, seenOf(withStops)).data.trips ?? []).toEqual([]);
+    expect(restoreFromExport(reset, withStops).trips).toEqual(withStops.trips);
+  });
+
+  // The server refuses a copy over 2,000,000 bytes (server/src/routes/sync.ts:77).
+  it("300 trips of 10 cities each, with notes, stay well under the backup's size limit", () => {
+    const trips: StoredTrip[] = Array.from({ length: 300 }, (_, i) => ({
+      ...trip(`trip-${i}`, `Trip number ${i} through several countries`, 1500, "2026-10-12T09:00:00.000Z"),
+      stops: Array.from({ length: 10 }, (_, j) => ({ id: `stop-${i}-${j}-xxxxxxxxxxxx`, countryCode: "FR", city: `Saint-Rémy-de-Provence ${j}`, lat: -43.12, lon: -170.45 })),
+      notes: "n".repeat(200),
+    }));
+    expect(Buffer.byteLength(JSON.stringify(trips), "utf8")).toBeLessThan(1_000_000);
   });
 });
 
