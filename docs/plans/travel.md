@@ -2,7 +2,7 @@
 
 An extension of the existing Trips screen (`client/lib/trips.ts`, `client/components/screens/TripsScreen.tsx`): a world map of the countries visited, a sheet of the trips in a country, city markers, and the trip list grouped by year. Read with `docs/CLAUDE_CODE_BRIEF.md`, which stays the authority on standards and standing rules.
 
-**Status (2026-11-05):** Phase 0 and Phase 1a are built, merged and verified live by the owner. Phases 1b and 1c are planned and **not approved**. Phase 2 has no plan yet.
+**Status (2026-11-05):** Phase 0 and Phase 1a are built, merged and verified live by the owner. **Phase 1b is approved and in progress** on `claude/travel-1b` (not merged). Phase 1c is planned, with its wording approved; its build is not yet approved. Phase 2 has no plan yet.
 
 **Rule 8:** the status line above and the phase status lines below change in the same commit as the work that changes them.
 
@@ -82,9 +82,11 @@ An extension of the existing Trips screen (`client/lib/trips.ts`, `client/compon
 
 ---
 
-## 4. Planned (not approved)
+## 4. Planned
 
 ### Phase 1b: the form, the list, the city file, the budget line, the credit
+
+**Status: approved, in progress** on `claude/travel-1b`.
 
 Cut as a **fresh branch from `main`**, not stacked. **The first step, before any UI uses them, is showing the owner every HELD string in §5 for approval.**
 
