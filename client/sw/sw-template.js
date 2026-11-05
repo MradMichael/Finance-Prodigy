@@ -14,7 +14,7 @@ const STATIC_CACHE = "essa-static-" + MANIFEST.build;
 const RUNTIME_CACHE = "essa-runtime-" + MANIFEST.build;
 const PAGES = new Set(MANIFEST.pages);
 const FILES = new Set(MANIFEST.files);
-const ON_FIRST_USE = new Set(["/pdf.worker.min.mjs"]);
+const ON_FIRST_USE = new Set(["/pdf.worker.min.mjs", "/geo/cities15000.json"]);
 const keyOf = (pathname) => new URL(pathname, self.location.origin).href;
 const HASHES = MANIFEST.hashes || {};
 const HASHES_KEY = "/__essa/manifest";

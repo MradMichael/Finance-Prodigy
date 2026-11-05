@@ -9,11 +9,20 @@
 //   lib/countryCodes.ts        the codes alone, for validating a trip's countries
 //     without loading the file. lib/countries.test.ts keeps the two in step.
 //
+//   public/geo/cities15000.json (Phase 1b; D6: one file, loaded on first use)
+//     {"fields":["name","country","lat","lon"],"source":"...","rows":[...]}
+//     GeoNames cities15000 (every place of 15,000 people or more; CC BY 4.0,
+//     credited on the About page): the name as GeoNames writes it, accents
+//     kept; coordinates to 2 decimals; sorted by country, then name. Written
+//     only when the GeoNames file is given. lib/cities-file.test.ts checks it.
+//
 // Run by hand, never during `next build` (it reads packages that aren't this
-// app's dependencies). Sends nothing anywhere; reads only the packages below.
+// app's dependencies). Sends nothing anywhere; reads only the files below.
 //
 //   npm install --prefix <dir> world-atlas@2.0.2 i18n-iso-countries@7.14.0 d3-geo@3.1.1 topojson-client@3.1.0
 //   node client/scripts/build-geo.mjs <dir>
+//   # and the city file, from https://download.geonames.org/export/dump/cities15000.zip, unzipped:
+//   node client/scripts/build-geo.mjs <dir> path/to/cities15000.txt <the dump's date, YYYY-MM-DD>
 //
 // Sources: Natural Earth via world-atlas (public domain; ISC package), codes
 // from i18n-iso-countries (MIT). Shapes are the 10m set, the most complete:
@@ -24,8 +33,11 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const deps = process.argv[2];
-if (!deps) { console.error("usage: node client/scripts/build-geo.mjs <dir with node_modules>"); process.exit(2); }
+const [deps, citiesTxt, citiesDate] = process.argv.slice(2);
+if (!deps || (citiesTxt && !/^\d{4}-\d{2}-\d{2}$/.test(citiesDate ?? ""))) {
+  console.error("usage: node client/scripts/build-geo.mjs <dir with node_modules> [<cities15000.txt> <YYYY-MM-DD>]");
+  process.exit(2);
+}
 const req = createRequire(path.join(path.resolve(deps), "node_modules", "_.js"));
 const { feature } = req("topojson-client");
 const { geoArea, geoCentroid } = req("d3-geo");
@@ -84,3 +96,20 @@ ${rows.map((r) => r[0]).reduce((lines, c, i) => { if (i % 20 === 0) lines.push([
 `;
 writeFileSync(path.join(root, "lib", "countryCodes.ts"), ts);
 console.log(`${rows.length} countries; countries.json ${Buffer.byteLength(json)} bytes`);
+
+if (citiesTxt) {
+  // GeoNames' tab-separated columns: 1 name, 4 latitude, 5 longitude, 8 country code.
+  const known = new Set(rows.map((r) => r[0]));
+  const round2 = (v) => Math.round(Number(v) * 100) / 100;
+  const cities = readFileSync(citiesTxt, "utf8").split("\n").filter(Boolean).map((line) => {
+    const c = line.split("\t");
+    return [c[1].trim(), c[8], round2(c[4]), round2(c[5])];
+  });
+  const bad = cities.filter(([name, cc, lat, lon]) => !name || !known.has(cc) || !(Math.abs(lat) <= 90) || !(Math.abs(lon) <= 180));
+  if (bad.length) { console.error(`Rows this app can't keep: ${bad.slice(0, 5).map((r) => JSON.stringify(r)).join(" ")}`); process.exit(1); }
+  const key = (r) => `${r[1]}\u0000${r[0]}`;
+  cities.sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
+  const out = `{"fields":["name","country","lat","lon"],"source":"GeoNames cities15000, ${citiesDate}, CC BY 4.0","rows":[\n${cities.map((r) => JSON.stringify(r)).join(",\n")}\n]}\n`;
+  writeFileSync(path.join(root, "public", "geo", "cities15000.json"), out);
+  console.log(`${cities.length} cities; cities15000.json ${Buffer.byteLength(out)} bytes`);
+}

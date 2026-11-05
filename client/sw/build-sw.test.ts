@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { buildManifest, renderWorker, PAGES } from "./build-sw.mjs";
+import { buildManifest, renderWorker, PAGES, ON_FIRST_USE } from "./build-sw.mjs";
 
 let root: string;
 const put = (rel: string, body = "x") => { const p = path.join(root, rel); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, body); };
@@ -25,6 +25,8 @@ beforeEach(() => {
   put("public/icon-192.png");
   put("public/fonts/spectral-400.woff2");
   put("public/manifest.webmanifest");
+  put("public/geo/countries.json");
+  put("public/geo/cities15000.json");
 });
 afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -43,6 +45,22 @@ describe("the precache list", () => {
     expect(files).toEqual(expect.arrayContaining(["/icon-192.png", "/fonts/spectral-400.woff2", "/manifest.webmanifest"]));
     expect(files).not.toContain("/sw.js");
     expect(files).not.toContain("/pdf.worker.min.mjs");
+  });
+
+  // Travel map plan, Phase 1b (D6): the city file (368 KB gzipped) is fetched only when a trip form
+  // first needs it, then kept; the country list (3 KB) is precached, so the form and map work offline.
+  it("never the city file; the country list, yes", () => {
+    const { files } = manifest();
+    expect(files).not.toContain("/geo/cities15000.json");
+    expect(files).toContain("/geo/countries.json");
+  });
+
+  it("the worker's own first-use list is this one (the two are written in two files)", () => {
+    const template = fs.readFileSync(path.join(templateDir, "sw-template.js"), "utf8");
+    const listed = /const ON_FIRST_USE = new Set\((\[[^\]]*\])\);/.exec(template);
+    expect(listed).not.toBeNull();
+    expect(JSON.parse(listed![1])).toEqual(ON_FIRST_USE);
+    expect(ON_FIRST_USE).toEqual(["/pdf.worker.min.mjs", "/geo/cities15000.json"]);
   });
 
   it("the pages, without /admin, and nothing under /api", () => {

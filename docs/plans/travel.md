@@ -2,7 +2,7 @@
 
 An extension of the existing Trips screen (`client/lib/trips.ts`, `client/components/screens/TripsScreen.tsx`): a world map of the countries visited, a sheet of the trips in a country, city markers, and the trip list grouped by year. Read with `docs/CLAUDE_CODE_BRIEF.md`, which stays the authority on standards and standing rules.
 
-**Status (2026-11-05):** Phase 0 and Phase 1a are built, merged and verified live by the owner. Phases 1b and 1c are planned and **not approved**. Phase 2 has no plan yet.
+**Status (2026-11-05):** Phase 0 and Phase 1a are built, merged and verified live by the owner. **Phase 1b is built on `claude/travel-1b` and NOT merged**: it waits for the owner's live check, then merges like the others. Phase 1c is planned and its wording approved; its build is not yet approved. Phase 2 has no plan yet.
 
 **Rule 8:** the status line above and the phase status lines below change in the same commit as the work that changes them.
 
@@ -25,18 +25,19 @@ An extension of the existing Trips screen (`client/lib/trips.ts`, `client/compon
 | D3 | Dates are stored as `YYYY-MM-DD` strings and shown as **DD/MM/YYYY, with slashes**, matching the app (`fmtDate`, `dayLabel`). |
 | D4 | Trips use **deletion records** (`recordDeletion`, `deletedKeys.trips`), not the 30-day soft delete, which is for transactions only. A trip's cities live inside it and are deleted with it. |
 | D5 | **Bundled map only:** world-atlas `countries-110m` + `d3-geo` + `topojson-client`, lazy-loaded. Small countries the 110m shapes leave out are drawn as dots. No tile servers and no geocoding; the content policy (`img-src 'self'`, `connect-src 'self'`) blocks them anyway. |
-| D6 | City data: **one** bundled GeoNames `cities15000` file, loaded the first time a trip form opens. Not one file per country. The GeoNames CC BY credit goes on the About page. The city field always accepts free text. |
+| D6 | City data: **one** bundled GeoNames `cities15000` file, loaded the first time a trip form opens. Not one file per country. The GeoNames CC BY credit goes on the About page. The city field always accepts free text. *As built (1b):* the New trip form is always on the Trips screen, so "opens" is read as the first time a form needs the list: tapping "Add a country" or "Add a city", or focusing a city box. Opening the screen fetches nothing. |
 | D7 | **Trip dates only;** stops have no dates of their own. |
 | D8 | A **blank trip name defaults to the country names**, in English, in route order, each once ("France, Italy, Malta"). A name left blank when editing re-fills from the countries the trip has after the edit. A blank name with no countries is still refused. |
 | D9 | **Budget line at 0:** budget 0 with spending shows "Spent $X" in plain text (no "over", no coral); no line at all when spending is also 0. A budget above 0 keeps today's line unchanged. |
 | D10 | **Exchange rows stay counted as Wants** in their month (`lib/foreignCash.ts`). Out of scope. |
-| D11 | A bad stop is **refused** (reason `"stops"`), with one message line in `TripsScreen`. Its wording is HELD (§5). |
+| D11 | A bad stop is **refused** (reason `"stops"`), with one message line in `TripsScreen`. Its wording is APPROVED (§5). |
 | D12 | **Visited vs planned:** a trip counts as visited only if its start date is today or earlier (the device's local calendar day). Later trips are **planned**: a distinct style on the map (dashed brass outline) and labeled "Planned" in the country sheet. Detail in Phase 1c. |
 | D13 | Each phase gets its own branch: RED tests first, then GREEN, one concern per commit, merged with a merge commit (no squash) after the owner's live check. |
+| D14 | **"Place on map" is in Phase 1c,** not 1b (owner, 2026-11-05): placing a typed city needs the map. In 1b, a city picked from the list (or typed exactly as the list writes it, accents aside) gets its point; any other typed city gets none until 1c. |
 
 ---
 
-## 3. Built and merged
+## 3. Built
 
 ### Phase 0: `editTrip` keeps fields it doesn't set. Merged at `464d376`, verified live.
 
@@ -80,67 +81,80 @@ An extension of the existing Trips screen (`client/lib/trips.ts`, `client/compon
 - client: 2,696 passed, 13 skipped (the skips predate this work); `tsc` and lint 0;
 - server: 230 passed, 13 skipped; its test typecheck 0.
 
+### Phase 1b: the form, the list, the city file, the budget line, the credit. Built on `claude/travel-1b`, NOT merged.
+
+Cut fresh from `main` at `46c9a0b`. Every new string is the owner's APPROVED wording (§5). First commit: `c95f0a8`, this doc's status line (rule 8).
+
+**The city file** (`6ce2317` RED, `2d22b46` GREEN)
+- `client/public/geo/cities15000.json`: 34,197 rows `[name, country, lat, lon]` from GeoNames' dump dated **2026-11-04**. The source and date are written in the file.
+  - Names are kept as GeoNames writes them, accents included; coordinates are rounded to 2 decimals; rows are sorted by country, then name.
+  - **1,113,819 bytes raw, 367,963 gzipped.** One row per line, for readable diffs, costs about 33 KB raw over the plan's compact measure; sorting saves about 3 KB gzipped.
+- `scripts/build-geo.mjs`, given the unzipped `cities15000.txt` and its date, writes it; `countries.json` regenerates byte-for-byte.
+- Every row's country is in `countryCodes.ts` (checked). Lebanon has 18 rows, Zahlé among them; Batroun isn't one.
+
+**Delivered on first use, never precached** (`82dc0b1` RED, `7903ebe` GREEN)
+- `/geo/cities15000.json` joins the PDF worker on the service worker's first-use list.
+- That list is written in two files, `sw/build-sw.mjs` and `sw/sw-template.js`, and a test now keeps them equal.
+- Production build checked: the city file appears only in the worker's first-use set; `/geo/countries.json` is precached; no JavaScript chunk contains city data.
+
+**Picking places** (`1e13276` RED, `8559c1e` GREEN)
+- `client/lib/places.ts`:
+  - `countryName` and `searchCountries`: browser names, accents and case aside;
+  - `searchCities` and `findCity`: one country at a time, so "zahle" finds "Zahlé";
+  - `loadCities`: fetched once from `/geo/cities15000.json`, its path alone. A failure, or an error page, is forgotten, so the next call asks again.
+- A source scan fails the build if any client file puts a city, country or coordinate in a URL query.
+- Own-work note (brief rule 17): one run of that scan failed in 6 ms and was never reproduced in four reruns. The likeliest cause is that run starting outside `client/`, because the scan rooted itself at `process.cwd()`. It now roots itself at its own folder.
+
+**Budget line at 0, D9** (`39f92b9` RED, `e48ee12` GREEN)
+- A budget above 0 keeps its line unchanged.
+- At 0: "Spent $X" in the text colour while anything was spent (`moneyEquals`, so float dust counts as nothing); no line otherwise.
+- The figure is `tripActual`'s, USD, as before.
+
+**The form** (`a541f75` RED, `2aa3fca` GREEN)
+- `client/components/travel/StopFields.tsx`: one row per country, in route order (France, Italy, then France again is three rows), each with its cities.
+- Countries are picked by name. A typed, unpicked country counts **only by its exact name**: its text is never read as a code, so "it" never becomes Italy. Anything else is passed as `""`, so `buildTrip` refuses it with the approved line.
+- Cities are picked from the file or typed. A typed city the file holds takes the file's spelling and point. One it doesn't hold is saved as typed, with no point, and the form says it won't be on the map.
+- `TripsScreen`:
+  - adds Notes;
+  - holds the city file's state, and asks for the file only when a form needs it (D6);
+  - the edit form loads the trip's stops and always sends them back, so an edit keeps every stop, ids included, and removing every country clears them.
+- `REASONS.stops` now carries the approved line.
+
+**The list** (`73ac874` RED, `8fa3d7e` GREEN)
+- Trips are grouped under the year they start in (an `h2`), newest first; a trip's name is now an `h3` under its year.
+- Each card shows its places in the approved format, with cities grouped under their country and countries in the order first visited: "France · Paris, Lyon — Italy · Rome — Malta". It also shows its notes.
+
+**The About page credit** (`0316b49` RED, `eacbf25` GREEN)
+- A "Map and place data" section in the approved words.
+- "geonames.org" links to `https://www.geonames.org/` and "Creative Commons Attribution 4.0" to `https://creativecommons.org/licenses/by/4.0/`. Same tab, underlined, `rel="noopener noreferrer"`.
+
+**Results on `claude/travel-1b`**
+- Client: **2,738 passed**, 13 skipped (the skips predate this work); `tsc` and lint 0.
+- Production build passes. Compared with `main` built the same way, the Overview (`/`) first load is 287 kB against 288 kB (no growth; the 1 kB difference is most likely rounding and chunk naming, not a real saving), and `/about` grows by 0.18 kB.
+- Server: unchanged by 1b.
+
+**Owner's live check (before merging 1b)**
+- On a phone at 375 px: a trip with no name and France (Paris, Lyon), Italy (Rome), Malta, and a typed "Batroun" (Lebanon), saves as "France, Italy, Malta, Lebanon". Its card reads "France · Paris, Lyon — Italy · Rome — Malta — Lebanon · Batroun", countries in route order.
+- Typing "zahle" offers Zahlé.
+- "Batroun" shows "Not in the list. It'll be saved as you typed it, but won't appear on the map."
+- DevTools → Network: opening Trips fetches no city file; the first "Add a country" fetches `/geo/cities15000.json` once; after that it loads from the worker's cache, airplane mode included.
+- A past trip with a $0 budget shows "Spent …", or no line, and never coral "over".
+- Year headings, newest first.
+- Edit a trip's budget only: its countries, cities and notes stay.
+- The other device matches after sync.
+- Edit cities on one device and notes on the other while both are offline, then sync: one edit wins, and the notice names the trip.
+- The About page shows the credit, and both links open.
+- **After a deploy,** the city file downloads again on its next use (see §7).
+
 ---
 
-## 4. Planned (not approved)
-
-### Phase 1b: the form, the list, the city file, the budget line, the credit
-
-Cut as a **fresh branch from `main`**, not stacked. **The first step, before any UI uses them, is showing the owner every HELD string in §5 for approval.**
-
-**Files:** `TripsScreen.tsx`, `components/travel/StopFields.tsx`, `scripts/build-geo.mjs` (extended for cities), `public/geo/cities15000.json`, `sw/build-sw.mjs`, `app/about/page.tsx`.
-
-**The city file**
-- `public/geo/cities15000.json`: 34,197 rows `[name, country, lat, lon]`, coordinates to 2 decimals. Measured at **1,080,914 bytes raw, 370,837 gzipped**. (With the GeoNames id it would be 1.35 MB / 496 KB; the id is dropped because each stop stores its own name and coordinates.)
-- It's added to the service worker's `ON_FIRST_USE`: not precached, fetched once when a trip form first opens, then cached for offline use.
-- About 1.1 MB of JSON is committed to the repo.
-- Lebanon has only 18 entries, and Batroun isn't one of them, so free text (D6) is essential.
-
-**The form**
-- A "Countries and cities" section:
-  - a searchable country picker (names from `Intl.DisplayNames`);
-  - cities picked from the file, searched without accents (typing "zahle" finds "Zahlé"), or typed in, with an optional "Place on map";
-  - rows that can be removed;
-  - a Notes field.
-- If the city file can't load, typed cities still work, and the form says the list is unavailable.
-
-**The list**
-- The existing cards, newest first, under year headings.
-- Each card gets a "Countries · cities" line and its notes.
-
-**Budget line:** D9.
-
-**About page:** a "Map and place data" section with the credit.
-
-**Tests to write first (RED before GREEN)**
-- The form: add a country; pick a city (fetch mocked; "zahle" finds "Zahlé"); type a city; remove a row.
-- The city file is fetched once, and only when a form opens; if it fails, typing still works.
-- The list: year headings, newest first; the countries line; notes.
-- The budget line (USD figures, so money tests per brief rule 4):
-  - budget 0 with spending shows "Spent $X" and no coral;
-  - budget 0 with no spending shows no line;
-  - budget above 0 is unchanged.
-- Service worker manifest: the city file is not precached; the country files are.
-- No city or coordinate ever appears in a URL (following `no-address-in-urls.test.ts`).
-- The About page shows the credit.
-- The script: every row is `[string, 2-letter code, lat, lon]` with values in range.
-
-**SAFE STOP.**
-
-**Owner's live check**
-- On a phone at 375 px: a trip with no name and France (Paris, Lyon), Italy (Rome), Malta (Valletta), plus a typed "Batroun" with a pin, saves as "France, Italy, Malta".
-- Searching "zahle" finds Zahlé.
-- DevTools: the city file loads only when the form opens, and from cache in airplane mode.
-- A past trip with a $0 budget shows "Spent …" or no line, never coral "over".
-- Year headings, newest first.
-- The other device matches after sync.
-- Edit cities on one device and notes on the other while both are offline, then sync: one edit wins and the notice names the trip.
-- A deleted trip stays gone on both devices.
-- The About page shows the credit.
+## 4. Planned
 
 ### Phase 1c: the map
 
-**Files:** `components/travel/TravelMap.tsx`, `components/travel/CountrySheet.tsx`, the dependencies `d3-geo` and `topojson-client`, `public/geo/countries-110m.json`.
+**Status: planned, wording approved, build not yet approved.** Cut fresh from `main` after 1b merges.
+
+**Files:** `components/travel/TravelMap.tsx`, `components/travel/CountrySheet.tsx`, `components/travel/StopFields.tsx` ("Place on map", D14), the dependencies `d3-geo` and `topojson-client`, `public/geo/countries-110m.json`.
 
 **Sizes (measured):**
 
@@ -173,6 +187,8 @@ Cut as a **fresh branch from `main`**, not stacked. **The first step, before any
 - Planned trips carry the **"Planned"** label. They appear at the top, because newest-first order puts later starts first.
 - Tapping a trip jumps to its card in the List.
 
+**"Place on map" (D14):** a typed city's row gets a "Place on map" button that opens the map to tap its point. The stop's `lat`/`lon` then come from the tap, in WGS84 degrees, checked as `buildTrip` already checks them. The not-in-the-list line changes to its approved 1c wording (§5).
+
 **Helper changes (D12):** `visitedCountries`, `tripsInCountry` and `cityMarkers` take a `today` argument (local calendar day, from `todayCalendarDay`).
 - `visitedCountries` returns visited countries and planned-only countries separately.
 - `tripsInCountry` and `cityMarkers` mark each trip visited or planned.
@@ -193,6 +209,7 @@ Cut as a **fresh branch from `main`**, not stacked. **The first step, before any
 - Contrast of the solid and dashed brass borders and the dots on `panelSoft`, all 6 themes (`theme.contrast.test.ts`).
 - 375 px, no horizontal scroll (following `phone-layout.test.tsx`).
 - Loading, over-10-seconds and error states.
+- "Place on map": a typed city given a point by a tap is saved with it, and the not-in-the-list line reads its 1c wording.
 
 **SAFE STOP.**
 
@@ -208,24 +225,38 @@ Cut as a **fresh branch from `main`**, not stacked. **The first step, before any
 
 ---
 
-## 5. Held wording, for approval when 1b starts
+## 5. Wording: APPROVED by the owner, 2026-11-05
 
-None of these may be used in the UI until the owner approves them. The first one is already in the code, marked HELD, but no current form can show it.
+Every item that was HELD is now APPROVED, some with changes; the text below is the final text. Nothing new may reach the UI without the same approval.
 
-| Where | HELD wording |
-|---|---|
-| Refusal for a bad stop (`TripsScreen.tsx`, `REASONS.stops`) | HELD: "Check the countries and cities." |
-| Map empty state | HELD: "Your travel map. Add a trip with the countries and cities you visited and they'll appear here. The map is drawn on your phone; your places aren't sent to any map service." Button: HELD: "Add a trip" |
-| Map loading, past 10 seconds | HELD: "Still loading the map…" |
-| Map failed to load | HELD: "Couldn't load the map. Your trips are safe. They're all in the list." Button: HELD: "Try again" |
-| City list failed to load (form) | HELD: "The city list couldn't load. You can still type a city." |
-| About page section | Heading HELD: "Map and place data". Text HELD: "Country shapes: Natural Earth (public domain), via world-atlas. City names and locations: GeoNames (geonames.org), licensed under Creative Commons Attribution 4.0." |
-| Country sheet, a future trip (D12) | HELD: "Planned" |
-| Form section and controls | HELD: "Countries and cities", "Add a country", "Add a city", "Place on map", "Notes" |
-| Map controls and list | HELD: "Map", "List", "Show my countries", "Countries visited (N)" |
-| Trip card | HELD: the "Countries · cities" line's format, e.g. "France · Paris, Lyon — Italy · Rome" |
+**Used in Phase 1b (built):**
 
-**Already decided, so not held:** the budget line at 0 ("Spent $X", D9) and the default trip name format ("France, Italy, Malta", D8).
+| # | Where | APPROVED wording |
+|---|---|---|
+| 1 | Refusal for a bad stop (`TripsScreen.tsx`, `REASONS.stops`) | "One of the countries or cities couldn't be saved. Check them and try again." *(changed from the draft)* |
+| 2 | City list failed to load (form) | "The city list couldn't load. You can still type a city." |
+| 3 | About page section | Heading: "Map and place data". Text: "Country shapes: Natural Earth (public domain), via world-atlas. City names and locations: GeoNames (geonames.org), licensed under Creative Commons Attribution 4.0." **"geonames.org" links to the site; "Creative Commons Attribution 4.0" links to the licence page** *(owner's addition)* |
+| 4 | Form section and controls | "Countries and cities", "Add a country", "Add a city", "Notes" |
+| 5 | Trip card places line | Format "France · Paris, Lyon — Italy · Rome"; a country with no city is its name alone ("Malta") |
+| 6 | Country field | Label "Country", placeholder "Type a country" |
+| 7 | City field | Label "City", placeholder "Type a city" |
+| 8 | Typed city not in the list | **1b:** "Not in the list. It'll be saved as you typed it, but won't appear on the map." *(changed)* **1c, once "Place on map" exists:** "Not in the list. It'll be saved as you typed it. Use Place on map to show it on the map." |
+| 9 | Remove buttons | "Remove", with a screen-reader label naming the row ("Remove Lyon", "Remove France") |
+
+**For Phase 1c (approved now, not yet used):**
+
+| # | Where | APPROVED wording |
+|---|---|---|
+| 10 | Map empty state | "Your travel map. Add a trip with the countries and cities you visited and they'll appear here. The map is drawn on your device; your places aren't sent to any map service." *("phone" changed to "device")* Button: "Add a trip" |
+| 11 | Map loading, past 10 seconds | "Still loading the map…" |
+| 12 | Map failed to load | "Couldn't load the map. Your trips are safe. They're all in the list." Button: "Try again" |
+| 13 | Country sheet, a future trip (D12) | "Planned" |
+| 14 | Map controls and list | "Map", "List", "Show my countries", "Countries visited (N)" |
+| 15 | Placing a typed city (D14) | "Place on map" |
+
+**Decided earlier, so never held:** the budget line at 0 ("Spent $X", D9) and the default trip name format ("France, Italy, Malta", D8).
+
+**Year headings** in the list are the bare year ("2025"), with no wording.
 
 ---
 
@@ -236,10 +267,10 @@ None of these may be used in the UI until the owner approves them. The first one
    - Editing stops or notes overwrites them, with no captured earlier state (deliberately, as trip edits are today).
    - A filled-in default name is an ordinary stored name.
    - The map changes nothing; it only reads.
-2. **Which claims are inherited.** Re-derive before 1b and 1c are built:
-   - the readers of a trip's name (6 at 1a);
-   - the city file's size (measured once, above);
-   - whether the service worker's precache rule is still "every file in `public/` except `ON_FIRST_USE`".
+2. **Which claims are inherited.** Re-derived at the end of 1b (2026-11-05); re-derive again before 1c is built:
+   - the readers of a trip's name: still **6** (the trip pickers in `ImportStatement`, `ForeignCashForms`, `InputPanel` and `EditTransactionSheet`; `TripsScreen`; the sync notice via `syncMerge`), re-counted by grep;
+   - the city file's size: re-measured from the committed file (§3);
+   - the service worker's precache rule: still "every file under `.next/static` and `public/` except `ON_FIRST_USE`", read from `sw/build-sw.mjs` and checked in the production build.
 3. **What units each figure carries.** Coordinates in WGS84 degrees; country codes ISO alpha-2; dates as local `YYYY-MM-DD` calendar days; the budget line in USD (`budgetUSD`, `totalUSD`); file sizes raw or gzipped as labelled.
 
 ---
@@ -250,9 +281,10 @@ None of these may be used in the UI until the owner approves them. The first one
   - **Already built:** USD trip budgets, per-category USD budgets, foreign-cash sheets, exchange cost per currency, and euro spends shown approximately in USD.
   - **The gap:** setting a budget *in* EUR. A likely shape is `budgetNative?: { amount; code }` beside `budgetUSD`, never added to a USD figure. Money tests come first (brief rule 4).
 - **Brief §1 scope tension.** The map serves none of Earn, Spend, Save or Achieve; only the trip budget serves Spend. The owner accepted this as a known tension, not a blocker. The strongest argument against building it now: about 60 KB more to download at install, plus four releases, while cohort items in `docs/ROADMAP.md` (for example the monthly disposable-capacity figure) stay open.
-- **Risks carried into 1b and 1c:**
-  - 371 KB over Lebanese mobile data the first time a trip form opens (cached after);
+- **The city file downloads again after every deploy.** The worker's runtime cache is named per build (`essa-runtime-<build>`), so after a deploy the 368 KB file is fetched again on its next use. The PDF worker already behaves this way. Found in 1b, deliberately not changed there: the fix (a cache that survives deploys for files that rarely change) is a service worker change of its own, for the owner to decide.
+- **Risks carried into 1c:**
+  - 368 KB over Lebanese mobile data the first time a form needs the city list, and again after each deploy (above);
   - small countries hard to tap at 375 px (hence the dots and the list);
-  - typed cities without a pin get no marker;
+  - typed cities get no marker until "Place on map" (1c);
   - tapping country shapes on iOS Safari needs checking on a real phone;
   - a stored stop with a code a future country list drops would make that trip's edit refuse until the stop is fixed.

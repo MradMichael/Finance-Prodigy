@@ -11,9 +11,9 @@
 // Deleting a trip keeps its rows' tags (owner, approved). Each card also
 // shows each sheet's balance and opens the Currency screen's own foreign-cash
 // forms, its trip preset (session 20, item 1; approved labels only).
-import { useState } from "react";
+import { Fragment, useCallback, useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
-import { categoryLabel, fmtDate, MONEY_MAX_USD } from "../../lib/localData";
+import { categoryLabel, fmtDate, moneyEquals, MONEY_MAX_USD } from "../../lib/localData";
 import { dayLabel } from "../../lib/period";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF } from "./shared";
@@ -22,6 +22,8 @@ import { buildTrip, deleteTrip, editTrip, tagToTrip, tripActual, tripCategoryVie
 import { fmtForeign, sheet, sheetCodes } from "../../lib/foreignCash";
 import { ExchangeForm, SpendForm } from "../ForeignCashForms";
 import CategoryOptions from "../form/CategoryOptions";
+import StopFields, { placesOf, stopsOf, type CitiesState, type PlaceDraft } from "../travel/StopFields";
+import { countryName, loadCities, type CityRow } from "../../lib/places";
 
 const usd = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 const num = (s: string) => parseFloat(s.replace(/,/g, ""));
@@ -38,31 +40,52 @@ function categoryLine(label: string, r: TripCategoryRow): string {
   return `${label}: ${spent}${of ? ` · ${approx}${usd(r.comparedUSD)}${of}` : ""}`;
 }
 const dayOf = (iso: string) => dayLabel(new Date(`${iso}T12:00:00`));
+/**
+ * Travel map plan, Phase 1b (format APPROVED, owner 2026-11-05): a trip's places, "France · Paris, Lyon — Italy ·
+ * Rome — Malta". Cities are grouped under their country, countries in the order first visited; a country with no
+ * city is its name alone. "" for a trip without stops.
+ */
+function placesLine(t: StoredTrip): string {
+  const by = new Map<string, string[]>();
+  for (const s of t.stops ?? []) {
+    const cities = by.get(s.countryCode) ?? [];
+    if (s.city && !cities.includes(s.city)) cities.push(s.city);
+    by.set(s.countryCode, cities);
+  }
+  return [...by].map(([code, cities]) => (cities.length ? `${countryName(code)} · ${cities.join(", ")}` : countryName(code))).join(" — ");
+}
 const REASONS = {
   name: "Name the trip.",
   dates: "The end date can't be before the start date.",
   budget: "A budget can't be negative.",
-  // Travel map plan, Phase 1a (owner: refuse, with one line here). HELD: wording drafted, not yet
-  // approved; for review in Phase 1b, whose form is the first to send countries and cities.
-  stops: "Check the countries and cities.",
+  // Travel map plan, Phase 1a (owner: refuse, with one line here). APPROVED (owner, 2026-11-05, Phase 1b).
+  stops: "One of the countries or cities couldn't be saved. Check them and try again.",
 } as const;
 
-/** A trip form's fields as typed. */
-interface Draft { name: string; start: string; end: string; budget: string; catRows: { category: string; amount: string }[] }
-const EMPTY: Draft = { name: "", start: "", end: "", budget: "", catRows: [] };
+/** A trip form's fields as typed. Travel map plan, Phase 1b: its countries and cities (`places`) and notes. */
+interface Draft { name: string; start: string; end: string; budget: string; catRows: { category: string; amount: string }[]; places: PlaceDraft[]; notes: string }
+const EMPTY: Draft = { name: "", start: "", end: "", budget: "", catRows: [], places: [], notes: "" };
 const draftOf = (t: StoredTrip): Draft => ({
   name: t.name, start: t.startDate, end: t.endDate, budget: String(t.budgetUSD),
   catRows: Object.entries(t.categoryBudgetsUSD ?? {}).map(([category, amount]) => ({ category, amount: String(amount) })),
+  places: placesOf(t.stops), notes: t.notes ?? "",
 });
-/** What the form asks for: an empty budget is 0; a category row without both a category and an amount is left out. */
-function paramsOf(d: Draft): Parameters<typeof buildTrip>[0] {
+/**
+ * What the form asks for: an empty budget is 0; a category row without both a category and an amount is left out.
+ * Phase 1b: the stops and notes are always sent, so an edit that removes them all clears them (lib/trips.ts).
+ */
+function paramsOf(d: Draft, cityRows: CityRow[] | null): Parameters<typeof buildTrip>[0] {
   const categoryBudgetsUSD = Object.fromEntries(d.catRows.filter((r) => r.category && r.amount !== "").map((r) => [r.category, num(r.amount)]));
-  return { name: d.name, startDate: d.start, endDate: d.end, budgetUSD: d.budget === "" ? 0 : num(d.budget), ...(Object.keys(categoryBudgetsUSD).length ? { categoryBudgetsUSD } : {}) };
+  return {
+    name: d.name, startDate: d.start, endDate: d.end, budgetUSD: d.budget === "" ? 0 : num(d.budget), ...(Object.keys(categoryBudgetsUSD).length ? { categoryBudgetsUSD } : {}),
+    stops: stopsOf(d.places, cityRows), notes: d.notes,
+  };
 }
 
 /** The fields a new trip and an edited one share. `idPrefix` keeps two open forms' ids apart. */
-function TripFields({ idPrefix, testIdPrefix, draft, onDraft, financials }: {
+function TripFields({ idPrefix, testIdPrefix, draft, onDraft, financials, cities, needCities }: {
   idPrefix: string; testIdPrefix: string; draft: Draft; onDraft: (d: Draft) => void; financials: LocalFinancials;
+  cities: CitiesState; needCities: () => void;
 }) {
   const T = useTheme();
   const field = { background: T.ink, border: `1px solid ${T.line}`, color: T.text };
@@ -106,6 +129,12 @@ function TripFields({ idPrefix, testIdPrefix, draft, onDraft, financials }: {
       <button type="button" onClick={() => onDraft({ ...draft, catRows: [...draft.catRows, { category: "", amount: "" }] })} className="text-xs underline" style={{ color: T.mute }}>
         Add a category budget
       </button>
+      <StopFields idPrefix={idPrefix} places={draft.places} onPlaces={(places) => onDraft({ ...draft, places })} cities={cities} needCities={needCities} />
+      <div>
+        <Label htmlFor={`${idPrefix}-notes`}>Notes</Label>
+        <textarea id={`${idPrefix}-notes`} value={draft.notes} onChange={(e) => onDraft({ ...draft, notes: e.target.value })} rows={3}
+          className="w-full rounded-xl px-3 py-2.5 text-sm" style={{ background: T.panelSoft, border: `1px solid ${T.line}`, color: T.text }} />
+      </div>
     </>
   );
 }
@@ -113,6 +142,12 @@ function TripFields({ idPrefix, testIdPrefix, draft, onDraft, financials }: {
 export default function TripsScreen({ financials, onChange }: { financials: LocalFinancials; onChange: (f: LocalFinancials) => void }) {
   const T = useTheme();
   const trips = [...(financials.trips ?? [])].sort((a, b) => b.startDate.localeCompare(a.startDate));
+  // Travel map plan, Phase 1b: grouped by the year each trip starts in, newest first (trips is already newest first).
+  const years: [string, StoredTrip[]][] = [];
+  for (const t of trips) {
+    const y = t.startDate.slice(0, 4);
+    if (years.at(-1)?.[0] === y) years.at(-1)![1].push(t); else years.push([y, [t]]);
+  }
 
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [error, setError] = useState("");
@@ -126,10 +161,22 @@ export default function TripsScreen({ financials, onChange }: { financials: Loca
   const codes = sheetCodes(financials);
   const toggleFx = (tripId: string, form: "exchange" | "spend") =>
     setFxOpen(fxOpen?.tripId === tripId && fxOpen.form === form ? null : { tripId, form });
+  // Travel map plan, Phase 1b (D6): the city file, asked for the first time a form needs it (adding a country or a
+  // city, or a city box getting focus), never on opening the screen. A failed load is asked again next time.
+  const [cities, setCities] = useState<CitiesState>({ rows: null, failed: false });
+  const [loadingCities, setLoadingCities] = useState(false);
+  const needCities = useCallback(() => {
+    if (cities.rows || loadingCities) return;
+    setLoadingCities(true);
+    loadCities().then(
+      (rows) => setCities({ rows, failed: false }),
+      () => setCities({ rows: null, failed: true }),
+    ).finally(() => setLoadingCities(false));
+  }, [cities.rows, loadingCities]);
   const fxBtn = (active: boolean) => ({ background: active ? T.jade + "22" : T.ink, border: `1px solid ${active ? T.jade : T.line}`, color: active ? T.jade : T.mute });
 
   function save() {
-    const r = buildTrip(paramsOf(draft));
+    const r = buildTrip(paramsOf(draft, cities.rows));
     if (!r.ok) { setError(REASONS[r.reason]); return; }
     onChange({ ...financials, trips: [...(financials.trips ?? []), r.trip] });
     setDraft(EMPTY); setError("");
@@ -141,7 +188,7 @@ export default function TripsScreen({ financials, onChange }: { financials: Loca
   }
 
   function saveEdit(trip: StoredTrip) {
-    const r = editTrip(financials, trip.id, paramsOf(editDraft));
+    const r = editTrip(financials, trip.id, paramsOf(editDraft, cities.rows));
     if (!r.ok) { setEditError(REASONS[r.reason]); return; }
     onChange(r.data);
     setEditing(null);
@@ -163,7 +210,10 @@ export default function TripsScreen({ financials, onChange }: { financials: Loca
 
         {trips.length === 0 && <p className="text-sm" style={{ color: T.mute }}>No trips yet.</p>}
 
-        {trips.map((trip) => {
+        {years.map(([year, inYear]) => (
+          <Fragment key={year}>
+          <h2 className="text-xl pt-2 tabular-nums" style={{ ...SERIF, color: T.mute }}>{year}</h2>
+          {inYear.map((trip) => {
           const actual = tripActual(financials, trip);
           const left = trip.budgetUSD - actual.totalUSD;
           const euros = tripForeignSpends(financials, trip);
@@ -173,8 +223,9 @@ export default function TripsScreen({ financials, onChange }: { financials: Loca
             <section key={trip.id} aria-label={trip.name} className="rounded-2xl p-5 space-y-3" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h2 className="text-lg" style={{ ...SERIF, color: T.text }}>{trip.name}</h2>
+                  <h3 className="text-lg" style={{ ...SERIF, color: T.text }}>{trip.name}</h3>
                   <p className="text-[11px]" style={{ color: T.mute }}>{`${dayOf(trip.startDate)} – ${dayOf(trip.endDate)}`}</p>
+                  {trip.stops?.length ? <p className="text-xs mt-1" style={{ color: T.text }}>{placesLine(trip)}</p> : null}
                 </div>
                 <div className="flex items-center gap-3">
                   <button type="button" onClick={() => toggleEdit(trip)} aria-expanded={editing === trip.id} className="text-xs underline" style={{ color: T.mute }}>Edit trip</button>
@@ -183,14 +234,20 @@ export default function TripsScreen({ financials, onChange }: { financials: Loca
               </div>
               {editing === trip.id && (
                 <form aria-label="Edit trip" className="space-y-3 pb-3" style={{ borderBottom: `1px solid ${T.line}` }} onSubmit={(e) => { e.preventDefault(); saveEdit(trip); }}>
-                  <TripFields idPrefix={`trip-edit-${trip.id}`} testIdPrefix="trip-edit" draft={editDraft} onDraft={setEditDraft} financials={financials} />
+                  <TripFields idPrefix={`trip-edit-${trip.id}`} testIdPrefix="trip-edit" draft={editDraft} onDraft={setEditDraft} financials={financials} cities={cities} needCities={needCities} />
                   <div role="status">{editError && <p className="text-[11px]" style={{ color: T.coral }}>{editError}</p>}</div>
                   <button type="submit" className="w-full py-2 rounded-xl text-sm font-semibold" style={{ background: T.jade, color: T.ink }}>Save changes</button>
                 </form>
               )}
-              <p className="text-sm tabular-nums" style={{ color: left < 0 ? T.coral : T.text }}>
-                {`Budget ${usd(trip.budgetUSD)} · spent ${usd(actual.totalUSD)} · ${left < 0 ? `${usd(-left)} over` : `${usd(left)} left`}`}
-              </p>
+              {/* Travel map plan, Phase 1b (owner, D9): a $0 budget is no budget. With spending, "Spent $X" in plain
+                  text, never "over" in coral; with none, no line. A budget above 0 keeps its line. */}
+              {trip.budgetUSD > 0 ? (
+                <p className="text-sm tabular-nums" style={{ color: left < 0 ? T.coral : T.text }}>
+                  {`Budget ${usd(trip.budgetUSD)} · spent ${usd(actual.totalUSD)} · ${left < 0 ? `${usd(-left)} over` : `${usd(left)} left`}`}
+                </p>
+              ) : !moneyEquals(actual.totalUSD, 0) && (
+                <p className="text-sm tabular-nums" style={{ color: T.text }}>{`Spent ${usd(actual.totalUSD)}`}</p>
+              )}
               {/* Session 22, item 1d (approved and merged in session 23, 2f5d30c): the trip by category. The exchanges count in the total
                   and in no category: they're the money moving, not a purchase. */}
               {(view.rows.length > 0 || view.exchangesUSD !== 0) && (
@@ -253,14 +310,17 @@ export default function TripsScreen({ financials, onChange }: { financials: Loca
                   </ul>
                 </div>
               )}
+              {trip.notes && <p className="text-xs whitespace-pre-line" style={{ color: T.mute }}>{trip.notes}</p>}
             </section>
           );
         })}
+          </Fragment>
+        ))}
 
         {/* U7 (session 33): the New trip form after your trips, so they come first on a phone. */}
         <form aria-label="New trip" className="rounded-2xl p-5 space-y-3" style={{ background: T.panel, border: `1px solid ${T.line}` }} onSubmit={(e) => { e.preventDefault(); save(); }}>
           <p className="text-xs uppercase tracking-widest" style={{ color: T.mute }}>New trip</p>
-          <TripFields idPrefix="trip" testIdPrefix="trip" draft={draft} onDraft={setDraft} financials={financials} />
+          <TripFields idPrefix="trip" testIdPrefix="trip" draft={draft} onDraft={setDraft} financials={financials} cities={cities} needCities={needCities} />
           <div role="status">{error && <p className="text-[11px]" style={{ color: T.coral }}>{error}</p>}</div>
           <button type="submit" className="w-full py-2 rounded-xl text-sm font-semibold" style={{ background: T.jade, color: T.ink }}>Save trip</button>
         </form>

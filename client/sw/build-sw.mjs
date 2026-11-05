@@ -11,7 +11,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 /** Pages precached as the app shell: prerendered at build, filled in on the device, so they hold no data. */
 export const PAGES = ["/", "/sign-in", "/sign-up", "/profile", "/recover", "/privacy", "/terms", "/about", "/security"];
 /** Not precached; the worker stores them on first use. */
-export const ON_FIRST_USE = ["/pdf.worker.min.mjs"];
+export const ON_FIRST_USE = ["/pdf.worker.min.mjs", "/geo/cities15000.json"]; // the city file: travel map plan, Phase 1b (D6)
 const NEVER = new Set(["/sw.js", ...ON_FIRST_USE]);
 
 function walk(dir, base = dir) {
