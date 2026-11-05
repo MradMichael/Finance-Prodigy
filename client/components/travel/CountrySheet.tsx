@@ -27,8 +27,8 @@ export default function CountrySheet({ code, trips, today, onClose, onShowTrip }
 
   return (
     <div role="dialog" aria-label={name} onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
-      className="fixed inset-x-0 bottom-0 z-30 max-h-[60vh] overflow-y-auto rounded-t-2xl p-5 space-y-3 sm:static sm:z-auto sm:max-h-none sm:rounded-2xl"
-      style={{ background: T.panel, border: `1px solid ${T.line}`, paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))" }}>
+      // The bottom sheet clears the home indicator (PWA P2's rule, safe-area.test.ts: class and inset on one line).
+      className="fixed inset-x-0 bottom-0 z-30 max-h-[60vh] overflow-y-auto rounded-t-2xl p-5 space-y-3 sm:static sm:z-auto sm:max-h-none sm:rounded-2xl" style={{ background: T.panel, border: `1px solid ${T.line}`, paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))" }}>
       <div className="flex items-start justify-between gap-3">
         <h3 ref={heading} tabIndex={-1} className="text-lg outline-none" style={{ fontFamily: "Spectral, Georgia, serif", color: T.text }}>{name}</h3>
         <button type="button" onClick={onClose} aria-label="Close" className="text-lg leading-none" style={{ color: T.mute, minWidth: 44, minHeight: 44 }}>✕</button>
