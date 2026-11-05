@@ -311,17 +311,17 @@ Two devices each log a different transaction between syncs; both survive after e
 
 ## Phase 2.8 — Goal progress derived from the ledger (finishes plan H 5a)
 
-**Status (updated 2026-11-04, session 41):** core built and merged as plan H 5a; the rest is planned, not started. **Not marked complete** (Rule 6). The owner's live check of 5a on the real account isn't recorded in this document: UNKNOWN.
+**Status (updated 2026-11-05, session 42):** core built and merged as plan H 5a. **2.8.5a–d built, held, not merged** (branch `claude/concurrent-corrections-2.8.5`): waits for the owner's two-device check by hand and for 2.8.5e (notice wording). The rest is planned, not started. **Not marked complete** (Rule 6). The owner's live check of 5a on the real account isn't recorded in this document: UNKNOWN.
 
 **Already merged (plan H 5a, merge `72de874`, 2026-10-09; `59db917`, `55d566a`, `b087902`):** goal progress = `openingAmount` + the goal's live contributions and corrections (`goalProgress`, `client/lib/localData.ts`). Schema v6→v7 (`addGoalOpenings`) sets `openingAmount` so progress equals the stored total on upgrade day. Edit Goal's "Saved" writes a $0 correction row carrying `goalAmount` (`buildGoalCorrectionTx`). `currentAmount` is no longer written after a goal is created. This is the "goal `currentAmount` derivation [2.4.57]" item in the 2026-09-02 sequencing note below.
 
 **Still open (session 41 plan; owner's answers the same day):**
 - Achievement is still a stored flag (`achievedAt`, three writers), not derived. To be derived like `debtPayoff`, dated by the latest crossing still standing. Readers disagree today (session 41, LB1); a merge restores a cleared one (LB2).
-- Concurrent goal corrections double-apply on merge (LB3, the 2.4.58 class): detection, built once for EF, debt and goal.
+- Concurrent corrections double-apply on merge (LB3, the 2.4.58 class), for the safety net, debts and goals alike. **2.8.5a–d built, held** (owner-approved rule, session 42): the later statement stays and the other device's correction is soft-deleted (restorable); a correction crossing an ordinary payment, contribution, deposit or withdrawal, or one involving a period close's row, is reported only. `lib/concurrentCorrections.ts`, wired into `mergeFinancials`; correction rows now record what was stated (`StoredTransaction.correction`). **2.8.5e (notice wording):** sentences 1–4 approved as drafted, 5–6 being redrafted (no signed figures). Limits: "later" uses device clocks; a merge done by a device on older code can't be caught afterwards.
 - Withdrawals don't exist: to be a $0 row with a negative `goalAmount`, moving nothing in the budget.
 - `achievedAt` is dual-written for one release; retiring `currentAmount` waits for the owner's confirmation that every device is updated.
 
-**SAFE STOP** per sub-phase. Nothing beyond 5a is approved to build yet.
+**SAFE STOP** per sub-phase. Approved to build: 2.8.5a–d (built). Nothing else beyond 5a is approved yet.
 
 ---
 
