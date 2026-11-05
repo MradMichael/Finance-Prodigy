@@ -16,11 +16,14 @@ out of it on purpose; ask the owner for them.
 | Plan H 5a: goal progress computed from contributions and corrections; `openingAmount` migration | `72de874` (2026-10-09) |
 | Privacy copy fixes: LB0, the About page, the sign-up and recover caveats and their size, the About badge; ROADMAP records plan H 5a | `dadd757` |
 | The Privacy page's LB6 caveat and its date (5 November 2026); one shared lira mistype check, now on the split entry too | `4733cd5` |
+| 2.8.5a–e (LB3): two devices' corrections to one account settle on the later statement, with the approved notices | `5a5ef2c` (2026-11-05) |
 
-## 2.8.5 (LB3): built, held, not merged
+## 2.8.5 (LB3): merged, owner-verified
 
-**Branch:** `claude/concurrent-corrections-2.8.5`, rebased onto `4733cd5`. Steps 2.8.5a–e are built, each
-tests-first. **It is not merged until the owner's two-device check by hand passes.**
+**Merged to `main` at `5a5ef2c`** (2026-11-05; a merge commit, not squashed), from
+`claude/concurrent-corrections-2.8.5` rebased onto `38c2d48`. Steps 2.8.5a–e, each tests-first. **The owner's
+two-device check by hand passed** before the merge (Rule 6). On the merged tree: full client suite 2,890
+passed, 13 skipped; `tsc` and lint clean; server 230 passed, 13 skipped; build clean.
 
 Owner's decisions (sessions 42–43):
 - **Rule:** when two devices each correct the same account (safety net, a debt, a goal) before syncing,

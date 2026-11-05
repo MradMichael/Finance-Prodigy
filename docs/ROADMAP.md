@@ -311,17 +311,17 @@ Two devices each log a different transaction between syncs; both survive after e
 
 ## Phase 2.8 — Goal progress derived from the ledger (finishes plan H 5a)
 
-**Status (updated 2026-11-05, session 43):** core built and merged as plan H 5a. **2.8.5a–d built, held, not merged** (branch `claude/concurrent-corrections-2.8.5`): waits for the owner's two-device check by hand. The rest is planned, not started (`docs/plans/phase-2.8.md`). **Not marked complete** (Rule 6). The owner's live check of 5a on the real account isn't recorded in this document: UNKNOWN.
+**Status (updated 2026-11-05, session 43):** core built and merged as plan H 5a. **2.8.5a–e merged at `5a5ef2c`** (2026-11-05), after the owner's two-device check by hand passed. The rest is planned, not started (`docs/plans/phase-2.8.md`). **Not marked complete** (Rule 6). The owner's live check of 5a on the real account isn't recorded in this document: UNKNOWN.
 
 **Already merged (plan H 5a, merge `72de874`, 2026-10-09; `59db917`, `55d566a`, `b087902`):** goal progress = `openingAmount` + the goal's live contributions and corrections (`goalProgress`, `client/lib/localData.ts`). Schema v6→v7 (`addGoalOpenings`) sets `openingAmount` so progress equals the stored total on upgrade day. Edit Goal's "Saved" writes a $0 correction row carrying `goalAmount` (`buildGoalCorrectionTx`). `currentAmount` is no longer written after a goal is created. This is the "goal `currentAmount` derivation [2.4.57]" item in the 2026-09-02 sequencing note below.
 
 **Still open (session 41 plan; owner's answers the same day):**
 - LB1, LB2: goal achievement to be derived like `debtPayoff`, dated by the latest crossing still standing (2.8.1–2.8.4, `docs/plans/phase-2.8.md`).
-- LB3: **2.8.5a–d built, held** (owner-approved rule, session 42), for the safety net, debts and goals alike. **2.8.5e** (notice wording): approved and built, session 43.
+- LB3: **2.8.5a–e merged at `5a5ef2c`, owner-verified** (rule approved session 42, wording session 43), for the safety net, debts and goals alike.
 - Withdrawals don't exist: to be a $0 row with a negative `goalAmount`, moving nothing in the budget.
 - `achievedAt` is dual-written for one release; retiring `currentAmount` waits for the owner's confirmation that every device is updated.
 
-**SAFE STOP** per sub-phase. Approved to build: 2.8.5a–d (built). Nothing else beyond 5a is approved yet.
+**SAFE STOP** per sub-phase. 2.8.5 is merged. Nothing else beyond 5a is approved to build yet.
 
 ---
 
