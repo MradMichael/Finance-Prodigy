@@ -38,6 +38,7 @@ import EditGoalSheet from "../components/EditGoalSheet";
 import PayDebtSheet from "../components/PayDebtSheet";
 import EditTransactionSheet from "../components/EditTransactionSheet";
 import { todayCalendarDay } from "../lib/calendarDay";
+import OfflineNotice, { backupRetriesOnReconnect } from "../components/OfflineNotice";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HOME
@@ -888,6 +889,8 @@ export default function Home() {
       {/* A11Y-03: the sync status, in the indicator's own long labels, for a
           screen reader; the dot alone says nothing to one. */}
       <span role="status" className="sr-only">{syncStatus !== "idle" ? syncStatusLongLabel(syncStatus) : ""}</span>
+      {/* PWA P3 (owner-approved wording, 2026-11-05): while the device is offline. */}
+      <OfflineNotice backsUp={backupRetriesOnReconnect({ backupOn, syncRefused, newerBackup, backupTooLarge })} />
 
       {/* Body row */}
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
