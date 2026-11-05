@@ -2249,10 +2249,20 @@ export function canReopen(
   return { ok: true, close };
 }
 
-/** A ledger row that states a balance, as opposed to one that moves it. */
-function isCorrectionFor(t: StoredTransaction, account: "ef" | { debtId: string }): boolean {
+/** Which account a correction is for (2.8.5b: goals joined EF and debts). */
+export type CorrectionAccount = "ef" | { debtId: string } | { goalId: string };
+
+/**
+ * A ledger row that states a balance, as opposed to one that moves it. The ONE
+ * test of that: the period close's reopen and the merge's concurrent-correction
+ * rule (2.8.5c) both ask it here. A goal's is Edit Goal's $0 row carrying
+ * goalAmount; a contribution whose converted value the v7 migration froze
+ * carries goalAmount too, but moves money (amount isn't 0), so it isn't one.
+ */
+export function isCorrectionFor(t: StoredTransaction, account: CorrectionAccount): boolean {
   if (t.deletedAt != null) return false;
   if (account === "ef") return t.amount === 0 && t.efAmount != null && t.debtId == null;
+  if ("goalId" in account) return t.goalId === account.goalId && t.amount === 0 && t.goalAmount != null;
   return t.debtId === account.debtId && t.debtAdjustment != null;
 }
 
