@@ -93,7 +93,8 @@ export default function RecoverPage() {
         </p>
       </div>
 
-      <p className="text-[10px] mt-8 text-center max-w-xs" style={{ color: T.mute }}>
+      {/* Session 42 (item E): body-text size and colour, was text-[10px] in T.mute (small print). */}
+      <p className="text-xs leading-relaxed mt-8 text-center max-w-xs" style={{ color: T.text }}>
         {/* Session 41 (item C): was "...for it being encrypted only you can unlock.", true of this browser's copy only. */}
         No recovery code saved? There&apos;s no other way back into an account&apos;s data. That&apos;s the tradeoff for
         this browser&apos;s copy being encrypted so only you can unlock it. If backup is on, the copy on our server is

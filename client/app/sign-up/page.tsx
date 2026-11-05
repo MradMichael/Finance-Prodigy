@@ -144,7 +144,8 @@ export default function SignUpPage() {
         <Link href="/privacy" className="underline hover:opacity-80" style={{ color: T.mute }}>Privacy Policy</Link>.
       </p>
 
-      <p className="text-[10px] mt-2 text-center max-w-xs" style={{ color: T.mute }}>
+      {/* Session 42 (item E): body-text size and colour, was text-[10px] in T.mute (small print). */}
+      <p className="text-xs leading-relaxed mt-2 text-center max-w-xs" style={{ color: T.text }}>
         {/* Session 41 (item C): was "Your records are private to you.", true of this browser's copy only. */}
         Each account&apos;s data is stored separately, encrypted in this browser. If you turn on backup, the copy on
         our server is not end-to-end encrypted: the server can read it.

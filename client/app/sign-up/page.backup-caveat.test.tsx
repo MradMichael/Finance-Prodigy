@@ -41,3 +41,28 @@ describe("the backup-on caveat", () => {
     expect(text).toMatch(/if backup is on, .*the server can read it/i);
   });
 });
+
+// Session 42 (owner, item E): the caveat is read, not small print. It matches
+// the page's body text (text-xs, like the subtitle) and is NOT in the muted
+// colour that subtitle uses -- compared against the page's own muted line, so
+// the test holds in every theme.
+function paragraphContaining(re: RegExp): HTMLElement {
+  const p = Array.from(document.querySelectorAll("p")).find((el) => re.test(el.textContent ?? ""));
+  if (!p) throw new Error(`no <p> matching ${re}`);
+  return p as HTMLElement;
+}
+
+describe("the backup-on caveat is readable", () => {
+  it.each([
+    ["sign-up", () => <SignUpPage />, /Start tracking your financial journey/],
+    ["recover", () => <RecoverPage />, /Enter the recovery code you saved/],
+  ])("%s: body-text size, not muted", (_name, page, mutedLine) => {
+    render(<ThemeProvider>{page()}</ThemeProvider>);
+    const caveat = paragraphContaining(/the server can read it/);
+    const muted = paragraphContaining(mutedLine);
+    expect(caveat.className).toContain("text-xs");
+    expect(caveat.className).not.toContain("text-[10px]");
+    expect(caveat.style.color).not.toBe("");
+    expect(caveat.style.color).not.toBe(muted.style.color);
+  });
+});
