@@ -8,7 +8,9 @@
 //     a thin ink outline, so neighbouring visited countries stay apart.
 //     Planned-only: a DASHED brass outline on plain land. Fill and dash carry the
 //     meaning together, never colour alone.
-//   - Countries without a 110m shape are dots, each with a 44 px tap area.
+//   - Countries without a 110m shape are dots, each with a 44 px tap area:
+//     only the visited or planned ones (design pass), so the oceans aren't
+//     scattered with every island nation.
 //   - City markers: jade with an ink halo; planned ones hollow and dashed.
 //   - "+" / "−" (read "Zoom in" / "Zoom out"), drag to move, "Show my countries".
 //   - The picture is hidden from screen readers: the country lists below it
@@ -139,11 +141,12 @@ export default function TravelMap({ world, trips, today, onCountry, onPoint, sel
           })}
           {world.dots.map((d) => {
             const state = stateOf(d.code);
+            if (state === "none") return null;
             return (
               <g key={d.code}>
-                <circle data-dot={d.code} data-state={state} cx={d.x} cy={d.y} r={(state === "none" ? 1.5 : 4) * k}
-                  fill={state === "visited" ? T.brass70 : state === "planned" ? T.panelSoft : T.line}
-                  stroke={state === "none" ? "none" : state === "visited" ? T.ink : T.brass} {...(state === "none" ? {} : border)}
+                <circle data-dot={d.code} data-state={state} cx={d.x} cy={d.y} r={4 * k}
+                  fill={state === "visited" ? T.brass70 : T.panelSoft}
+                  stroke={state === "visited" ? T.ink : T.brass} {...border}
                   {...(state === "planned" ? { strokeDasharray: dash } : {})} />
                 <circle data-hit={d.code} cx={d.x} cy={d.y} r={(TAP_PX / 2) * k} fill="transparent" onClick={country(d.code)} />
               </g>

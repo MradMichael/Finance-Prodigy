@@ -66,7 +66,7 @@ describe("the map", () => {
   it("a visited small country is a brass dot; the image is hidden from screen readers", () => {
     const { svg, dot } = draw([EUROPE]);
     expect(dot("MT")!.getAttribute("data-state")).toBe("visited");
-    expect(dot("SG")!.getAttribute("data-state")).toBe("none");
+    expect(dot("SG")).toBeNull(); // design pass: no dot for a small country with no trip
     expect(svg.getAttribute("aria-hidden")).toBe("true");
   });
 
