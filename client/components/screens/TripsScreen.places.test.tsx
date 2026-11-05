@@ -202,7 +202,9 @@ describe("editing a trip's countries and cities", () => {
     stops: [{ id: "s1", countryCode: "FR", city: "Paris", lat: 48.85, lon: 2.35 }, { id: "s2", countryCode: "IT", city: "Rome", lat: 41.89, lon: 12.48 }, { id: "s3", countryCode: "FR", city: "Lyon" }, { id: "s4", countryCode: "MT" }],
     createdAt: "2026-11-05T09:00:00.000Z", updatedAt: "2026-11-05T09:00:00.000Z",
   };
+  // Phase 1c: a trip with a country opens Trips on Map; its card is under "List".
   const openEdit = () => {
+    fireEvent.click(screen.getByRole("button", { name: "List" }));
     fireEvent.click(screen.getByRole("button", { name: "Edit trip" }));
     return within(screen.getByRole("form", { name: "Edit trip" }));
   };
