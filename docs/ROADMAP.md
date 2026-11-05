@@ -447,6 +447,21 @@ Users are on inconsistent Lebanese mobile networks.
 
 **Conflict warning.** Queued offline writes interact with sync conflict resolution. Report the interaction before implementing.
 
+### Installable app: owner decisions and gate (2026-11-05)
+
+Taken after a read-only app-readiness assessment (2026-11-04). The plan is website first, app second. A PWA stays the target; a Google Play listing through a Trusted Web Activity is the later option. A native wrapper is not planned.
+
+**Owner's decisions:**
+- **The session key stays in `sessionStorage`.** An installed app asks for the password on every cold start. This is deliberate and not a defect (`client/lib/crypto.ts`, `activateSessionKey`).
+- **Custom domain: deferred** until the owner is ready for Google Play. The PWA stays on `vercel.app` until then. A Play app is tied to its domain, so the domain comes first in that work.
+- **Export reminder: 14 days.** The interval for the reminder shown when backup is off and nothing has been exported.
+
+**Gate before any app-store work.** These are live bugs from a separate audit session, planned there as Phase 2.8; they are not specified here.
+- Must be fixed first: **LB3** and **LB6**.
+- Should be fixed first: LB0, LB1, LB2, LB4, LB5.
+
+**Who owns what:** the install prompt, storage persistence and offline hardening belong to a separate PWA session. The mobile-correctness pass (16 px inputs, 44 px tap targets) belongs to the session that recorded this note.
+
 **SAFE STOP.**
 
 ---
