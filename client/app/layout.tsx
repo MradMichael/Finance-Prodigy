@@ -15,6 +15,10 @@ export const metadata: Metadata = {
   // no <link rel="icon"> tag was ever rendered at all and every browser
   // fell back to its generic default tab icon.
   icons: { icon: "/icon.svg", apple: "/apple-touch-icon.png" },
+  // PWA P1 (owner-approved, 2026-11-05): on an iPhone home screen the app is named "ESSA", and the status bar
+  // keeps its own background ("default"), so its text is readable on every theme -- "black-translucent" would
+  // put white text over Ivory, the default theme. No startup images (owner, Q3).
+  appleWebApp: { capable: true, title: "ESSA", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {
