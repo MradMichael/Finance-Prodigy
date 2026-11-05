@@ -1117,6 +1117,16 @@ export interface LocalFinancials {
    * (lib/syncMerge.ts); read with clashRecords (lib/clashNotice.ts).
    */
   balanceClashRecords?: ClashRecord[];
+  /**
+   * Phase 2.8.5d (owner-approved, session 42): two devices' corrections to one
+   * account (safety net, a debt, a goal) that a merge settled or reported
+   * (lib/concurrentCorrections.ts). Kept apart from clashRecords for the
+   * reason transactions' and tracked balances' are: older code words every
+   * clashRecords entry and has no sentence for a correction; it ignores this
+   * field. Pruned the same way (lib/syncMerge.ts); read with clashRecords
+   * (lib/clashNotice.ts).
+   */
+  correctionClashRecords?: ClashRecord[];
   // Travel slice 2 (merged in session 19, 15d791f): trips (lib/trips.ts), merged like the wishlist.
   trips?: StoredTrip[];
   // Foreign cash, model 2 (merged in session 19, 15d791f): the sheets' entries that aren't ledger
