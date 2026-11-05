@@ -196,3 +196,22 @@ describe("4c. the views fit what lights", () => {
     expect(holds(vb, WORLD.project(-52.33, 4.94))).toBe(false);
   });
 });
+
+// 5. On desktop the map uses the main area's width (capped, max-w-6xl) and a country's sheet opens below it,
+//    its trips in two columns; the header, the cards and the forms keep Trips' 768 px column. Phones keep the
+//    bottom sheet. jsdom has no layout: these pin the structure; the screenshots show the result.
+describe("5. desktop: the map wide, the sheet below it", () => {
+  it("the sheet follows the map, never beside it, its trips in two columns from sm", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => new Response(url.endsWith("countries-110m.json") ? TOPO : LIST)));
+    const { container } = render(<ThemeProvider><MapPanel trips={[EUROPE]} today={TODAY} onAddTrip={vi.fn()} onShowTrip={vi.fn()} /></ThemeProvider>);
+    await screen.findByRole("button", { name: "Show my countries" });
+    fireEvent.click(container.querySelector('path[data-code="FR"]')!);
+    const sheet = screen.getByRole("dialog", { name: "France" });
+    expect(container.innerHTML).not.toMatch(/grid-cols-\[2fr_1fr\]/);
+    const map = container.querySelector("svg")!.closest("div.space-y-2")!;
+    expect(map.compareDocumentPosition(sheet) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(sheet.querySelector("ul")!.className).toMatch(/\bsm:grid-cols-2\b/);
+    expect(sheet.className).toMatch(/\bfixed\b/); // the phone's bottom sheet stays
+    expect(sheet.className).toMatch(/\bsm:static\b/);
+  });
+});
