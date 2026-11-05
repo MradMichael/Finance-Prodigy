@@ -20,7 +20,7 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "../../contexts/ThemeContext";
 import type { World, Box } from "../../lib/worldMap";
-import { cityMarkers, visitedCountries } from "../../lib/travel";
+import { cityMarkers, litPieces, visitedCountries } from "../../lib/travel";
 import type { StoredTrip } from "../../lib/trips";
 
 const TAP_PX = 44; // a dot's tap area, across
@@ -73,6 +73,8 @@ export default function TravelMap({ world, trips, today, onCountry, onPoint, sel
   const visitedSet = useMemo(() => new Set(visited), [visited]);
   const plannedSet = useMemo(() => new Set(planned), [planned]);
   const markers = useMemo(() => cityMarkers(trips, today), [trips, today]);
+  // Design pass, 4 (rule B): which pieces light, and whose sheet each opens.
+  const lit = useMemo(() => litPieces(world, trips, today), [world, trips, today]);
   const stateOf = (code: string | null) => (code && visitedSet.has(code) ? "visited" : code && plannedSet.has(code) ? "planned" : "none");
 
   const zoom = (by: number) => setView((v) => viewAt(v.x + v.width / 2, v.y + v.height / 2, v.width * by));
@@ -127,16 +129,21 @@ export default function TravelMap({ world, trips, today, onCountry, onPoint, sel
           className="block w-full h-full touch-none select-none" style={{ cursor: onPoint ? "crosshair" : "grab" }}
           onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onClick={onSvgClick}>
           <path d={world.outline} fill={T.ink} />
-          {world.shapes.map((s, i) => {
-            const state = stateOf(s.code);
+          {/* One path per piece (design pass, 4): a piece lights by rule B (litPieces), and opens the sheet of
+              the country that lit it, else of its own. */}
+          {world.pieces.map((p, i) => {
+            const l = p.code ? lit.get(`${p.code}#${p.index}`) : undefined;
+            const state = l?.state ?? "none";
+            const opens = l?.code ?? p.code;
+            const chosen = !!opens && selected === opens;
             return (
-              <path key={s.code ?? `u${i}`} d={s.d} data-shape="" {...(s.code ? { "data-code": s.code } : {})} data-state={state}
+              <path key={p.code ? `${p.code}#${p.index}` : `u${i}`} d={p.d} data-shape="" {...(p.code ? { "data-code": p.code, "data-piece": p.index } : {})} data-state={state}
                 fill={state === "visited" ? T.brass70 : T.panelSoft}
-                stroke={selected === s.code ? T.text : state === "none" ? T.line : state === "visited" ? T.ink : T.brass}
-                strokeWidth={selected === s.code ? 2.5 : state === "none" ? 0.5 : state === "visited" ? 0.75 : border.strokeWidth}
+                stroke={chosen ? T.text : state === "none" ? T.line : state === "visited" ? T.ink : T.brass}
+                strokeWidth={chosen ? 2.5 : state === "none" ? 0.5 : state === "visited" ? 0.75 : border.strokeWidth}
                 vectorEffect="non-scaling-stroke"
                 {...(state === "planned" ? { strokeDasharray: dash } : {})}
-                onClick={country(s.code)} />
+                onClick={country(opens)} />
             );
           })}
           {world.dots.map((d) => {

@@ -48,7 +48,7 @@ const viewBox = (svg: SVGSVGElement) => svg.getAttribute("viewBox")!.split(" ").
 describe("the map", () => {
   it("draws every shape; visited ones are filled with an ink outline, planned-only ones have a dashed brass one; the rest none", () => {
     const { svg, shape } = draw([EUROPE, JAPAN, FRANCE_AGAIN]);
-    expect(svg.querySelectorAll("path[data-shape]")).toHaveLength(177);
+    expect(svg.querySelectorAll("path[data-shape]")).toHaveLength(WORLD.pieces.length); // one per piece since the design pass (177 shapes)
     const brass = THEMES.ivory.brass.toLowerCase();
     for (const code of ["FR", "IT"]) { // France: a past trip and a planned one, so visited
       expect(shape(code)!.getAttribute("data-state"), code).toBe("visited");
@@ -176,7 +176,7 @@ describe("the panel that loads the map", () => {
     const { container } = panel([EUROPE]);
     expect(container.querySelector("[data-map-placeholder]")).toBeTruthy();
     expect(await screen.findByRole("button", { name: "Show my countries" })).toBeTruthy();
-    expect(container.querySelectorAll("path[data-shape]")).toHaveLength(177);
+    expect(container.querySelectorAll("path[data-shape]")).toHaveLength(WORLD.pieces.length); // one per piece (177 shapes)
   });
 
   it("past 10 seconds, says it's still loading", async () => {

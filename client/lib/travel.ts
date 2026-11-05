@@ -60,3 +60,51 @@ export function cityMarkers(trips: StoredTrip[], today: string): CityMarker[] {
   }
   return [...by.values()].sort((a, b) => a.countryCode.localeCompare(b.countryCode) || (a.city ?? "").localeCompare(b.city ?? ""));
 }
+
+/** What `litPieces` needs from the world (lib/worldMap.ts), so this file never loads the map's code. */
+type PieceWorld = {
+  groups: (code: string) => number[];
+  locate: (code: string, lon: number, lat: number) => number | null;
+  territory: (code: string) => { code: string; index: number } | null;
+};
+/** A lit piece: its state, and whose sheet tapping it opens (a territory's, for French Guiana on France's shape). */
+export type LitPiece = { state: "visited" | "planned"; code: string };
+
+/**
+ * Travel map design pass, 4 (owner's rule B, 2026-11-05): which pieces of which shapes light, keyed
+ * `${code}#${index}`. Per trip and country, the piece groups (lib/worldMap.ts: the home group, or an
+ * overseas group such as Hawaii) holding its stops' points light; if none of its stops there has a point,
+ * its home group lights. Groups add up across trips. A stop in a territory with no shape of its own
+ * (French Guiana, GF) lights its parent's group that holds the territory's point, as the territory.
+ * Visited first; planned trips light only what no visited trip has.
+ */
+export function litPieces(world: PieceWorld, trips: StoredTrip[], today: string): Map<string, LitPiece> {
+  const lit = new Map<string, LitPiece>();
+  const lightGroup = (shapeCode: string, group: number, state: LitPiece["state"], code: string) => {
+    world.groups(shapeCode).forEach((g, i) => {
+      const key = `${shapeCode}#${i}`;
+      if (g === group && !lit.has(key)) lit.set(key, { state, code });
+    });
+  };
+  for (const state of ["visited", "planned"] as const) {
+    for (const t of trips.filter((x) => isPlanned(x, today) === (state === "planned"))) {
+      const byCountry = new Map<string, NonNullable<StoredTrip["stops"]>>();
+      for (const s of t.stops ?? []) byCountry.set(s.countryCode, [...(byCountry.get(s.countryCode) ?? []), s]);
+      for (const [code, stops] of byCountry) {
+        const terr = world.territory(code);
+        if (terr) { lightGroup(terr.code, world.groups(terr.code)[terr.index], state, code); continue; }
+        const groups = world.groups(code);
+        if (groups.length === 0) continue; // a dot: drawn as its dot
+        const hit = new Set<number>();
+        for (const s of stops) {
+          if (s.lat === undefined || s.lon === undefined) continue;
+          const i = world.locate(code, s.lon, s.lat);
+          if (i !== null) hit.add(groups[i]);
+        }
+        if (hit.size === 0) hit.add(0);
+        for (const g of hit) lightGroup(code, g, state, code);
+      }
+    }
+  }
+  return lit;
+}
