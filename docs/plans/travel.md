@@ -2,7 +2,7 @@
 
 An extension of the existing Trips screen (`client/lib/trips.ts`, `client/components/screens/TripsScreen.tsx`): a world map of the countries visited, a sheet of the trips in a country, city markers, and the trip list grouped by year. Read with `docs/CLAUDE_CODE_BRIEF.md`, which stays the authority on standards and standing rules.
 
-**Status (2026-11-05):** Phase 0 and Phase 1a are built, merged and verified live by the owner. **Phase 1b is merged at `2077aa4`** (owner-approved). **Phase 1c is built on `claude/travel-1c` and NOT merged**: it waits for the owner's live check. Phase 1 (the travel map) is then complete. Phase 2 has no plan yet.
+**Status (2026-11-05):** Phase 0 and Phase 1a are built, merged and verified live by the owner. **Phase 1b is merged at `2077aa4`** (owner-approved). **Phase 1c is merged at `06b4bec`** (owner: preview checked, CI green). **Phase 1, the travel map, is complete.** Phase 2 has no plan yet.
 
 **Rule 8:** the status line above and the phase status lines below change in the same commit as the work that changes them.
 
@@ -150,7 +150,7 @@ Cut fresh from `main` at `46c9a0b`. Every new string is the owner's APPROVED wor
 - The About page shows the credit, and both links open.
 - **After a deploy,** the city file downloads again on its next use; that's known, and the fix is an open item (§7).
 
-### Phase 1c: the map. Built on `claude/travel-1c`, NOT merged.
+### Phase 1c: the map. Merged at `06b4bec`.
 
 Cut from `main` at `a476736`. Every new string is APPROVED wording (§5). Pushed after every commit (owner, mid-phase). First commit: `c90656a`, the status line (rule 8).
 
@@ -221,7 +221,9 @@ Cut from `main` at `a476736`. Every new string is APPROVED wording (§5). Pushed
   - the Trips chunk loads them only through webpack's on-demand loader, when Map or the picker opens;
   - the Overview (`/`) first load is 289 kB here against 290 kB on `main` built the same way: no growth.
 
-**Owner's live check (before merging 1c)**
+**Merged** at `06b4bec`, a merge commit (no squash), approved by the owner after checking the preview with CI green, onto `main` at `e0b3c15`. `main` had moved 3 commits since 1c was cut (a sync-service fix, session 41 item 2), none in 1c's files; no conflicts. On the merged result: client **3,005 passed**, 14 skipped; under `TZ=Asia/Beirut` **3,017 passed**, 2 skipped; `tsc` and lint 0.
+
+**Owner's live check (for 1c on `main`)**
 - **Map:** France, Italy and Malta highlighted, Malta as a dot; city dots in the right places. Tap France: the trip, its dates, Paris and Lyon.
 - **Show my countries:** zooms to Europe; "+"/"−" and dragging work on the phone.
 - **Planned:** a trip starting next month shows its country dashed, listed under "Planned (1)", with "Planned" in its sheet. After its start date it shows filled under "Countries visited", with no change on your part.
@@ -236,7 +238,7 @@ Cut from `main` at `a476736`. Every new string is APPROVED wording (§5). Pushed
 
 ## 4. Planned
 
-Nothing more is planned for Phase 1; it is complete once 1c merges. Phase 2 and the open items are in §7.
+Nothing more is planned for Phase 1, which is complete (1c merged at `06b4bec`). Phase 2 and the open items are in §7.
 
 ---
 
