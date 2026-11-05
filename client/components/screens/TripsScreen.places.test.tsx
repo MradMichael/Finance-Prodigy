@@ -144,6 +144,7 @@ describe("a new trip's countries and cities", () => {
     addCountry("fra", "France");
     typeCity("Lyon");
     typeCity("Paris");
+    await newForm().findByRole("button", { name: "Paris" }); // the list has loaded, so Paris gets its point
     fireEvent.click(newForm().getByRole("button", { name: "Remove Lyon" }));
     addCountry("ita", "Italy");
     fireEvent.click(newForm().getByRole("button", { name: "Remove Italy" }));
