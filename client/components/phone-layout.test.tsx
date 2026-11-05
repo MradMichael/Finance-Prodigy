@@ -37,7 +37,7 @@ describe("U3: notices clear the phone's bars", () => {
     const merge = src("app/page.tsx").match(/\{mergeNotice && \(\s*<div\s+className="([^"]+)"/);
     const toast = src("components/InputPanel.tsx").match(/\{actionMsg && \(\s*<div\s+className="([^"]+)"/);
     // PWA P2 (2026-11-05): below md, the same 4.75rem plus the home indicator's inset (viewport-fit=cover).
-    for (const [m, below] of [[merge, /(^| )bottom-\[4\.75rem\]( |$)/], [toast, /(^| )bottom-\[calc\(4\.75rem\+env\(safe-area-inset-bottom\)\)\]( |$)/]] as const) {
+    for (const [m, below] of [[merge, /(^| )bottom-\[calc\(4\.75rem\+env\(safe-area-inset-bottom\)\)\]( |$)/], [toast, /(^| )bottom-\[calc\(4\.75rem\+env\(safe-area-inset-bottom\)\)\]( |$)/]] as const) {
       expect(m).not.toBeNull();
       expect(m![1]).toMatch(below);
       expect(m![1]).toMatch(/(^| )md:bottom-4( |$)/);
@@ -48,14 +48,15 @@ describe("U3: notices clear the phone's bars", () => {
     const page = src("app/page.tsx");
     const save = page.match(/\{saveError && \(\s*<div\s+role="alert"\s+className="([^"]+)"/);
     expect(save).not.toBeNull();
-    expect(save![1]).toMatch(/(^| )top-\[4\.5rem\]( |$)/);
+    // PWA P2 (2026-11-05): below md, the same offsets plus the notch/status bar's inset (viewport-fit=cover).
+    expect(save![1]).toMatch(/(^| )top-\[calc\(4\.5rem\+env\(safe-area-inset-top\)\)\]( |$)/);
     expect(save![1]).toMatch(/(^| )md:top-4( |$)/);
     for (const name of ["syncRefused", "backupTooLarge", "backupFailed"]) {
       // Session 33 (U3): the backup notice can be dismissed, so its condition gained "&& !backupNoticeDismissed".
       const at = page.search(new RegExp(`\\{${name}(?: && !\\w+)? && \\(`));
       expect(at, name).toBeGreaterThan(-1);
       const block = page.slice(at, at + 600);
-      expect(block, name).toMatch(/saveError \? "top-\[11rem\] md:top-\[7\.5rem\]" : "top-\[4\.5rem\] md:top-4"/);
+      expect(block, name).toMatch(/saveError \? "top-\[calc\(11rem\+env\(safe-area-inset-top\)\)\] md:top-\[7\.5rem\]" : "top-\[calc\(4\.5rem\+env\(safe-area-inset-top\)\)\] md:top-4"/);
       expect(block, name).not.toMatch(/top: saveError/);
     }
   });

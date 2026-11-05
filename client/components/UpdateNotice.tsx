@@ -47,7 +47,7 @@ export default function UpdateNotice() {
   return (
     <div
       role="status"
-      className="fixed left-1/2 -translate-x-1/2 bottom-[4.75rem] md:bottom-4 z-50 w-[calc(100%-2rem)] max-w-md rounded-2xl px-4 py-3 flex items-center gap-3 shadow-lg"
+      className="fixed left-1/2 -translate-x-1/2 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] md:bottom-4 z-50 w-[calc(100%-2rem)] max-w-md rounded-2xl px-4 py-3 flex items-center gap-3 shadow-lg"
       style={{ background: T.panel, border: `1px solid ${T.brass}60` }}
     >
       <p className="text-sm flex-1" style={{ color: T.text }}>A new version of ESSA is ready. Reload to use it.</p>
