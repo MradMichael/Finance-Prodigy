@@ -15,6 +15,7 @@ import { DEFAULT_DATA, confirmRate, recordRateEdit, rateOn, type LocalFinancials
 import { computeDashboard } from "./computeDashboard";
 import { mergeFinancials } from "./syncMerge";
 import { seenOf } from "./syncSeen";
+import { clashSentence } from "./syncService";
 
 const NOW = new Date(2026, 10, 5, 10, 0); // 5 Nov 2026, 10:00 local
 beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(NOW); });
@@ -92,6 +93,22 @@ describe("confirmRate across two devices", () => {
       expect(m.lbpRate).toBe(100_000);
       expect(m.lbpRateUpdatedAt).toBe(at(9).toISOString()); // the age is the change's, not the confirm's
       expect(m.settingsUpdatedAt?.lbpRate).toBe(at(9).toISOString());
+    }
+  });
+
+  // Owner, 2026-11-05: pin the notice. Characterization -- this is the
+  // existing approved setting sentence (clashSentence, plan H 5d), not new
+  // wording; it passed when written. Each merge order is one device's view,
+  // and both name the change as kept and the confirmed value as the other.
+  // Note it says "Both devices changed" though one only confirmed: the
+  // sentence has no way to know, and rewording it needs the owner.
+  it("the clash notice: one setting clash, the change kept, told in the approved sentence", () => {
+    const start = synced(), seen = seenOf(start);
+    const changed = recordRateEdit(start, 100_000, at(9));
+    const confirmed = confirmRate(start, at(10));
+    for (const r of [mergeFinancials(confirmed, changed, at(11), seen), mergeFinancials(changed, confirmed, at(11), seen)]) {
+      expect(r.clashes).toEqual([{ kind: "setting", setting: "lbpRate", kept: 100_000, other: 89_500 }]);
+      expect(clashSentence(r.clashes[0])).toBe("Both devices changed your LBP rate — kept L£ 100,000 / $1 (the other device had L£ 89,500 / $1).");
     }
   });
 
