@@ -7,6 +7,8 @@
 //      a thin ink outline (a brass one would vanish on brass) so neighbouring
 //      visited countries stay apart. City markers keep their ink halo, which is
 //      what reaches 3:1 on the fill. Planned keeps its dashed brass on land.
+//   3. Small-country dots (the countries the 110m shapes leave out) only for
+//      visited or planned countries, not for every small country.
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import TravelMap from "./TravelMap";
@@ -84,5 +86,20 @@ describe("2. visited countries stand out", () => {
       ];
       expect(pairs.filter(([, r]) => r < 3).map(([p, r]) => `${p} ${r.toFixed(2)}`)).toEqual([]);
     });
+  });
+});
+
+describe("3. dots only for visited or planned small countries", () => {
+  it("Malta visited and Singapore planned have dots, with their tap areas; no other small country has one", () => {
+    const SINGAPORE_PLANNED = trip("sg", "2027-01-10", [{ id: "s", countryCode: "SG" }]);
+    const { container } = render(<ThemeProvider><TravelMap world={WORLD} trips={[EUROPE, SINGAPORE_PLANNED]} today={TODAY} /></ThemeProvider>);
+    const dots = [...container.querySelectorAll("circle[data-dot]")].map((c) => [c.getAttribute("data-dot"), c.getAttribute("data-state")]);
+    expect(dots.sort()).toEqual([["MT", "visited"], ["SG", "planned"]]);
+    expect([...container.querySelectorAll("circle[data-hit]")].map((c) => c.getAttribute("data-hit")).sort()).toEqual(["MT", "SG"]);
+  });
+
+  it("no trips: no dots at all", () => {
+    const { container } = render(<ThemeProvider><TravelMap world={WORLD} trips={[]} today={TODAY} /></ThemeProvider>);
+    expect(container.querySelectorAll("circle[data-dot], circle[data-hit]")).toHaveLength(0);
   });
 });
