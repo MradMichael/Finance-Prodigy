@@ -63,7 +63,7 @@ export default function EditDebtSheet({
     const current = derivedDebtBalance(debt, financials.transactions, financials);
     const delta = roundMoney(current - entered);
     if (delta !== 0) {
-      update({ transactions: [buildDebtAdjustmentTx(debt, delta), ...financials.transactions] });
+      update({ transactions: [buildDebtAdjustmentTx(debt, delta, { stated: entered, base: current }), ...financials.transactions] });
     }
     setBalanceInput(null);
   }

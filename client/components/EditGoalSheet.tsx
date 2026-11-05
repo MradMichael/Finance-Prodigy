@@ -43,14 +43,15 @@ export default function EditGoalSheet({
     // correction row carrying the difference, not an edited total. (A goal
     // not yet migrated still edits its stored total, as before.)
     const migrated = goal.openingAmount != null;
-    const delta = roundMoney(currentNum - goalProgress(goal, financials));
+    const progress = goalProgress(goal, financials);
+    const delta = roundMoney(currentNum - progress);
     update({
       goals: financials.goals.map((g) => g.id !== goal.id ? g : edited({
         ...g, name: name.trim(), emoji: emoji || "🎯",
         targetAmount: targetNum, targetDate: date, ...(migrated ? {} : { currentAmount: currentNum }),
         achievedAt: currentNum >= targetNum ? (g.achievedAt ?? new Date().toISOString()) : undefined,
       })),
-      ...(migrated && delta !== 0 ? { transactions: [buildGoalCorrectionTx(goal, delta), ...financials.transactions] } : {}),
+      ...(migrated && delta !== 0 ? { transactions: [buildGoalCorrectionTx(goal, delta, { stated: currentNum, base: progress }), ...financials.transactions] } : {}),
     });
     onClose();
   }

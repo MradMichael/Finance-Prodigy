@@ -488,6 +488,18 @@ export interface StoredTransaction {
   // its goal's and that has no stored rate, and by a goal balance correction
   // (amount 0, this carries the difference). goalProgress reads it first.
   goalAmount?: number;
+  /**
+   * Phase 2.8.5a (owner-approved, session 42): on a correction row, what the
+   * person stated the balance is (`stated`) and the balance ESSA showed when
+   * they did (`base`), both in the ACCOUNT's own unit: an emergency-fund
+   * correction in USD, a debt's in the debt's currency, a goal's in the goal's
+   * currency. The row's own difference (efAmount / debtAdjustment / goalAmount)
+   * is what these imply: stated - base for EF and a goal, base - stated for a
+   * debt (derivedDebtBalance subtracts). Written once, by the builders below;
+   * read by the merge to tell two devices' statements apart (2.8.5c). Absent on
+   * rows written before it, and older code ignores it.
+   */
+  correction?: CorrectionStatement;
   // Added in schema v4 (Phase 2.6.1) -- signed: positive means this
   // transaction also added to the emergency fund, negative means it also
   // drew from it, for derivedEfBalance (2.6.2). Deliberately independent
@@ -576,6 +588,9 @@ export interface StoredTransaction {
    */
   statementImportId?: string;
 }
+
+/** Phase 2.8.5a: a correction row's statement. Units: the account's own (see StoredTransaction.correction). */
+export interface CorrectionStatement { account: "ef" | "debt" | "goal"; stated: number; base: number }
 
 export interface StoredGoal {
   id: string;
@@ -1102,6 +1117,16 @@ export interface LocalFinancials {
    * (lib/syncMerge.ts); read with clashRecords (lib/clashNotice.ts).
    */
   balanceClashRecords?: ClashRecord[];
+  /**
+   * Phase 2.8.5d (owner-approved, session 42): two devices' corrections to one
+   * account (safety net, a debt, a goal) that a merge settled or reported
+   * (lib/concurrentCorrections.ts). Kept apart from clashRecords for the
+   * reason transactions' and tracked balances' are: older code words every
+   * clashRecords entry and has no sentence for a correction; it ignores this
+   * field. Pruned the same way (lib/syncMerge.ts); read with clashRecords
+   * (lib/clashNotice.ts).
+   */
+  correctionClashRecords?: ClashRecord[];
   // Travel slice 2 (merged in session 19, 15d791f): trips (lib/trips.ts), merged like the wishlist.
   trips?: StoredTrip[];
   // Foreign cash, model 2 (merged in session 19, 15d791f): the sheets' entries that aren't ledger
@@ -2067,7 +2092,7 @@ export function planEfClose(
   const expectedUSD = derivedEfBalance(data as LocalFinancials);
   const deltaUSD = roundMoney(countedUSD - expectedUSD);
   if (deltaUSD === 0) return { entry: { expectedUSD, countedUSD, deltaUSD } };
-  const transaction = buildEfAdjustmentTx(deltaUSD);
+  const transaction = buildEfAdjustmentTx(deltaUSD, { stated: countedUSD, base: expectedUSD });
   return { entry: { expectedUSD, countedUSD, deltaUSD, transactionId: transaction.id }, transaction };
 }
 
@@ -2095,7 +2120,7 @@ export function planDebtClose(
   const deltaNative = roundMoney(expectedNative - countedNative);
   const base = { debtId: debt.id, currency: debt.currency, expectedNative, countedNative, deltaNative };
   if (deltaNative === 0) return { entry: base };
-  const transaction = buildDebtAdjustmentTx(debt, deltaNative);
+  const transaction = buildDebtAdjustmentTx(debt, deltaNative, { stated: countedNative, base: expectedNative });
   return { entry: { ...base, transactionId: transaction.id }, transaction };
 }
 /**
@@ -2234,10 +2259,20 @@ export function canReopen(
   return { ok: true, close };
 }
 
-/** A ledger row that states a balance, as opposed to one that moves it. */
-function isCorrectionFor(t: StoredTransaction, account: "ef" | { debtId: string }): boolean {
+/** Which account a correction is for (2.8.5b: goals joined EF and debts). */
+export type CorrectionAccount = "ef" | { debtId: string } | { goalId: string };
+
+/**
+ * A ledger row that states a balance, as opposed to one that moves it. The ONE
+ * test of that: the period close's reopen and the merge's concurrent-correction
+ * rule (2.8.5c) both ask it here. A goal's is Edit Goal's $0 row carrying
+ * goalAmount; a contribution whose converted value the v7 migration froze
+ * carries goalAmount too, but moves money (amount isn't 0), so it isn't one.
+ */
+export function isCorrectionFor(t: StoredTransaction, account: CorrectionAccount): boolean {
   if (t.deletedAt != null) return false;
   if (account === "ef") return t.amount === 0 && t.efAmount != null && t.debtId == null;
+  if ("goalId" in account) return t.goalId === account.goalId && t.amount === 0 && t.goalAmount != null;
   return t.debtId === account.debtId && t.debtAdjustment != null;
 }
 
@@ -3726,12 +3761,13 @@ export function negativeGoalOpenings(d: LocalFinancials): { id: string; name: st
  * goalAmount carries the difference into progress. Its description,
  * "Goal balance correction: <name>", is owner-approved (session 6).
  */
-export function buildGoalCorrectionTx(goal: StoredGoal, delta: number): StoredTransaction {
+export function buildGoalCorrectionTx(goal: StoredGoal, delta: number, statement?: { stated: number; base: number }): StoredTransaction {
   const now = new Date().toISOString();
   return {
     id: uid(), amount: 0, currency: goal.currency, bucket: "SAVINGS", goalId: goal.id,
     description: `Goal balance correction: ${goal.name}`, date: todayISO(), paymentMethod: "other",
     goalAmount: roundMoney(delta), createdAt: now, updatedAt: now,
+    ...(statement ? { correction: correctionStatement("goal", statement) } : {}),
   };
 }
 
@@ -4015,13 +4051,19 @@ export function reanchorTrackedBalance(
  * inspectable ledger row instead of a silently-edited scalar with nothing
  * behind it.
  */
-export function buildEfAdjustmentTx(delta: number): StoredTransaction {
+export function buildEfAdjustmentTx(delta: number, statement?: { stated: number; base: number }): StoredTransaction {
   const now = new Date().toISOString();
   return {
     id: uid(), amount: 0, currency: "USD", bucket: "SAVINGS",
     description: "Emergency fund balance correction", date: todayISO(), paymentMethod: "other",
     efAmount: roundMoney(delta), createdAt: now, updatedAt: now,
+    ...(statement ? { correction: correctionStatement("ef", statement) } : {}),
   };
+}
+
+/** Phase 2.8.5a: a builder's statement, rounded as the difference is. */
+function correctionStatement(account: CorrectionStatement["account"], s: { stated: number; base: number }): CorrectionStatement {
+  return { account, stated: roundMoney(s.stated), base: roundMoney(s.base) };
 }
 
 /**
@@ -4036,12 +4078,13 @@ export function buildEfAdjustmentTx(delta: number): StoredTransaction {
  * Unlike buildEfAdjustmentTx, this carries the DEBT's own currency, not USD
  * unconditionally -- debts (unlike EF) have always supported LBP.
  */
-export function buildDebtAdjustmentTx(debt: StoredDebt, delta: number): StoredTransaction {
+export function buildDebtAdjustmentTx(debt: StoredDebt, delta: number, statement?: { stated: number; base: number }): StoredTransaction {
   const now = new Date().toISOString();
   return {
     id: uid(), amount: 0, currency: debt.currency, bucket: "SAVINGS",
     description: `Debt correction: ${debt.name}`, date: todayISO(), paymentMethod: "other",
     debtId: debt.id, debtAdjustment: roundMoney(delta), createdAt: now, updatedAt: now,
+    ...(statement ? { correction: correctionStatement("debt", statement) } : {}),
   };
 }
 
