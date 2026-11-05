@@ -114,7 +114,7 @@ export default function SetupScreen({
       const entered = Math.max(0, parsed);
       const delta = roundMoney(entered - efBalance);
       if (delta !== 0) {
-        update({ transactions: [buildEfAdjustmentTx(delta), ...financials.transactions] });
+        update({ transactions: [buildEfAdjustmentTx(delta, { stated: entered, base: efBalance }), ...financials.transactions] });
       }
     }
     setEfBalanceInput(null);
