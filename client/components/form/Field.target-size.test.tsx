@@ -18,6 +18,16 @@ it("the password field's Show toggle is at least 24 by 24", () => {
   expect(parseFloat(toggle.style.minHeight)).toBeGreaterThanOrEqual(24);
 });
 
+// A1 (app readiness, owner-approved 2026-11-05): 44 by 44, the brief's touch-target minimum (section 5).
+// The inline style outranks globals.css's 44 px touch rule, so the toggle sets its own. It still fits
+// inside the field (about 46 px tall on a desktop, about 50 px on a touch screen); measured live.
+it("the password field's Show toggle is at least 44 by 44", () => {
+  render(<ThemeProvider><Field label="Password" type="password" value="" onChange={() => {}} /></ThemeProvider>);
+  const toggle = screen.getByRole("button", { name: "Show password" });
+  expect(parseFloat(toggle.style.minWidth)).toBeGreaterThanOrEqual(44);
+  expect(parseFloat(toggle.style.minHeight)).toBeGreaterThanOrEqual(44);
+});
+
 it("a field that isn't a password has no toggle", () => {
   render(<ThemeProvider><Field label="Email" type="email" value="" onChange={() => {}} /></ThemeProvider>);
   expect(screen.queryByRole("button")).toBeNull();
