@@ -2,7 +2,7 @@
 
 An extension of the existing Trips screen (`client/lib/trips.ts`, `client/components/screens/TripsScreen.tsx`): a world map of the countries visited, a sheet of the trips in a country, city markers, and the trip list grouped by year. Read with `docs/CLAUDE_CODE_BRIEF.md`, which stays the authority on standards and standing rules.
 
-**Status (2026-11-05):** Phase 0 and Phase 1a are built, merged and verified live by the owner. **Phase 1b is built on `claude/travel-1b` and NOT merged**: it waits for the owner's live check, then merges like the others. Phase 1c is planned and its wording approved; its build is not yet approved. Phase 2 has no plan yet.
+**Status (2026-11-05):** Phase 0 and Phase 1a are built, merged and verified live by the owner. **Phase 1b is merged at `2077aa4`** (owner-approved). Phase 1c is planned and its wording approved; its build is not yet approved. Phase 2 has no plan yet.
 
 **Rule 8:** the status line above and the phase status lines below change in the same commit as the work that changes them.
 
@@ -81,7 +81,7 @@ An extension of the existing Trips screen (`client/lib/trips.ts`, `client/compon
 - client: 2,696 passed, 13 skipped (the skips predate this work); `tsc` and lint 0;
 - server: 230 passed, 13 skipped; its test typecheck 0.
 
-### Phase 1b: the form, the list, the city file, the budget line, the credit. Built on `claude/travel-1b`, NOT merged.
+### Phase 1b: the form, the list, the city file, the budget line, the credit. Merged at `2077aa4`.
 
 Cut fresh from `main` at `46c9a0b`. Every new string is the owner's APPROVED wording (§5). First commit: `c95f0a8`, this doc's status line (rule 8).
 
@@ -133,7 +133,9 @@ Cut fresh from `main` at `46c9a0b`. Every new string is the owner's APPROVED wor
 - Production build passes. Compared with `main` built the same way, the Overview (`/`) first load is 287 kB against 288 kB (no growth; the 1 kB difference is most likely rounding and chunk naming, not a real saving), and `/about` grows by 0.18 kB.
 - Server: unchanged by 1b.
 
-**Owner's live check (before merging 1b)**
+**Merged** at `2077aa4`, a merge commit (no squash), approved by the owner, onto `main` at `06ff376`. `main` had moved 65 commits since 1b was cut, among them the PWA, app-readiness A1 (44 px controls and 16 px fields on touch screens, applied by a global rule in `globals.css`, which covers 1b's controls) and Phase 2.8.5 (sync merge). No conflicts. On the merged result: client **2,932 passed**, 13 skipped; `tsc` and lint 0; server 230 passed, 13 skipped, its test typecheck 0.
+
+**Owner's live check (for 1b on `main`)**
 - On a phone at 375 px: a trip with no name and France (Paris, Lyon), Italy (Rome), Malta, and a typed "Batroun" (Lebanon), saves as "France, Italy, Malta, Lebanon". Its card reads "France · Paris, Lyon — Italy · Rome — Malta — Lebanon · Batroun", countries in route order.
 - Typing "zahle" offers Zahlé.
 - "Batroun" shows "Not in the list. It'll be saved as you typed it, but won't appear on the map."
@@ -144,7 +146,7 @@ Cut fresh from `main` at `46c9a0b`. Every new string is the owner's APPROVED wor
 - The other device matches after sync.
 - Edit cities on one device and notes on the other while both are offline, then sync: one edit wins, and the notice names the trip.
 - The About page shows the credit, and both links open.
-- **After a deploy,** the city file downloads again on its next use (see §7).
+- **After a deploy,** the city file downloads again on its next use; that's known, and the fix is an open item (§7).
 
 ---
 
@@ -281,7 +283,9 @@ Every item that was HELD is now APPROVED, some with changes; the text below is t
   - **Already built:** USD trip budgets, per-category USD budgets, foreign-cash sheets, exchange cost per currency, and euro spends shown approximately in USD.
   - **The gap:** setting a budget *in* EUR. A likely shape is `budgetNative?: { amount; code }` beside `budgetUSD`, never added to a USD figure. Money tests come first (brief rule 4).
 - **Brief §1 scope tension.** The map serves none of Earn, Spend, Save or Achieve; only the trip budget serves Spend. The owner accepted this as a known tension, not a blocker. The strongest argument against building it now: about 60 KB more to download at install, plus four releases, while cohort items in `docs/ROADMAP.md` (for example the monthly disposable-capacity figure) stay open.
-- **The city file downloads again after every deploy.** The worker's runtime cache is named per build (`essa-runtime-<build>`), so after a deploy the 368 KB file is fetched again on its next use. The PDF worker already behaves this way. Found in 1b, deliberately not changed there: the fix (a cache that survives deploys for files that rarely change) is a service worker change of its own, for the owner to decide.
+- **Open item (owner-approved fix, 2026-11-05): cache first-use files (city file, PDF worker) by content hash, so they re-download only when the file changes; own commit, service worker tests first.**
+  - Why: the worker's runtime cache is named per build (`essa-runtime-<build>`), so today every deploy makes the next use fetch the 368 KB city file and the PDF worker again.
+  - Found in 1b and deliberately not changed there; it's not part of 1c either.
 - **Risks carried into 1c:**
   - 368 KB over Lebanese mobile data the first time a form needs the city list, and again after each deploy (above);
   - small countries hard to tap at 375 px (hence the dots and the list);
