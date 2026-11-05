@@ -2,8 +2,15 @@
 // concern adds its tests here, failing first.
 //   1. The map opens fitted to the visited countries (the "Show my countries"
 //      view); the whole world only when nothing is visited.
+//   2. Visited countries stand out: a strong brass fill (the theme's brass70,
+//      brass at 0xB0) reaching 3:1 against unvisited land in every theme, with
+//      a thin ink outline (a brass one would vanish on brass) so neighbouring
+//      visited countries stay apart. City markers keep their ink halo, which is
+//      what reaches 3:1 on the fill. Planned keeps its dashed brass on land.
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
+import TravelMap from "./TravelMap";
+import { THEMES, type ThemeKey } from "../../lib/theme";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import MapPanel from "./MapPanel";
@@ -45,5 +52,37 @@ describe("1. opens fitted to the visited countries", () => {
 
   it("nothing visited (only planned trips): the whole world", async () => {
     expect(viewBox(await panel([JAPAN_PLANNED]))).toEqual([0, 0, WORLD.width, WORLD.height]);
+  });
+});
+
+describe("2. visited countries stand out", () => {
+  it("visited: the strong brass fill and an ink outline; planned: the dashed brass outline on plain land", () => {
+    const t = THEMES.ivory;
+    const { container } = render(<ThemeProvider><TravelMap world={WORLD} trips={[EUROPE, JAPAN_PLANNED]} today={TODAY} /></ThemeProvider>);
+    const fr = container.querySelector('path[data-code="FR"]')!, jp = container.querySelector('path[data-code="JP"]')!;
+    expect(fr.getAttribute("fill")).toBe(t.brass70);
+    expect(fr.getAttribute("stroke")).toBe(t.ink);
+    expect(jp.getAttribute("fill")).toBe(t.panelSoft);
+    expect(jp.getAttribute("stroke")).toBe(t.brass);
+    expect(jp.getAttribute("stroke-dasharray")).toBeTruthy();
+    expect(t.brass70).toBe(t.brass + "B0");
+  });
+
+  describe.each(Object.keys(THEMES) as ThemeKey[])("contrast, %s", (key) => {
+    const t = THEMES[key];
+    const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+    const ch = (c: number) => { const v = c / 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+    const lum = ([r, g, b]: number[]) => 0.2126 * ch(r) + 0.7152 * ch(g) + 0.0722 * ch(b);
+    const ratio = (a: number[], b: number[]) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+    const over = (fg: number[], a: number, bg: number[]) => fg.map((c, i) => Math.round(c * a + bg[i] * (1 - a)));
+    it("the fill on land, the ink outline and the markers' ink halo on the fill, the markers' jade on their halo, planned brass on land: all 3:1", () => {
+      const land = rgb(t.panelSoft), fill = over(rgb(t.brass), 0xb0 / 255, land);
+      const pairs: [string, number][] = [
+        ["visited fill on land", ratio(fill, land)], ["ink outline on the fill", ratio(rgb(t.ink), fill)],
+        ["marker halo (ink) on the fill", ratio(rgb(t.ink), fill)], ["marker jade on its ink halo", ratio(rgb(t.jade), rgb(t.ink))],
+        ["planned brass on land", ratio(rgb(t.brass), land)], ["marker jade on unvisited land", ratio(rgb(t.jade), land)],
+      ];
+      expect(pairs.filter(([, r]) => r < 3).map(([p, r]) => `${p} ${r.toFixed(2)}`)).toEqual([]);
+    });
   });
 });
