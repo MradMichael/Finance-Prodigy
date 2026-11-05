@@ -178,3 +178,21 @@ describe("4. overseas pieces light by rule B", () => {
     expect(onCountry).toHaveBeenCalledWith("FR");
   });
 });
+
+describe("4c. the views fit what lights", () => {
+  it("a France trip to Cayenne only opens on French Guiana, not on Paris; \"Show my countries\" too", async () => {
+    const svg = await panel([trip("t", "2025-01-01", [{ id: "c", countryCode: "FR", city: "Cayenne", lat: 4.94, lon: -52.33 }])]);
+    const vb = viewBox(svg);
+    expect(holds(vb, WORLD.project(-52.33, 4.94))).toBe(true);
+    expect(holds(vb, WORLD.project(2.35, 48.85))).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Show my countries" }));
+    expect(holds(viewBox(svg), WORLD.project(-52.33, 4.94))).toBe(true);
+    expect(holds(viewBox(svg), WORLD.project(2.35, 48.85))).toBe(false);
+  });
+
+  it("a Paris trip still opens on France's mainland, without French Guiana", async () => {
+    const vb = viewBox(await panel([trip("t", "2025-01-01", [{ id: "p", countryCode: "FR", city: "Paris", lat: 48.85, lon: 2.35 }])]));
+    expect(holds(vb, WORLD.project(2.35, 48.85))).toBe(true);
+    expect(holds(vb, WORLD.project(-52.33, 4.94))).toBe(false);
+  });
+});
