@@ -2,7 +2,7 @@
 
 An extension of the existing Trips screen (`client/lib/trips.ts`, `client/components/screens/TripsScreen.tsx`): a world map of the countries visited, a sheet of the trips in a country, city markers, and the trip list grouped by year. Read with `docs/CLAUDE_CODE_BRIEF.md`, which stays the authority on standards and standing rules.
 
-**Status (2026-11-05):** Phase 0 and Phase 1a are built, merged and verified live by the owner. **Phase 1b is merged at `2077aa4`** (owner-approved). **Phase 1c is merged at `06b4bec`** (owner: preview checked, CI green). **Phase 1, the travel map, is complete.** A **map design pass** (owner, 2026-11-05) is built on `claude/travel-map-design` and **NOT merged**: it waits for the owner's review of the before/after screenshots. Phase 2 has no plan yet.
+**Status (2026-11-05):** Phase 0 and Phase 1a are built, merged and verified live by the owner. **Phase 1b is merged at `2077aa4`** (owner-approved). **Phase 1c is merged at `06b4bec`** (owner: preview checked, CI green). **Phase 1, the travel map, is complete.** A **map design pass** (owner, 2026-11-05) is **merged at `bbfbc42`** (owner: preview and screenshots checked). Phase 2 has no plan yet.
 
 **Rule 8:** the status line above and the phase status lines below change in the same commit as the work that changes them.
 
@@ -40,7 +40,7 @@ An extension of the existing Trips screen (`client/lib/trips.ts`, `client/compon
 | D18 | **Visited countries stand out:** a strong brass fill (`brass70`, brass at 0xB0), 3:1 on unvisited land in every theme, with a thin ink outline so neighbouring visited countries stay apart. Planned keeps its dashed brass outline on plain land (owner, design pass). |
 | D19 | **Small-country dots only for visited or planned countries,** drawn larger than a city marker so their brass shows round a city in them (owner, design pass). |
 | D20 | **Overseas pieces: rule B at 650 km** (owner, design pass). A country's largest piece is its mainland; pieces within 650 km of the mainland, or of another home piece, are home; the rest are overseas, and overseas pieces within 650 km of each other form a group (Hawaii; Alaska; Svalbard). Per trip and country, the groups holding its cities' points light (50 km of slack for coarse coasts); if none of its stops there has a point, the home group lights. Groups add up across trips. A territory with no shape of its own (French Guiana GF, Svalbard SJ, and the other TERRITORIES) lights its parent's group that holds its point, and tapping that piece opens the territory. 650 km, not the 500 first proposed: measured, 500 made Peninsular Malaysia (603 km from Borneo) overseas. |
-| D21 | **Desktop:** in Map view the map breaks out of Trips' 768 px column to the main area's width, capped at 1,152 px (`max-w-6xl`); a country's sheet opens below the map at its width, its trips in two columns; phones keep the bottom sheet (owner, design pass). |
+| D21 | **Desktop:** in Map view the map, and (5b, owner after the screenshots) the page header and the Map | List toggle, break out of Trips' 768 px column to the main area's width, capped at 1,152 px (`max-w-6xl`); the New trip form keeps the column, and List view is unchanged; a country's sheet opens below the map at its width, its trips in two columns; phones keep the bottom sheet (owner, design pass). |
 | D22 | **"Countries visited (N)" is hidden when N is 0** (owner, design pass; replaces 1c's "(0)" heading). |
 
 ---
@@ -242,7 +242,7 @@ Cut from `main` at `a476736`. Every new string is APPROVED wording (§5). Pushed
 
 ---
 
-### Map design pass. Built on `claude/travel-map-design`, NOT merged.
+### Map design pass. Merged at `bbfbc42`.
 
 Owner's brief (2026-11-05), six problems, plus one found in the screenshots. Cut from `main` at `45ee52e`; pushed after every commit; failing test before each change. Decisions D17-D22.
 
@@ -258,6 +258,8 @@ Owner's brief (2026-11-05), six problems, plus one found in the screenshots. Cut
 | 4c | The opening view and "Show my countries" fit what lights (a Cayenne-only France trip opens on French Guiana) | `30b6581`, `1c36bb5` |
 | 5 | Desktop: map wide, sheet below (D21) | `02eaf36`, `810f731` |
 | 6 | No "Countries visited (0)" (D22) | `eeaf8ca`, `78f61af` |
+| 5b | In Map view the header and the Map \| List toggle line up with the wide map (owner, after the screenshots); the New trip form keeps the 768 px column; List view unchanged | `73a54b0`, `7bd2a44` |
+| — | `World.shapes` removed, unused since 4b (owner); the one test that only read it removed | `a0edafc` |
 
 **Measured, not assumed:**
 - Contrast, from the theme tokens, all 6 themes: the visited fill on unvisited land 3.2-6.0:1 (was 1.3-1.6); the ink outline on the fill 3.9-6.9:1; the city markers' ink halo on the fill 3.9:1 and up; planned brass on land 6.2:1 and up.
@@ -267,6 +269,8 @@ Owner's brief (2026-11-05), six problems, plus one found in the screenshots. Cut
 **Tests changed on purpose:** 1c's visited-border, dot, path-count and "(0)" tests now describe the new design; the old contrast block now checks what is drawn. Each change is named in its GREEN commit.
 
 **Results:** client **3,039 passed** (UTC), **3,051 passed** under `TZ=Asia/Beirut`; `tsc` and lint 0. Production build passes; the Overview's first load is 291 kB before and after (no growth).
+
+**Merged** at `bbfbc42`, a merge commit (no squash), onto `main` at `45ee52e` (no commits since the branch was cut). On the merged result: the same counts, UTC 3,039 and Asia/Beirut 3,051 passed; `tsc` and lint 0.
 
 **Screenshots** (before = `main` at `45ee52e`, after = this branch; a temporary harness page rendering the real `TripsScreen` with demo trips in a 220 px-sidebar shell, never committed): 375 px, 375 px with France's sheet, 1440 px with France's sheet in Ivory and in Ledger.
 
@@ -360,8 +364,8 @@ All of 10–15 and 8's 1c line are now in use. Item 12's line also serves the Pl
   - ~~"Countries visited (0)"~~: resolved by the design pass (D22).
   - **The picker's failure line:** if the map can't load while placing a city, the picker shows item 12, "…They're all in the list.". The words were approved for the Map view; they're true here too, but read a little oddly in a form.
 - **Left after the design pass (none blocks a merge):**
-  - **Two left edges on desktop:** in Map view the header and the New trip form keep the centred 768 px column while the map spans 1,152 px (D21 as approved). The usual wide-figure pattern; aligning them is a small change if wanted.
-  - **`World.shapes` is now unused** outside one test (the map draws `pieces` since 4b). Left in place, not removed unasked.
+  - ~~Two left edges on desktop~~: resolved (5b): in Map view the header and toggle line up with the map. Side effect: on desktop the header shifts when switching between Map and List, which use different widths.
+  - ~~`World.shapes` unused~~: removed (`a0edafc`).
   - **A small country's ring can sit off-centre** round its city (Valletta is not Malta's centroid): true geography, not a bug.
 - **Risks carried from 1b and 1c:**
   - 368 KB over Lebanese mobile data the first time a form needs the city list, and again after each deploy (above);
