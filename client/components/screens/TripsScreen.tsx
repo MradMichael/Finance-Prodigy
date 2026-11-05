@@ -42,6 +42,9 @@ const REASONS = {
   name: "Name the trip.",
   dates: "The end date can't be before the start date.",
   budget: "A budget can't be negative.",
+  // Travel map plan, Phase 1a (owner: refuse, with one line here). HELD: wording drafted, not yet
+  // approved; for review in Phase 1b, whose form is the first to send countries and cities.
+  stops: "Check the countries and cities.",
 } as const;
 
 /** A trip form's fields as typed. */
