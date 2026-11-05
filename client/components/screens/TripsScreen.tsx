@@ -242,7 +242,9 @@ export default function TripsScreen({ financials, onChange }: { financials: Loca
 
   return (
     <main className="min-h-screen px-4 py-8 md:px-10" style={{ background: T.ink }}>
-      <div className="max-w-3xl mx-auto space-y-6">
+      {/* Design pass, 5b (owner, after the screenshots): in Map view the header and the toggle line up with the
+          wide map (max-w-6xl); in List view they keep the 768 px column with the cards. */}
+      <div className={`${view === "map" ? "max-w-6xl" : "max-w-3xl"} mx-auto space-y-6`}>
         <div>
           <p className="text-[10px] uppercase tracking-widest" style={{ color: T.mute }}>ESSA</p>
           <h1 className="text-3xl mt-1" style={SERIF}>Trips</h1>
