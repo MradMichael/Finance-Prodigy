@@ -3,9 +3,11 @@
 // Travel map plan, Phase 1c (owner-approved; wording APPROVED 2026-11-05): the
 // world map, drawn from lib/worldMap.ts. Loaded only with the Map view or
 // "Place on map" (a dynamic import), never with the Trips screen's own code.
-//   - Visited (a trip there has started; D12): a soft brass fill, decoration
-//     only, and a SOLID brass border. Planned-only: a DASHED brass border and no
-//     brass fill. The border and its dash carry the meaning, not colour.
+//   - Visited (a trip there has started; D12): a strong brass fill (brass70,
+//     3:1 on unvisited land in every theme; design pass, owner 2026-11-05) with
+//     a thin ink outline, so neighbouring visited countries stay apart.
+//     Planned-only: a DASHED brass outline on plain land. Fill and dash carry the
+//     meaning together, never colour alone.
 //   - Countries without a 110m shape are dots, each with a 44 px tap area.
 //   - City markers: jade with an ink halo; planned ones hollow and dashed.
 //   - "+" / "−" (read "Zoom in" / "Zoom out"), drag to move, "Show my countries".
@@ -127,9 +129,9 @@ export default function TravelMap({ world, trips, today, onCountry, onPoint, sel
             const state = stateOf(s.code);
             return (
               <path key={s.code ?? `u${i}`} d={s.d} data-shape="" {...(s.code ? { "data-code": s.code } : {})} data-state={state}
-                fill={state === "visited" ? T.brass30 : T.panelSoft}
-                stroke={state === "none" ? T.line : T.brass}
-                strokeWidth={state === "none" ? 0.5 : selected === s.code ? 2.5 : border.strokeWidth}
+                fill={state === "visited" ? T.brass70 : T.panelSoft}
+                stroke={selected === s.code ? T.text : state === "none" ? T.line : state === "visited" ? T.ink : T.brass}
+                strokeWidth={selected === s.code ? 2.5 : state === "none" ? 0.5 : state === "visited" ? 0.75 : border.strokeWidth}
                 vectorEffect="non-scaling-stroke"
                 {...(state === "planned" ? { strokeDasharray: dash } : {})}
                 onClick={country(s.code)} />
@@ -140,8 +142,8 @@ export default function TravelMap({ world, trips, today, onCountry, onPoint, sel
             return (
               <g key={d.code}>
                 <circle data-dot={d.code} data-state={state} cx={d.x} cy={d.y} r={(state === "none" ? 1.5 : 4) * k}
-                  fill={state === "visited" ? T.brass30 : state === "planned" ? T.panelSoft : T.line}
-                  stroke={state === "none" ? "none" : T.brass} {...(state === "none" ? {} : border)}
+                  fill={state === "visited" ? T.brass70 : state === "planned" ? T.panelSoft : T.line}
+                  stroke={state === "none" ? "none" : state === "visited" ? T.ink : T.brass} {...(state === "none" ? {} : border)}
                   {...(state === "planned" ? { strokeDasharray: dash } : {})} />
                 <circle data-hit={d.code} cx={d.x} cy={d.y} r={(TAP_PX / 2) * k} fill="transparent" onClick={country(d.code)} />
               </g>
