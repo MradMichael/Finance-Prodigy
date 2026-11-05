@@ -147,7 +147,11 @@ export default function SignInPage() {
       </div>
 
       <p className="text-[10px] mt-8 text-center max-w-xs" style={{ color: T.mute }}>
-        Your data is stored privately in your browser. Connect a database to sync across devices.
+        {/* A1, app readiness (owner-approved wording, 2026-11-05): was "Your data is stored privately in your
+            browser. Connect a database to sync across devices.", a note to a developer. */}
+        Your data is encrypted and stored in this browser. It&apos;s copied to our server only if you turn on
+        backup, and that copy isn&apos;t end-to-end encrypted: the server can read it.{" "}
+        <Link href="/privacy" className="underline hover:opacity-80" style={{ color: T.mute }}>How your data is stored</Link>
       </p>
 
       {recoveryCode && (
