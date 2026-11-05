@@ -1948,7 +1948,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
               </div>
               <div>
                 <Label htmlFor="new-debt-apr">APR (%)</Label>
-                <FocusInput id="new-debt-apr" type="number" min="0" step="0.1" value={dApr} onChange={(e) => setDApr(e.target.value)} placeholder="20" />
+                <FocusInput id="new-debt-apr" type="number" inputMode="decimal" min="0" step="0.1" value={dApr} onChange={(e) => setDApr(e.target.value)} placeholder="20" />
               </div>
               <div>
                 <Label htmlFor="new-debt-min">Min/mo</Label>

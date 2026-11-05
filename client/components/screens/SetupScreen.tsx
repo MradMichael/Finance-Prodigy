@@ -174,7 +174,7 @@ export default function SetupScreen({
               id="setup-income"
               className="w-full rounded-xl px-4 py-2.5 text-sm tabular-nums"
               style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
-              type="number" min="0" max={MAX_INCOME} step="100"
+              type="number" inputMode="decimal" min="0" max={MAX_INCOME} step="100"
               value={financials.income || ""}
               // Doubly enforced, matching the pattern already proven on
               // Projections' own test-amount input: the HTML `max` handles
@@ -226,7 +226,7 @@ export default function SetupScreen({
               id="setup-payday"
               className="w-full rounded-xl px-4 py-2.5 text-sm tabular-nums"
               style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
-              type="number" min="1" max={MAX_CYCLE_START_DAY} step="1"
+              type="number" inputMode="numeric" min="1" max={MAX_CYCLE_START_DAY} step="1"
               value={startDayDraft ?? String(startDay)}
               onChange={(e) => setStartDayDraft(e.target.value)}
             />
@@ -283,7 +283,7 @@ export default function SetupScreen({
                 id="ef-target-months"
                 className="w-full rounded-xl px-4 py-2.5 text-sm tabular-nums"
                 style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
-                type="number" min="1" max="24"
+                type="number" inputMode="numeric" min="1" max="24"
                 value={financials.emergencyFundTargetMonths}
                 onChange={(e) => {
                   // Same rule as the LBP-rate field above: only commit a
@@ -306,7 +306,7 @@ export default function SetupScreen({
                 id="ef-balance"
                 className="w-full rounded-xl px-4 py-2.5 text-sm tabular-nums"
                 style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
-                type="number" min="0" step="100"
+                type="number" inputMode="decimal" min="0" step="100"
                 value={efBalanceInput ?? (efBalance || "")}
                 onChange={(e) => setEfBalanceInput(e.target.value)}
                 onBlur={(e) => commitEfBalance(e.target.value)}
