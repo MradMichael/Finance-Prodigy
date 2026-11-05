@@ -9,9 +9,15 @@
 //      what reaches 3:1 on the fill. Planned keeps its dashed brass on land.
 //   3. Small-country dots (the countries the 110m shapes leave out) only for
 //      visited or planned countries, not for every small country.
+//   4. Overseas pieces (rule B, owner): per trip and country, the piece groups
+//      holding its cities' points light; none of its stops there with a point:
+//      the home group. Groups add up across trips. A territory with no shape of
+//      its own (French Guiana, GF) lights its parent's piece, and tapping that
+//      piece opens the territory. Planned lights, dashed, where nothing is visited.
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import TravelMap from "./TravelMap";
+import { fireEvent } from "@testing-library/react";
 import { THEMES, type ThemeKey } from "../../lib/theme";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -101,5 +107,74 @@ describe("3. dots only for visited or planned small countries", () => {
   it("no trips: no dots at all", () => {
     const { container } = render(<ThemeProvider><TravelMap world={WORLD} trips={[]} today={TODAY} /></ThemeProvider>);
     expect(container.querySelectorAll("circle[data-dot], circle[data-hit]")).toHaveLength(0);
+  });
+});
+
+describe("4. overseas pieces light by rule B", () => {
+  const PARIS = { id: "p", countryCode: "FR", city: "Paris", lat: 48.85, lon: 2.35 };
+  const CAYENNE = { id: "c", countryCode: "FR", city: "Cayenne", lat: 4.94, lon: -52.33 };
+  const HONOLULU = { id: "h", countryCode: "US", city: "Honolulu", lat: 21.31, lon: -157.86 };
+  function drawn(trips: StoredTrip[]) {
+    const onCountry = vi.fn();
+    const { container } = render(<ThemeProvider><TravelMap world={WORLD} trips={trips} today={TODAY} onCountry={onCountry} /></ThemeProvider>);
+    const piece = (code: string, lon: number, lat: number) => container.querySelector(`path[data-code="${code}"][data-piece="${WORLD.locate(code, lon, lat)}"]`)!;
+    const stateAt = (code: string, lon: number, lat: number) => piece(code, lon, lat).getAttribute("data-state");
+    return { onCountry, piece, stateAt, container };
+  }
+
+  it("one path per piece", () => {
+    expect(drawn([]).container.querySelectorAll("path[data-shape]")).toHaveLength(WORLD.pieces.length);
+  });
+
+  it("Paris: mainland France and Corsica, not French Guiana", () => {
+    const { stateAt } = drawn([trip("t", "2025-01-01", [PARIS])]);
+    expect(stateAt("FR", 2.35, 48.85)).toBe("visited");
+    expect(stateAt("FR", 9.15, 42.15)).toBe("visited");
+    expect(stateAt("FR", -52.33, 4.94)).toBe("none");
+  });
+
+  it("Cayenne only: French Guiana, not the mainland", () => {
+    const { stateAt } = drawn([trip("t", "2025-01-01", [CAYENNE])]);
+    expect(stateAt("FR", -52.33, 4.94)).toBe("visited");
+    expect(stateAt("FR", 2.35, 48.85)).toBe("none");
+  });
+
+  it("France with no city point: the mainland (home group) only", () => {
+    const { stateAt } = drawn([trip("t", "2025-01-01", [{ id: "x", countryCode: "FR", city: "Somewhere typed" }])]);
+    expect(stateAt("FR", 2.35, 48.85)).toBe("visited");
+    expect(stateAt("FR", -52.33, 4.94)).toBe("none");
+  });
+
+  it("Honolulu: every Hawaiian piece, not Alaska nor the mainland; with another US trip without points, the mainland too", () => {
+    const one = drawn([trip("t", "2025-01-01", [HONOLULU])]);
+    expect(one.stateAt("US", -157.86, 21.31)).toBe("visited");
+    expect(one.stateAt("US", -155.09, 19.72)).toBe("visited"); // Hilo, another island
+    expect(one.stateAt("US", -149.9, 61.22)).toBe("none");
+    expect(one.stateAt("US", -74, 40.71)).toBe("none");
+    cleanup();
+    const two = drawn([trip("t", "2025-01-01", [HONOLULU]), trip("u", "2024-01-01", [{ id: "y", countryCode: "US" }])]);
+    expect(two.stateAt("US", -74, 40.71)).toBe("visited");
+    expect(two.stateAt("US", -157.86, 21.31)).toBe("visited");
+  });
+
+  it("French Guiana as its own country (GF): France's Guiana piece lights, and tapping it opens French Guiana", () => {
+    const { stateAt, piece, onCountry } = drawn([trip("t", "2025-01-01", [{ id: "g", countryCode: "GF" }])]);
+    expect(stateAt("FR", -52.33, 4.94)).toBe("visited");
+    expect(stateAt("FR", 2.35, 48.85)).toBe("none");
+    fireEvent.click(piece("FR", -52.33, 4.94));
+    expect(onCountry).toHaveBeenCalledWith("GF");
+  });
+
+  it("planned lights dashed where nothing is visited: Paris planned, Cayenne visited", () => {
+    const { stateAt, piece } = drawn([trip("v", "2025-01-01", [CAYENNE]), trip("p", "2027-01-01", [PARIS])]);
+    expect(stateAt("FR", -52.33, 4.94)).toBe("visited");
+    expect(stateAt("FR", 2.35, 48.85)).toBe("planned");
+    expect(piece("FR", 2.35, 48.85).getAttribute("stroke-dasharray")).toBeTruthy();
+  });
+
+  it("tapping a piece that isn't lit still opens its country", () => {
+    const { piece, onCountry } = drawn([trip("t", "2025-01-01", [PARIS])]);
+    fireEvent.click(piece("FR", -52.33, 4.94));
+    expect(onCountry).toHaveBeenCalledWith("FR");
   });
 });
