@@ -44,6 +44,8 @@ export interface World {
    * A group lights as a whole.
    */
   groups: (code: string) => number[];
+  /** One piece's box (design pass, 4c: the views fit what lights). */
+  pieceBox: (code: string, index: number) => Box | null;
   /** The index of the country's piece holding this point (50 km of slack for coarse coasts), or null. */
   locate: (code: string, lon: number, lat: number) => number | null;
   /** A territory with no shape of its own (TERRITORIES): the piece of another country's shape that holds its point, or null. */
@@ -191,6 +193,12 @@ export function buildWorld(topo: unknown, list: ListFile): World {
 
   return {
     pieces, roles, groups, locate, territory,
+    pieceBox: (code, index) => {
+      const pg = polysBy.get(code)?.[index];
+      if (!pg) return null;
+      const [[x0, y0], [x1, y1]] = path.bounds(pg);
+      return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+    },
     width: WIDTH, height, outline: path(sphere) ?? "", shapes, dots, project,
     invert: (x, y) => {
       const p = projection.invert?.([x, y]);

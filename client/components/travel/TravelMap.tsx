@@ -39,6 +39,8 @@ export default function TravelMap({ world, trips, today, onCountry, onPoint, sel
 }) {
   const T = useTheme();
   const full: Box = { x: 0, y: 0, width: world.width, height: world.height };
+  // Design pass, 4 (rule B): which pieces light, and whose sheet each opens. Before the opening view, which fits them.
+  const lit = useMemo(() => litPieces(world, trips, today), [world, trips, today]);
   const aspect = world.width / world.height;
   /** A view of this width centred on (cx, cy), clamped inside the world. */
   const viewAt = (cx: number, cy: number, width: number): Box => {
@@ -46,9 +48,21 @@ export default function TravelMap({ world, trips, today, onCountry, onPoint, sel
     const w = Math.max(MIN_WIDTH, width), h = w / aspect;
     return { x: Math.min(world.width - w, Math.max(0, cx - w / 2)), y: Math.min(world.height - h, Math.max(0, cy - h / 2)), width: w, height: h };
   };
-  /** The view round these countries, at the map's shape, with a margin. */
+  /**
+   * The view round these countries, at the map's shape, with a margin. Design pass, 4c: round what lights
+   * of each (litPieces: a Cayenne-only France trip is French Guiana), else its mainland or dot.
+   */
   const fitted = (codes: string[]): Box => {
-    const b = world.bounds(codes);
+    const boxes: Box[] = [];
+    for (const code of codes) {
+      const mine = [...lit].filter(([, l]) => l.code === code).map(([key]) => { const [c, i] = key.split("#"); return world.pieceBox(c, Number(i)); }).filter((x): x is Box => !!x);
+      const own = world.bounds([code]);
+      if (mine.length) boxes.push(...mine);
+      if (!mine.length || world.territory(code)) if (own.width < world.width) boxes.push(own); // a territory: its dot too
+    }
+    if (!boxes.length) return full;
+    const x0 = Math.min(...boxes.map((x) => x.x)), y0 = Math.min(...boxes.map((x) => x.y));
+    const b = { x: x0, y: y0, width: Math.max(...boxes.map((x) => x.x + x.width)) - x0, height: Math.max(...boxes.map((x) => x.y + x.height)) - y0 };
     return viewAt(b.x + b.width / 2, b.y + b.height / 2, Math.max(b.width, b.height * aspect) * 1.2);
   };
   const [view, setView] = useState<Box>(() => (fitTo?.length ? fitted(fitTo) : full));
@@ -73,8 +87,7 @@ export default function TravelMap({ world, trips, today, onCountry, onPoint, sel
   const visitedSet = useMemo(() => new Set(visited), [visited]);
   const plannedSet = useMemo(() => new Set(planned), [planned]);
   const markers = useMemo(() => cityMarkers(trips, today), [trips, today]);
-  // Design pass, 4 (rule B): which pieces light, and whose sheet each opens.
-  const lit = useMemo(() => litPieces(world, trips, today), [world, trips, today]);
+
   const stateOf = (code: string | null) => (code && visitedSet.has(code) ? "visited" : code && plannedSet.has(code) ? "planned" : "none");
 
   const zoom = (by: number) => setView((v) => viewAt(v.x + v.width / 2, v.y + v.height / 2, v.width * by));
