@@ -25,6 +25,7 @@ import type { StoredTrip } from "../../lib/trips";
 
 const TAP_PX = 44; // a dot's tap area, across
 const MARKER_PX = 4; // a city marker's radius
+const DOT_PX = 7; // a small country's dot: larger than a city marker, so its brass shows round a city in it (design pass, 3b)
 const DRAG_PX = 5; // further than this is a drag, not a tap
 const MIN_WIDTH = 24; // the closest zoom, in SVG units
 
@@ -164,7 +165,7 @@ export default function TravelMap({ world, trips, today, onCountry, onPoint, sel
             if (state === "none") return null;
             return (
               <g key={d.code}>
-                <circle data-dot={d.code} data-state={state} cx={d.x} cy={d.y} r={4 * k}
+                <circle data-dot={d.code} data-state={state} cx={d.x} cy={d.y} r={DOT_PX * k}
                   fill={state === "visited" ? T.brass70 : T.panelSoft}
                   stroke={state === "visited" ? T.ink : T.brass} {...border}
                   {...(state === "planned" ? { strokeDasharray: dash } : {})} />
