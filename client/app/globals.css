@@ -19,6 +19,19 @@
 }
 
 /*
+ * A1, app readiness (owner-approved 2026-11-05). On a touch screen only, so the desktop layout keeps
+ * its smaller text: every typing field, select and textarea is 16 px. iOS Safari zooms the page in when
+ * a focused field's text is smaller, and a 375 px sweep found 30 fields at 14 px across 11 screens.
+ * !important because Tailwind's text-sm is a class, which outranks these element selectors.
+ */
+@media (pointer: coarse) {
+  select, textarea,
+  input:not([type="hidden"]):not([type="range"]):not([type="checkbox"]):not([type="radio"]) {
+    font-size: 16px !important;
+  }
+}
+
+/*
  * Spectral, served from ESSA's own site (PRIV-01, FB-1c). It used to load from
  * Google's CDN on every page, telling Google each visitor's IP, browser and
  * page. These are the same latin files Google served (v15), so rendering is
