@@ -10,6 +10,7 @@ import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY, CurrencyToggle, PM_OPTIONS, CardPicker } from "./form/Primitives";
 import { cycleKeyForISO, currentCycleKey } from "../lib/period";
 import { foreignCashRole } from "../lib/foreignCash";
+import { looksLikeMistypedLbp } from "../lib/entryGuards";
 import CategoryOptions from "./form/CategoryOptions";
 
 type TxBucket = "NEEDS" | "WANTS" | "SAVINGS" | "INCOME" | "TRANSFER";
@@ -153,7 +154,7 @@ export default function EditTransactionSheet({
     if (fxRole && !(fxAmtNum > 0)) return;
     const amtNum = parseFloat(amt.replace(/,/g, ""));
     if (!desc.trim() || isNaN(amtNum) || !date) return;
-    if (currency === "LBP" && amtNum < 500) { setLbpConfirmAmount(amtNum); return; }
+    if (looksLikeMistypedLbp(amtNum, currency)) { setLbpConfirmAmount(amtNum); return; }
     commit();
   }
 

@@ -17,6 +17,7 @@ import { calendarDayOf } from "../lib/calendarDay";
 import CategoryOptions from "./form/CategoryOptions";
 import { suggestedTripId } from "../lib/trips";
 import RateAgeChip from "./RateAgeChip";
+import { looksLikeMistypedLbp } from "../lib/entryGuards";
 
 type Bucket = "NEEDS" | "WANTS" | "SAVINGS";
 // Transactions (not recurring items) can also be logged as one-off INCOME --
@@ -291,7 +292,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   function addTransaction() {
     const amt = parseFloat(txAmt);
     if (!amt || amt <= 0) return;
-    if (txCurrency === "LBP" && amt < 500) {
+    if (looksLikeMistypedLbp(amt, txCurrency)) {
       setLbpConfirm({ amount: amt, proceed: commitTransaction });
       return;
     }
@@ -369,6 +370,19 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   // and it's stamped identically on both -- see its own doc comment in
   // localData.ts for why nothing downstream may read it as anything other
   // than a display hint.
+  // Session 42 (owner): the lira leg gets the same "did you mean USD?" check
+  // as a single lira entry (addTransaction). It skipped it before, by oversight.
+  function addSplitTransaction() {
+    const amtUSDLeg = parseFloat(txSplitUSD.replace(/,/g, ""));
+    const amtLBPLeg = parseFloat(txSplitLBP.replace(/,/g, ""));
+    if (!(amtUSDLeg > 0) || !(amtLBPLeg > 0)) return;
+    if (looksLikeMistypedLbp(amtLBPLeg, "LBP")) {
+      setLbpConfirm({ amount: amtLBPLeg, proceed: commitSplitTransaction });
+      return;
+    }
+    commitSplitTransaction();
+  }
+
   function commitSplitTransaction() {
     const amtUSDLeg = parseFloat(txSplitUSD.replace(/,/g, ""));
     const amtLBPLeg = parseFloat(txSplitLBP.replace(/,/g, ""));
@@ -927,7 +941,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
               value={txDesc}
               onChange={(e) => setTxDesc(e.target.value)}
               placeholder={txBucket === "INCOME" ? "Bonus, freelance gig, gift…" : txBucket === "TRANSFER" ? "Dad paid me back for gas…" : "Rent, groceries, gym…"}
-              onKeyDown={(e) => e.key === "Enter" && (txSplitMode ? commitSplitTransaction() : addTransaction())}
+              onKeyDown={(e) => e.key === "Enter" && (txSplitMode ? addSplitTransaction() : addTransaction())}
             />
             {!txSplitMode && txBucket !== "INCOME" && txBucket !== "TRANSFER" && looksRecurring(txDesc, txDate, activeTx, financials.recurring ?? [], startDay) && (
               <div className="mt-2 rounded-xl px-3 py-2.5 flex items-center justify-between gap-2" style={{ background: T.brass + "14", border: `1px solid ${T.brass}30` }}>
@@ -1072,7 +1086,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
           </div>
 
           <PrimaryBtn
-            onClick={txSplitMode ? commitSplitTransaction : addTransaction}
+            onClick={txSplitMode ? addSplitTransaction : addTransaction}
             color={T.jade}
             disabled={txSplitMode ? !(parseFloat(txSplitUSD) > 0 && parseFloat(txSplitLBP) > 0) : !(parseFloat(txAmt) > 0)}
           >
