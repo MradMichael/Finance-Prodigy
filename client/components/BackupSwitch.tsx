@@ -52,7 +52,11 @@ export default function BackupSwitch({ on, busy, onChoose }: {
         </p>
       ) : (
         <p className="text-xs leading-relaxed" style={{ color: T.mute }}>
-          Off. Your data stays in this browser only. Without a server copy you can&apos;t sign in on another device, and
+          {/* LB0 (session 41): "off" is also the state after "keep the existing copy", which this
+              switch can't tell apart, so the text holds for both (was "Your data stays in this
+              browser only", false while a kept copy is on the server). */}
+          Off. Nothing is uploaded from this device. If you kept the existing copy, it stays on our server without
+          updating, and the server can read it. Without a server copy you can&apos;t sign in on another device, and
           your recovery code only works on this device. Download my data (below) is the way to keep your own backup.
         </p>
       )}
