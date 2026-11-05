@@ -91,7 +91,8 @@ export default function MapPanel({ trips, today, onAddTrip, onShowTrip }: {
         <TravelMap world={world} trips={trips} today={today} onCountry={setSelected} selected={selected} fitTo={lists.visited} />
         {selected && <CountrySheet code={selected} trips={trips} today={today} onClose={() => setSelected(null)} onShowTrip={onShowTrip} />}
       </div>
-      {list(`Countries visited (${lists.visited.length})`, lists.visited)}
+      {/* Design pass, 6 (owner): no "Countries visited (0)". */}
+      {lists.visited.length > 0 && list(`Countries visited (${lists.visited.length})`, lists.visited)}
       {lists.planned.length > 0 && list(`Planned (${lists.planned.length})`, lists.planned)}
     </div>
   );

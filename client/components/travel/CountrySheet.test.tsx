@@ -53,9 +53,10 @@ describe("the country lists under the map", () => {
     expect(screen.queryByRole("heading", { name: /^Planned/ })).toBeNull();
   });
 
-  it("only planned trips: \"Countries visited (0)\", and the countries under \"Planned\"", async () => {
+  // Design pass, 6 (owner): "Countries visited (0)" is hidden.
+  it("only planned trips: no \"Countries visited\" heading, and the countries under \"Planned\"", async () => {
     await open([JAPAN]);
-    expect(screen.getByRole("heading", { name: "Countries visited (0)" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: /^Countries visited/ })).toBeNull();
     expect(listUnder("Planned (1)").getByRole("button", { name: "Japan" })).toBeTruthy();
   });
 });
