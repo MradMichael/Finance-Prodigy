@@ -2,7 +2,7 @@
 
 An extension of the existing Trips screen (`client/lib/trips.ts`, `client/components/screens/TripsScreen.tsx`): a world map of the countries visited, a sheet of the trips in a country, city markers, and the trip list grouped by year. Read with `docs/CLAUDE_CODE_BRIEF.md`, which stays the authority on standards and standing rules.
 
-**Status (2026-11-05):** Phase 0 and Phase 1a are built, merged and verified live by the owner. **Phase 1b is merged at `2077aa4`** (owner-approved). **Phase 1c is approved and in progress** on `claude/travel-1c` (not merged). Phase 2 has no plan yet.
+**Status (2026-11-05):** Phase 0 and Phase 1a are built, merged and verified live by the owner. **Phase 1b is merged at `2077aa4`** (owner-approved). **Phase 1c is built on `claude/travel-1c` and NOT merged**: it waits for the owner's live check. Phase 1 (the travel map) is then complete. Phase 2 has no plan yet.
 
 **Rule 8:** the status line above and the phase status lines below change in the same commit as the work that changes them.
 
@@ -34,6 +34,8 @@ An extension of the existing Trips screen (`client/lib/trips.ts`, `client/compon
 | D12 | **Visited vs planned:** a trip counts as visited only if its start date is today or earlier (the device's local calendar day). Later trips are **planned**: a distinct style on the map (dashed brass outline) and labeled "Planned" in the country sheet. Detail in Phase 1c. |
 | D13 | Each phase gets its own branch: RED tests first, then GREEN, one concern per commit, merged with a merge commit (no squash) after the owner's live check. |
 | D14 | **"Place on map" is in Phase 1c,** not 1b (owner, 2026-11-05): placing a typed city needs the map. In 1b, a city picked from the list (or typed exactly as the list writes it, accents aside) gets its point; any other typed city gets none until 1c. |
+| D15 | **Trips opens on Map once any trip has a country; otherwise on List**, as Trips always has (owner, 2026-11-05): an account whose trips have no countries isn't shown an empty map over its trip cards. |
+| D16 | **Under the map:** "Countries visited (N)", N counting visited countries only; below it "Planned (N)", the countries with only planned trips, by name (owner, 2026-11-05). A country with both is under "Countries visited" only. The map picture is hidden from screen readers; these lists are their route. |
 
 ---
 
@@ -148,82 +150,93 @@ Cut fresh from `main` at `46c9a0b`. Every new string is the owner's APPROVED wor
 - The About page shows the credit, and both links open.
 - **After a deploy,** the city file downloads again on its next use; that's known, and the fix is an open item (§7).
 
+### Phase 1c: the map. Built on `claude/travel-1c`, NOT merged.
+
+Cut from `main` at `a476736`. Every new string is APPROVED wording (§5). Pushed after every commit (owner, mid-phase). First commit: `c90656a`, the status line (rule 8).
+
+**Visited or planned, D12** (`76a4025` RED, `428190e` GREEN)
+- `lib/travel.ts` takes `today`, the device's local calendar day (`todayCalendarDay`). `isPlanned` is true when a trip starts after today.
+- `visitedCountries` returns `{ visited, planned }`; a country with any trip that has started is visited only.
+- `tripsInCountry` marks each trip. A city marker is planned only when every trip there is.
+- A Beirut-leg test pins that the local day decides: 00:30 on 6 November in Beirut is the 6th.
+
+**The country shapes** (`1c7955a` RED, `7c9ef95` GREEN)
+- `public/geo/countries-110m.json` is world-atlas 2.0.2's file, copied as is by `scripts/build-geo.mjs`: **107,761 B raw, 38,495 B gzipped**.
+- It's precached; the production build's worker lists it.
+
+**The geometry** (`c85ef99` RED, `6fc2fbd` GREEN)
+- `lib/worldMap.ts`:
+  - shapes keyed to ISO codes through the country list's numeric column, with Kosovo matched by name;
+  - dots for the 75 listed countries without a shape;
+  - Equal Earth, 960 × 468 SVG units, with `invert` for a tap;
+  - `bounds()` fitted on each country's largest land, so France's view leaves out French Guiana;
+  - `loadWorld` fetches both files once, by their paths alone.
+- Dependencies, at the exact versions measured: `d3-geo` 3.1.1 and `topojson-client` 3.1.0, plus their types as dev dependencies. `d3-geo`'s `d3-array` is the one recharts already brings.
+- **The lockfile was edited by hand, deliberately:** it's the old lockfile plus the 7 new entries. npm 10.9.9 and 11.6.2 would both also have dropped the `libc` fields of 35 native packages, which is unrelated to this change. `npm ci` installs from it cleanly.
+
+**The map and its panel** (`054d7b5` RED, `86c46c1` GREEN)
+- `components/travel/TravelMap.tsx` draws the map:
+  - visited countries: a soft brass fill (decoration) and a **solid brass border**;
+  - planned-only: a **dashed brass border** on plain land;
+  - small countries as dots, with a 44 px tap area sized from the measured drawn width;
+  - jade city markers with an ink halo; planned ones hollow and dashed;
+  - "+"/"−" zoom (read "Zoom in"/"Zoom out"), drag (never taken for a tap), and "Show my countries";
+  - hidden from screen readers.
+- `components/travel/MapPanel.tsx`: the empty state (nothing fetched), a placeholder, the past-10-seconds line, and the failure line with "Try again".
+- **Contrast (WCAG 1.4.11, 3:1), all 6 themes**, measured from the tokens:
+  - brass border on land 6.2–11.2:1; on the sea 7.4:1 and up; on its own fill 4.6–7.0:1;
+  - jade markers on land 6.0:1 and up; on the brass fill 4.0:1 and up;
+  - the fill itself is 1.3–1.6:1 against land, so it is decoration and nothing relies on it.
+
+**The country lists and sheet** (`b9e9d6a` RED, `4ab37f1` GREEN, then `49d2c1a`)
+- Under the map: "Countries visited (N)" and "Planned (N)" (D16).
+- `components/travel/CountrySheet.tsx`:
+  - a bottom sheet on a phone, beside the map from `sm` up;
+  - the country's trips newest first, with dates as DD/MM/YYYY, "Planned" in brass on a planned trip, and its cities there;
+  - a trip's name shows its card;
+  - "✕" (read "Close") or Escape closes it, and its heading takes focus.
+- `49d2c1a` puts the sheet's bottom pin and its home-indicator inset on one line, for PWA P2's line-by-line `safe-area.test.ts`. The sheet already cleared the home indicator; only the source's layout changed.
+
+**Map | List** (`007aaf9` RED, `6da4599` GREEN)
+- `TripsScreen` gets the toggle (D15).
+- The panel is loaded by `import("../travel/MapPanel")` only; its props type is declared in the screen, so not even a type import names it.
+- "Add a trip" focuses the New trip form's Name. A trip's name in a sheet switches to List and focuses its card.
+- The 1b list and edit tests, whose trips have countries, now tap "List" first. What they check is unchanged.
+
+**Place on map, D14** (`b302344` RED, `e5552cd` GREEN)
+- A typed city with no point from the list (it isn't there, or the list didn't load) gets "Place on map" and item 8's 1c line.
+- The button shows "Tap the map where <city> is." and "Cancel" straight away, then `components/travel/PlacePicker.tsx` (a dynamic import) opens the map fitted to the row's country.
+- A tap is the city's point, WGS84 to 2 decimals, and survives correcting the name.
+- If the map can't load, the picker shows item 12's line and "Try again".
+- 1b's test of the old not-in-the-list line now expects the approved 1c wording.
+
+**375 px** (`45f8c7a`, a pin): the map's container, lists and sheet keep inside a phone's width (classes only; jsdom has no layout).
+
+**Results on `claude/travel-1c`**
+- Client: **2,988 passed**, 14 skipped (one more than before: the Beirut-only test skips in UTC, as the repo's Beirut tests do).
+- Under `TZ=Asia/Beirut`: **3,001 passed**, 2 skipped.
+- `tsc` and lint 0. Server unchanged by 1c.
+- **Production build passes:**
+  - the map's code is **14,769 B gzipped** in four chunks: d3-geo 8,845; geometry and topojson 3,262; panel 1,944; picker 718. That's below the plan's 22 KB estimate;
+  - the Trips chunk loads them only through webpack's on-demand loader, when Map or the picker opens;
+  - the Overview (`/`) first load is 289 kB here against 290 kB on `main` built the same way: no growth.
+
+**Owner's live check (before merging 1c)**
+- **Map:** France, Italy and Malta highlighted, Malta as a dot; city dots in the right places. Tap France: the trip, its dates, Paris and Lyon.
+- **Show my countries:** zooms to Europe; "+"/"−" and dragging work on the phone.
+- **Planned:** a trip starting next month shows its country dashed, listed under "Planned (1)", with "Planned" in its sheet. After its start date it shows filled under "Countries visited", with no change on your part.
+- **Place on map:** a typed city ("Batroun") shows "Place on map". Tap it, then tap the map: after saving, its dot appears there.
+- **Opening view:** an account whose trips have no countries opens Trips on List.
+- **Themes:** all 6 readable, the dashed outline included.
+- **Offline:** in airplane mode after one visit, the map still draws.
+- **Network (DevTools):** Overview loads no map files; opening Trips loads no map code until Map opens; no request leaves the app's own site.
+- **Phone sheet:** the bottom sheet clears the home indicator on an installed iPhone.
+
 ---
 
 ## 4. Planned
 
-### Phase 1c: the map
-
-**Status: approved, in progress** on `claude/travel-1c`, cut from `main` at `a476736`.
-
-**Files:** `components/travel/TravelMap.tsx`, `components/travel/CountrySheet.tsx`, `components/travel/StopFields.tsx` ("Place on map", D14), the dependencies `d3-geo` and `topojson-client`, `public/geo/countries-110m.json`.
-
-**Sizes (measured):**
-
-| Item | Raw | Gzipped |
-|---|---|---|
-| `countries-110m.json` (177 shapes; precached) | 107,761 B | 38,495 B |
-| `topojson-client@3.1.0` | 7,169 B | 2,628 B |
-| `d3-geo@3.1.1` | 36,329 B | 13,077 B |
-| `d3-array@3.2.4` (d3-geo's dependency) | 17,204 B | 5,988 B |
-
-- The map code is about 22 KB gzipped, behind a dynamic `import()` that runs only when the Map view opens. It's kept out of `TripsScreen`'s own chunk, because `preloadScreens` fetches every screen.
-- **Added to the Overview's first load: 0.**
-- The 110m set has 177 shapes, 64 fewer than the 50m set's 241. The missing ones include Malta, Singapore, Bahrain, Monaco, Vatican, Andorra, Maldives and Hong Kong. Any country in `countries.json` without a 110m shape is drawn as a dot at its centroid.
-- Three shapes have no id: N. Cyprus, Somaliland and Kosovo. Kosovo is matched by name as `XK`; the other two can't be picked.
-
-**The map**
-- Unvisited countries: `panelSoft` fill with a `line` border.
-- **Visited:** `brass30` fill with a solid `brass` border.
-- **Planned only (D12):** a dashed `brass` border and no fill. Planned dots are hollow and dashed. The dash pattern, not colour alone, tells the two apart.
-- A country with both a past and a planned trip is drawn as **visited**.
-- Cities are `jade` dots with an `ink` halo; planned cities use the planned style. `coral` is not used.
-- All colours come from `useTheme`, so all 6 themes work.
-- Controls: "Show my countries" (zooms to fit them), plus zoom buttons and drag.
-- Small-country dots have a 44 px tap area.
-- Below the map, a "Countries visited (N)" list of buttons is the keyboard and screen-reader route. It includes planned-only countries.
-
-**The country sheet**
-- A bottom sheet on phones, a side panel on wider screens.
-- Each trip shows its name, `DD/MM/YYYY – DD/MM/YYYY`, and its cities in that country, newest first.
-- Planned trips carry the **"Planned"** label. They appear at the top, because newest-first order puts later starts first.
-- Tapping a trip jumps to its card in the List.
-
-**"Place on map" (D14):** a typed city's row gets a "Place on map" button that opens the map to tap its point. The stop's `lat`/`lon` then come from the tap, in WGS84 degrees, checked as `buildTrip` already checks them. The not-in-the-list line changes to its approved 1c wording (§5).
-
-**Helper changes (D12):** `visitedCountries`, `tripsInCountry` and `cityMarkers` take a `today` argument (local calendar day, from `todayCalendarDay`).
-- `visitedCountries` returns visited countries and planned-only countries separately.
-- `tripsInCountry` and `cityMarkers` mark each trip visited or planned.
-- The comparison is a plain `YYYY-MM-DD` string compare.
-
-**Tests to write first (RED before GREEN)**
-- The map: one path per country, with visited ones marked; a visited small country gets a dot.
-- Tapping a country opens the sheet with the right trips, dates in DD/MM/YYYY, and that country's cities.
-- The keyboard list opens the same sheet.
-- "Show my countries" fits the visited ones.
-- Visited vs planned:
-  - a trip starting today is visited, one starting tomorrow is planned, one that started yesterday and ends next week is visited;
-  - a country with both shows as visited, and the sheet labels each trip;
-  - the boundary near midnight in Beirut follows the existing date-boundary tests;
-  - the "Planned" label renders.
-- The map module isn't statically imported by `TripsScreen` (following `screens-lazy.test.tsx`).
-- The content-policy test is unchanged.
-- Contrast of the solid and dashed brass borders and the dots on `panelSoft`, all 6 themes (`theme.contrast.test.ts`).
-- 375 px, no horizontal scroll (following `phone-layout.test.tsx`).
-- Loading, over-10-seconds and error states.
-- "Place on map": a typed city given a point by a tap is saved with it, and the not-in-the-list line reads its 1c wording.
-
-**SAFE STOP.**
-
-**Owner's live check**
-- France, Italy and Malta highlighted, Malta as a dot; cities in the right places.
-- Tap France: the trip, its dates, Paris and Lyon.
-- "Show my countries" zooms to Europe.
-- A trip starting next month shows dashed, and the sheet says "Planned". After its start date it shows filled, with no change on your part.
-- All 6 themes readable.
-- The map works in airplane mode after one visit.
-- Overview loads no map files.
-- No request leaves the app's own site.
+Nothing more is planned for Phase 1; it is complete once 1c merges. Phase 2 and the open items are in §7.
 
 ---
 
@@ -245,7 +258,7 @@ Every item that was HELD is now APPROVED, some with changes; the text below is t
 | 8 | Typed city not in the list | **1b:** "Not in the list. It'll be saved as you typed it, but won't appear on the map." *(changed)* **1c, once "Place on map" exists:** "Not in the list. It'll be saved as you typed it. Use Place on map to show it on the map." |
 | 9 | Remove buttons | "Remove", with a screen-reader label naming the row ("Remove Lyon", "Remove France") |
 
-**For Phase 1c (approved now, not yet used):**
+**For Phase 1c (in use since 1c):**
 
 | # | Where | APPROVED wording |
 |---|---|---|
@@ -255,6 +268,17 @@ Every item that was HELD is now APPROVED, some with changes; the text below is t
 | 13 | Country sheet, a future trip (D12) | "Planned" |
 | 14 | Map controls and list | "Map", "List", "Show my countries", "Countries visited (N)" |
 | 15 | Placing a typed city (D14) | "Place on map" |
+
+**Added during 1c (approved 2026-11-05):**
+
+| # | Where | APPROVED wording |
+|---|---|---|
+| 16 | Zoom buttons | Visible "+" and "−", read aloud "Zoom in" and "Zoom out" |
+| 17 | Country sheet's close button | "✕", read aloud "Close" (as the Edit Recurring and Pay Debt sheets) |
+| 18 | Place on map, while picking | "Tap the map where <city> is." (the typed name), and "Cancel" (the app's existing word) |
+| 19 | Under the map (D16) | "Countries visited (N)" (visited only), then "Planned (N)" listing planned-only countries by name *(owner's wording; replaced a "· Planned" suffix)* |
+
+All of 10–15 and 8's 1c line are now in use. Item 12's line also serves the Place on map picker if its map can't load.
 
 **Decided earlier, so never held:** the budget line at 0 ("Spent $X", D9) and the default trip name format ("France, Italy, Malta", D8).
 
@@ -268,10 +292,10 @@ Every item that was HELD is now APPROVED, some with changes; the text below is t
    - Deleting a trip: its stops are removed with it, and a deletion record syncs the deletion. Tagged rows keep their tags (deliberately left standing, an existing decision).
    - Editing stops or notes overwrites them, with no captured earlier state (deliberately, as trip edits are today).
    - A filled-in default name is an ordinary stored name.
-   - The map changes nothing; it only reads.
-2. **Which claims are inherited.** Re-derived at the end of 1b (2026-11-05); re-derive again before 1c is built:
-   - the readers of a trip's name: still **6** (the trip pickers in `ImportStatement`, `ForeignCashForms`, `InputPanel` and `EditTransactionSheet`; `TripsScreen`; the sync notice via `syncMerge`), re-counted by grep;
-   - the city file's size: re-measured from the committed file (§3);
+   - The map changes nothing; it only reads. Place on map writes only the row's point in the form, kept or discarded with the form; "Cancel" leaves none.
+2. **Which claims are inherited.** Re-derived at the end of 1c (2026-11-05):
+   - the readers of a trip's name: now **7**, re-counted by grep. These are the trip pickers in `ImportStatement`, `ForeignCashForms`, `InputPanel` and `EditTransactionSheet`; `TripsScreen`; the sync notice via `syncMerge`; and 1c's `CountrySheet`. All read the stored name, so a default name needs nothing more;
+   - the city file's size (1b) and the shapes file's size (1c): measured from the committed files (§3);
    - the service worker's precache rule: still "every file under `.next/static` and `public/` except `ON_FIRST_USE`", read from `sw/build-sw.mjs` and checked in the production build.
 3. **What units each figure carries.** Coordinates in WGS84 degrees; country codes ISO alpha-2; dates as local `YYYY-MM-DD` calendar days; the budget line in USD (`budgetUSD`, `totalUSD`); file sizes raw or gzipped as labelled.
 
@@ -286,9 +310,13 @@ Every item that was HELD is now APPROVED, some with changes; the text below is t
 - **Open item (owner-approved fix, 2026-11-05): cache first-use files (city file, PDF worker) by content hash, so they re-download only when the file changes; own commit, service worker tests first.**
   - Why: the worker's runtime cache is named per build (`essa-runtime-<build>`), so today every deploy makes the next use fetch the 368 KB city file and the PDF worker again.
   - Found in 1b and deliberately not changed there; it's not part of 1c either.
-- **Risks carried into 1c:**
+- **Left after 1c (none blocks the merge):**
+  - **Pinch to zoom isn't built:** zoom is "+"/"−" and drag. Two-finger pinch is a possible later addition, with no new wording.
+  - **"Countries visited (0)":** an account with only planned trips sees that heading over an empty list, then "Planned (1)". This was a judgement call (the heading's meaning stays steady), easy to change.
+  - **The picker's failure line:** if the map can't load while placing a city, the picker shows item 12, "…They're all in the list.". The words were approved for the Map view; they're true here too, but read a little oddly in a form.
+- **Risks carried from 1b and 1c:**
   - 368 KB over Lebanese mobile data the first time a form needs the city list, and again after each deploy (above);
   - small countries hard to tap at 375 px (hence the dots and the list);
-  - typed cities get no marker until "Place on map" (1c);
+  - a typed city has no marker until it's placed ("Place on map");
   - tapping country shapes on iOS Safari needs checking on a real phone;
   - a stored stop with a code a future country list drops would make that trip's edit refuse until the stop is fixed.
