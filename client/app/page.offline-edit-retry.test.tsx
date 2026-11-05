@@ -33,7 +33,6 @@ import { computeDashboard } from "../lib/computeDashboard";
 import { currentCycleKey, calendarKeyForDate } from "../lib/period";
 
 const NOTICE = "Your latest changes aren't backed up yet. They're safe on this device, and ESSA will try again.";
-const FAIL = { ok: false, error: "Sync failed (HTTP 503)." };
 const OK = { ok: true, syncedAt: "2026-10-07T19:00:00.000Z" };
 
 function settled(): LocalFinancials {
@@ -57,7 +56,6 @@ beforeEach(() => {
 });
 afterEach(() => { vi.useRealTimers(); });
 
-const minutes = (n: number) => act(async () => { await vi.advanceTimersByTimeAsync(n * 60_000); });
 
 /** Open, make one edit, and let its upload run. */
 async function editAndUpload() {
