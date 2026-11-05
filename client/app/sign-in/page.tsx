@@ -146,9 +146,22 @@ export default function SignInPage() {
         </>)}
       </div>
 
-      <p className="text-[10px] mt-8 text-center max-w-xs" style={{ color: T.mute }}>
-        Your data is stored privately in your browser. Connect a database to sync across devices.
+      {/* A1, app readiness (owner, 2026-11-05): the same size and colour as sign-up's caveat (text-xs, main
+          text colour), was text-[10px] in T.mute. */}
+      <p className="text-xs leading-relaxed mt-8 text-center max-w-xs" style={{ color: T.text }}>
+        {/* A1, app readiness (owner-approved wording, 2026-11-05): was "Your data is stored privately in your
+            browser. Connect a database to sync across devices.", a note to a developer. */}
+        Your data is encrypted and stored in this browser. It&apos;s copied to our server only if you turn on
+        backup, and that copy isn&apos;t end-to-end encrypted: the server can read it.
       </p>
+      {/* Its own line, at least 44 px tall to tap (owner, 2026-11-05); it was inline in 10 px text, about 12 px tall. */}
+      <Link
+        href="/privacy"
+        className="flex items-center justify-center px-3 text-xs underline hover:opacity-80"
+        style={{ color: T.text, minHeight: 44 }}
+      >
+        How your data is stored
+      </Link>
 
       {recoveryCode && (
         <RecoveryCodeModal code={recoveryCode} onContinue={() => router.push("/")} />

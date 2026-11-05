@@ -345,7 +345,7 @@ export default function GoalsScreen({
                           {/* Custom amount */}
                           <div className="flex gap-2">
                             <input
-                              type="number" min="0" step="1"
+                              type="number" inputMode="decimal" min="0" step="1"
                               placeholder={`Custom amount (${g.currency === "LBP" ? "L£" : "$"})`}
                               value={payAmt}
                               onChange={(e) => setPayAmt(e.target.value)}

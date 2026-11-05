@@ -170,7 +170,7 @@ export default function CurrencyScreen({ financials, onChange }: { financials: L
             // min/max constrain the stepper and mark the field invalid, and
             // commitLbpRate clamps the finished value on blur for anything
             // typed, pasted, or autofilled past them.
-            type="number" min={LBP_RATE_MIN} max={LBP_RATE_MAX} step="500"
+            type="number" inputMode="decimal" min={LBP_RATE_MIN} max={LBP_RATE_MAX} step="500"
             value={lbpRateInput ?? lbpRateOf(financials)}
             onChange={(e) => setLbpRateInput(e.target.value)}
             onBlur={(e) => commitLbpRate(e.target.value)}

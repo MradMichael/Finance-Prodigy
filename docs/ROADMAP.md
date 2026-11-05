@@ -208,7 +208,7 @@ A debt payment sourced partly from EF is recordable as one real transaction, vis
 
 ## Phase 2.6.4 — Debt/goal payment forms close the gaps 2.6.3(c) left at the point of use
 
-**Status:** all three steps built 2026-08-27 on `fix/payment-method-picker-2.6.4`, 421/421 tests, tsc clean, both builds clean, held for review, not merged · **Depends on:** Phase 2.6.3(a)/(b)/(c) (merged, live) · **Blocks:** nothing declared yet — real, rated High (2.4.41), but not unilaterally added as a Phase 2 precondition; owner to decide separately.
+**Status:** all three steps built 2026-08-27 on `fix/payment-method-picker-2.6.4`, 421/421 tests, tsc clean, both builds clean, held for review, not merged. **Corrected 2026-11-05 (truth pass): merged to `main` 2026-08-27 as `22d2b1f`, confirmed an ancestor of `main` by `git merge-base`; Phase 2.6's own status line above already said so. This line was never updated (Rule 8).** · **Depends on:** Phase 2.6.3(a)/(b)/(c) (merged, live) · **Blocks:** nothing declared yet — real, rated High (2.4.41), but not unilaterally added as a Phase 2 precondition; owner to decide separately.
 
 ### Context
 
@@ -270,7 +270,7 @@ A debt payment can be tagged with a real payment method (and card, where relevan
 
 ## Phase 2.7 — Sync merge for transactions
 
-**Status:** sub-phase 1 merged to `main` (`16a935a` via `86b55af`), Vercel `Ready` in production. Sub-phase 2 built, held for review, not yet merged — Rule 6. Design approved 2026-08-26 · **Depends on:** Phase 2.6 (all of 2.6.3, including (c)) — met, 2.6.3(c) merged and live · **Blocks:** Phase 2 (cohort launch).
+**Status:** sub-phase 1 merged to `main` (`16a935a` via `86b55af`), Vercel `Ready` in production. Sub-phase 2 built, held for review, not yet merged — Rule 6. Design approved 2026-08-26. **Corrected 2026-11-05 (truth pass): all three sub-phases are on `main`. Sub-phase 2 (`371eb32`) and sub-phase 3 (`84524cb`, merged `3a225da`, 2026-09-02) are both ancestors of `main` by `git merge-base`, and `CLAUDE_CODE_BRIEF.md` rule 8 already describes all three as merged. Whether the owner has marked the phase complete (Rule 6) is not recorded in this document: UNKNOWN.** · **Depends on:** Phase 2.6 (all of 2.6.3, including (c)) — met, 2.6.3(c) merged and live · **Blocks:** Phase 2 (cohort launch).
 
 **Sub-phases (owner's instruction, 2026-09-01: same discipline as Phases 2.5/2.6 and F3 — SAFE STOP per sub-phase, tests-first, held for review at each):**
 1. **`mergeTransactions(local, server)`, pure engine, tests-first, unwired.** Union by id, tombstone-rank rule (`purgedAt` > `deletedAt` > active, unconditional), `updatedAt`-based last-writer-wins for genuine same-id conflicts, order-independent per-id outcome. **Built 2026-09-01 on `feat/sync-merge-subphase1` (`16a935a`). Merged to `main` (`86b55af`) 2026-09-01, Vercel `Ready` in production.**
@@ -436,16 +436,33 @@ The owner already produces and reads a monthly report externally. It should be a
 
 ## Phase 7 — F6 PWA and offline resilience
 
-**Status:** not started · **Depends on:** none after Phase 1
+**Status:** partly built (corrected 2026-11-05; this line read "not started" while the list below already recorded the offline shell as built). Built and on `main`: the offline app shell and update notice (`bb5c352`, 2026-11-02, session 34, decision 26); screens loaded on first use and precached (R3, `9585ea8`, 2026-11-02); unchanged files reused across deploys (`e87e4d6`, 2026-11-03). Not built: an install prompt, a storage-persistence request, and the offline-write report required by the conflict warning below. · **Depends on:** none after Phase 1
 
 Users are on inconsistent Lebanese mobile networks.
 
 - Installable to a phone home screen.
 - Offline app shell (built in session 34, decision 26): the service worker precaches the pages and every file of the build in a cache named for it, so the app and every screen open offline; a new build waits for "Reload". Never `/api/*` or data.
 - Offline read of previously loaded data; queued write syncing on reconnection.
-- Deferred loading to reduce initial bundle. Current (re-confirmed 2026-08-29, VER-02): 87.7 kB shared, 266 kB first load, all 14 screens in one non-route-split bundle.
+- Deferred loading to reduce initial bundle. Current (re-confirmed 2026-08-29, VER-02): 87.7 kB shared, 266 kB first load, all 14 screens in one non-route-split bundle. **Superseded 2026-11-05:** a production build of `f74c6e6` (Next.js 15.5.28) reports 103 kB shared and 287 kB first load for `/`. Every screen but the Overview now loads on first use (R3, `9585ea8`), so the "one non-route-split bundle" no longer holds. The 287 kB figure is from that build's own route table; why it is larger than 266 kB was not investigated.
 
 **Conflict warning.** Queued offline writes interact with sync conflict resolution. Report the interaction before implementing.
+
+### Installable app: owner decisions and gate (2026-11-05)
+
+Taken after a read-only app-readiness assessment (2026-11-04). The plan is website first, app second. A PWA stays the target; a Google Play listing through a Trusted Web Activity is the later option. A native wrapper is not planned.
+
+**Owner's decisions:**
+- **The session key stays in `sessionStorage`.** An installed app asks for the password on every cold start. This is deliberate and not a defect (`client/lib/crypto.ts`, `activateSessionKey`).
+- **Custom domain: deferred** until the owner is ready for Google Play. The PWA stays on `vercel.app` until then. A Play app is tied to its domain, so the domain comes first in that work.
+- **Export reminder: 14 days.** The interval for the reminder shown when backup is off and nothing has been exported.
+
+**Gate before any app-store work.** These are live bugs from a separate audit session, planned there as Phase 2.8; they are not specified here.
+- Must be fixed first: **LB3** and **LB6**.
+- Should be fixed first: LB0, LB1, LB2, LB4, LB5.
+
+**Who owns what:** the install prompt, storage persistence and offline hardening belong to a separate PWA session. The mobile-correctness pass (16 px inputs, 44 px tap targets) belongs to the session that recorded this note.
+
+**Own-work finding (Rule 17), from the 2026-11-04 assessment.** This has no audit number because the audit document isn't in the repository; the owner assigns one when copying it in. The first 375 px sweep (Playwright, a new empty account) reported figures for all 16 screens, but it measured the Overview 16 times. The blocking backup-choice prompt (`SyncChoicePrompt`) covered the bottom navigation, so every navigation click failed, and the script logged "nav fail" and measured the screen it was still on. This was caught from those log lines and a screenshot, before anything was reported. A re-run that first chose "Keep it off" measured each screen, and only those figures were reported. **Lesson:** a sweep that navigates must check it arrived on the screen it names before measuring it. A failed click that is logged and then ignored produces plausible numbers for the wrong screen.
 
 **SAFE STOP.**
 
@@ -535,7 +552,7 @@ Not scheduled. Each requires an explicit decision to activate.
 
 | Item | Why deferred | Trigger to revisit |
 |---|---|---|
-| Next.js 14→16 (rewrite-smuggling CVE) | Major version bump; adversary must be positioned on infrastructure path; not a ten-person risk | After cohort is stable, or any sign of exploitation |
+| Next.js 14→16 (rewrite-smuggling CVE) | Major version bump; adversary must be positioned on infrastructure path; not a ten-person risk. **Updated 2026-11-05: 14→15 is done.** Next.js 15.5.28 merged 2026-10-19 (`3e4f4f4`, SEC-K1). 15→16 remains deferred. Whether 15.5.28 already closes the CVE this row names was not checked in this pass: UNKNOWN | After cohort is stable, or any sign of exploitation |
 | Finding 2.2.16 — server-side registration gap | Zero of 36 live rows affected; naive fix is an account-takeover bug | If any account is found in the gap state |
 | Email ownership verification | Enables email squatting; support friction, not data exposure | If squatting actually occurs, or before public launch |
 | Password change while signed in | Path exists via recovery code | Cohort complaint |
@@ -543,8 +560,8 @@ Not scheduled. Each requires an explicit decision to activate.
 | Environment identifier in `/api/health` | Bundle with staging work | With staging |
 | Server-side admin gating | Nothing cross-user behind the gate | If anything sensitive is ever added to `/admin` |
 | Dual-currency single transaction (one bill paid partly USD, partly LBP — e.g. $10 + L£200,000) | Real gap, but small compared to Phase 9 above — added 2026-08-25. `StoredTransaction` has exactly one `amount`+`currency` pair; a schema-level split (`amount2?`/`currency2?`) would touch every one of the dozens of `t.amount`/`t.currency` read sites across the app. The pragmatic version doesn't touch the schema at all: one form submission in `InputPanel.tsx` creates *two* ordinary `StoredTransaction` rows (one per currency), no new fields, no consumer changes needed anywhere else — sized at roughly a day, not a phase. Minor accepted tradeoff: two line items in Transactions instead of one for what was conceptually a single payment. | Owner decides it's worth building — small enough to fold into any nearby work, not just a dedicated phase |
-| React 18→19 | Major version, real breaking changes (new JSX runtime expectations, `ref` as a plain prop, several removed legacy APIs) — added 2026-08-29, external audit AUD-14/`PROCESS_IMPROVEMENTS` §5. React 19 is Next.js 15+'s own baseline, not something to upgrade independently of Next | Bundle with the Next.js 14→16 upgrade above — don't upgrade React alone first |
-| ESLint 8→9 + `eslint-config-next` | ESLint 9's flat-config format is a real authoring-format breaking change; `eslint-config-next` (currently pinned to Next 14.2.35) needs its own compatible bump at the same time, they're coupled — added 2026-08-29, AUD-14 | When `eslint-config-next` ships a version that supports flat config cleanly against whichever Next version is current then, or bundle with the Next.js upgrade |
+| React 18→19 | Major version, real breaking changes (new JSX runtime expectations, `ref` as a plain prop, several removed legacy APIs) — added 2026-08-29, external audit AUD-14/`PROCESS_IMPROVEMENTS` §5. React 19 is Next.js 15+'s own baseline, not something to upgrade independently of Next | Bundle with the Next.js 14→16 upgrade above — don't upgrade React alone first. **Done 2026-10-19:** React 19 merged with Next.js 15.5.28 (`3e4f4f4`) |
+| ESLint 8→9 + `eslint-config-next` | ESLint 9's flat-config format is a real authoring-format breaking change; `eslint-config-next` (pinned to Next 14.2.35 when this was written; `^15.5.28` since `3e4f4f4`, 2026-10-19, ESLint itself still 8) needs its own compatible bump at the same time, they're coupled — added 2026-08-29, AUD-14 | When `eslint-config-next` ships a version that supports flat config cleanly against whichever Next version is current then, or bundle with the Next.js upgrade |
 | Tailwind 3→4 | Significant rewrite (new engine, different config authoring) with no security driver — purely a DX/performance upgrade. Real regression risk specific to this app: 6 themes, every one needs to render identically after the bump — added 2026-08-29, AUD-14 | Post-cohort, when there's time to visually re-verify all 6 themes end to end, not squeezed in alongside other work |
 | Prisma 5→6 (server) | Major version — added 2026-08-29, AUD-14 | Review the Prisma 6 migration guide and confirm a supported window against whichever Postgres/Neon version is in production at the time |
 | Zod 3→4 (server) | Major version, several schema-authoring APIs changed — added 2026-08-29, AUD-14 | Next time `server/src/routes/*.ts`'s zod schemas are touched for an unrelated reason — verify the migration then, not as its own dedicated pass |
@@ -573,6 +590,8 @@ Phase 9  Generalized currency  — unscheduled, Phase-1-sized, not before cohort
 ```
 
 **Critical path to launch: Phase 0 → Phase 1 → real-device check → ship.** Everything after Phase 2 waits on evidence from real users.
+
+**Note (2026-11-05, truth pass):** also out of date in the diagram: 2.6.4 and all of 2.7 are merged (see their corrected status lines), and Phase 7 is partly built. The diagram is still not rewritten, for the reason the 2026-09-02 note gives.
 
 **Note (2026-09-02): the diagram above predates several completed phases (2.6, 2.6.4, 2.7 are all merged and live; Phase 9 was re-split into 9-N, approved before cohort) and is not being rewritten here — not in scope for this note.** Current sequencing authority is `docs/AUDIT_2026-08.md`'s Amendment 13: the owner reframed the launch goal from "pre-cohort polish" to "daily-use completeness" (never needing a spreadsheet or mental arithmetic to correct a number ESSA shows), triggering a full re-triage. Approved build order, ahead of Phase 9-N and the deferred backlog above: (1) TRANSFER retag sign bug [2.4.56], (2) Balance Check re-anchoring [2.4.53], (3) reimbursement repayment quick-entry [2.4.55 remainder], (4) goal `currentAmount` derivation [2.4.57, scope before building; **core built and merged as plan H 5a, 2026-10-09 — see Phase 2.8 for what remains**], (5) Overview past-month view [scope before building], (6) cross-device non-transaction merge detection [2.4.52, detection-only]. The original 9-item pre-cohort queue, Phase 9-N, and F4-F7 stay explicitly logged, not abandoned, sequenced behind this list.
 

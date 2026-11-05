@@ -392,7 +392,7 @@ export default function ProjectionsScreen({
               <div className="flex items-center gap-1.5">
                 <span style={{ color: T.brass }}>$</span>
                 <input
-                  type="number" min={0} max={MAX_TEST_AMOUNT} step={10}
+                  type="number" inputMode="numeric" min={0} max={MAX_TEST_AMOUNT} step={10}
                   value={testAmount}
                   onChange={(e) => setTestAmount(Math.min(MAX_TEST_AMOUNT, Math.max(0, Math.round(Number(e.target.value) || 0))))}
                   className="w-24 rounded-lg px-2 py-1 text-sm font-semibold tabular-nums text-right"

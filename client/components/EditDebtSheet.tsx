@@ -98,7 +98,7 @@ export default function EditDebtSheet({
               <Label htmlFor="edit-debt-balance">Balance ({debt.currency === "LBP" ? "L£" : "$"})</Label>
               <input
                 id="edit-debt-balance"
-                type="number" min="0" step="1"
+                type="number" inputMode="decimal" min="0" step="1"
                 className="w-full rounded-lg px-3 py-2 text-sm tabular-nums"
                 style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
                 value={balanceInput ?? (balance || "")}
@@ -107,7 +107,7 @@ export default function EditDebtSheet({
                 placeholder="0"
               />
             </div>
-            <div><Label htmlFor="edit-debt-apr">APR (%)</Label><FocusInput id="edit-debt-apr" type="number" min="0" step="0.1" value={apr} onChange={(e) => setApr(e.target.value)} placeholder="0" /></div>
+            <div><Label htmlFor="edit-debt-apr">APR (%)</Label><FocusInput id="edit-debt-apr" type="number" inputMode="decimal" min="0" step="0.1" value={apr} onChange={(e) => setApr(e.target.value)} placeholder="0" /></div>
             <div><Label htmlFor="edit-debt-min">Min/mo</Label><MoneyInput id="edit-debt-min" value={min} onChange={setMin} placeholder="0" max={moneyMaxFor(debt.currency, lbpRateOf(financials))} /></div>
           </div>
           <div>
