@@ -3,7 +3,7 @@
 // each card with its countries and cities ("France · Paris, Lyon — Italy ·
 // Rome"; a country with no city is its name alone) and its notes.
 import { it, expect, vi, afterEach } from "vitest";
-import { render, screen, within, cleanup } from "@testing-library/react";
+import { render, screen, within, cleanup, fireEvent } from "@testing-library/react";
 import TripsScreen from "./TripsScreen";
 import { ThemeProvider } from "../../contexts/ThemeContext";
 import { DEFAULT_DATA, type LocalFinancials } from "../../lib/localData";
@@ -19,8 +19,11 @@ const EUROPE = trip("eu", "Europe", "2025-06-01", "2025-06-20", [
 const NEW_YEAR = trip("ny", "New Year in Beirut", "2025-12-30", "2026-01-03", [{ id: "e", countryCode: "LB", city: "Beirut" }]);
 const SPRING = trip("sp", "Spring", "2026-03-01", "2026-03-05");
 const OLD = trip("old", "Paris 2023", "2023-04-10", "2023-04-15", [{ id: "f", countryCode: "FR", city: "Paris" }]);
-const show = (trips: StoredTrip[]) =>
+// Phase 1c: a trip with a country opens Trips on Map, so these tap "List" first (TripsScreen.map.test.tsx).
+const show = (trips: StoredTrip[]) => {
   render(<ThemeProvider><TripsScreen financials={{ ...DEFAULT_DATA, lbpRate: 89_500, lbpRateHistory: [], transactions: [], trips } as LocalFinancials} onChange={vi.fn()} /></ThemeProvider>);
+  fireEvent.click(screen.getByRole("button", { name: "List" }));
+};
 
 it("years as headings, newest first, each trip under the year it starts in, newest first", () => {
   show([OLD, EUROPE, SPRING, NEW_YEAR]);

@@ -116,13 +116,14 @@ describe("a new trip's countries and cities", () => {
     expect(stopsOf(written())).toEqual([{ countryCode: "LB", city: "Zahlé", lat: 33.85, lon: 35.9 }]);
   });
 
-  it("a typed city the list doesn't hold: told it won't be on the map, and saved as typed, with no point", async () => {
+  // Phase 1c: item 8's 1c wording, now that "Place on map" exists (owner-approved; components/travel/PlaceOnMap.test.tsx).
+  it("a typed city the list doesn't hold: told it can be placed on the map, and saved as typed, with no point", async () => {
     serve();
     const { written } = show();
     dates();
     addCountry("leb", "Lebanon");
     typeCity("Batroun");
-    expect(await newForm().findByText("Not in the list. It'll be saved as you typed it, but won't appear on the map.")).toBeTruthy();
+    expect(await newForm().findByText("Not in the list. It'll be saved as you typed it. Use Place on map to show it on the map.")).toBeTruthy();
     save();
     expect(stopsOf(written())).toEqual([{ countryCode: "LB", city: "Batroun" }]);
   });
@@ -202,7 +203,9 @@ describe("editing a trip's countries and cities", () => {
     stops: [{ id: "s1", countryCode: "FR", city: "Paris", lat: 48.85, lon: 2.35 }, { id: "s2", countryCode: "IT", city: "Rome", lat: 41.89, lon: 12.48 }, { id: "s3", countryCode: "FR", city: "Lyon" }, { id: "s4", countryCode: "MT" }],
     createdAt: "2026-11-05T09:00:00.000Z", updatedAt: "2026-11-05T09:00:00.000Z",
   };
+  // Phase 1c: a trip with a country opens Trips on Map; its card is under "List".
   const openEdit = () => {
+    fireEvent.click(screen.getByRole("button", { name: "List" }));
     fireEvent.click(screen.getByRole("button", { name: "Edit trip" }));
     return within(screen.getByRole("form", { name: "Edit trip" }));
   };

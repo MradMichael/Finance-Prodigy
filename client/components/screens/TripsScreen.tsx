@@ -11,7 +11,7 @@
 // Deleting a trip keeps its rows' tags (owner, approved). Each card also
 // shows each sheet's balance and opens the Currency screen's own foreign-cash
 // forms, its trip preset (session 20, item 1; approved labels only).
-import { Fragment, useCallback, useState } from "react";
+import { Fragment, useCallback, useEffect, useState, type ComponentType } from "react";
 import type { LocalFinancials } from "../../lib/localData";
 import { categoryLabel, fmtDate, moneyEquals, MONEY_MAX_USD } from "../../lib/localData";
 import { dayLabel } from "../../lib/period";
@@ -24,6 +24,14 @@ import { ExchangeForm, SpendForm } from "../ForeignCashForms";
 import CategoryOptions from "../form/CategoryOptions";
 import StopFields, { placesOf, stopsOf, type CitiesState, type PlaceDraft } from "../travel/StopFields";
 import { countryName, loadCities, type CityRow } from "../../lib/places";
+import { todayCalendarDay } from "../../lib/calendarDay";
+
+/**
+ * Travel map plan, Phase 1c: the Map view's panel (components/travel/MapPanel.tsx), loaded only by the dynamic
+ * import below when Map opens. Never imported statically, not even its types: preloadScreens fetches every
+ * screen's code, so a static import would put the map's code (d3-geo, topojson-client) on every device.
+ */
+type MapPanelProps = { trips: StoredTrip[]; today: string; onAddTrip: () => void; onShowTrip: (tripId: string) => void };
 
 const usd = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 const num = (s: string) => parseFloat(s.replace(/,/g, ""));
@@ -149,6 +157,39 @@ export default function TripsScreen({ financials, onChange }: { financials: Loca
     if (years.at(-1)?.[0] === y) years.at(-1)![1].push(t); else years.push([y, [t]]);
   }
 
+  // Travel map plan, Phase 1c: Map or List. Opens on Map once a trip has a country, otherwise on List, as Trips
+  // always has (owner, 2026-11-05). The New trip form stays at the bottom in both.
+  const hasPlaces = trips.some((t) => (t.stops ?? []).length > 0);
+  const [view, setView] = useState<"map" | "list">(hasPlaces ? "map" : "list");
+  const [Panel, setPanel] = useState<ComponentType<MapPanelProps> | null>(null);
+  const [panelFailed, setPanelFailed] = useState(false);
+  const [panelAttempt, setPanelAttempt] = useState(0);
+  useEffect(() => {
+    if (view !== "map" || Panel) return;
+    let live = true;
+    setPanelFailed(false);
+    import("../travel/MapPanel").then((m) => { if (live) setPanel(() => m.default); }, () => { if (live) setPanelFailed(true); });
+    return () => { live = false; };
+  }, [view, Panel, panelAttempt]);
+  // A trip's name in a country's sheet: its card in the List, focused (and scrolled to, where the browser can).
+  const [showTripId, setShowTripId] = useState<string | null>(null);
+  useEffect(() => {
+    if (view !== "list" || !showTripId) return;
+    const card = document.getElementById(`trip-card-${showTripId}`);
+    card?.scrollIntoView?.({ block: "start" });
+    card?.focus();
+    setShowTripId(null);
+  }, [view, showTripId]);
+  const showTrip = useCallback((id: string) => { setView("list"); setShowTripId(id); }, []);
+  // "Add a trip" (the Map view's empty state): the New trip form's Name.
+  const addTrip = useCallback(() => {
+    const name = document.getElementById("trip-name");
+    name?.scrollIntoView?.({ block: "center" });
+    name?.focus();
+  }, []);
+  const today = todayCalendarDay();
+  const seg = (active: boolean) => ({ minHeight: 44, background: active ? T.brass20 : T.ink, border: `1px solid ${active ? T.brass : T.line}`, color: active ? T.text : T.mute });
+
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [error, setError] = useState("");
   // One trip's edit form open at a time.
@@ -208,9 +249,22 @@ export default function TripsScreen({ financials, onChange }: { financials: Loca
           <p className="text-sm mt-2" style={{ color: T.mute }}>A trip&apos;s budget against what it actually cost, in dollars at what you paid.</p>
         </div>
 
-        {trips.length === 0 && <p className="text-sm" style={{ color: T.mute }}>No trips yet.</p>}
+        <div className="flex gap-2">
+          <button type="button" aria-pressed={view === "map"} onClick={() => setView("map")} className="px-4 rounded-xl text-sm font-semibold" style={seg(view === "map")}>Map</button>
+          <button type="button" aria-pressed={view === "list"} onClick={() => setView("list")} className="px-4 rounded-xl text-sm font-semibold" style={seg(view === "list")}>List</button>
+        </div>
 
-        {years.map(([year, inYear]) => (
+        {view === "map" && (Panel ? <Panel trips={trips} today={today} onAddTrip={addTrip} onShowTrip={showTrip} />
+          : panelFailed ? (
+            <div role="status" className="rounded-2xl p-5 space-y-3" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
+              <p className="text-sm" style={{ color: T.text }}>Couldn&apos;t load the map. Your trips are safe. They&apos;re all in the list.</p>
+              <button type="button" onClick={() => setPanelAttempt((n) => n + 1)} className="px-4 rounded-xl text-sm font-semibold" style={{ background: T.jade, color: T.ink, minHeight: 44 }}>Try again</button>
+            </div>
+          ) : <div className="w-full rounded-xl animate-pulse" style={{ aspectRatio: "960 / 468", background: T.panelSoft, border: `1px solid ${T.line}` }} />)}
+
+        {view === "list" && trips.length === 0 && <p className="text-sm" style={{ color: T.mute }}>No trips yet.</p>}
+
+        {view === "list" && years.map(([year, inYear]) => (
           <Fragment key={year}>
           <h2 className="text-xl pt-2 tabular-nums" style={{ ...SERIF, color: T.mute }}>{year}</h2>
           {inYear.map((trip) => {
@@ -220,7 +274,7 @@ export default function TripsScreen({ financials, onChange }: { financials: Loca
           const view = tripCategoryView(financials, trip);
           const untagged = untaggedDuringTrip(financials, trip);
           return (
-            <section key={trip.id} aria-label={trip.name} className="rounded-2xl p-5 space-y-3" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
+            <section key={trip.id} id={`trip-card-${trip.id}`} tabIndex={-1} aria-label={trip.name} className="rounded-2xl p-5 space-y-3" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h3 className="text-lg" style={{ ...SERIF, color: T.text }}>{trip.name}</h3>
