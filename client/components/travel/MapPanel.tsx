@@ -9,15 +9,22 @@
 //     shape while they do (brief §5: honest loading, no spinner forever), "Still
 //     loading the map…" past 10 seconds, and on failure the approved line with
 //     "Try again". The trips are never affected; the List has them all.
-import { useCallback, useEffect, useState } from "react";
+//   - Under the map, the keyboard and screen-reader route (the map itself is
+//     hidden from them): "Countries visited (N)", N visited only, and below it
+//     "Planned (N)" for countries with only planned trips (owner). Either list,
+//     or the map, opens a country's sheet (CountrySheet).
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTheme } from "../../contexts/ThemeContext";
 import { loadWorld, type World } from "../../lib/worldMap";
 import type { StoredTrip } from "../../lib/trips";
+import { visitedCountries } from "../../lib/travel";
+import { countryName } from "../../lib/places";
 import TravelMap from "./TravelMap";
+import CountrySheet from "./CountrySheet";
 
 const SLOW_MS = 10_000;
 
-export default function MapPanel({ trips, today, onAddTrip }: {
+export default function MapPanel({ trips, today, onAddTrip, onShowTrip }: {
   trips: StoredTrip[]; today: string; onAddTrip: () => void; onShowTrip: (tripId: string) => void;
 }) {
   const T = useTheme();
@@ -26,6 +33,8 @@ export default function MapPanel({ trips, today, onAddTrip }: {
   const [failed, setFailed] = useState(false);
   const [slow, setSlow] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const [selected, setSelected] = useState<string | null>(null);
+  const lists = useMemo(() => visitedCountries(trips, today), [trips, today]);
 
   useEffect(() => {
     if (!hasPlaces || world) return;
@@ -61,5 +70,28 @@ export default function MapPanel({ trips, today, onAddTrip }: {
       </div>
     );
   }
-  return <TravelMap world={world} trips={trips} today={today} />;
+  const byName = (codes: string[]) => codes.map((code) => ({ code, name: countryName(code) })).sort((a, b) => a.name.localeCompare(b.name));
+  const list = (title: string, codes: string[]) => (
+    <div className="space-y-2">
+      <h3 className="text-[10px] uppercase tracking-widest font-medium" style={{ color: T.mute }}>{title}</h3>
+      <ul className="flex flex-wrap gap-2">
+        {byName(codes).map((c) => (
+          <li key={c.code}>
+            <button type="button" onClick={() => setSelected(c.code)} aria-pressed={selected === c.code} className="px-3 rounded-lg text-xs"
+              style={{ minHeight: 44, background: selected === c.code ? T.brass20 : T.ink, border: `1px solid ${selected === c.code ? T.brass : T.line}`, color: T.text }}>{c.name}</button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+  return (
+    <div className="space-y-4">
+      <div className={selected ? "sm:grid sm:grid-cols-[2fr_1fr] sm:gap-4 sm:items-start" : ""}>
+        <TravelMap world={world} trips={trips} today={today} onCountry={setSelected} selected={selected} />
+        {selected && <CountrySheet code={selected} trips={trips} today={today} onClose={() => setSelected(null)} onShowTrip={onShowTrip} />}
+      </div>
+      {list(`Countries visited (${lists.visited.length})`, lists.visited)}
+      {lists.planned.length > 0 && list(`Planned (${lists.planned.length})`, lists.planned)}
+    </div>
+  );
 }
