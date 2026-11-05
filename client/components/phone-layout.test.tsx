@@ -36,9 +36,10 @@ describe("U3: notices clear the phone's bars", () => {
   it("the merge notice and the action toast sit above the bottom navigation below md", () => {
     const merge = src("app/page.tsx").match(/\{mergeNotice && \(\s*<div\s+className="([^"]+)"/);
     const toast = src("components/InputPanel.tsx").match(/\{actionMsg && \(\s*<div\s+className="([^"]+)"/);
-    for (const m of [merge, toast]) {
+    // PWA P2 (2026-11-05): below md, the same 4.75rem plus the home indicator's inset (viewport-fit=cover).
+    for (const [m, below] of [[merge, /(^| )bottom-\[4\.75rem\]( |$)/], [toast, /(^| )bottom-\[calc\(4\.75rem\+env\(safe-area-inset-bottom\)\)\]( |$)/]] as const) {
       expect(m).not.toBeNull();
-      expect(m![1]).toMatch(/(^| )bottom-\[4\.75rem\]( |$)/);
+      expect(m![1]).toMatch(below);
       expect(m![1]).toMatch(/(^| )md:bottom-4( |$)/);
     }
   });
