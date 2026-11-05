@@ -15,6 +15,24 @@
 // Units (2.4.138): every `…USD` figure is USD; tripForeignSpends' amounts are
 // in their currency `code`.
 import { activeTransactions, edited, makeToUSDOn, recordDeletion, uid, TRAVEL_CATEGORY_KEYS, type LocalFinancials, type StoredTransaction } from "./localData";
+import { COUNTRY_CODES } from "./countryCodes";
+
+/**
+ * Travel map plan, Phase 1a (owner-approved): one place on a trip, in route
+ * order. Units: `countryCode` is ISO 3166-1 alpha-2 (Kosovo XK, as
+ * lib/countryCodes.ts lists them); `lat`/`lon` are WGS84 degrees, both or
+ * neither. No date: a stop has the trip's dates (owner).
+ */
+export interface TripStop {
+  id: string;
+  countryCode: string;
+  /** As picked or typed; absent = the country only. */
+  city?: string;
+  lat?: number;
+  lon?: number;
+}
+/** A stop as a form gives it: no id yet, a code in any case. */
+export type TripStopInput = { id?: string; countryCode: string; city?: string; lat?: number; lon?: number };
 
 export interface StoredTrip {
   id: string;
@@ -25,6 +43,10 @@ export interface StoredTrip {
   budgetUSD: number;
   /** Optional budgets by category key, USD. */
   categoryBudgetsUSD?: Record<string, number>;
+  /** Travel map plan, Phase 1a: the countries and cities, in route order. Absent = none (every trip before it). */
+  stops?: TripStop[];
+  /** Travel map plan, Phase 1a: free text, trimmed. */
+  notes?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -32,10 +54,53 @@ export interface StoredTrip {
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const SPENDING = new Set(["NEEDS", "WANTS", "SAVINGS"]);
 
-/** A new trip, checked: a name, dates in order, budgets that aren't negative. */
-export function buildTrip(p: { name: string; startDate: string; endDate: string; budgetUSD: number; categoryBudgetsUSD?: Record<string, number> }, now: Date = new Date()):
-  { ok: true; trip: StoredTrip } | { ok: false; reason: "name" | "dates" | "budget" } {
-  const name = p.name.trim();
+export type TripRefusal = "name" | "dates" | "budget" | "stops";
+
+const inRange = (v: number | undefined, max: number) => typeof v === "number" && Number.isFinite(v) && Math.abs(v) <= max;
+
+/**
+ * Travel map plan, Phase 1a: a form's stops, checked and tidied, or null when
+ * one can't be kept (a country lib/countryCodes.ts doesn't list; coordinates
+ * unpaired, not numbers, or out of range). City names are trimmed, an empty
+ * one is none. A country named again without a city adds nothing, so it's
+ * dropped; two cities in one country are both kept.
+ */
+function checkStops(input: TripStopInput[]): TripStop[] | null {
+  const out: TripStop[] = [];
+  for (const s of input) {
+    const countryCode = s.countryCode.trim().toUpperCase();
+    if (!COUNTRY_CODES.has(countryCode)) return null;
+    const hasLat = s.lat !== undefined, hasLon = s.lon !== undefined;
+    if (hasLat !== hasLon || (hasLat && !(inRange(s.lat, 90) && inRange(s.lon, 180)))) return null;
+    const city = s.city?.trim();
+    out.push({ id: s.id || uid(), countryCode, ...(city ? { city } : {}), ...(hasLat ? { lat: s.lat, lon: s.lon } : {}) });
+  }
+  return out.filter((s, i) => s.city || !out.some((o, j) => o.countryCode === s.countryCode && (o.city || j < i)));
+}
+
+let regionNames: Intl.DisplayNames | null = null;
+/**
+ * Owner (after Phase 0): a blank name is the trip's countries, in English, in
+ * route order, each once ("France, Italy, Malta"). Stored as the name, so the
+ * six files that name a trip read it unchanged.
+ */
+export function defaultTripName(stops: Pick<TripStop, "countryCode">[]): string {
+  regionNames ??= new Intl.DisplayNames(["en"], { type: "region" });
+  return [...new Set(stops.map((s) => s.countryCode))].map((c) => regionNames!.of(c) ?? c).join(", ");
+}
+
+/**
+ * A new trip, checked: a name, dates in order, budgets that aren't negative,
+ * stops that can be kept (Phase 1a). A bad stop is refused before a blank
+ * name is filled from the stops.
+ */
+export function buildTrip(
+  p: { name: string; startDate: string; endDate: string; budgetUSD: number; categoryBudgetsUSD?: Record<string, number>; stops?: TripStopInput[]; notes?: string },
+  now: Date = new Date(),
+): { ok: true; trip: StoredTrip } | { ok: false; reason: TripRefusal } {
+  const stops = checkStops(p.stops ?? []);
+  if (!stops) return { ok: false, reason: "stops" };
+  const name = p.name.trim() || defaultTripName(stops);
   if (!name) return { ok: false, reason: "name" };
   if (!p.startDate || !p.endDate || p.endDate < p.startDate) return { ok: false, reason: "dates" };
   const budgets = Object.values(p.categoryBudgetsUSD ?? {});
@@ -46,6 +111,8 @@ export function buildTrip(p: { name: string; startDate: string; endDate: string;
     trip: {
       id: uid(), name, startDate: p.startDate, endDate: p.endDate, budgetUSD: round2(p.budgetUSD),
       ...(budgets.length ? { categoryBudgetsUSD: Object.fromEntries(Object.entries(p.categoryBudgetsUSD!).map(([k, v]) => [k, round2(v)])) } : {}),
+      ...(stops.length ? { stops } : {}),
+      ...(p.notes?.trim() ? { notes: p.notes.trim() } : {}),
       createdAt: at, updatedAt: at,
     },
   };
@@ -57,17 +124,20 @@ export function buildTrip(p: { name: string; startDate: string; endDate: string;
  * change. Rows aren't touched, so every tag stays. A trip that's gone
  * (deleted on another device) isn't brought back.
  * Travel map plan, Phase 0 (owner-approved): a field the form doesn't set
- * (one newer code wrote: a trip's cities, its notes) is kept. The fields it
- * does set are replaced, and one it leaves out (no category budgets) is gone.
+ * (one newer code wrote) is kept. The fields it does set are replaced, and
+ * one it leaves out (no category budgets) is gone.
+ * Phase 1a: stops and notes are fields it sets, but only when the edit sends
+ * them: an edit without them (today's form) keeps the trip's own. A name left
+ * blank re-fills from the stops the trip has after the edit (owner).
  */
 export function editTrip(data: LocalFinancials, tripId: string, p: Parameters<typeof buildTrip>[0], now: Date = new Date()):
-  { ok: true; data: LocalFinancials } | { ok: false; reason: "name" | "dates" | "budget" } {
+  { ok: true; data: LocalFinancials } | { ok: false; reason: TripRefusal } {
   const old = (data.trips ?? []).find((t) => t.id === tripId);
   if (!old) return { ok: true, data };
-  const r = buildTrip(p, now);
+  const r = buildTrip({ ...p, stops: p.stops ?? old.stops, notes: p.notes ?? old.notes }, now);
   if (!r.ok) return r;
   const { id: _new, createdAt: _created, ...fields } = r.trip;
-  const { name: _n, startDate: _s, endDate: _e, budgetUSD: _b, categoryBudgetsUSD: _c, updatedAt: _u, ...kept } = old;
+  const { name: _n, startDate: _s, endDate: _e, budgetUSD: _b, categoryBudgetsUSD: _c, stops: _st, notes: _no, updatedAt: _u, ...kept } = old;
   const trip: StoredTrip = { ...kept, id: old.id, ...fields, createdAt: old.createdAt };
   return { ok: true, data: { ...data, trips: (data.trips ?? []).map((t) => (t.id === tripId ? trip : t)) } };
 }

@@ -14,7 +14,7 @@
 import { describe, it, expect } from "vitest";
 import { DEFAULT_DATA, softDelete, isEmptyFinancials, buildTransferTx, type LocalFinancials, type StoredTransaction } from "./localData";
 import { buildExchange, buildChangeBack, buildForeignEntry } from "./foreignCash";
-import { buildTrip, editTrip, tripActual, tripForeignSpends, suggestedTripId, deleteTrip, type StoredTrip } from "./trips";
+import { buildTrip, editTrip, defaultTripName, tripActual, tripForeignSpends, suggestedTripId, deleteTrip, type StoredTrip } from "./trips";
 
 const RATE = 89_500;
 const LISBON: StoredTrip = { id: "trip-lis", name: "Lisbon", startDate: "2026-11-02", endDate: "2026-11-09", budgetUSD: 1200, categoryBudgetsUSD: { dining: 400, transport: 150 }, createdAt: "2026-10-12T09:00:00.000Z", updatedAt: "2026-10-12T09:00:00.000Z" };
@@ -157,6 +157,118 @@ describe("editing a trip", () => {
     expect(r.data.trips!.find((t) => t.id === "trip-rome")).toEqual(rome);
     const gone = data([], [rome]);
     expect(editTrip(gone, "trip-lis", p)).toEqual({ ok: true, data: gone });
+  });
+});
+
+// Travel map plan, Phase 1a (owner-approved): a trip's countries and cities (`stops`, in route
+// order) and its notes. A stop is a country (ISO 3166-1 alpha-2, Kosovo XK), optionally a city
+// and its coordinates (WGS84 degrees, both or neither). A trip with no stops is still a trip.
+describe("a trip's countries, cities and notes", () => {
+  const base = { name: "Europe", startDate: "2025-06-01", endDate: "2025-06-20", budgetUSD: 0 };
+  const built = (p: Partial<Parameters<typeof buildTrip>[0]>) => buildTrip({ ...base, ...p });
+  const stopsOf = (r: ReturnType<typeof buildTrip>) => (r.ok ? r.trip.stops?.map(({ id: _id, ...s }) => s) : r.reason);
+
+  it("keeps stops in route order, each with an id; a city's name is trimmed, and an empty one is none", () => {
+    const r = built({ stops: [{ countryCode: "FR", city: " Paris ", lat: 48.85, lon: 2.35 }, { countryCode: "IT", city: "Rome" }, { countryCode: "MT", city: "  " }] });
+    expect(stopsOf(r)).toEqual([{ countryCode: "FR", city: "Paris", lat: 48.85, lon: 2.35 }, { countryCode: "IT", city: "Rome" }, { countryCode: "MT" }]);
+    if (!r.ok) throw new Error("refused");
+    expect(r.trip.stops!.every((s) => typeof s.id === "string" && s.id.length > 0)).toBe(true);
+    expect(new Set(r.trip.stops!.map((s) => s.id)).size).toBe(3);
+  });
+
+  it("keeps a stop's id when it has one", () => {
+    const r = built({ stops: [{ id: "s-paris", countryCode: "FR", city: "Paris" }] });
+    expect(r.ok && r.trip.stops![0].id).toBe("s-paris");
+  });
+
+  it("drops a country named again without a city; a country named twice with cities keeps both", () => {
+    expect(stopsOf(built({ stops: [{ countryCode: "FR", city: "Paris" }, { countryCode: "FR" }, { countryCode: "IT" }, { countryCode: "IT" }, { countryCode: "FR", city: "Lyon" }] })))
+      .toEqual([{ countryCode: "FR", city: "Paris" }, { countryCode: "IT" }, { countryCode: "FR", city: "Lyon" }]);
+  });
+
+  it("reads a country code in any case, with spaces", () => {
+    expect(stopsOf(built({ stops: [{ countryCode: " lb ", city: "Batroun" }] }))).toEqual([{ countryCode: "LB", city: "Batroun" }]);
+  });
+
+  it("refuses a country it doesn't know, and coordinates out of range, unpaired or not numbers", () => {
+    for (const s of [
+      { countryCode: "ZZ" }, { countryCode: "" }, { countryCode: "FRA" },
+      { countryCode: "FR", lat: 91, lon: 0 }, { countryCode: "FR", lat: 0, lon: -181 },
+      { countryCode: "FR", lat: 48.85 }, { countryCode: "FR", lon: 2.35 },
+      { countryCode: "FR", lat: Number.NaN, lon: 2 }, { countryCode: "FR", lat: 1, lon: Number.POSITIVE_INFINITY },
+    ]) expect(built({ stops: [s] }), JSON.stringify(s)).toEqual({ ok: false, reason: "stops" });
+    expect(stopsOf(built({ stops: [{ countryCode: "XK", city: "Pristina", lat: 90, lon: -180 }] }))).toEqual([{ countryCode: "XK", city: "Pristina", lat: 90, lon: -180 }]);
+  });
+
+  it("no stops, or an empty list, is a trip without any (as every trip before this)", () => {
+    for (const r of [built({}), built({ stops: [] })]) {
+      if (!r.ok) throw new Error("refused");
+      expect(r.trip).not.toHaveProperty("stops");
+    }
+  });
+
+  it("keeps notes trimmed; empty notes are none", () => {
+    const r = built({ notes: "  Fado night in Alfama \n" });
+    expect(r.ok && r.trip.notes).toBe("Fado night in Alfama");
+    const none = built({ notes: "   " });
+    expect(none.ok && none.trip).not.toHaveProperty("notes");
+  });
+
+  // Owner (session after Phase 0): a blank name is the trip's countries, in English, in route
+  // order, each once. Stored as the name, so every screen that names a trip reads it unchanged.
+  it("a blank name is its countries' names in route order, each once", () => {
+    const r = built({ name: "  ", stops: [{ countryCode: "FR", city: "Paris" }, { countryCode: "IT" }, { countryCode: "FR", city: "Lyon" }, { countryCode: "MT" }] });
+    expect(r.ok && r.trip.name).toBe("France, Italy, Malta");
+    expect(defaultTripName([{ countryCode: "XK" }, { countryCode: "LB" }])).toBe("Kosovo, Lebanon");
+  });
+
+  it("a blank name with no countries is still refused", () => {
+    expect(built({ name: "" })).toEqual({ ok: false, reason: "name" });
+  });
+
+  it("a bad stop is refused before the name is filled from it", () => {
+    expect(built({ name: "", stops: [{ countryCode: "ZZ" }] })).toEqual({ ok: false, reason: "stops" });
+  });
+});
+
+describe("editing a trip's countries, cities and notes", () => {
+  const p = { name: "Lisbon", startDate: "2026-11-02", endDate: "2026-11-09", budgetUSD: 1200 };
+  const withStops = { ...LISBON, stops: [{ id: "s1", countryCode: "PT", city: "Lisbon", lat: 38.72, lon: -9.14 }], notes: "Fado" } as StoredTrip;
+
+  it("an edit that doesn't send stops or notes keeps them (today's form sends neither)", () => {
+    const r = editTrip(data([], [withStops]), "trip-lis", { ...p, budgetUSD: 900 });
+    if (!r.ok) throw new Error("refused");
+    expect(r.data.trips![0]).toMatchObject({ budgetUSD: 900, stops: withStops.stops, notes: "Fado" });
+  });
+
+  it("an edit that sends them replaces them; an empty list and empty notes clear them", () => {
+    const r = editTrip(data([], [withStops]), "trip-lis", { ...p, stops: [{ id: "s1", countryCode: "PT", city: "Lisbon", lat: 38.72, lon: -9.14 }, { countryCode: "PT", city: "Porto" }], notes: "Fado, then port" });
+    if (!r.ok) throw new Error("refused");
+    expect(r.data.trips![0].stops!.map((s) => s.city)).toEqual(["Lisbon", "Porto"]);
+    expect(r.data.trips![0].stops![0].id).toBe("s1");
+    expect(r.data.trips![0].notes).toBe("Fado, then port");
+    const cleared = editTrip(data([], [withStops]), "trip-lis", { ...p, stops: [], notes: "" });
+    if (!cleared.ok) throw new Error("refused");
+    expect(cleared.data.trips![0]).not.toHaveProperty("stops");
+    expect(cleared.data.trips![0]).not.toHaveProperty("notes");
+  });
+
+  // Owner: a name left blank on edit re-fills from the countries the trip has after the edit.
+  it("a name left blank re-fills from the countries after the edit", () => {
+    const kept = editTrip(data([], [withStops]), "trip-lis", { ...p, name: "" });
+    expect(kept.ok && kept.data.trips![0].name).toBe("Portugal");
+    const changed = editTrip(data([], [withStops]), "trip-lis", { ...p, name: " ", stops: [{ countryCode: "ES" }, { countryCode: "PT" }] });
+    expect(changed.ok && changed.data.trips![0].name).toBe("Spain, Portugal");
+  });
+
+  it("a name left blank on a trip with no countries is refused, as before", () => {
+    expect(editTrip(data([]), "trip-lis", { ...p, name: "" })).toEqual({ ok: false, reason: "name" });
+  });
+
+  it("still keeps a field neither the form nor this code sets (Phase 0)", () => {
+    const newer = { ...withStops, futureField: { a: 1 } } as StoredTrip;
+    const r = editTrip(data([], [newer]), "trip-lis", { ...p, notes: "x" });
+    expect(r.ok && (r.data.trips![0] as StoredTrip & { futureField?: unknown }).futureField).toEqual({ a: 1 });
   });
 });
 
