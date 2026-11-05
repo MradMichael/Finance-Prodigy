@@ -26,6 +26,6 @@ describe("error reports", () => {
 
   it("the page's date moved with it", () => {
     render(<ThemeProvider><PrivacyPage /></ThemeProvider>);
-    expect(document.body.textContent).toContain("Last updated: 30 October 2026");
+    expect(document.body.textContent).toContain("Last updated: 5 November 2026");
   });
 });

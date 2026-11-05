@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useTheme } from "../../contexts/ThemeContext";
 
 const SERIF: React.CSSProperties = { fontFamily: "Spectral, Georgia, serif" };
-const LAST_UPDATED = "30 October 2026"; // INF-02 (approved and merged in session 31, the merge day)
+const LAST_UPDATED = "5 November 2026"; // the LB6 caveat (merged in session 43, the merge day); before it INF-02, 30 October 2026
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   const T = useTheme();
