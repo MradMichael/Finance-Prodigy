@@ -86,7 +86,8 @@ export default function MapPanel({ trips, today, onAddTrip, onShowTrip }: {
   );
   return (
     <div className="space-y-4">
-      <div className={selected ? "sm:grid sm:grid-cols-[2fr_1fr] sm:gap-4 sm:items-start" : ""}>
+      {/* Design pass, 5: the sheet opens below the map at its width (a bottom sheet on a phone), never beside it. */}
+      <div className="space-y-4">
         <TravelMap world={world} trips={trips} today={today} onCountry={setSelected} selected={selected} fitTo={lists.visited} />
         {selected && <CountrySheet code={selected} trips={trips} today={today} onClose={() => setSelected(null)} onShowTrip={onShowTrip} />}
       </div>
