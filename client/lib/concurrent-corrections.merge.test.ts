@@ -82,7 +82,35 @@ describe("the draft sentences (2.8.5e approves them)", () => {
   it("close, for the safety net", () => {
     expect(correctionSentence(c({ how: "close", account: "ef", key: "ef", name: "Safety net", result: 850 }))).toBe("Both devices corrected your safety net, and one of the corrections belongs to a closed cycle, so ESSA kept both: it now shows $850. If that's wrong, correct it once more.");
   });
-  it("crossed, for a debt in lira", () => {
-    expect(correctionSentence(c({ how: "crossed", account: "debt", key: "debt:d2", name: "Loan", currency: "LBP", kept: 90_000_000, other: null, moved: -1_000_000, result: 89_000_000 }))).toBe('One device set the debt "Loan" to L£90,000,000 while the other recorded a change of −L£1,000,000. ESSA kept both, so it now shows L£89,000,000. If L£90,000,000 was right, correct it once more.');
+  // 2.8.5e (owner, session 42): sentences 5 and 6 never show a signed figure;
+  // the action is named by account and direction (re-derived in
+  // concurrent-corrections.test.ts from real rows).
+  const crossed = (o: object) => c({ how: "crossed", other: null, ...o });
+  it("5, debt: a payment", () => {
+    expect(correctionSentence(crossed({ account: "debt", key: "debt:d2", name: "Loan", currency: "LBP", kept: 90_000_000, moved: -1_000_000, movedCount: 1, movedDirection: "down", result: 89_000_000 }))).toBe('One device set the debt "Loan" to L£90,000,000 while the other recorded a payment of L£1,000,000. ESSA kept both, so it now shows L£89,000,000. If L£90,000,000 was right, correct it once more.');
+  });
+  it("5, goal: a contribution", () => {
+    expect(correctionSentence(crossed({ kept: 600, moved: 50, movedCount: 1, movedDirection: "up", result: 650 }))).toBe('One device set the goal "Laptop" to $600 while the other recorded a contribution of $50. ESSA kept both, so it now shows $650. If $600 was right, correct it once more.');
+  });
+  it("5, safety net: a deposit, and a withdrawal", () => {
+    const ef = { account: "ef", key: "ef", name: "Safety net", kept: 900 };
+    expect(correctionSentence(crossed({ ...ef, moved: 200, movedCount: 1, movedDirection: "up", result: 1100 }))).toBe("One device set your safety net to $900 while the other recorded a deposit of $200. ESSA kept both, so it now shows $1,100. If $900 was right, correct it once more.");
+    expect(correctionSentence(crossed({ ...ef, moved: -300, movedCount: 1, movedDirection: "down", result: 600 }))).toBe("One device set your safety net to $900 while the other recorded a withdrawal of $300. ESSA kept both, so it now shows $600. If $900 was right, correct it once more.");
+  });
+  it("5, several in one direction: a count and a total (DRAFT, not yet approved)", () => {
+    expect(correctionSentence(crossed({ account: "debt", key: "debt:d1", name: "Car", kept: 5000, moved: -150, movedCount: 2, movedDirection: "down", result: 4850 }))).toBe('One device set the debt "Car" to $5,000 while the other recorded 2 payments totalling $150. ESSA kept both, so it now shows $4,850. If $5,000 was right, correct it once more.');
+  });
+  it("5, mixed or unexpected directions: no figure, no sign (DRAFT, not yet approved)", () => {
+    expect(correctionSentence(crossed({ account: "ef", key: "ef", name: "Safety net", kept: 900, moved: -100, movedCount: 2, movedDirection: "mixed", result: 800 }))).toBe("One device set your safety net to $900 while the other recorded other changes to it. ESSA kept both, so it now shows $800. If $900 was right, correct it once more.");
+    expect(correctionSentence(crossed({ account: "debt", key: "debt:d1", name: "Car", kept: 5000, moved: 100, movedCount: 1, movedDirection: "up", result: 5100 }))).toBe('One device set the debt "Car" to $5,000 while the other recorded other changes to it. ESSA kept both, so it now shows $5,100. If $5,000 was right, correct it once more.');
+  });
+  it("6, figure unknown: a contribution", () => {
+    expect(correctionSentence(crossed({ kept: null, moved: 50, movedCount: 1, movedDirection: "up", result: 650 }))).toBe('One device corrected the goal "Laptop" while the other recorded a contribution of $50. ESSA kept both, so it now shows $650. If that\'s wrong, correct it once more.');
+  });
+  it("no crossed sentence shows a signed figure", () => {
+    for (const [account, dir, moved] of [["ef", "up", 200], ["ef", "down", -300], ["debt", "down", -100], ["debt", "up", 100], ["goal", "up", 50], ["ef", "mixed", -100]] as const) {
+      const text = correctionSentence(crossed({ account, key: account, kept: 1000, moved, movedCount: 1, movedDirection: dir, result: 900 }));
+      expect(text).not.toMatch(/[−+-]\s?(\$|L£)\d/);
+    }
   });
 });

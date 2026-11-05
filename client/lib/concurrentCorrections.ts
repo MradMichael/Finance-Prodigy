@@ -43,8 +43,11 @@ export interface CorrectionClash {
   kept: number | null;
   /** The other side's latest statement (null as above; always null when crossed). */
   other: number | null;
-  /** crossed only: what the other side's movements changed the balance by. */
+  /** crossed only: what the other side's movements changed the balance by (internal: the notice never shows its sign). */
   moved?: number;
+  /** crossed only: how many movements, and which way each moved the balance: all up, all down, or mixed (one with no effect counts as mixed). */
+  movedCount?: number;
+  movedDirection?: "up" | "down" | "mixed";
   /** close and crossed: the balance now, with both kept. */
   result?: number;
   /** Fingerprint of the account and the rows involved: the same clash merged on two devices is one record. */
@@ -146,9 +149,13 @@ export function settleConcurrentCorrections(
       const result = a.balance(data);
       const ids = new Set(crossing.moves.map((t) => t.id));
       const without = a.balance({ ...data, transactions: txs.filter((t) => !ids.has(t.id)) });
+      // Each movement's own effect: the balance with every row, minus without that one.
+      const effects = crossing.moves.map((m) => roundMoney(result - a.balance({ ...data, transactions: txs.filter((t) => t.id !== m.id) })));
+      const movedDirection = effects.every((e) => e > 0) ? "up" : effects.every((e) => e < 0) ? "down" : "mixed";
       clashes.push({
         ...base, how: "crossed", kept: statedOf(latest(crossing.fix)), other: null,
-        moved: roundMoney(result - without), result, id: recordId(a.key, [...crossing.fix, ...crossing.moves]),
+        moved: roundMoney(result - without), movedCount: crossing.moves.length, movedDirection,
+        result, id: recordId(a.key, [...crossing.fix, ...crossing.moves]),
       });
     }
   }
