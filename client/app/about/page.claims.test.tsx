@@ -50,6 +50,14 @@ describe("About page: no privacy or encryption claims of its own", () => {
     expect(document.body.textContent).toMatch(/where your data is stored/i);
   });
 
+  // Session 42 (owner, item F): the badge keeps only the claim that holds --
+  // the copy in the browser is encrypted (AES-256-GCM, lib/crypto.ts); the
+  // server copy, with backup on, is not.
+  it("hero badge reads exactly 'Version 1.0 · encrypted in your browser'", () => {
+    render(<ThemeProvider><AboutPage /></ThemeProvider>);
+    expect(screen.getByText("Version 1.0 · encrypted in your browser")).toBeTruthy();
+  });
+
   it("names every theme the app has, not a stale count", () => {
     render(<ThemeProvider><AboutPage /></ThemeProvider>);
     const names = Object.values(THEMES).map((t) => t.name);

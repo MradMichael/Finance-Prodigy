@@ -120,7 +120,8 @@ export default function AboutPage() {
             className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs"
             style={{ background: T.jade + "18", color: T.jade, border: `1px solid ${T.jade}30` }}
           >
-            Version 1.0
+            {/* Session 42 (item F): only the claim that holds; the server copy (backup on) is not end-to-end encrypted. */}
+            Version 1.0 · encrypted in your browser
           </div>
         </section>
 
