@@ -22,6 +22,7 @@ import type { LocalFinancials } from "../../lib/localData";
 import { LOAD_FAILED, LOAD_FAILED_NEXT } from "../../lib/loadFailure";
 import { isAnalyticsOptedIn, setAnalyticsOptIn } from "../../lib/analytics";
 import { useTheme, useThemeControl } from "../../contexts/ThemeContext";
+import StorageKeep from "../../components/StorageKeep";
 import { THEMES, type ThemeKey } from "../../lib/theme";
 import Field from "../../components/form/Field";
 import { DateFieldDMY } from "../../components/form/Primitives";
@@ -837,6 +838,9 @@ export default function ProfilePage() {
               </div>
             )}
           </div>
+
+          {/* PWA P3 (owner-approved, 2026-11-05): what this browser says about keeping the data, and the ask. */}
+          <StorageKeep />
         </div>
 
         {/* Analytics opt-in */}
