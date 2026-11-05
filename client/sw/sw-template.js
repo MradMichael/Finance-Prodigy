@@ -73,6 +73,10 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("message", (event) => {
   if (event.data && event.data.type === "SKIP_WAITING") self.skipWaiting();
+  // PWA P5 (owner-approved, 2026-11-05): Profile's version line asks which build (and commit) this worker is.
+  if (event.data && event.data.type === "VERSION" && event.ports && event.ports[0]) {
+    event.ports[0].postMessage({ build: MANIFEST.build, commit: MANIFEST.commit || null });
+  }
 });
 
 self.addEventListener("fetch", (event) => {
