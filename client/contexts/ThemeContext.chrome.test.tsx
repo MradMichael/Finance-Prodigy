@@ -39,6 +39,28 @@ it("adds the tag if the page has none", async () => {
   await waitFor(() => expect(themeColor()).toEqual([THEMES.ember.ink]));
 });
 
+// Found in the browser check (production build, 375 px): moving from /sign-up to / client-side, Next re-applied
+// the layout's metadata and the tag read Ledger ink again under the Ivory theme. The theme's ink must win back.
+it("puts the theme's ink back when Next resets the tag's content on a page change", async () => {
+  localStorage.setItem("essa_theme", "midnight");
+  render(<ThemeProvider><Switch /></ThemeProvider>);
+  await waitFor(() => expect(themeColor()).toEqual([THEMES.midnight.ink]));
+  document.head.querySelector('meta[name="theme-color"]')!.setAttribute("content", "#0B1F1E");
+  await waitFor(() => expect(themeColor()).toEqual([THEMES.midnight.ink]));
+});
+
+it("puts the theme's ink back when Next replaces the tag with a new one", async () => {
+  localStorage.setItem("essa_theme", "midnight");
+  render(<ThemeProvider><Switch /></ThemeProvider>);
+  await waitFor(() => expect(themeColor()).toEqual([THEMES.midnight.ink]));
+  document.head.querySelector('meta[name="theme-color"]')!.remove();
+  const fresh = document.createElement("meta");
+  fresh.name = "theme-color";
+  fresh.content = "#0B1F1E";
+  document.head.appendChild(fresh);
+  await waitFor(() => expect(themeColor()).toEqual([THEMES.midnight.ink]));
+});
+
 it("gives the page body the theme's ink", async () => {
   localStorage.setItem("essa_theme", "obsidian");
   render(<ThemeProvider><Switch /></ThemeProvider>);
