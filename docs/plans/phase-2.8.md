@@ -20,7 +20,7 @@ out of it on purpose; ask the owner for them.
 ## 2.8.5 (LB3): built, held, not merged
 
 **Branch:** `claude/concurrent-corrections-2.8.5`, rebased onto `4733cd5`. Steps 2.8.5a–e are built, each
-tests-first. It waits for the owner's two-device check by hand; it is not merged before that.
+tests-first. **It is not merged until the owner's two-device check by hand passes.**
 
 Owner's decisions (sessions 42–43):
 - **Rule:** when two devices each correct the same account (safety net, a debt, a goal) before syncing,
@@ -32,6 +32,9 @@ Owner's decisions (sessions 42–43):
   other device's movement is named by account and direction (a payment, a contribution, a deposit, a
   withdrawal; the other way, or both ways at once, an increase or a decrease).
 - **Testing:** never against production. The owner checks two devices by hand.
+- **Approved (session 43):** several movements in one direction read as a count and a total ("2 payments
+  totalling $150"); movements that cancel out produce no notice, since the balance is then exactly what the
+  correction stated.
 - **Known limits:** device clocks decide "later"; the protection holds once every device runs the new code.
 
 ## The rest of 2.8: planned, not approved to build

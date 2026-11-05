@@ -73,8 +73,8 @@ This file records one feature's plan and the owner's decisions; it does not repl
 - **Q3:** **No iPhone startup images** for now.
 - **Q4:** Live checks on the **branch preview with a throwaway account** (deleted afterwards, rule 9). If
   deployment protection blocks installing there, check on production after merge.
-- **Q5:** P4's install card is **gated on LB3** (two devices double a goal/EF/debt correction) **and LB6**
-  (account deletion misses ~15 server rows), from another audit, and on the owner's iPhone storage check.
+- **Q5:** P4's install card is **gated on LB3 and LB6** (labels only; see `docs/plans/phase-2.8.md`), from
+  another audit, and on the owner's iPhone storage check.
 - **Q6:** P5 approved: it lets the owner confirm versions on the phone.
 - `persist()` runs **only from a button**, never on its own (Firefox answers it with a permission prompt).
 - The version line shows the **commit hash** (`VERCEL_GIT_COMMIT_SHA`, documented in `client/.env.example`
