@@ -1,6 +1,6 @@
 # ESSA — App readiness plan
 
-**Status:** website work for phases A0 and A1 is built on `claude/funny-allen-ksej82`, pushed and not merged. Nothing here is marked complete; only the owner does that (ROADMAP Rule 6).
+**Status:** website work for phases A0 and A1 is built on `claude/funny-allen-ksej82`, rebased onto `main` and pushed, not merged. Nothing here is marked complete; only the owner does that (ROADMAP Rule 6).
 **Written:** 2026-11-05, from a read-only assessment (2026-11-04) and the owner's decisions since.
 **Companions:** `docs/ROADMAP.md` Phase 7 (status and the app gate), `docs/CLAUDE_CODE_BRIEF.md` (standards).
 **Public repository:** live bugs are named here by label only. Their details stay in the audit, outside the repo.
@@ -31,6 +31,8 @@ Website first, app second, and free if possible.
 | D6 | The Projections test amount gets the whole-number keypad (its code rounds to a whole number). |
 | D7 | Sign-in small-print wording, as approved (see A1 below). |
 | D8 | The taller date field on touch screens is left as it is for now and logged as a later item (section 5). |
+| D9 | The sign-in storage note matches the sign-up caveat: 12 px (`text-xs`) in the main text colour, not muted. |
+| D10 | "How your data is stored" is a link on its own line, with a tap area at least 44 px tall. |
 
 ---
 
@@ -39,17 +41,18 @@ Website first, app second, and free if possible.
 Each phase can ship on its own and ends at a **SAFE STOP**.
 
 ### A0 — Roadmap truth pass (docs only). Built.
-- `849480c`: status lines corrected to match `main` (2.6.4, 2.7, Phase 7, the bundle figure, the Next.js and React backlog rows), each citing the commit that proves it.
-- `0757418`: decisions D1, D2, D3 and the app gate recorded under ROADMAP Phase 7, by label only.
-- `d1fa519`: own-work finding logged (Rule 17). A 375 px sweep measured one screen sixteen times because a blocking prompt covered the navigation. Sweeps now check they reached each screen before measuring it. It has no audit number yet; the owner assigns one.
+- `284619f`: status lines corrected to match `main` (2.6.4, 2.7, Phase 7, the bundle figure, the Next.js and React backlog rows), each citing the commit that proves it.
+- `072753a`: decisions D1, D2, D3 and the app gate recorded under ROADMAP Phase 7, by label only.
+- `366d0e1`: own-work finding logged (Rule 17). A 375 px sweep measured one screen sixteen times because a blocking prompt covered the navigation. Sweeps now check they reached each screen before measuring it. It has no audit number yet; the owner assigns one.
 - **SAFE STOP.**
 
 ### A1 — Phone correctness. Built.
-- `a600428`: on a touch screen, fields are 16 px, so iOS doesn't zoom on focus. Desktop is unchanged.
-- `9b619df`: on a touch screen, controls are at least 44 px to tap. Desktop is unchanged.
-- `580d0cd`: the password "Show" toggle is 44×44.
-- `8e7e46f`: all 10 number fields name their keyboard: decimal for 7, whole-number for 3, chosen from how each value is parsed.
-- `2d462a6`: the sign-in small print now reads, in the owner's words: "Your data is encrypted and stored in this browser. It's copied to our server only if you turn on backup, and that copy isn't end-to-end encrypted: the server can read it." It's followed by a "How your data is stored" link to `/privacy`.
+- `8583cb5`: on a touch screen, fields are 16 px, so iOS doesn't zoom on focus. Desktop is unchanged.
+- `0f10982`: on a touch screen, controls are at least 44 px to tap. Desktop is unchanged.
+- `d32e3d3`: the password "Show" toggle is 44×44.
+- `56eb358`: all 10 number fields name their keyboard: decimal for 7, whole-number for 3, chosen from how each value is parsed.
+- `f0b84d3`: the sign-in small print now reads, in the owner's words: "Your data is encrypted and stored in this browser. It's copied to our server only if you turn on backup, and that copy isn't end-to-end encrypted: the server can read it." It's followed by a "How your data is stored" link to `/privacy`.
+- `b7e212d`: D9 and D10. The note matches the sign-up caveat's size and colour, and the link sits on its own line, 159×44 at 375 px.
 - Tests were written first for each change. Measured at 375 px with touch emulation across all 16 screens: fields under 16 px went from 30 to 0, controls under 44 px from 99 to 9, with no horizontal scroll.
 - **SAFE STOP after each commit.**
 
@@ -82,7 +85,8 @@ A precache that survives one failed file; an end-to-end test of "edit offline, c
 
 ## 4. What's left before this branch merges
 
-- **Rebase:** waits for `claude/compassionate-edison-f58sbc` to merge into `main` (not merged as of 2026-11-05). Then rebase, keep both ROADMAP changes, re-run the full suite, push. Push only, never merge.
+- **Rebase: done, 2026-11-05.** `claude/compassionate-edison-f58sbc` merged into `main` (`dadd757`), and this branch was rebased onto it, then again onto `1169e8b` (no conflicts that time) before merging. One ROADMAP conflict, resolved keeping both: this branch's 2026-11-05 note, then `main`'s updated 2026-09-02 note (with its plan H 5a addition). Full suite after the first rebase: 2719 passed, 13 skipped; tsc and lint clean. The result of the second rebase is tested again before merging. The rebase changed every commit ID; the IDs above are the rebased ones.
+- **Merge:** into `main` with a merge commit, at the owner's request (2026-11-05).
 - **Owner's phone check:** see section 6.
 
 ---
@@ -91,7 +95,8 @@ A precache that survives one failed file; an end-to-end test of "edit offline, c
 
 - **The date field on touch screens is about 66 px tall**, next to 44 px fields: its segments get the 44 px minimum inside a padded box. Left as it is by decision (D8).
 - **Leftover small targets on touch screens:** the date field's DD and MM segments (32 wide × 44 tall, inside a full-height field) and the Projections range slider (excluded by design).
-- **The sign-in "How your data is stored" link** is inline in 10 px text, so its tap area is about 112×12. WCAG allows that for an inline link; the brief's 44 px standard doesn't. A bigger target would mean restyling the small print, and the reworded sign-up caveat on the other branch already uses 12 px body text. That's for the owner to decide.
+- ~~**The sign-in "How your data is stored" link** is inline in 10 px text, with a tap area of about 112×12.~~ **Done (`b7e212d`, D10):** on its own line, 159×44.
+- ~~**The sign-in note is muted 10 px text, while the sign-up caveat is 12 px body text.**~~ **Done (`b7e212d`, D9):** it now matches the sign-up caveat.
 - **A decimal keypad may show a comma** in some phone regions. Check that an amount typed with a comma saves.
 
 ---
@@ -101,6 +106,6 @@ A precache that survives one failed file; an end-to-end test of "edit offline, c
 1. On My Finances, Setup, Trips and Balance Check, tap the amount, description and date fields: no zoom.
 2. Number fields: income and amounts show a keypad with a decimal point; payday, emergency-fund months and the Projections test amount show digits only.
 3. Small controls are easy to hit: ✕ on Get Started, the ↑↓ priority arrows in Projections, "Recently deleted", the High/Medium/Low buttons, "Show" on sign-in.
-4. Sign-in: the new small print reads correctly and its link opens Privacy.
+4. Sign-in: the storage note reads correctly at the same size as sign-up's, and "How your data is stored" is easy to tap and opens Privacy.
 5. On a laptop, check nothing changed.
 6. After A2–A4 (PWA session): add ESSA to the home screen, then check whether the installed app sees the account; cold-start it in airplane mode; check the update notice after a deploy.
