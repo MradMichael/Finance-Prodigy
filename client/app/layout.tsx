@@ -23,6 +23,10 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: "#0B1F1E",
+  // PWA P2 (owner-approved, 2026-11-05): draw to the screen's edges so the browser reports the notch and
+  // home-indicator insets (env(safe-area-inset-*) reads 0 without this); the top bar, bottom navigation, pinned
+  // notices and page body pad themselves by them (components/shell/safe-area-shell.test.tsx, safe-area.test.ts).
+  viewportFit: "cover",
 };
 
 // Registers the service worker (owner, session 34, decision 26). public/sw.js is generated at build time
