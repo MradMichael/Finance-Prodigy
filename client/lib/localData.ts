@@ -1310,8 +1310,9 @@ export const MONEY_MAX_USD = 100_000_000;
 /**
  * Days without a rate edit before the LBP rate counts as stale.
  *
- * Shared by CurrencyScreen's RateStaleness indicator and computeDashboard's
- * `rate-stale` alert. One constant rather than two 14s, because the alert
+ * Read through rateAge (lib/rateAge.ts), the one function that applies it,
+ * by CurrencyScreen's RateStaleness indicator, computeDashboard's
+ * `rate-stale` alert and the entry form's RateAgeChip. One constant rather than two 14s, because the alert
  * exists precisely to say the same thing as the indicator on a screen the
  * user is more likely to be looking at -- two literals that mean "the same
  * threshold" and can drift apart is the shape this project keeps logging.

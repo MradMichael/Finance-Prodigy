@@ -3,8 +3,9 @@
 import { totalSpent } from "../../lib/spending";
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
-import { historizedRecurringContribution, moneyEquals, activeTransactions, LBP_RATE_STALE_DAYS, cycleStartDayOf, calendarDaysSince, recordRateEdit, confirmRate, lbpRateOf, makeToUSDLive } from "../../lib/localData";
+import { historizedRecurringContribution, moneyEquals, activeTransactions, cycleStartDayOf, recordRateEdit, confirmRate, lbpRateOf, makeToUSDLive } from "../../lib/localData";
 import { computeHoldingsByCurrency } from "../../lib/computeDashboard";
+import { rateAge } from "../../lib/rateAge";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
 import Donut from "../charts/Donut";
@@ -41,15 +42,18 @@ const LBP_RATE_MAX = 10_000_000;
 // stays silent (owner's answer 3), so it has nothing to confirm either.
 function RateStaleness({ updatedAt, rate, onConfirm, justConfirmed }: { updatedAt?: string; rate: number; onConfirm: () => void; justConfirmed: boolean }) {
   const T = useTheme();
-  if (!updatedAt) return null;
-  const days = calendarDaysSince(updatedAt); // COPY-08: calendar days, like the Overview alert
-  if (days < 3) {
+  // Phase 3 commit 1: thresholds and day-counting from rateAge, the one place
+  // they live (same values: nudge from 3, stale from 14, calendar days).
+  const age = rateAge(updatedAt);
+  if (!age) return null;
+  const days = age.ageDays;
+  if (age.level === "fresh") {
     // Said only on the visit the tap happened, so it reads as the answer to it.
     return justConfirmed ? (
       <p className="text-[11px] mt-1.5 px-1" style={{ color: T.mute }}>Rate confirmed today.</p>
     ) : null; // recently updated — no need to nag
   }
-  const stale = days >= LBP_RATE_STALE_DAYS;
+  const stale = age.level === "stale";
   const color = stale ? T.coral : T.brass;
   const label = `${days} days ago`; // never 1 (unreachable, gated above at days < 3)
   return (
