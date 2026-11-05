@@ -39,6 +39,7 @@ import { fingerprint, transactionFingerprint, settingValue, seenOf, SETTING_FIEL
 import { cycleLabelLong } from "./period";
 import type { ClosedEdit } from "./closedEditNotice";
 import type { ResetElsewhere } from "./resetNotice";
+import { settleConcurrentCorrections, type CorrectionClash } from "./concurrentCorrections";
 
 export type { Tombstone } from "./localData";
 export { stableStringify } from "./canonical";
@@ -300,7 +301,7 @@ function applyMergedUndos(side: LocalFinancials, merged: PeriodClose[]): LocalFi
 /** The fields mergeFinancials combines; every other field is this device's copy. */
 export const MERGED_FIELDS = [
   "transactions", "trackedBalances", "wishlist", "customCategories", "categoryRules", "periodCloses", "deletedKeys", "revivedKeys",
-  "clashRecords", "transactionClashRecords", "balanceClashRecords", "trips", "foreignEntries",
+  "clashRecords", "transactionClashRecords", "balanceClashRecords", "correctionClashRecords", "trips", "foreignEntries",
 ] as const satisfies readonly (keyof LocalFinancials)[];
 
 /**
@@ -463,7 +464,9 @@ export type MergeClash =
   // sentences; the merging device names it from the merge's own conflicts.
   // `how`: "newer" (the kept copy's edit time is later, or only it has one),
   // "tie" (the same time), "versions" (neither has one).
-  | { kind: "transaction"; name: string; kept: number; other: number; how: "newer" | "tie" | "versions"; keptCurrency?: "USD" | "LBP"; otherCurrency?: "USD" | "LBP" };
+  | { kind: "transaction"; name: string; kept: number; other: number; how: "newer" | "tie" | "versions"; keptCurrency?: "USD" | "LBP"; otherCurrency?: "USD" | "LBP" }
+  // Phase 2.8.5d: two devices' corrections to one account (lib/concurrentCorrections.ts).
+  | Omit<CorrectionClash, "id">;
 
 /**
  * Plan H 5d (owner, session 6): a settled clash as the copy keeps it, so every
@@ -790,7 +793,7 @@ const KNOWN_FIELDS = {
   cycleStartDayChangedAt: true, budgetRule: true, budgetCustomNeeds: true, budgetSplitHealedAt: true,
   budgetSplitHealedFrom: true, budgetCustomWants: true, customCategories: true, categoryRules: true, wishlist: true,
   recurringModelNoticeSeen: true, syncChoice: true, periodCloses: true, deletedKeys: true, resetAt: true,
-  revivedKeys: true, clashRecords: true, transactionClashRecords: true, balanceClashRecords: true, trips: true, foreignEntries: true,
+  revivedKeys: true, clashRecords: true, transactionClashRecords: true, balanceClashRecords: true, correctionClashRecords: true, trips: true, foreignEntries: true,
   lbpRateLog: true, salaryIntoBalanceId: true, freedMoneyTo: true,
 } as const satisfies Record<keyof LocalFinancials, true>;
 
@@ -893,10 +896,20 @@ export function mergeFinancials(localIn: LocalFinancials, serverIn: LocalFinanci
     balanceClashRecords: balanceClashRecords.length ? balanceClashRecords : undefined,
     ...(resetAt ? { resetAt } : {}),
   };
-  const data = resetHere ? withResetSettings(merged, localIn, serverIn, seen) : merged;
+  const settledData = resetHere ? withResetSettings(merged, localIn, serverIn, seen) : merged;
+  // Phase 2.8.5d (owner-approved, session 42): two devices' corrections to one
+  // account. The later statement stays and the other side's are soft-deleted;
+  // a correction crossing a movement, or a period close's row, is reported only
+  // (lib/concurrentCorrections.ts). Judged on the copies the transaction merge
+  // took (localU/serverU): a row one of them lacks was made since they last
+  // met. With or without a record of the last sync: the rule needs none.
+  const txIds = (d: LocalFinancials) => new Set((d.transactions ?? []).map((t) => t.id));
+  const corrections = settleConcurrentCorrections(settledData, txIds(localU), txIds(serverU), at);
+  const correctionClashRecords = mergeClashRecords(local.correctionClashRecords, server.correctionClashRecords, corrections.clashes.map((c): ClashRecord => ({ ...c, at })), now);
+  const data: LocalFinancials = { ...corrections.data, correctionClashRecords: correctionClashRecords.length ? correctionClashRecords : undefined };
   return {
     data,
-    clashes: [...(ruled?.clashes ?? []).filter(notReset), ...balanceSettled.map((x) => x.clash)],
+    clashes: [...(ruled?.clashes ?? []).filter(notReset), ...balanceSettled.map((x) => x.clash), ...corrections.clashes.map(({ id: _id, ...c }) => c)],
     transactions,
     localTransactions: localU.transactions,
     serverTransactions: serverU.transactions,

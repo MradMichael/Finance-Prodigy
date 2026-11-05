@@ -45,7 +45,7 @@ export interface CorrectionClash {
   other: number | null;
   /** crossed only: what the other side's movements changed the balance by. */
   moved?: number;
-  /** crossed only: the balance now, with both. */
+  /** close and crossed: the balance now, with both kept. */
   result?: number;
   /** Fingerprint of the account and the rows involved: the same clash merged on two devices is one record. */
   id: string;
@@ -129,7 +129,7 @@ export function settleConcurrentCorrections(
       const others = keptLocal ? fixS : fixL;
       const keptValue = statedOf(kept), otherValue = statedOf(latest(others));
       if (group.some((t) => closeRows.has(t.id))) {
-        clashes.push({ ...base, how: "close", kept: keptValue, other: otherValue, id: recordId(a.key, group) });
+        clashes.push({ ...base, how: "close", kept: keptValue, other: otherValue, result: a.balance(data), id: recordId(a.key, group) });
         continue;
       }
       for (const t of others) setAside.add(t.id);

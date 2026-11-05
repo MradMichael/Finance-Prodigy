@@ -10,6 +10,7 @@ import { loadSeen, saveSeen } from "./syncSeen";
 import { CLOSED_EDIT_SENTENCE, type ClosedEdit } from "./closedEditNotice";
 import { RESET_ELSEWHERE_SENTENCE, type ResetElsewhere } from "./resetNotice";
 import { noticeMoney } from "./noticeMoney";
+import { correctionSentence } from "./correctionNotice";
 
 /** Plan H 5b: after a successful push the server holds what this device holds (see saveSeen). */
 async function recordServerCopy(serverCopy: LocalFinancials): Promise<void> {
@@ -936,6 +937,8 @@ const CLASH_NOUNS = {
  * claims no "later". Both approved in session 6.
  */
 export function clashSentence(c: MergeClash): string {
+  // Phase 2.8.5d: two devices' corrections to one account. DRAFT wording (lib/correctionNotice.ts).
+  if (c.kind === "correction") return correctionSentence(c);
   // Item 7: a transaction's record, in the approved transaction sentences.
   if (c.kind === "transaction") {
     const kept = noticeMoney(c.kept, c.keptCurrency), other = noticeMoney(c.other, c.otherCurrency);

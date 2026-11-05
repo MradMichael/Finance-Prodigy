@@ -21,6 +21,8 @@ const COPY = {
   transactionClashRecords: [],
   // Session 39 (fix A): tracked balances' clash records, in their own field.
   balanceClashRecords: [{ id: "b1", at: "2026-11-04T09:00:00.000Z", key: "tb1", kind: "trackedBalance", name: "Wallet", later: true }],
+  // Phase 2.8.5d: two devices' corrections to one account, in their own field.
+  correctionClashRecords: [{ id: "k1", at: "2026-11-05T12:00:00.000Z", key: "goal:g1", kind: "correction", how: "later", account: "goal", name: "Laptop", currency: "USD", kept: 650, other: 600 }],
   // A field from a client newer than this server: kept, not refused.
   someFieldFromANewerClient: { anything: [1, "two"] },
 };
