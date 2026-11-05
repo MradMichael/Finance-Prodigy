@@ -11,7 +11,7 @@
 // Deleting a trip keeps its rows' tags (owner, approved). Each card also
 // shows each sheet's balance and opens the Currency screen's own foreign-cash
 // forms, its trip preset (session 20, item 1; approved labels only).
-import { useCallback, useState } from "react";
+import { Fragment, useCallback, useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
 import { categoryLabel, fmtDate, moneyEquals, MONEY_MAX_USD } from "../../lib/localData";
 import { dayLabel } from "../../lib/period";
@@ -23,7 +23,7 @@ import { fmtForeign, sheet, sheetCodes } from "../../lib/foreignCash";
 import { ExchangeForm, SpendForm } from "../ForeignCashForms";
 import CategoryOptions from "../form/CategoryOptions";
 import StopFields, { placesOf, stopsOf, type CitiesState, type PlaceDraft } from "../travel/StopFields";
-import { loadCities, type CityRow } from "../../lib/places";
+import { countryName, loadCities, type CityRow } from "../../lib/places";
 
 const usd = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 const num = (s: string) => parseFloat(s.replace(/,/g, ""));
@@ -40,6 +40,20 @@ function categoryLine(label: string, r: TripCategoryRow): string {
   return `${label}: ${spent}${of ? ` · ${approx}${usd(r.comparedUSD)}${of}` : ""}`;
 }
 const dayOf = (iso: string) => dayLabel(new Date(`${iso}T12:00:00`));
+/**
+ * Travel map plan, Phase 1b (format APPROVED, owner 2026-11-05): a trip's places, "France · Paris, Lyon — Italy ·
+ * Rome — Malta". Cities are grouped under their country, countries in the order first visited; a country with no
+ * city is its name alone. "" for a trip without stops.
+ */
+function placesLine(t: StoredTrip): string {
+  const by = new Map<string, string[]>();
+  for (const s of t.stops ?? []) {
+    const cities = by.get(s.countryCode) ?? [];
+    if (s.city && !cities.includes(s.city)) cities.push(s.city);
+    by.set(s.countryCode, cities);
+  }
+  return [...by].map(([code, cities]) => (cities.length ? `${countryName(code)} · ${cities.join(", ")}` : countryName(code))).join(" — ");
+}
 const REASONS = {
   name: "Name the trip.",
   dates: "The end date can't be before the start date.",
@@ -128,6 +142,12 @@ function TripFields({ idPrefix, testIdPrefix, draft, onDraft, financials, cities
 export default function TripsScreen({ financials, onChange }: { financials: LocalFinancials; onChange: (f: LocalFinancials) => void }) {
   const T = useTheme();
   const trips = [...(financials.trips ?? [])].sort((a, b) => b.startDate.localeCompare(a.startDate));
+  // Travel map plan, Phase 1b: grouped by the year each trip starts in, newest first (trips is already newest first).
+  const years: [string, StoredTrip[]][] = [];
+  for (const t of trips) {
+    const y = t.startDate.slice(0, 4);
+    if (years.at(-1)?.[0] === y) years.at(-1)![1].push(t); else years.push([y, [t]]);
+  }
 
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [error, setError] = useState("");
@@ -190,7 +210,10 @@ export default function TripsScreen({ financials, onChange }: { financials: Loca
 
         {trips.length === 0 && <p className="text-sm" style={{ color: T.mute }}>No trips yet.</p>}
 
-        {trips.map((trip) => {
+        {years.map(([year, inYear]) => (
+          <Fragment key={year}>
+          <h2 className="text-xl pt-2 tabular-nums" style={{ ...SERIF, color: T.mute }}>{year}</h2>
+          {inYear.map((trip) => {
           const actual = tripActual(financials, trip);
           const left = trip.budgetUSD - actual.totalUSD;
           const euros = tripForeignSpends(financials, trip);
@@ -200,8 +223,9 @@ export default function TripsScreen({ financials, onChange }: { financials: Loca
             <section key={trip.id} aria-label={trip.name} className="rounded-2xl p-5 space-y-3" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h2 className="text-lg" style={{ ...SERIF, color: T.text }}>{trip.name}</h2>
+                  <h3 className="text-lg" style={{ ...SERIF, color: T.text }}>{trip.name}</h3>
                   <p className="text-[11px]" style={{ color: T.mute }}>{`${dayOf(trip.startDate)} – ${dayOf(trip.endDate)}`}</p>
+                  {trip.stops?.length ? <p className="text-xs mt-1" style={{ color: T.text }}>{placesLine(trip)}</p> : null}
                 </div>
                 <div className="flex items-center gap-3">
                   <button type="button" onClick={() => toggleEdit(trip)} aria-expanded={editing === trip.id} className="text-xs underline" style={{ color: T.mute }}>Edit trip</button>
@@ -286,9 +310,12 @@ export default function TripsScreen({ financials, onChange }: { financials: Loca
                   </ul>
                 </div>
               )}
+              {trip.notes && <p className="text-xs whitespace-pre-line" style={{ color: T.mute }}>{trip.notes}</p>}
             </section>
           );
         })}
+          </Fragment>
+        ))}
 
         {/* U7 (session 33): the New trip form after your trips, so they come first on a phone. */}
         <form aria-label="New trip" className="rounded-2xl p-5 space-y-3" style={{ background: T.panel, border: `1px solid ${T.line}` }} onSubmit={(e) => { e.preventDefault(); save(); }}>
