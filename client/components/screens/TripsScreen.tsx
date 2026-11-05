@@ -13,7 +13,7 @@
 // forms, its trip preset (session 20, item 1; approved labels only).
 import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
-import { categoryLabel, fmtDate, MONEY_MAX_USD } from "../../lib/localData";
+import { categoryLabel, fmtDate, moneyEquals, MONEY_MAX_USD } from "../../lib/localData";
 import { dayLabel } from "../../lib/period";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF } from "./shared";
@@ -188,9 +188,15 @@ export default function TripsScreen({ financials, onChange }: { financials: Loca
                   <button type="submit" className="w-full py-2 rounded-xl text-sm font-semibold" style={{ background: T.jade, color: T.ink }}>Save changes</button>
                 </form>
               )}
-              <p className="text-sm tabular-nums" style={{ color: left < 0 ? T.coral : T.text }}>
-                {`Budget ${usd(trip.budgetUSD)} · spent ${usd(actual.totalUSD)} · ${left < 0 ? `${usd(-left)} over` : `${usd(left)} left`}`}
-              </p>
+              {/* Travel map plan, Phase 1b (owner, D9): a $0 budget is no budget. With spending, "Spent $X" in plain
+                  text, never "over" in coral; with none, no line. A budget above 0 keeps its line. */}
+              {trip.budgetUSD > 0 ? (
+                <p className="text-sm tabular-nums" style={{ color: left < 0 ? T.coral : T.text }}>
+                  {`Budget ${usd(trip.budgetUSD)} · spent ${usd(actual.totalUSD)} · ${left < 0 ? `${usd(-left)} over` : `${usd(left)} left`}`}
+                </p>
+              ) : !moneyEquals(actual.totalUSD, 0) && (
+                <p className="text-sm tabular-nums" style={{ color: T.text }}>{`Spent ${usd(actual.totalUSD)}`}</p>
+              )}
               {/* Session 22, item 1d (approved and merged in session 23, 2f5d30c): the trip by category. The exchanges count in the total
                   and in no category: they're the money moving, not a purchase. */}
               {(view.rows.length > 0 || view.exchangesUSD !== 0) && (
