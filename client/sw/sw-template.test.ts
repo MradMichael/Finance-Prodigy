@@ -138,6 +138,18 @@ describe("fetch", () => {
     expect(w.fetched).toEqual([]);
     expect(w.cacheMap.has("essa-runtime-b1")).toBe(true);
   });
+
+  // Travel map plan, Phase 1b (D6).
+  it("the city file is stored on its first use, then served from the cache", async () => {
+    const w = await installed();
+    const first = await w.get("/geo/cities15000.json");
+    expect(await (await first.responded!).text()).toBe("body of /geo/cities15000.json");
+    expect(w.fetched).toEqual([`${ORIGIN}/geo/cities15000.json`]);
+    w.fetched.length = 0;
+    const second = await w.get("/geo/cities15000.json");
+    expect(await (await second.responded!).text()).toBe("body of /geo/cities15000.json");
+    expect(w.fetched).toEqual([]);
+  });
 });
 
 describe("taking over", () => {
