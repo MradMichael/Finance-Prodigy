@@ -9,6 +9,9 @@
 //   lib/countryCodes.ts        the codes alone, for validating a trip's countries
 //     without loading the file. lib/countries.test.ts keeps the two in step.
 //
+//   public/geo/countries-110m.json (Phase 1c; D5): world-atlas's 110m country
+//     shapes, copied as is (ISO numeric ids; Natural Earth, public domain).
+//     The map draws them; lib/map-file.test.ts checks it.
 //   public/geo/cities15000.json (Phase 1b; D6: one file, loaded on first use)
 //     {"fields":["name","country","lat","lon"],"source":"...","rows":[...]}
 //     GeoNames cities15000 (every place of 15,000 people or more; CC BY 4.0,
@@ -95,6 +98,7 @@ ${rows.map((r) => r[0]).reduce((lines, c, i) => { if (i % 20 === 0) lines.push([
 ]);
 `;
 writeFileSync(path.join(root, "lib", "countryCodes.ts"), ts);
+writeFileSync(path.join(root, "public", "geo", "countries-110m.json"), readFileSync(req.resolve("world-atlas/countries-110m.json")));
 console.log(`${rows.length} countries; countries.json ${Buffer.byteLength(json)} bytes`);
 
 if (citiesTxt) {
