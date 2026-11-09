@@ -8,8 +8,10 @@
 //             (not deleted, not purged) by date, then creation time, then id,
 //             with goalProgress's own rounding; the last row that takes the
 //             total from under the target to at or over it dates it, as its
-//             own day. No row crosses (the opening alone meets the target):
-//             null here; 2.8.2 reads the before-ledger record.
+//             own day. No row crosses (the opening alone meets the target, or
+//             the goal was never migrated): the before-ledger record (2.8.2),
+//             the stored achievedAt read as a local day (a day string as it
+//             is, an instant as its local day), else null.
 //
 // A debt crosses downward (above 0 to 0 or below); a goal crosses upward. The
 // conditions mirror each other; they are not the same comparison (rule 18).
@@ -223,5 +225,54 @@ describe("time zones: the date is the row's own day on every leg", () => {
   it(`on ${process.env.TZ ?? "this machine's zone"}`, () => {
     expect(ach(goal(), [row("2026-10-31", 100, { createdAt: "2026-10-31T23:30:00.000Z" })]).on).toBe("2026-10-31");
     expect(ach(goal(), [row("2026-11-01", 100, { createdAt: "2026-10-31T22:30:00.000Z" })]).on).toBe("2026-11-01");
+  });
+});
+
+describe("2.8.2: the before-ledger record, when no row crosses", () => {
+  // No migration and no schema bump (owner, session 47): the stored achievedAt
+  // already holds the date a goal reached before the ledger began.
+  const before = (achievedAt?: string, o: Partial<StoredGoal> = {}) =>
+    goal({ targetAmount: 600, openingAmount: 600, ...(achievedAt ? { achievedAt } : {}), ...o });
+
+  it("a day stamp is that day, in every zone (a contribution's stamp, todayISO())", () => {
+    expect(ach(before("2026-10-02"), [])).toEqual({ achieved: true, on: "2026-10-02" });
+  });
+
+  it("no stamp: achieved, with no date", () => {
+    expect(ach(before(), [])).toEqual({ achieved: true, on: null });
+  });
+
+  it("a target lowered below what was saved before the ledger: the stamp's day", () => {
+    expect(ach(goal({ targetAmount: 1200, openingAmount: 1300, achievedAt: "2026-09-14" }), [])).toEqual({ achieved: true, on: "2026-09-14" });
+  });
+
+  it("a goal never migrated reads its stamp too", () => {
+    const { openingAmount: _o, ...unmigrated } = goal({ currentAmount: 120, achievedAt: "2026-07-01" });
+    expect(ach(unmigrated as StoredGoal, [])).toEqual({ achieved: true, on: "2026-07-01" });
+  });
+
+  it("a stamp is ignored whenever a row crosses: the row dates it (a stale stamp from the day it was typed in)", () => {
+    const g = goal({ targetAmount: 600, openingAmount: 400, achievedAt: "2026-10-02" });
+    expect(ach(g, [row("2026-09-28", 200, { createdAt: "2026-10-02T09:00:00.000Z" })])).toEqual({ achieved: true, on: "2026-09-28" });
+  });
+
+  it("a stamp on a goal not achieved is ignored", () => {
+    expect(ach(goal({ targetAmount: 600, openingAmount: 400, achievedAt: "2026-10-02" }), [])).toEqual({ achieved: false, on: null });
+  });
+
+  it("a stamp that isn't a date reads as no date", () => {
+    expect(ach(before("not a date"), [])).toEqual({ achieved: true, on: null });
+  });
+
+  // The edit sheet stamps an instant (toISOString()). 22:30 UTC on 2 October is
+  // 01:30 on 3 October in Beirut: its local day there, not the UTC day.
+  const INSTANT = "2026-10-02T22:30:00.000Z";
+  const LOCAL_DAY: Record<string, string> = { UTC: "2026-10-02", "Asia/Beirut": "2026-10-03", "America/Los_Angeles": "2026-10-02" };
+  const ZONE = process.env.TZ ?? "";
+  it.runIf(ZONE in LOCAL_DAY)(`an instant stamp is its local day [${ZONE}]`, () => {
+    expect(ach(before(INSTANT), [])).toEqual({ achieved: true, on: LOCAL_DAY[ZONE] });
+  });
+  it.runIf(ZONE === "America/Los_Angeles")("west of UTC, a day stamp is never read through a UTC midnight (it would read 1 October)", () => {
+    expect(ach(before("2026-10-02"), []).on).toBe("2026-10-02");
   });
 });
