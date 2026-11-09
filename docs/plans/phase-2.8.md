@@ -68,13 +68,148 @@ Each step is a SAFE STOP, tests-first (RED before GREEN), one concern per commit
 
 | Step | What | Owner's answer |
 |---|---|---|
-| 2.8.1 | A pure, unwired function deriving a goal's achievement from its ledger, the sibling of `debtPayoff` | Dated by the latest crossing that still stands, matching `debtPayoff` |
-| 2.8.2 | Additive migration for goals achieved before the ledger began; nothing reads it yet; zero-diff checked | — |
-| 2.8.3 | Every reader of achievement switches to the derived value (LB1). A visible change, so its own bug-fix commit | — |
+| 2.8.1 | A pure, unwired function deriving a goal's achievement from its ledger, the sibling of `debtPayoff` | Dated by the latest crossing that still stands, matching `debtPayoff`. **Planned below (session 46); approved (session 47)** |
+| 2.8.2 | The before-ledger record for goals reached before the ledger began; nothing reads it yet; zero-diff checked. **No migration and no schema bump** (proposed session 46, approved session 47; below) | — |
+| 2.8.3 | Every reader of achievement switches to the derived value (LB1). A visible change, so its own bug-fix commit. **Planned below; approved (session 47)** | — |
 | 2.8.4 | The stored achievement stops being written, after one release of dual-writing; the merge keeps the before-ledger record instead (LB2; its merge part is fixed already, above) | Dual-write for one release |
 | 2.8.6 | Goal withdrawals | A $0 row with a negative `goalAmount`; moves nothing in the budget |
 | 2.8.7 | Contributions from the other currency's pool, at the rate on the day | LB4 and LB5 are fixed first, each its own commit |
 | 2.8.8 | Retire `currentAmount` | Waits for the owner's confirmation that every device is updated |
+
+## 2.8.1–2.8.3 (LB1): plan approved (session 47, 2026-11-09; written in session 46)
+
+**Approved by the owner in session 47.** All eight open questions take the recommendation (answers below),
+and the Projections wording is approved. The build is 2.8.1 and 2.8.2 merged, then 2.8.3 held for the owner's
+review. Each step's status is recorded in this section as it merges. The private detail lives outside the repo (ask the owner): every place that
+decides or shows "achieved" today, with file and line, the proof that they disagree, and worked examples.
+Decisions already in force: the date is the latest crossing that still stands, as `debtPayoff`'s is; the
+stored achievement is dual-written for one release.
+
+### Today
+
+Goal screens use four different tests for "achieved":
+- the stored stamp (`achievedAt`);
+- the dashboard's rounded percent;
+- the exact saved figure against the target;
+- a target of 0 or less counting as met.
+
+They disagree in realistic cases. 2.8.3 moves every one of them to one rule.
+
+### The rule (2.8.1)
+
+`goalAchievement(goal, data) → { achieved, on }`, in `client/lib/localData.ts` beside `goalProgress` and
+`debtPayoff`.
+- **Achieved:** the saved figure (`goalProgress`) is at or over the target, or the target is 0 or less (today's
+  convention). It's the same figure every screen shows, so the yes/no can't disagree with it.
+- **On:** the goal's live rows (not deleted, not purged), sorted by date, then creation time, then id. Each
+  step's total uses the exact formula `goalProgress` ends on, so the last total equals the figure to the cent.
+  The last row that takes the total from under the target to at or over it dates the achievement (its own
+  day).
+  - A goal crosses upward; a debt crosses downward. The two conditions mirror each other (re-derived, rule 18).
+- **Edge cases:**
+  - **Withdrawals** (2.8.6) and negative corrections count like any row: under the target un-achieves; a
+    later row brings it back and dates it.
+  - **A raised target** un-achieves at once. **A lowered target** is walked against the new target, because
+    targets keep no history.
+  - **A pause** doesn't change achievement. The badge still reads paused first.
+  - **Lira rows** convert exactly as the saved figure converts them. Today's rate never moves an achievement.
+  - **Closes** write no goal rows.
+  - **Deleted rows** are out while deleted and come back on restore.
+  - **Future-dated rows** count, as they do in the saved figure (open question 2).
+
+### The before-ledger record (2.8.2)
+
+When the goal is achieved and no row crosses (the opening amount alone meets the target), the date is the
+stored stamp's local day: a day string is kept as is, and an instant is converted. With no stamp, there is no
+date.
+
+**No migration and no schema bump:**
+- The stamp already holds that date. 2.8.4 turns it into exactly that record by no longer writing it (the
+  pattern of a debt's `paidOffBeforeLedger`).
+- A new field would only rename it, and the bump it needs would pause every older build's sync until it
+  reloads.
+
+### Every reader on the rule (2.8.3)
+
+- **What moves to the rule:**
+  - the dashboard's goals gain `achieved` and `achievedOn`;
+  - the Overview, Goals, My Finances (Goals), Journey, Projections and the PDF report read them.
+- **The percent:** 100% only when achieved; otherwise at most 99%. Only the 99.5–99.99% band changes.
+- **Projections' empty state** gets the line below (for approval) when the goals left are paused rather than
+  achieved.
+- **Unchanged:** the writers and the merge (the dual-write).
+
+### Sync, older builds, rollback
+
+- **No clocks:** the rule reads only rows, the opening amount and the target, which all merge under the
+  fingerprint rule. Two devices that have synced agree.
+- **During the dual-write release:**
+  - the stamp is still written as today, and read by new builds only as the before-ledger record;
+  - older builds read exactly what they read today.
+- **The session-45 tension:** the merge keeps the earliest stamp, while the rule dates by the latest crossing.
+  It can't show on screen when a row crosses, because the row dates it.
+- **2.8.4** stops both writers, and the merge goes back to "always the earliest". It waits for one release
+  and the owner's word that every device shows the new build (Profile's version line).
+- **Rollback:** revert each merge. None of 2.8.1–2.8.3 writes anything new.
+
+### Tests first
+
+- **2.8.1:**
+  - exact and one-cent cases;
+  - one, two and withdrawn crossings;
+  - deleted, restored and purged rows;
+  - same-day order;
+  - corrections;
+  - lira rows at stored and on-the-day rates;
+  - paused goals, and targets raised and lowered;
+  - future-dated rows;
+  - a seeded property test: the yes/no always equals "saved ≥ target", and the walk's total always equals the
+    saved figure;
+  - three time zones.
+- **2.8.2:** day and instant stamps in three zones; no stamp; a stale stamp ignored whenever a row crosses.
+- **2.8.3:** each screen asserted on the rounding, deleted-row, backdated, before-ledger, paused-and-reached
+  and paused-only cases. Today's T5 tests and a zero-diff snapshot are guards.
+- **Perturbations** (each must turn a test red):
+  - the rounded percent as the rule;
+  - no deleted filter;
+  - the first crossing;
+  - per-row rounding;
+  - a day stamp parsed as UTC;
+  - the before-ledger record ignored;
+  - the wrong rate;
+  - Projections on the rounded percent;
+  - no 99 cap;
+  - Journey on the stamp;
+  - paused read as achieved.
+
+### Wording (approved, session 47)
+
+Projections, when no goal is left to plan because each is achieved or paused (at least one paused and not
+reached):
+
+> Nothing left to plan: every goal is achieved or paused.
+
+"All goals achieved. 🎉" stays when every goal is achieved. No other new words.
+
+### Merges and the owner's checks by hand
+
+| Merge | Visible | Check by hand |
+|---|---|---|
+| 2.8.1 | nothing | nothing changes |
+| 2.8.2 | nothing | nothing changes; screenshots of the goal screens, to compare after 2.8.3 |
+| 2.8.3 | yes | On a throwaway goal ($100 target): $99.60 reads not achieved everywhere (99%, Add payment shown, planned). $0.40 more reads achieved, dated today. Delete that row: not achieved; restore it: achieved again, same date. A row dated three days back that reaches a goal is dated that day. A paused, reached goal shows the same on a second device after a sync. Then the real account against the screenshots |
+
+### The owner's answers (session 47: each takes the recommendation)
+
+1. A lowered target is dated by the row that crossed it.
+2. Future-dated rows count, as they do in the saved figure. A warning when a contribution is dated in the future
+   is planned separately.
+3. Percentages show at most 99% until a goal is achieved.
+4. The empty-state line above is approved.
+5. 2.8.2 has no migration and no schema bump.
+6. 2.8.4 waits for one release and the owner's word that every device is updated.
+7. A reached, paused goal shows "Achieved" and "Paused", and counts in Journey.
+8. Same-instant rows are ordered by id for goals; debts are unchanged.
 
 ## Income-history fallback: decided, not approved to build
 
