@@ -3748,6 +3748,39 @@ export function goalProgress(g: StoredGoal, d: LocalFinancials): number {
   return g.openingAmount == null ? g.currentAmount : roundMoney(g.openingAmount + goalContributions(g, d));
 }
 
+/**
+ * Phase 2.8.1 (LB1; plan approved in session 47): a goal's achievement,
+ * derived from its ledger, the sibling of debtPayoff. Achieved means what's
+ * saved (goalProgress, the figure every screen shows) is at or over the
+ * target; a target of 0 or less counts as met. `on` is the latest crossing
+ * that still stands: the goal's live rows (not deleted, not purged) walked by
+ * date, then creation time, then id, each step's total rounded as
+ * goalProgress rounds its own, so the last total is the figure to the cent.
+ * The last row that takes it from under the target to at or over it dates it,
+ * as its own day. A debt crosses downward; a goal crosses upward. With no
+ * crossing row (the opening alone meets the target, or the goal was never
+ * migrated), `on` is null here.
+ */
+export function goalAchievement(g: StoredGoal, d: LocalFinancials): { achieved: boolean; on: string | null } {
+  if (!(g.targetAmount <= 0 || goalProgress(g, d) >= g.targetAmount)) return { achieved: false, on: null };
+  if (g.openingAmount == null) return { achieved: true, on: null };
+  const rows = (d.transactions ?? [])
+    .filter((t) => t.goalId === g.id && t.deletedAt == null && t.purgedAt == null)
+    .sort((a, b) => (a.date !== b.date ? (a.date < b.date ? -1 : 1)
+      : (a.createdAt ?? "") !== (b.createdAt ?? "") ? ((a.createdAt ?? "") < (b.createdAt ?? "") ? -1 : 1)
+      : a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  let sum = 0;
+  let before = roundMoney(g.openingAmount);
+  let on: string | null = null;
+  for (const t of rows) {
+    sum += contributionToGoal(t, g, d);
+    const after = roundMoney(g.openingAmount + roundMoney(sum));
+    if (before < g.targetAmount && after >= g.targetAmount) on = t.date;
+    before = after;
+  }
+  return { achieved: true, on };
+}
+
 /** Goals whose opening amount came out negative at the v7 migration -- for the owner to correct by hand, never automatically. */
 export function negativeGoalOpenings(d: LocalFinancials): { id: string; name: string; currency: Currency; storedTotal: number; contributions: number; openingAmount: number }[] {
   return (d.goals ?? [])

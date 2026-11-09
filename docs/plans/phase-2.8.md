@@ -18,6 +18,7 @@ out of it on purpose; ask the owner for them.
 | The Privacy page's LB6 caveat and its date (5 November 2026); one shared lira mistype check, now on the split entry too | `4733cd5` |
 | 2.8.5a–e (LB3): two devices' corrections to one account settle on the later statement, with the approved notices | `5a5ef2c` (2026-11-05) |
 | LB2's merge fix: a goal's achievement cleared by an edit stays cleared after a sync | `fix/lb2-deliberate-clear` (2026-11-09, session 45) |
+| 2.8.1 (LB1): `goalAchievement()`, the rule, unwired (nothing reads it yet) | `feat/2.8.1-goal-achievement` (2026-11-09, session 47) |
 
 ## LB2's merge fix: merged, not yet owner-verified
 
@@ -80,7 +81,15 @@ Each step is a SAFE STOP, tests-first (RED before GREEN), one concern per commit
 
 **Approved by the owner in session 47.** All eight open questions take the recommendation (answers below),
 and the Projections wording is approved. The build is 2.8.1 and 2.8.2 merged, then 2.8.3 held for the owner's
-review. Each step's status is recorded in this section as it merges. The private detail lives outside the repo (ask the owner): every place that
+review. Each step's status is recorded in this section as it merges.
+
+**Built so far:**
+- **2.8.1 is merged** (session 47): `goalAchievement()` in `client/lib/localData.ts`, unwired.
+  - Tests first: 25 in `client/lib/goal-achievement.test.ts`, red until it existed.
+  - 5 perturbations each turned a test red: the rounded percent as the rule, no deleted filter in the walk,
+    the first crossing, rounding row by row, and the rate on the day over a stored rate.
+
+The private detail lives outside the repo (ask the owner): every place that
 decides or shows "achieved" today, with file and line, the proof that they disagree, and worked examples.
 Decisions already in force: the date is the latest crossing that still stands, as `debtPayoff`'s is; the
 stored achievement is dual-written for one release.
