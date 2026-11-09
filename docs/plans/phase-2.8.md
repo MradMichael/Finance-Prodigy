@@ -17,6 +17,28 @@ out of it on purpose; ask the owner for them.
 | Privacy copy fixes: LB0, the About page, the sign-up and recover caveats and their size, the About badge; ROADMAP records plan H 5a | `dadd757` |
 | The Privacy page's LB6 caveat and its date (5 November 2026); one shared lira mistype check, now on the split entry too | `4733cd5` |
 | 2.8.5a–e (LB3): two devices' corrections to one account settle on the later statement, with the approved notices | `5a5ef2c` (2026-11-05) |
+| LB2's merge fix: a goal's achievement cleared by an edit stays cleared after a sync | `fix/lb2-deliberate-clear` (2026-11-09, session 45) |
+
+## LB2's merge fix: merged, not yet owner-verified
+
+**Merged to `main` from `fix/lb2-deliberate-clear`** (2026-11-09, session 45; a merge commit). The rule is the owner's,
+from the session 45 list and its answers. No new wording. Not marked complete (Rule 6).
+
+- A goal's achievement is stamped once (`achievedAt`), and a merge never drops one on its own. A person's
+  clear is an edit: the edit sheet clears it when a save leaves the goal below its target.
+- **Only one device changed the goal since the last sync:** the merge takes that device's copy. If that
+  copy has no stamp, it was a deliberate clear, and it stays cleared. If it has one, the earliest stamp any
+  copy holds stays, as before.
+- **Both devices changed it (a clash):** the earliest stamp any copy holds stays, as before. The merge can't
+  tell a clear from a stamp the winning copy never saw, because a contribution sets the stamp without
+  marking an edit.
+- **Debts are unchanged:** a debt's before-ledger payoff date is still kept from any copy.
+- **Tests first:** `client/lib/goal-achieved-clear.test.tsx` (2 red before the fix; guards for the clash,
+  older copies, a newer backup and debts; 4 perturbations each red).
+- **Known limits (owner-accepted):**
+  - A clear made while the other device also edited that goal comes back.
+  - A device still on an older build re-applies the old rule until it updates.
+  - The stored stamp is still what readers use; deriving it from the ledger is 2.8.1–2.8.4.
 
 ## 2.8.5 (LB3): merged, owner-verified
 
@@ -49,7 +71,7 @@ Each step is a SAFE STOP, tests-first (RED before GREEN), one concern per commit
 | 2.8.1 | A pure, unwired function deriving a goal's achievement from its ledger, the sibling of `debtPayoff` | Dated by the latest crossing that still stands, matching `debtPayoff` |
 | 2.8.2 | Additive migration for goals achieved before the ledger began; nothing reads it yet; zero-diff checked | — |
 | 2.8.3 | Every reader of achievement switches to the derived value (LB1). A visible change, so its own bug-fix commit | — |
-| 2.8.4 | The stored achievement stops being written, after one release of dual-writing; the merge keeps the before-ledger record instead (LB2) | Dual-write for one release |
+| 2.8.4 | The stored achievement stops being written, after one release of dual-writing; the merge keeps the before-ledger record instead (LB2; its merge part is fixed already, above) | Dual-write for one release |
 | 2.8.6 | Goal withdrawals | A $0 row with a negative `goalAmount`; moves nothing in the budget |
 | 2.8.7 | Contributions from the other currency's pool, at the rate on the day | LB4 and LB5 are fixed first, each its own commit |
 | 2.8.8 | Retire `currentAmount` | Waits for the owner's confirmation that every device is updated |

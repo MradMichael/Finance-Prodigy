@@ -101,6 +101,14 @@ describe("a merge never silently drops a standing achievedAt", () => {
     for (const r of both(contributedOnA(), OPEN, OPEN)) expect(r.data.goals[0].achievedAt).toBe("2026-10-08");
   });
 
+  it("only one side changed it and its copy still has a stamp (cleared, then reached again): the earliest any copy holds stays", () => {
+    const again = base({ goals: [goal({ achievedAt: "2026-10-08", name: "MacBook", updatedAt: "2026-10-08T09:00:00.000Z" })] });
+    for (const r of both(again, ACHIEVED, ACHIEVED)) {
+      expect(r.clashes).toEqual([]);
+      expect(r.data.goals[0]).toMatchObject({ name: "MacBook", achievedAt: "2026-10-02" });
+    }
+  });
+
   it("both stamped: the earlier stays, from either side", () => {
     const a = base({ goals: [goal({ openingAmount: 1100, achievedAt: "2026-10-05", name: "Laptop Pro", updatedAt: "2026-10-05T09:00:00.000Z" })] });
     const b = base({ goals: [goal({ openingAmount: 1100, achievedAt: "2026-10-03", updatedAt: "2026-10-03T09:00:00.000Z" })] });

@@ -684,14 +684,14 @@ function mergeSettingsBySeen(local: LocalFinancials, server: LocalFinancials, se
   return { patch: patch as Partial<LocalFinancials>, settingsUpdatedAt: stamps, settled };
 }
 
-/** Each merged item carries the earliest `field` any copy of it holds (a once-only stamp). */
-function keepEarliest<T extends { id: string }, K extends keyof T>(merged: T[], copies: T[], field: K): T[] {
+/** Each merged item carries the earliest `field` any copy of it holds (a once-only stamp); with `applies`, only the items it accepts. */
+function keepEarliest<T extends { id: string }, K extends keyof T>(merged: T[], copies: T[], field: K, applies: (m: T) => boolean = () => true): T[] {
   const earliest = new Map<string, T[K]>();
   for (const c of copies) {
     const v = c[field];
     if (v && (!earliest.has(c.id) || v < earliest.get(c.id)!)) earliest.set(c.id, v);
   }
-  return merged.map((m) => (earliest.has(m.id) ? { ...m, [field]: earliest.get(m.id) } : m));
+  return merged.map((m) => (earliest.has(m.id) && applies(m) ? { ...m, [field]: earliest.get(m.id) } : m));
 }
 
 const byYm = <T extends { ym: string }>(xs: T[]) => [...xs].sort((a, b) => (a.ym < b.ym ? -1 : a.ym > b.ym ? 1 : 0));
@@ -718,10 +718,16 @@ function mergeUnderRule(local: LocalFinancials, server: LocalFinancials, deleted
   const goals = mergeBySeen(local.goals ?? [], server.goals ?? [], (g) => g.id, s("goals"), stamp);
   named("goal", goals);
   // A goal's achievedAt is stamped once and never cleared by a merge: the
-  // earliest either side holds stays. Only a person clears one, and no screen
-  // does today. A debt's paidOffBeforeLedger (DI-01, session 30: the payoff
-  // date of a debt paid before the ledger) is kept the same way.
-  const goalsOut = keepEarliest(goals.items, [...(local.goals ?? []), ...(server.goals ?? [])], "achievedAt");
+  // earliest either side holds stays. A person does clear one: the edit sheet,
+  // when a save leaves the goal below its target (LB2, session 45). That clear
+  // is an edit and wins like one: when only one side changed the goal since
+  // the last sync and the copy taken has no achievedAt, it stays cleared. In a
+  // clash the earliest stays, as a clear can't be told from a stamp the winner
+  // never saw (a contribution stamps achievedAt without stamping an edit).
+  // A debt's paidOffBeforeLedger (DI-01, session 30: the payoff date of a debt
+  // paid before the ledger) is kept the same way, always: no screen clears it.
+  const goalClashed = new Set(goals.clashed.map((c) => c.key));
+  const goalsOut = keepEarliest(goals.items, [...(local.goals ?? []), ...(server.goals ?? [])], "achievedAt", (g) => goalClashed.has(g.id) || !!g.achievedAt);
 
   const debts = mergeBySeen(local.debts ?? [], server.debts ?? [], (d) => d.id, s("debts"), stamp); named("debt", debts);
   const debtsOut = keepEarliest(debts.items, [...(local.debts ?? []), ...(server.debts ?? [])], "paidOffBeforeLedger");
