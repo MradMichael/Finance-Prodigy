@@ -203,8 +203,12 @@ function payloadSnapshot() {
   // relicense every other value in the payload at the same time (the
   // exact failure this file's own header warns about). Asserted
   // separately below instead.
+  // Phase 2.8.3 (session 47): each goal's `achieved` and `achievedOn` are
+  // ADDED, held out the same way and asserted below.
   const { periodLabel, ...rest } = dash;
-  return { periodLabel, serialisable: { ...rest, anchor: dash.anchor.toISOString() } };
+  const goalAchievements = dash.goals.map(({ achieved, achievedOn }) => ({ achieved, achievedOn }));
+  const goals = dash.goals.map(({ achieved: _a, achievedOn: _o, ...g }) => g);
+  return { periodLabel, goalAchievements, serialisable: { ...rest, goals, anchor: dash.anchor.toISOString() } };
 }
 
 describe("period primitive — zero-diff gate", () => {
@@ -216,11 +220,14 @@ describe("period primitive — zero-diff gate", () => {
 
   for (const zone of BASELINE_ZONES) {
     it.runIf(ZONE === zone)(`the entire computeDashboard payload is unchanged [${zone}]`, () => {
-      const { periodLabel, serialisable } = payloadSnapshot();
+      const { periodLabel, goalAchievements, serialisable } = payloadSnapshot();
       expect(serialisable).toMatchSnapshot();
       // At startDay 1 the label must still read as a plain month, or the
       // hold-out above would be hiding a real change to existing behaviour.
       expect(periodLabel).toBe("Sep 2026");
+      // Neither fixture goal is reached (500 of 4,000; 0 of 1,500), so both
+      // percents are unchanged in the snapshot and neither is achieved.
+      expect(goalAchievements).toEqual([{ achieved: false, achievedOn: null }, { achieved: false, achievedOn: null }]);
     });
   }
 
