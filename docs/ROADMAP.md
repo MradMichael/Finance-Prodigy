@@ -315,12 +315,12 @@ Two devices each log a different transaction between syncs; both survive after e
 
 ## Phase 2.8 — Goal progress derived from the ledger (finishes plan H 5a)
 
-**Status (updated 2026-11-05, session 43):** core built and merged as plan H 5a. **2.8.5a–e merged at `5a5ef2c`** (2026-11-05), after the owner's two-device check by hand passed. The rest is planned, not started (`docs/plans/phase-2.8.md`). **Not marked complete** (Rule 6). The owner's live check of 5a on the real account isn't recorded in this document: UNKNOWN.
+**Status (updated 2026-11-09, session 45):** core built and merged as plan H 5a. **2.8.5a–e merged at `5a5ef2c`** (2026-11-05), after the owner's two-device check by hand passed. **LB2's merge fix is merged from `fix/lb2-deliberate-clear` (2026-11-09):** a goal's achievement cleared by an edit stays cleared after a sync. The rest is planned, not started (`docs/plans/phase-2.8.md`). **Not marked complete** (Rule 6). The owner's live check of 5a on the real account isn't recorded in this document: UNKNOWN.
 
 **Already merged (plan H 5a, merge `72de874`, 2026-10-09; `59db917`, `55d566a`, `b087902`):** goal progress = `openingAmount` + the goal's live contributions and corrections (`goalProgress`, `client/lib/localData.ts`). Schema v6→v7 (`addGoalOpenings`) sets `openingAmount` so progress equals the stored total on upgrade day. Edit Goal's "Saved" writes a $0 correction row carrying `goalAmount` (`buildGoalCorrectionTx`). `currentAmount` is no longer written after a goal is created. This is the "goal `currentAmount` derivation [2.4.57]" item in the 2026-09-02 sequencing note below.
 
 **Still open (session 41 plan; owner's answers the same day):**
-- LB1, LB2: goal achievement to be derived like `debtPayoff`, dated by the latest crossing still standing (2.8.1–2.8.4, `docs/plans/phase-2.8.md`).
+- LB1, LB2: goal achievement to be derived like `debtPayoff`, dated by the latest crossing still standing (2.8.1–2.8.4, `docs/plans/phase-2.8.md`). **LB2's merge part is fixed** (session 45, `fix/lb2-deliberate-clear`; see `docs/plans/phase-2.8.md`). The derived achievement (2.8.1–2.8.4) is still open.
 - LB3: **2.8.5a–e merged at `5a5ef2c`, owner-verified** (rule approved session 42, wording session 43), for the safety net, debts and goals alike.
 - Withdrawals don't exist: to be a $0 row with a negative `goalAmount`, moving nothing in the budget.
 - `achievedAt` is dual-written for one release; retiring `currentAmount` waits for the owner's confirmation that every device is updated.
@@ -589,7 +589,7 @@ Phase 1    Dual-currency             — ✅ complete 2026-08-21
 Phase 2.5  Recurring confirm-on-due  — merged; the owner's live check pending (its status line)
 Phase 2.6  EF/debt ledger-derived    — merged (4a77742; 2.6.4 at 22d2b1f); the owner's live check pending
 Phase 2.7  Sync merge (transactions) — all three sub-phases merged (3a225da); the owner's mark: UNKNOWN
-Phase 2.8  Goal progress from ledger — plan H 5a (72de874) and 2.8.5 (5a5ef2c) merged; the rest planned
+Phase 2.8  Goal progress from ledger — plan H 5a (72de874), 2.8.5 (5a5ef2c) and LB2's merge fix merged; the rest planned
 Phase 2    COHORT LAUNCH             — not yet: its preconditions (below) aren't all marked complete
 Phase 3    Recurring end dates       — partly built: installments, the step change, P3-A/B/C, the due reminder
 Phase 4    Goal feasibility          — ✅ complete 2026-09-01
