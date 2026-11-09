@@ -3786,6 +3786,16 @@ export function goalAchievement(g: StoredGoal, d: LocalFinancials): { achieved: 
 }
 
 /**
+ * Phase 2.8.3 (owner, session 47): a goal's percent as every screen shows it.
+ * 100 only when achieved (goalAchievement); otherwise rounded and at most 99,
+ * so 99.5% saved reads 99%, not a 100% that isn't achieved. A target of 0 or
+ * less is achieved, so 100. Unitless: saved and target in the goal's currency.
+ */
+export function goalPercent(saved: number, target: number, achieved: boolean): number {
+  return achieved ? 100 : Math.min(99, Math.round((saved / target) * 100));
+}
+
+/**
  * A stored stamp as a local day (2.8.2): a day string (todayISO(): what a
  * contribution stamps, and the edit sheet too since review fix 2) as it is;
  * an instant (what the edit sheet stamped before that, toISOString()) as its

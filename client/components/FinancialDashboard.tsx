@@ -721,8 +721,9 @@ export default function FinancialDashboard({
           <div className="grid gap-4 sm:grid-cols-2">
             {goals.map((g) => {
               // T5 (session 32 review): paused and achieved first, as the Goals screen's badge reads them
-              // (GoalsScreen.tsx); neither has a schedule to keep.
-              const achieved = !g.paused && g.projection.pctComplete >= 100;
+              // (GoalsScreen.tsx); neither has a schedule to keep. Phase 2.8.3: achieved is the one rule
+              // (goalAchievement), not the rounded percent (99.5% saved isn't achieved).
+              const achieved = !g.paused && g.achieved;
               const color = g.paused ? T.mute : achieved || g.projection.onTrack ? T.jade : T.brass;
               return (
               <div key={g.id} className="rounded-xl p-4" style={{ background: T.panelSoft, border: `1px solid ${T.line}` }}>

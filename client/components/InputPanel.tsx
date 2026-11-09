@@ -7,7 +7,7 @@ import { useScrollFocus } from "./useScrollFocus";
 import type { LocalFinancials, StoredTransaction, StoredGoal, StoredDebt, StoredRecurring, StoredCard, RecurringFrequency, Currency, PaymentMethod, BudgetRuleKey } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, goalProgress, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, remainingInstallments, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, buildExtraPaymentTx, categoryLabel, categoryIcon, matchCategoryRule, usualBucketOf, roundMoney, moneyMaxFor, MONEY_MAX_USD, derivedDebtBalance, activeTransactions, softDelete, cycleStartDayOf, syncAllowed, edited, recordDeletion, saveCard as storeCard, makeToUSDOn, rateOn, lbpRateOf, makeToUSDLive, debtPayoff } from "../lib/localData";
+import { uid, goalProgress, goalAchievement, goalPercent, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, remainingInstallments, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, buildExtraPaymentTx, categoryLabel, categoryIcon, matchCategoryRule, usualBucketOf, roundMoney, moneyMaxFor, MONEY_MAX_USD, derivedDebtBalance, activeTransactions, softDelete, cycleStartDayOf, syncAllowed, edited, recordDeletion, saveCard as storeCard, makeToUSDOn, rateOn, lbpRateOf, makeToUSDLive, debtPayoff } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker } from "./form/Primitives";
 import { fmtCur, money } from "./screens/shared";
@@ -1332,6 +1332,10 @@ export default function InputPanel({ financials, dashData, onChange, session, on
             // which read dashData.goals) for a goal edited down to a $0 target.
             const saved = goalProgress(g, financials);
             const pct = g.targetAmount > 0 ? Math.min(100, (saved / g.targetAmount) * 100) : 100;
+            // Phase 2.8.3: achieved, its date and the percent shown follow the one
+            // rule (goalAchievement, goalPercent), as every other goal screen does.
+            const achievement = goalAchievement(g, financials);
+            const pctShown = goalPercent(saved, g.targetAmount, achievement.achieved);
             const remaining = Math.max(0, g.targetAmount - saved);
             const isContrib  = contributeGoalId === g.id;
             return (
@@ -1344,7 +1348,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                       <div className="min-w-0 flex-1">
                         <p className="text-sm flex items-center gap-1.5 min-w-0" style={{ color: T.text }}>
                           <span className="truncate">{g.emoji} {g.name}</span>
-                          {g.achievedAt && (
+                          {achievement.achieved && (
                             <span className="flex-shrink-0 text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full" style={{ background: T.jade + "22", color: T.jade }}>Achieved</span>
                           )}
                           {g.pausedAt && (
@@ -1355,10 +1359,10 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                           {fmtCur(saved, g.currency)} of {fmtCur(g.targetAmount, g.currency)}
                           {remaining > 0 && <span style={{ color: T.brass }}> · {fmtCur(remaining, g.currency)} to go</span>}
                         </p>
-                        {(g.createdAt || g.achievedAt || g.pausedAt) && (
+                        {(g.createdAt || achievement.on || g.pausedAt) && (
                           <p className="text-[9px] mt-0.5" style={{ color: T.mute }}>
                             {g.createdAt && <span>Added {fmtDate(g.createdAt)}</span>}
-                            {g.achievedAt && <span style={{ color: T.jade }}> · Achieved {fmtDate(g.achievedAt)}</span>}
+                            {achievement.on && <span style={{ color: T.jade }}> · Achieved {fmtDate(achievement.on)}</span>}
                             {g.pausedAt && <span> · Paused {fmtDate(g.pausedAt)}</span>}
                           </p>
                         )}
@@ -1392,10 +1396,10 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                       </div>
                     </div>
                     <div className="mt-2 h-1.5 rounded-full overflow-hidden" style={{ background: T.line }}>
-                      <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: pct >= 100 ? T.jade : T.brass }} />
+                      <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: achievement.achieved ? T.jade : T.brass }} />
                     </div>
                     <div className="flex justify-between text-[9px] mt-1">
-                      <span style={{ color: pct >= 100 ? T.jade : T.brass }}>{pct.toFixed(0)}%</span>
+                      <span style={{ color: achievement.achieved ? T.jade : T.brass }}>{pctShown}%</span>
                       <span style={{ color: T.mute }}>by {fmtDate(g.targetDate)}</span>
                     </div>
                   </div>

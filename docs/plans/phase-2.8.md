@@ -20,6 +20,7 @@ out of it on purpose; ask the owner for them.
 | LB2's merge fix: a goal's achievement cleared by an edit stays cleared after a sync | `fix/lb2-deliberate-clear` (2026-11-09, session 45) |
 | 2.8.1 (LB1): `goalAchievement()`, the rule, unwired (nothing reads it yet) | `feat/2.8.1-goal-achievement` (2026-11-09, session 47) |
 | 2.8.2 (LB1): the before-ledger record, read as a local day; no migration, no schema bump; unwired | `feat/2.8.2-before-ledger` (2026-11-09, session 47) |
+| 2.8.3 (LB1): every goal screen reads the one rule; at most 99% until achieved; the approved Projections line | `held/2.8.3-goal-achievement-readers` (2026-11-12, session 50; built session 47) |
 
 ## LB2's merge fix: merged, not yet owner-verified
 
@@ -81,8 +82,9 @@ Each step is a SAFE STOP, tests-first (RED before GREEN), one concern per commit
 ## 2.8.1–2.8.3 (LB1): plan approved (session 47, 2026-11-09; written in session 46)
 
 **Approved by the owner in session 47.** All eight open questions take the recommendation (answers below),
-and the Projections wording is approved. The build is 2.8.1 and 2.8.2 merged, then 2.8.3 held for the owner's
-review. Each step's status is recorded in this section as it merges.
+and the Projections wording is approved. 2.8.1 and 2.8.2 merged in session 47; 2.8.3 was held for the owner's
+review and merged in session 50. Each step's status is recorded in this section as it merges. Not marked complete
+until the owner's checks by hand (Rule 6; the table below).
 
 **Built so far:**
 - **2.8.1 is merged** (session 47): `goalAchievement()` in `client/lib/localData.ts`, unwired.
@@ -95,6 +97,17 @@ review. Each step's status is recorded in this section as it merges.
   - Tests first: 9 more, 4 or 5 red by zone until it existed.
   - 2 perturbations each turned a test red: a day stamp read through a UTC midnight (Los Angeles), and the
     stamp ignored.
+- **2.8.3 is merged** (session 50, approved by the owner after reviewing it; built in session 47, rebased onto the
+  review fixes at `386c9b9` in session 48 and onto `efec1a1` in session 50). It moves to the
+  one rule:
+  - the dashboard's goals (`achieved`, `achievedOn`; `goalPercent`: 100 only when achieved, else at most 99);
+  - the Overview, Goals (✓, badge, Add payment), My Finances (badge, date, percent), Journey and Projections
+    (the plan, and the approved empty-state line). The PDF follows the percent.
+  - The writers and the merge are unchanged (the dual-write).
+  - Tests first: 18 in `client/components/goal-achievement.screens.test.tsx` (13 red before), and the zero-diff
+    gate holds out the two new keys.
+  - 6 perturbations each turned a test red: the rounded percent as the rule, Projections on it, no 99 cap,
+    Journey on the stamp, paused read as achieved in Projections, and My Finances' badge on the stamp.
 
 The private detail lives outside the repo (ask the owner): every place that
 decides or shows "achieved" today, with file and line, the proof that they disagree, and worked examples.
@@ -166,7 +179,7 @@ date.
     in Los Angeles (run and confirmed in the review). This page used to say devices always agree; for this
     case they don't.
   - **How narrow it is:** only a goal with no crossing row whose stamp is an instant. Instants were written
-    only by the goal edit sheet. Since review fix 2 (branch `claude/review-fixes-goal-edit`, not merged yet)
+    only by the goal edit sheet. Since review fix 2 (branch `claude/review-fixes-goal-edit`, merged at `386c9b9`)
     the sheet stamps the local day, as a contribution does, so builds with that fix write no new instants.
     Instants already stored stay as they are (no migration), and a device on an older build still writes
     them until it updates.

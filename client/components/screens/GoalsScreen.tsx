@@ -218,7 +218,7 @@ export default function GoalsScreen({
                     <div className="flex items-start justify-between gap-2 mb-5">
                       <p className="text-base font-medium leading-snug" style={{ color: T.text }}>
                         {g.emoji} {g.name}
-                        {pct >= 100 && <span className="ml-2 text-sm">✓</span>}
+                        {g.achieved && <span className="ml-2 text-sm">✓</span>}
                       </p>
                       <div className="flex items-center gap-1.5 flex-shrink-0">
                         <button
@@ -240,7 +240,7 @@ export default function GoalsScreen({
                           className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full whitespace-nowrap"
                           style={{ border: `1px solid ${g.paused ? T.mute : color}`, color: g.paused ? T.mute : color }}
                         >
-                          {g.paused ? "paused" : pct >= 100 ? "achieved!" : g.projection.onTrack ? "on pace" : "behind pace"}
+                          {g.paused ? "paused" : g.achieved ? "achieved!" : g.projection.onTrack ? "on pace" : "behind pace"}
                         </span>
                       </div>
                     </div>
@@ -291,8 +291,8 @@ export default function GoalsScreen({
                     </div>
                   </div>
 
-                  {/* Payment section */}
-                  {pct < 100 && (
+                  {/* Payment section (Phase 2.8.3: shown until the goal is achieved, the one rule) */}
+                  {!g.achieved && (
                     <div style={{ borderTop: `1px solid ${T.line}` }}>
                       {isSuccess ? (
                         <div className="px-5 py-3 flex items-center gap-2" style={{ background: T.jade + "14" }}>
