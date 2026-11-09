@@ -1,6 +1,6 @@
 # ESSA — App readiness plan
 
-**Status:** website work for phases A0 and A1 is built on `claude/funny-allen-ksej82`, rebased onto `main` and pushed, not merged. Nothing here is marked complete; only the owner does that (ROADMAP Rule 6).
+**Status:** website work for phases A0 and A1 is **merged to `main` at `63ceb95`** (2026-11-05, a merge commit; corrected 2026-11-09, session 45: this line read "not merged" after the merge). Every commit ID in section 3 is an ancestor of `main`. Nothing here is marked complete; only the owner does that (ROADMAP Rule 6). The owner's phone check (section 6) isn't recorded here: UNKNOWN.
 **Written:** 2026-11-05, from a read-only assessment (2026-11-04) and the owner's decisions since.
 **Companions:** `docs/ROADMAP.md` Phase 7 (status and the app gate), `docs/CLAUDE_CODE_BRIEF.md` (standards).
 **Public repository:** live bugs are named here by label only. Their details stay in the audit, outside the repo.
@@ -83,8 +83,9 @@ A precache that survives one failed file; an end-to-end test of "edit offline, c
 
 ---
 
-## 4. What's left before this branch merges
+## 4. Merging this branch (done)
 
+- **Merged at `63ceb95`** (2026-11-05). The branch `claude/funny-allen-ksej82` was deleted from the remote on 2026-11-09 (session 45), after a check that it was fully in `main`.
 - **Rebase: done, 2026-11-05.** `claude/compassionate-edison-f58sbc` merged into `main` (`dadd757`), and this branch was rebased onto it, then again onto `1169e8b` (no conflicts that time) before merging. One ROADMAP conflict, resolved keeping both: this branch's 2026-11-05 note, then `main`'s updated 2026-09-02 note (with its plan H 5a addition). Full suite after the first rebase: 2719 passed, 13 skipped; tsc and lint clean. The result of the second rebase is tested again before merging. The rebase changed every commit ID; the IDs above are the rebased ones.
 - **Merge:** into `main` with a merge commit, at the owner's request (2026-11-05).
 - **Owner's phone check:** see section 6.
