@@ -68,17 +68,19 @@ Each step is a SAFE STOP, tests-first (RED before GREEN), one concern per commit
 
 | Step | What | Owner's answer |
 |---|---|---|
-| 2.8.1 | A pure, unwired function deriving a goal's achievement from its ledger, the sibling of `debtPayoff` | Dated by the latest crossing that still stands, matching `debtPayoff`. **Planned in detail below (session 46)** |
-| 2.8.2 | The before-ledger record for goals reached before the ledger began; nothing reads it yet; zero-diff checked. **Proposed (session 46): no migration and no schema bump** (below) | — |
-| 2.8.3 | Every reader of achievement switches to the derived value (LB1). A visible change, so its own bug-fix commit. **Planned in detail below** | — |
+| 2.8.1 | A pure, unwired function deriving a goal's achievement from its ledger, the sibling of `debtPayoff` | Dated by the latest crossing that still stands, matching `debtPayoff`. **Planned below (session 46); approved (session 47)** |
+| 2.8.2 | The before-ledger record for goals reached before the ledger began; nothing reads it yet; zero-diff checked. **No migration and no schema bump** (proposed session 46, approved session 47; below) | — |
+| 2.8.3 | Every reader of achievement switches to the derived value (LB1). A visible change, so its own bug-fix commit. **Planned below; approved (session 47)** | — |
 | 2.8.4 | The stored achievement stops being written, after one release of dual-writing; the merge keeps the before-ledger record instead (LB2; its merge part is fixed already, above) | Dual-write for one release |
 | 2.8.6 | Goal withdrawals | A $0 row with a negative `goalAmount`; moves nothing in the budget |
 | 2.8.7 | Contributions from the other currency's pool, at the rate on the day | LB4 and LB5 are fixed first, each its own commit |
 | 2.8.8 | Retire `currentAmount` | Waits for the owner's confirmation that every device is updated |
 
-## 2.8.1–2.8.3 (LB1): plan, not approved to build (session 46, 2026-11-09)
+## 2.8.1–2.8.3 (LB1): plan approved (session 47, 2026-11-09; written in session 46)
 
-Plan only; nothing is built. The private detail lives outside the repo (ask the owner): every place that
+**Approved by the owner in session 47.** All eight open questions take the recommendation (answers below),
+and the Projections wording is approved. The build is 2.8.1 and 2.8.2 merged, then 2.8.3 held for the owner's
+review. Each step's status is recorded in this section as it merges. The private detail lives outside the repo (ask the owner): every place that
 decides or shows "achieved" today, with file and line, the proof that they disagree, and worked examples.
 Decisions already in force: the date is the latest crossing that still stands, as `debtPayoff`'s is; the
 stored achievement is dual-written for one release.
@@ -180,7 +182,7 @@ date.
   - Journey on the stamp;
   - paused read as achieved.
 
-### Wording for approval (verbatim draft)
+### Wording (approved, session 47)
 
 Projections, when no goal is left to plan because each is achieved or paused (at least one paused and not
 reached):
@@ -197,16 +199,17 @@ reached):
 | 2.8.2 | nothing | nothing changes; screenshots of the goal screens, to compare after 2.8.3 |
 | 2.8.3 | yes | On a throwaway goal ($100 target): $99.60 reads not achieved everywhere (99%, Add payment shown, planned). $0.40 more reads achieved, dated today. Delete that row: not achieved; restore it: achieved again, same date. A row dated three days back that reaches a goal is dated that day. A paused, reached goal shows the same on a second device after a sync. Then the real account against the screenshots |
 
-### Open questions (recommendation first)
+### The owner's answers (session 47: each takes the recommendation)
 
-1. A lowered target is dated by the row that crossed it (recommended), or by the day it was lowered?
-2. Future-dated rows count, as in the saved figure (recommended), or only rows up to today in both?
-3. 99% until achieved (recommended), or floor every percent?
-4. The empty-state line above, or the owner's words?
-5. 2.8.2 without a migration (recommended), or a new field with a schema bump?
-6. 2.8.4 after one release and the owner's word that every device is updated (recommended)?
-7. A reached, paused goal shows "Achieved" and "Paused" and counts in Journey (recommended)?
-8. Same-instant rows ordered by id for goals (recommended; debts unchanged)?
+1. A lowered target is dated by the row that crossed it.
+2. Future-dated rows count, as they do in the saved figure. A warning when a contribution is dated in the future
+   is planned separately.
+3. Percentages show at most 99% until a goal is achieved.
+4. The empty-state line above is approved.
+5. 2.8.2 has no migration and no schema bump.
+6. 2.8.4 waits for one release and the owner's word that every device is updated.
+7. A reached, paused goal shows "Achieved" and "Paused", and counts in Journey.
+8. Same-instant rows are ordered by id for goals; debts are unchanged.
 
 ## Income-history fallback: decided, not approved to build
 
