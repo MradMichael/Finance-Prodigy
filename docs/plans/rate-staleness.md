@@ -1,6 +1,6 @@
 # Rate staleness — plan, decisions, and what's left
 
-**Status (2026-11-05):** Phases 1 and 3 built on `claude/gallant-wright-899t1h`, pushed, **not merged**. The owner checks both on the preview before merging once. Phases 2 and 4 were not approved and are not built.
+**Status (corrected 2026-11-09, session 45; this line read "not merged" after the merge):** Phases 1 and 3 are **merged to `main` at `1169e8b`** (2026-11-05, a merge commit), from `claude/gallant-wright-899t1h` (deleted from the remote on 2026-11-09, after a check that it was fully in `main`). Whether the owner's preview check came before the merge isn't recorded here: UNKNOWN. Not complete until the owner confirms it (Rule 6). Phases 2 and 4 were not approved and are not built.
 
 **Pillars:** Spend and Save. Every USD/LBP figure depends on the rate, so a stale rate distorts budgets, balances and goal progress.
 
