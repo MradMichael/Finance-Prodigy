@@ -19,6 +19,7 @@ out of it on purpose; ask the owner for them.
 | 2.8.5a–e (LB3): two devices' corrections to one account settle on the later statement, with the approved notices | `5a5ef2c` (2026-11-05) |
 | LB2's merge fix: a goal's achievement cleared by an edit stays cleared after a sync | `fix/lb2-deliberate-clear` (2026-11-09, session 45) |
 | 2.8.1 (LB1): `goalAchievement()`, the rule, unwired (nothing reads it yet) | `feat/2.8.1-goal-achievement` (2026-11-09, session 47) |
+| 2.8.2 (LB1): the before-ledger record, read as a local day; no migration, no schema bump; unwired | `feat/2.8.2-before-ledger` (2026-11-09, session 47) |
 
 ## LB2's merge fix: merged, not yet owner-verified
 
@@ -88,6 +89,12 @@ review. Each step's status is recorded in this section as it merges.
   - Tests first: 25 in `client/lib/goal-achievement.test.ts`, red until it existed.
   - 5 perturbations each turned a test red: the rounded percent as the rule, no deleted filter in the walk,
     the first crossing, rounding row by row, and the rate on the day over a stored rate.
+- **2.8.2 is merged** (session 47): with no crossing row, the stored stamp is the before-ledger record, read as a
+  local day. A day string is kept; an instant is read as its local day (Beirut: 3 October for 22:30 UTC on 2 October).
+  - No migration and no schema bump.
+  - Tests first: 9 more, 4 or 5 red by zone until it existed.
+  - 2 perturbations each turned a test red: a day stamp read through a UTC midnight (Los Angeles), and the
+    stamp ignored.
 
 The private detail lives outside the repo (ask the owner): every place that
 decides or shows "achieved" today, with file and line, the proof that they disagree, and worked examples.

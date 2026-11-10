@@ -3757,13 +3757,17 @@ export function goalProgress(g: StoredGoal, d: LocalFinancials): number {
  * date, then creation time, then id, each step's total rounded as
  * goalProgress rounds its own, so the last total is the figure to the cent.
  * The last row that takes it from under the target to at or over it dates it,
- * as its own day. A debt crosses downward; a goal crosses upward. With no
- * crossing row (the opening alone meets the target, or the goal was never
- * migrated), `on` is null here.
+ * as its own day. A debt crosses downward; a goal crosses upward.
+ *
+ * Phase 2.8.2: with no crossing row (the opening alone meets the target, or
+ * the goal was never migrated), the stored achievedAt is the before-ledger
+ * record, read as a local day, as debtPayoff reads paidOffBeforeLedger. No
+ * migration and no schema bump (owner, session 47): the stamp already holds
+ * that date, and 2.8.4 stops writing it.
  */
 export function goalAchievement(g: StoredGoal, d: LocalFinancials): { achieved: boolean; on: string | null } {
   if (!(g.targetAmount <= 0 || goalProgress(g, d) >= g.targetAmount)) return { achieved: false, on: null };
-  if (g.openingAmount == null) return { achieved: true, on: null };
+  if (g.openingAmount == null) return { achieved: true, on: localDayOfStamp(g.achievedAt) };
   const rows = (d.transactions ?? [])
     .filter((t) => t.goalId === g.id && t.deletedAt == null && t.purgedAt == null)
     .sort((a, b) => (a.date !== b.date ? (a.date < b.date ? -1 : 1)
@@ -3778,7 +3782,19 @@ export function goalAchievement(g: StoredGoal, d: LocalFinancials): { achieved: 
     if (before < g.targetAmount && after >= g.targetAmount) on = t.date;
     before = after;
   }
-  return { achieved: true, on };
+  return { achieved: true, on: on ?? localDayOfStamp(g.achievedAt) };
+}
+
+/**
+ * A stored stamp as a local day (2.8.2): a day string (a contribution's
+ * stamp, todayISO()) as it is; an instant (the edit sheet's, toISOString())
+ * as its day on this device's calendar, not the UTC day; anything else, null.
+ */
+function localDayOfStamp(stamp: string | undefined): string | null {
+  if (!stamp) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(stamp)) return stamp;
+  const at = new Date(stamp);
+  return Number.isNaN(at.getTime()) ? null : isoLocalDay(at);
 }
 
 /** Goals whose opening amount came out negative at the v7 migration -- for the owner to correct by hand, never automatically. */
