@@ -2,7 +2,7 @@
 
 A local-first personal finance tracker: 50/30/20 (or custom) budget tracking, a Financial Health Score, an emergency fund tracker, Snowball/Avalanche debt payoff projections, and milestone goals with required-monthly-contribution math. Supports USD and LBP (Lebanese Pound) with a user-set exchange rate.
 
-**Stack:** Next.js 14 (App Router, TypeScript) + Tailwind CSS + Recharts · Node.js/Express · Postgres (Neon) + Prisma (optional cross-device sync).
+**Stack:** Next.js 15 (App Router, TypeScript) + Tailwind CSS + Recharts · Node.js/Express · Postgres (Neon) + Prisma (optional cross-device sync).
 
 ---
 
@@ -10,9 +10,9 @@ A local-first personal finance tracker: 50/30/20 (or custom) budget tracking, a 
 
 **Your financial data lives in your browser, not in a database.** Everything — transactions, goals, debts, recurring payments — is stored in `localStorage`, encrypted at rest (AES-GCM), and all dashboard math (health score, debt payoff plans, goal projections) runs client-side in [`client/lib/computeDashboard.ts`](client/lib/computeDashboard.ts). There is no server-side session or user database backing sign-in.
 
-**The Express + Postgres backend is optional and does two things:**
-1. **Sync** (`/api/sync/push` / `/api/sync/pull`) — lets you carry your data to a second device. Push uploads a JSON blob keyed by email; pull downloads it. Protected by a token derived from your account password (see [Security model](#security-model)) — the server never sees your password. **The uploaded blob itself is not client-side-encrypted** the way `localStorage` is — it's stored as plain, readable data (protected by DB access controls + TLS in transit + the sync token instead), because the analytics decomposition below needs to read actual field values. See [`client/app/security/page.tsx`](client/app/security/page.tsx) for the full explanation.
-2. **Analytics warehouse** — every push also fires-and-forgets a decomposition of your data into a proper star schema (`dim_date`, `dim_category`, `fact_transaction`, etc. — see [`prisma/schema.prisma`](server/prisma/schema.prisma)) so you can point Power BI / Qlik / Metabase at it later. **The app itself doesn't read this back** — it's a write-only sink today, populated by `server/src/lib/normalizeSync.ts` on every push.
+**The Express + Postgres backend is optional and does one thing today, sync:**
+1. **Sync** (`/api/sync/push` / `/api/sync/pull`) — lets you carry your data to a second device. Push uploads a JSON blob keyed by email; pull downloads it. Protected by a token derived from your account password (see [Security model](#security-model)) — the server never sees your password. **The uploaded blob itself is not client-side-encrypted** the way `localStorage` is — it's stored as plain, readable data (protected by DB access controls + TLS in transit + the sync token instead), because it has to be restorable on a device that doesn't hold this device's key: a second device that joins by pulling your data generates its own independent key, and couldn't read a copy encrypted under the first one. See [`client/app/security/page.tsx`](client/app/security/page.tsx) for the full explanation.
+2. **Analytics warehouse: no longer written.** The star-schema tables (`dim_date`, `dim_category`, `fact_transaction`, etc. — see [`prisma/schema.prisma`](server/prisma/schema.prisma)) and the BI views are still in the schema, but a push doesn't fill them any more (2.4.132; the note in [`server/src/routes/sync.ts`](server/src/routes/sync.ts) says why: the decomposition ran after the push had already answered `ok`, sometimes failed without anyone seeing, and nothing reads the tables). Rows written before that stay until the account is deleted, which still purges them (`deleteAllDataForEmail` in `server/src/lib/normalizeSync.ts`).
 
 If you never run the server, the app works fully offline — sign-up, sign-in, and all the screens work purely against `localStorage`.
 
@@ -48,7 +48,7 @@ Finance-Prodigy/
 │   │   └── ThemeContext.tsx           # The 6-theme system (light/dark-aware, per-account persisted)
 │   ├── public/                        # manifest.webmanifest, sw.js, icons — PWA/installable support
 │   └── next.config.js                 # Proxies /api/* to the Express server (see API_URL below)
-├── server/                        # Express API — sync + analytics warehouse only
+├── server/                        # Express API — sync (the analytics warehouse is no longer written)
 │   ├── prisma/
 │   │   ├── schema.prisma              # Postgres star schema (Neon or any Postgres host)
 │   │   ├── analytics_views.sql        # BI-facing views (vw_fact_ledger, vw_monthly_bucket, vw_category_variance)
@@ -58,7 +58,7 @@ Finance-Prodigy/
 │   │   ├── routes/sync.ts             # push / pull / relink / delete
 │   │   ├── routes/auth.ts             # check-email (interim cross-device duplicate-email warning)
 │   │   ├── routes/events.ts           # Analytics event sink — allow-listed event names only
-│   │   └── lib/{normalizeSync,logger}.ts  # Star-schema decomposition + structured JSON logging
+│   │   └── lib/{normalizeSync,logger}.ts  # Account deletion's purge of old warehouse rows (the decomposition is no longer called) + structured JSON logging
 │   └── .env.example
 └── demo/
     └── momentum-planner.jsx           # Standalone interactive planner, no backend — a design reference, not part of the app
