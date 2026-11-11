@@ -157,8 +157,19 @@ date.
 
 ### Sync, older builds, rollback
 
-- **No clocks:** the rule reads only rows, the opening amount and the target, which all merge under the
-  fingerprint rule. Two devices that have synced agree.
+- **No clocks, with one limit (corrected 2026-11-10, after a review):**
+  - **Whether a goal is achieved, and a date from a crossing row:** these read only rows, the opening amount
+    and the target, which all merge under the fingerprint rule. Two devices that have synced agree.
+  - **The before-ledger date (2.8.2) can differ between devices in different time zones.** It reads the stored
+    stamp. A day string reads the same everywhere. An instant is read as the day on the *reading* device's
+    calendar: the stamp `2026-10-02T22:30:00.000Z` is 3 October on a phone in Beirut and 2 October on a laptop
+    in Los Angeles (run and confirmed in the review). This page used to say devices always agree; for this
+    case they don't.
+  - **How narrow it is:** only a goal with no crossing row whose stamp is an instant. Instants were written
+    only by the goal edit sheet. Since review fix 2 (branch `claude/review-fixes-goal-edit`, not merged yet)
+    the sheet stamps the local day, as a contribution does, so builds with that fix write no new instants.
+    Instants already stored stay as they are (no migration), and a device on an older build still writes
+    them until it updates.
 - **During the dual-write release:**
   - the stamp is still written as today, and read by new builds only as the before-ledger record;
   - older builds read exactly what they read today.

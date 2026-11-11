@@ -3,7 +3,7 @@
 import { useState, useRef } from "react";
 import { useDialogFocus } from "./useDialogFocus";
 import type { LocalFinancials, StoredGoal } from "../lib/localData";
-import { moneyMaxFor, goalProgress, buildGoalCorrectionTx, roundMoney, edited, lbpRateOf } from "../lib/localData";
+import { moneyMaxFor, goalProgress, buildGoalCorrectionTx, roundMoney, edited, lbpRateOf, todayISO } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY } from "./form/Primitives";
 
@@ -34,7 +34,6 @@ export default function EditGoalSheet({
 
   function save() {
     const targetNum  = parseFloat(target.replace(/,/g, ""));
-    const currentNum = parseFloat(current.replace(/,/g, "")) || 0;
     // target <= 0 would read as 100%/achieved everywhere else that displays
     // this goal -- a $0 target isn't a real goal, same guard the add-goal
     // form already applies.
@@ -44,12 +43,19 @@ export default function EditGoalSheet({
     // not yet migrated still edits its stored total, as before.)
     const migrated = goal.openingAmount != null;
     const progress = goalProgress(goal, financials);
+    // Review fix 1 (owner, 2026-11-10): an empty or non-numeric "Saved" box is NO CHANGE, so it reads as what's
+    // saved now. It used to read as 0 (`|| 0`): one cleared box and a Save wrote a correction for minus everything
+    // saved and cleared the achieved stamp. A typed 0 is still 0.
+    const typed = parseFloat(current.replace(/,/g, ""));
+    const currentNum = Number.isFinite(typed) ? typed : progress;
     const delta = roundMoney(currentNum - progress);
     update({
       goals: financials.goals.map((g) => g.id !== goal.id ? g : edited({
         ...g, name: name.trim(), emoji: emoji || "🎯",
         targetAmount: targetNum, targetDate: date, ...(migrated ? {} : { currentAmount: currentNum }),
-        achievedAt: currentNum >= targetNum ? (g.achievedAt ?? new Date().toISOString()) : undefined,
+        // Review fix 2 (owner, 2026-11-10): the LOCAL day, as a contribution stamps it (TIME-02). toISOString() is
+        // the UTC instant, and the screens show its first ten characters: a day early after local midnight east of UTC.
+        achievedAt: currentNum >= targetNum ? (g.achievedAt ?? todayISO()) : undefined,
       })),
       ...(migrated && delta !== 0 ? { transactions: [buildGoalCorrectionTx(goal, delta, { stated: currentNum, base: progress }), ...financials.transactions] } : {}),
     });

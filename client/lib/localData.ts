@@ -3786,13 +3786,24 @@ export function goalAchievement(g: StoredGoal, d: LocalFinancials): { achieved: 
 }
 
 /**
- * A stored stamp as a local day (2.8.2): a day string (a contribution's
- * stamp, todayISO()) as it is; an instant (the edit sheet's, toISOString())
- * as its day on this device's calendar, not the UTC day; anything else, null.
+ * A stored stamp as a local day (2.8.2): a day string (todayISO(): what a
+ * contribution stamps, and the edit sheet too since review fix 2) as it is;
+ * an instant (what the edit sheet stamped before that, toISOString()) as its
+ * day on this device's calendar, not the UTC day; anything else, null.
+ *
+ * Review fix 3 (owner, 2026-11-10): a day-shaped stamp must name a REAL day.
+ * "2026-13-45" and "2026-02-30" are no date, where the shape alone used to
+ * pass them. The check is calendarDay.ts's round trip: dayStart builds the UTC
+ * midnight and occurrenceDay reads the day back; month 13 gives no date, and
+ * 30 February rolls into March and comes back different. A day-shaped stamp
+ * that fails is null: it never falls through to be parsed as an instant.
  */
 function localDayOfStamp(stamp: string | undefined): string | null {
   if (!stamp) return null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(stamp)) return stamp;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(stamp)) {
+    const midnight = dayStart(stamp as CalendarDay);
+    return !Number.isNaN(midnight.getTime()) && occurrenceDay(midnight) === stamp ? stamp : null;
+  }
   const at = new Date(stamp);
   return Number.isNaN(at.getTime()) ? null : isoLocalDay(at);
 }
