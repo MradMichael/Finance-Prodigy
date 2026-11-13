@@ -2,6 +2,7 @@
 
 import { useState, useRef } from "react";
 import { useDialogFocus } from "./useDialogFocus";
+import LbpMistypeDialog from "./LbpMistypeDialog";
 import type { LocalFinancials, StoredTransaction, StoredCard, Currency, PaymentMethod } from "../lib/localData";
 import {
   fmtDate, looksRecurring, buildQuickRecurring, cycleMonthDivergence,
@@ -114,8 +115,6 @@ export default function EditTransactionSheet({
   const [lbpConfirmAmount, setLbpConfirmAmount] = useState<number | null>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
   useDialogFocus(sheetRef, true, onClose); // A11Y-02: a named modal dialog, focus in and back; U8 (session 32): Escape closes it
-  const lbpConfirmRef = useRef<HTMLDivElement>(null);
-  useDialogFocus(lbpConfirmRef, lbpConfirmAmount != null); // A11Y-02
 
   const divergence = cycleMonthDivergence(transaction, financials.recurring ?? [], startDay);
   // A transfer, like income, doesn't fit "convert to a recurring bill" --
@@ -401,41 +400,11 @@ export default function EditTransactionSheet({
       </div>
 
       {lbpConfirmAmount != null && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: "rgba(0,0,0,0.6)" }}
-          onClick={(e) => { if (e.target === e.currentTarget) setLbpConfirmAmount(null); }}
-        >
-          <div
-            ref={lbpConfirmRef}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Confirm low LBP amount"
-            className="w-full max-w-sm rounded-2xl p-6 shadow-2xl"
-            style={{ background: T.panel, border: `1px solid ${T.line}` }}
-          >
-            <p className="text-[10px] uppercase tracking-widest font-semibold mb-2" style={{ color: T.brass }}>Double-check this amount</p>
-            <p className="text-sm mb-5" style={{ color: T.text }}>
-              <strong>{lbpConfirmAmount.toLocaleString("en-US")} LBP</strong> is unusually low for a real purchase — most things this cheap are actually meant to be USD. Did you mean to log this in USD instead?
-            </p>
-            <div className="flex flex-col gap-2">
-              <button
-                onClick={() => setLbpConfirmAmount(null)}
-                className="w-full py-2.5 rounded-xl text-sm font-semibold hover:opacity-90"
-                style={{ background: T.jade, color: T.ink }}
-              >
-                Let me fix the currency
-              </button>
-              <button
-                onClick={() => { setLbpConfirmAmount(null); commit(); }}
-                className="w-full py-2.5 rounded-xl text-sm hover:opacity-90"
-                style={{ background: T.panelSoft, color: T.mute, border: `1px solid ${T.line}` }}
-              >
-                No, save it as {lbpConfirmAmount.toLocaleString("en-US")} LBP
-              </button>
-            </div>
-          </div>
-        </div>
+        <LbpMistypeDialog
+          amount={lbpConfirmAmount}
+          onFix={() => setLbpConfirmAmount(null)}
+          onSave={() => { setLbpConfirmAmount(null); commit(); }}
+        />
       )}
     </div>
   );
