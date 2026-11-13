@@ -319,6 +319,7 @@ export default function EditTransactionSheet({
               {PM_OPTIONS.map((p) => (
                 <button key={p.value} type="button"
                   onClick={() => { setPayMethod(p.value); setCardId(null); }}
+                  aria-pressed={payMethod === p.value}
                   className="py-1.5 rounded-lg text-[10px] font-medium transition-all"
                   style={{ background: payMethod === p.value ? T.jade + "22" : T.ink, border: `1px solid ${payMethod === p.value ? T.jade : T.line}`, color: payMethod === p.value ? T.jade : T.mute }}
                 >{p.icon} {p.label}</button>
@@ -406,6 +407,7 @@ export default function EditTransactionSheet({
           amount={lbpConfirmAmount}
           onFix={() => setLbpConfirmAmount(null)}
           onSave={() => { setLbpConfirmAmount(null); commit(); }}
+          closeOnEscape
         />
       )}
     </div>

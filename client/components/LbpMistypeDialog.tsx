@@ -10,8 +10,8 @@ import { useDialogFocus } from "./useDialogFocus";
  * here; it was written out in InputPanel and in EditTransactionSheet.
  *
  * `amount` is the lira figure as typed (LBP, native). `onFix` closes it ("Let me fix the currency", a tap
- * outside, and Escape where `closeOnEscape` is set: the entry form sets it, the edit sheet doesn't, as each did
- * before). `onSave` closes it and goes ahead.
+ * outside, and Escape where `closeOnEscape` is set: the entry form and the edit sheet both set it, session 52).
+ * `onSave` closes it and goes ahead.
  */
 export default function LbpMistypeDialog({ amount, onFix, onSave, closeOnEscape = false }: {
   amount: number;
@@ -21,13 +21,15 @@ export default function LbpMistypeDialog({ amount, onFix, onSave, closeOnEscape 
 }) {
   const T = useTheme();
   const ref = useRef<HTMLDivElement>(null);
-  useDialogFocus(ref, true); // A11Y-02
+  // A11Y-02, and Escape through the same hook: only the topmost dialog acts, so a sheet under this one stays.
+  useDialogFocus(ref, true, closeOnEscape ? onFix : undefined);
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.6)" }}
-      onClick={(e) => { if (e.target === e.currentTarget) onFix(); }}
-      onKeyDown={closeOnEscape ? (e) => { if (e.key === "Escape") onFix(); } : undefined}
+      // Session 52 (owner): its clicks stay here. In the edit sheet it sits inside the sheet's backdrop, whose
+      // click closes the sheet; an answer used to close the sheet too, and the edit in progress went.
+      onClick={(e) => { e.stopPropagation(); if (e.target === e.currentTarget) onFix(); }}
     >
       <div
         ref={ref}
