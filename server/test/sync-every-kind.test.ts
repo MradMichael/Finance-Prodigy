@@ -29,7 +29,6 @@ import { buildForeignEntry, editForeignEntry } from "../../client/lib/foreignCas
 import { stableStringify } from "../../client/lib/canonical";
 
 type D = LocalFinancials;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Item = any;
 
 interface Kind {

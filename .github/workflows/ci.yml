@@ -70,6 +70,11 @@ jobs:
           cache: npm
           cache-dependency-path: server/package-lock.json
       - run: npm ci
+      # Session 51 (owner: "mirror the client's setup"): the same ESLint 8 and
+      # parser the client lints with, and the client's one rule that isn't
+      # about React, Next or accessibility. The client's config turns on no
+      # @typescript-eslint rule, so neither does this.
+      - run: npm run lint
       - run: npm run build
       # Session 39 (owner): the sync proof's test files, type-checked. The
       # build covers src only; these also import the client's sync code.
