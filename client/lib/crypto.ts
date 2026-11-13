@@ -30,16 +30,22 @@ export type Envelope = { v: 1; iv: string; ct: string };
 // arguments at 65,536).
 const B64_CHUNK = 0x8000;
 
+// R4 (session 51 review): apply, not a spread. A spread walks the chunk through the array iterator, which
+// cost 164 ms an entry on a phone at 1,500 entries; apply reads the typed array by index. Same arguments.
 export function toB64(bytes: Uint8Array): string {
   let binary = "";
   for (let i = 0; i < bytes.length; i += B64_CHUNK) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + B64_CHUNK));
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + B64_CHUNK) as unknown as number[]);
   }
   return btoa(binary);
 }
-// No spread on this side: Uint8Array.from walks the string one character at a time.
+// R2 (session 51 review): an indexed loop. Uint8Array.from with a callback made one call per byte, 315-329
+// ms of every app open on a phone at 1,500 entries. atob's output is one character per byte (0-255).
 export function fromB64(s: string): Uint8Array {
-  return Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+  const binary = atob(s);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
 }
 
 /** PBKDF2 key-encryption-key (KEK) — used only to wrap/unwrap the DEK, never to encrypt data directly. */
