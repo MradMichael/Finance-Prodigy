@@ -385,7 +385,7 @@ export function DateFieldDMY({
 
   return (
     <div
-      className="w-full rounded-xl px-3 py-2.5 flex items-center gap-1 text-sm tabular-nums transition-all duration-150"
+      className="dmy-field w-full rounded-xl px-3 py-2.5 flex items-center gap-1 text-sm tabular-nums transition-all duration-150"
       style={{
         position: "relative",
         background: T.panelSoft,
