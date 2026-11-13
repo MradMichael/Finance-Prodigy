@@ -25,6 +25,8 @@ import { useTheme } from "../contexts/ThemeContext";
 import { moneyEquals, type LocalFinancials, cycleStartDayOf } from "../lib/localData";
 import { getLastSyncTime, serverCopyExists } from "../lib/syncService";
 import { getSession } from "../lib/auth";
+import { exportReminderState, snoozeExportReminder } from "../lib/exportReminder";
+import { downloadDataFile } from "../lib/exportData";
 import { periodTotals, bucketDisplayState, type DashboardPayload } from "../lib/computeDashboard";
 import OnboardingChecklist from "./OnboardingChecklist";
 import { fmtCur, type Screen } from "./screens/shared";
@@ -177,6 +179,15 @@ export default function FinancialDashboard({
     return () => { live = false; };
   }, [wouldClaim]);
 
+  // D3 (owner, 2026-11-05): with backup off, a reminder after 14 days without a download of the data
+  // (lib/exportReminder.ts). Read in an effect: the times are kept in this browser. Its wording is a draft.
+  const backupOff = financials?.syncChoice?.enabled === false;
+  const [exportDue, setExportDue] = useState(false);
+  useEffect(() => {
+    const s = getSession();
+    setExportDue(!!s && exportReminderState(s.userId, backupOff));
+  }, [backupOff]);
+
   // 2.4.55 sub-phase 3 -- past-month review. Deliberately NOT a
   // parameterized version of this whole live dashboard: health score,
   // alerts, upcoming renewals, and Balance Check are all now-concepts
@@ -266,6 +277,29 @@ export default function FinancialDashboard({
         {/* COPY-05 (owner, 2026-09-30): with backup off, nothing prompts an
             upload -- the choice was made, and Profile already says what it
             means. On, or still undecided, the banner shows as before. */}
+        {exportDue && financials && (
+          <div className="rounded-2xl px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-2" style={{ background: T.brass + "12", border: `1px solid ${T.brass}30` }}>
+            <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: T.brass }} />
+            <span className="text-sm flex-1 min-w-[12rem]" style={{ color: T.text }}>
+              Backup is off, so your data is only on this device. Download a copy every couple of weeks to keep one safe.
+            </span>
+            <button
+              onClick={() => { const s = getSession(); if (s) downloadDataFile(financials, s.userId); setExportDue(false); }}
+              className="text-xs font-semibold px-3 py-1.5 rounded-lg hover:opacity-90 transition-opacity"
+              style={{ background: T.brass, color: T.ink }}
+            >
+              Download my data
+            </button>
+            <button
+              onClick={() => { const s = getSession(); if (s) snoozeExportReminder(s.userId); setExportDue(false); }}
+              className="text-xs px-2 py-1.5 rounded-lg hover:opacity-70 transition-opacity"
+              style={{ color: T.mute }}
+            >
+              Not now
+            </button>
+          </div>
+        )}
+
         {neverSynced && wouldClaim && (
           <button
             onClick={() => router.push("/profile")}

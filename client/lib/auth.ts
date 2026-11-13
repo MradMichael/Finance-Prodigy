@@ -894,6 +894,9 @@ export async function deleteAccount(userId: string): Promise<{ serverCleanupOk: 
   localStorage.removeItem(`essa_clashes_shown_${userId}`);
   // DI-16: and its own sync time.
   localStorage.removeItem(`essa_last_sync_${userId}`);
+  // D3: and the export reminder's two times (lib/exportReminder.ts).
+  localStorage.removeItem(`essa_last_export_${userId}`);
+  localStorage.removeItem(`essa_export_clock_${userId}`);
 
   if (!user) return { serverCleanupOk: true }; // nothing local to have synced in the first place
   try {

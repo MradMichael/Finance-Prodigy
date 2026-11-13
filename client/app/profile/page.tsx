@@ -8,7 +8,7 @@ import RecoveryCodeModal from "../../components/RecoveryCodeModal";
 import BackupSwitch from "../../components/BackupSwitch";
 import ResetDataPanel from "../../components/ResetDataPanel";
 import type { Session } from "../../lib/auth";
-import { loadData, saveData, keepUnreadableRecord, removeUnreadableCopies, hasUnreadableCopies, activeTransactions, syncAllowed, resetFinancials, saveFailureKind, SAVE_FAILURE_REASON, exportFileName, listKeptCopies, removeKeptCopy, fmtDate, isoLocalDay } from "../../lib/localData";
+import { loadData, saveData, keepUnreadableRecord, removeUnreadableCopies, hasUnreadableCopies, activeTransactions, syncAllowed, resetFinancials, saveFailureKind, SAVE_FAILURE_REASON, listKeptCopies, removeKeptCopy, fmtDate, isoLocalDay } from "../../lib/localData";
 import { computeDashboard } from "../../lib/computeDashboard";
 import { buildReportHtml } from "../../lib/printReport";
 import { pushToServer, pullFromServer, getLastSyncTime, confirmOverwriteIfNeeded, mergeAndPush, recordMergeStored, recordRestoreStored, buildMergeNoticeText, applyBackupChoice, NEWER_BACKUP_MESSAGE, mergeCopyIntoLocal, type BackupChoice } from "../../lib/syncService";
@@ -27,6 +27,7 @@ import VersionCheck from "../../components/VersionCheck";
 import { THEMES, type ThemeKey } from "../../lib/theme";
 import Field from "../../components/form/Field";
 import { DateFieldDMY } from "../../components/form/Primitives";
+import { downloadDataFile } from "../../lib/exportData";
 
 // Each theme's own accent and panel, from lib/theme.ts (they were copied here by hand, and drift when
 // a theme changes: A11Y-01, session 22).
@@ -314,20 +315,9 @@ export default function ProfilePage() {
     try {
       const data = await readLocal(session.userId);
       if (!data) { setDownloadMsg("✗ " + LOAD_FAILED); return; }
-      // A soft-deleted transaction still has its full payload -- it's
-      // filtered from every calculation, not stripped. Left unfiltered
-      // here, every transaction ever deleted (with description, amount,
-      // everything) would leave the device the moment this file does.
-      const exportData = { ...data, transactions: activeTransactions(data.transactions) };
-      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = exportFileName();
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      // D3: the same file the Overview's export reminder downloads, through one function (deleted
+      // transactions left out), which also records the time for the reminder.
+      downloadDataFile(data, session.userId);
     } finally {
       setDownloading(null);
     }
