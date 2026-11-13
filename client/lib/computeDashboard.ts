@@ -1,6 +1,6 @@
 import { spentByBucket, spendingEffect, totalSpent } from "./spending";
 import type { LocalFinancials, BudgetRuleKey, StoredDebt, StoredTransaction, StoredRecurring, TrackedBalance, Currency, PeriodCloseAcknowledgement } from "./localData";
-import { goalProgress, goalAchievement, goalPercent, acknowledgementFor, historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, cycleStartDayOf, valueForMonth, makeToUSDForMonth, makeToUSDOn, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, derivedEfBalance, derivedDebtBalance, activeTransactions, parseLocalDate, isRecurringActive, isAfterBalanceBaseline, lbpRateOf, rateOn } from "./localData";
+import { goalProgress, goalAchievement, goalPercent, acknowledgementFor, historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, cycleStartDayOf, incomeForCycle, makeToUSDForMonth, makeToUSDOn, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, derivedEfBalance, derivedDebtBalance, activeTransactions, parseLocalDate, isRecurringActive, isAfterBalanceBaseline, lbpRateOf, rateOn } from "./localData";
 import { currentCycleKey, calendarKeyForDate, isInCycle, cycleProgress, cycleBounds, cycleKeyMinus, cycleKeyForISO, periodNoun, cycleLabel, type CycleKey, type CalendarKey, type CalendarHistory } from "./period";
 import { simulateDebtPayoff, type DebtInput } from "./debtEngine";
 import { calendarDayOf, dayStart } from "./calendarDay";
@@ -217,7 +217,7 @@ export function salaryCreditUSD(tb: Pick<TrackedBalance, "id" | "startingDate">,
     key = cycleKeyMinus(key, -1);
     const payday = calendarDayOf(cycleBounds(key, startDay).start);
     if (payday > throughDay) break;
-    if (payday > tb.startingDate) totalUSD += valueForMonth(data.incomeHistory, key, data.income);
+    if (payday > tb.startingDate) totalUSD += incomeForCycle(data.incomeHistory, key, data.income);
   }
   return totalUSD;
 }
@@ -370,7 +370,7 @@ export function periodTotals(
   // Session 19: the shared spending rule (lib/spending.ts): a change-back nets against Wants; income, transfers and other reimbursements stay out.
   const toUSDOn = makeToUSDOn(data); // plan J (merged in session 23, bafa688): what each row cost, on its own day
   const spent = spentByBucket(tx, (t) => toUSDOn(t.amount, t.currency, t.date));
-  const salary = valueForMonth(data.incomeHistory, ym, data.income);
+  const salary = incomeForCycle(data.incomeHistory, ym, data.income);
   const txIncome = tx.filter((t) => t.bucket === "INCOME").reduce((s, t) => s + toUSDOn(t.amount, t.currency, t.date), 0);
   const out = { income: salary + txIncome, needs: spent.needs, wants: spent.wants, savings: spent.savings };
   for (const r of data.recurring ?? []) {
@@ -529,7 +529,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     // startDay 1; one period out at any other value.
     .filter((t) => isInCycle(t.date, ym, startDay) && t.bucket === "INCOME")
     .reduce((s, t) => s + toUSDOn(t.amount, t.currency, t.date), 0);
-  const incomeForMonth = (ym: CycleKey) => valueForMonth(data.incomeHistory, ym, data.income) + incomeTxForMonth(ym);
+  const incomeForMonth = (ym: CycleKey) => incomeForCycle(data.incomeHistory, ym, data.income) + incomeTxForMonth(ym);
   const incomeForMonthSafe = (ym: CycleKey) => Math.max(incomeForMonth(ym), 1);
 
   const monthTx = (data.transactions ?? []).filter((t) => isInCycle(t.date, prefix, startDay));
