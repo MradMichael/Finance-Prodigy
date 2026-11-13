@@ -3,7 +3,7 @@
 import { spendingEffect, spentByBucket } from "../../lib/spending";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import type { LocalFinancials } from "../../lib/localData";
-import { activeTransactions, cycleStartDayOf, makeToUSDOn, debtPayoff } from "../../lib/localData";
+import { activeTransactions, cycleStartDayOf, makeToUSDOn, debtPayoff, goalAchievement } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { projectCompletion } from "../../lib/projections";
 import { useTheme } from "../../contexts/ThemeContext";
@@ -101,7 +101,7 @@ export default function JourneyScreen({
 
   // ── Milestones ───────────────────────────────────────────────────
   const totalTx = activeTx.length;
-  const goalsAchieved = financials.goals.filter((g) => g.achievedAt).length;
+  const goalsAchieved = financials.goals.filter((g) => goalAchievement(g, financials).achieved).length; // Phase 2.8.3: the one rule, as debts below
   const debtsPaidOff = financials.debts.filter((d) => debtPayoff(d, financials.transactions, financials).paidOff).length; // DI-01 (session 30)
 
   // ── What's next: same EF pace math as the Projections page ─────────

@@ -1,6 +1,6 @@
 import { spentByBucket, spendingEffect, totalSpent } from "./spending";
 import type { LocalFinancials, BudgetRuleKey, StoredDebt, StoredTransaction, StoredRecurring, TrackedBalance, Currency, PeriodCloseAcknowledgement } from "./localData";
-import { goalProgress, acknowledgementFor, historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, cycleStartDayOf, valueForMonth, makeToUSDForMonth, makeToUSDOn, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, derivedEfBalance, derivedDebtBalance, activeTransactions, parseLocalDate, isRecurringActive, isAfterBalanceBaseline, lbpRateOf, rateOn } from "./localData";
+import { goalProgress, goalAchievement, goalPercent, acknowledgementFor, historizedRecurringContribution, nextConfirmTarget, BUDGET_RULES, cycleStartDayOf, valueForMonth, makeToUSDForMonth, makeToUSDOn, budgetPctForMonth, toUSD as toUSDShared, floorCustomSplit, derivedEfBalance, derivedDebtBalance, activeTransactions, parseLocalDate, isRecurringActive, isAfterBalanceBaseline, lbpRateOf, rateOn } from "./localData";
 import { currentCycleKey, calendarKeyForDate, isInCycle, cycleProgress, cycleBounds, cycleKeyMinus, cycleKeyForISO, periodNoun, cycleLabel, type CycleKey, type CalendarKey, type CalendarHistory } from "./period";
 import { simulateDebtPayoff, type DebtInput } from "./debtEngine";
 import { calendarDayOf, dayStart } from "./calendarDay";
@@ -90,6 +90,8 @@ export interface DashboardPayload {
     id: number; name: string; emoji: string | null; type: string;
     targetAmount: number; currentAmount: number; currency: Currency; projection: Projection;
     paused: boolean;
+    /** Phase 2.8.3: the one rule (goalAchievement): achieved, and since when (a local day; null when nothing dates it). */
+    achieved: boolean; achievedOn: string | null;
   }[];
   sixMonthTrend: { ymKey: number; income: number; spend: number; savingsContrib: number }[];
   /** CALENDAR-keyed, unlike every other history (2.4.87). */
@@ -758,14 +760,17 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     // goal -- structurally the same numbers, not just independently
     // re-derived to (hopefully) match.
     const { rawMs, req, pace } = goalPace(g);
+    const achievement = goalAchievement(g, data);
     return {
       id: i + 1, name: g.name, emoji: g.emoji || null, type: "SAVINGS",
       targetAmount: g.targetAmount, currentAmount: goalProgress(g, data), currency: g.currency,
       paused: !!g.pausedAt,
+      achieved: achievement.achieved, achievedOn: achievement.on,
       projection: {
         // targetAmount of exactly 0 (e.g. a goal saved before an amount was
         // entered) would otherwise divide 0/0 into NaN — treat it as met.
-        pctComplete: g.targetAmount > 0 ? Math.min(100, Math.round((goalProgress(g, data) / g.targetAmount) * 100)) : 100,
+        // Phase 2.8.3: 100 only when achieved, else at most 99 (goalPercent).
+        pctComplete: goalPercent(goalProgress(g, data), g.targetAmount, achievement.achieved),
         // Raw (only floored at 0, not 1) — an overdue goal should read "0 mo
         // left", not the misleading "1 mo left" the div-by-zero-safe `ms`
         // above would otherwise leak into display.

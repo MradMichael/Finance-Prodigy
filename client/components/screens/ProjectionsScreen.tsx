@@ -151,7 +151,7 @@ export default function ProjectionsScreen({
   // What's free from each step's month: the base plus everything freed by then.
   const freeFrom = (freed: Date) => freeNowUSD + boundedObligations.filter((o) => o.freed <= freed).reduce((s, o) => s + o.monthlyAmountUSD, 0);
   const monthYear = (d: Date) => d.toLocaleDateString("en-GB", { month: "short", year: "numeric", timeZone: "UTC" });
-  const openGoals = goals.filter((g) => g.projection.pctComplete < 100 && !g.paused);
+  const openGoals = goals.filter((g) => !g.achieved && !g.paused); // Phase 2.8.3: the one rule, not the rounded percent
   const totalGoalsRemaining = openGoals.reduce((s, g) => {
     const remaining = Math.max(0, g.targetAmount - g.currentAmount);
     return s + toUSDShared(remaining, g.currency, lbpRate);
@@ -167,7 +167,7 @@ export default function ProjectionsScreen({
   // index.
   const openGoalsWithId = financials.goals
     .map((stored, i) => ({ stored, dash: goals[i] }))
-    .filter(({ dash }) => dash.projection.pctComplete < 100 && !dash.paused);
+    .filter(({ dash }) => !dash.achieved && !dash.paused);
   const goalCapacityInputs: GoalCapacityInput[] = openGoalsWithId.map(({ stored }) => ({
     id: stored.id,
     name: stored.name,
@@ -665,7 +665,7 @@ export default function ProjectionsScreen({
             )}
           </div>
           {openGoalsWithId.length === 0 ? (
-            <p className="text-sm" style={{ color: T.mute }}>{goals.length === 0 ? "No goals yet. Add one in Goals." : "All goals achieved. 🎉"}</p>
+            <p className="text-sm" style={{ color: T.mute }}>{goals.length === 0 ? "No goals yet. Add one in Goals." : goals.every((g) => g.achieved) ? "All goals achieved. 🎉" : "Nothing left to plan: every goal is achieved or paused."}</p>
           ) : !hasIncome ? (
             <p className="text-sm" style={{ color: T.mute }}>Set your monthly income to see this.</p>
           ) : testAmount <= 0 ? (
