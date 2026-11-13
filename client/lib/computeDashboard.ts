@@ -88,6 +88,8 @@ export interface DashboardPayload {
   };
   goals: {
     id: number; name: string; emoji: string | null; type: string;
+    /** Session 52: the stored goal's own id. `id` is only this list's numbering (1, 2, ...); look a goal up by this. */
+    storedId: string;
     targetAmount: number; currentAmount: number; currency: Currency; projection: Projection;
     paused: boolean;
     /** Phase 2.8.3: the one rule (goalAchievement): achieved, and since when (a local day; null when nothing dates it). */
@@ -762,7 +764,7 @@ export function computeDashboard(data: LocalFinancials): DashboardPayload {
     const { rawMs, req, pace } = goalPace(g);
     const achievement = goalAchievement(g, data);
     return {
-      id: i + 1, name: g.name, emoji: g.emoji || null, type: "SAVINGS",
+      id: i + 1, storedId: g.id, name: g.name, emoji: g.emoji || null, type: "SAVINGS",
       targetAmount: g.targetAmount, currentAmount: goalProgress(g, data), currency: g.currency,
       paused: !!g.pausedAt,
       achieved: achievement.achieved, achievedOn: achievement.on,

@@ -80,11 +80,15 @@ export default function GoalsScreen({
     return saved.card;
   }
 
-  function pay(dashGoalId: number) {
+  // Session 52: a goal is found by its own id (the dashboard goal's storedId), not by its place in the list. The
+  // dashboard and the stored list are separate props, and a place only matches while they are in step.
+  const storedGoal = (storedId: string) => financials.goals.find((g) => g.id === storedId);
+
+  function pay(dashGoalId: number, storedId: string) {
     const amt = parseFloat(payAmt.replace(/,/g, ""));
     if (!amt || amt <= 0) return;
 
-    const rawGoal = financials.goals[dashGoalId - 1];
+    const rawGoal = storedGoal(storedId);
     if (!rawGoal) return;
 
     let cardId: string | undefined;
@@ -112,10 +116,8 @@ export default function GoalsScreen({
     setTimeout(() => setPaySuccess(null), 3000);
   }
 
-  // dashData.goals' own "id" is a 1-based index into financials.goals, not
-  // the real StoredGoal.id -- same lookup pay()/togglePause() already do.
-  function editGoal(dashGoalId: number) {
-    const rawGoal = financials.goals[dashGoalId - 1];
+  function editGoal(storedId: string) {
+    const rawGoal = storedGoal(storedId);
     if (!rawGoal) return;
     onEdit(rawGoal.id);
   }
@@ -124,8 +126,8 @@ export default function GoalsScreen({
   // Projections' funding plan while keeping it (and its saved amount) around
   // for history -- resuming is fully reversible. See computeDashboard.ts's
   // goalScores / ProjectionsScreen's openGoals for where paused is read.
-  function togglePause(dashGoalId: number) {
-    const rawGoal = financials.goals[dashGoalId - 1];
+  function togglePause(storedId: string) {
+    const rawGoal = storedGoal(storedId);
     if (!rawGoal) return;
     onChange({
       ...financials,
@@ -223,13 +225,13 @@ export default function GoalsScreen({
                       </p>
                       <div className="flex items-center gap-1.5 flex-shrink-0">
                         <button
-                          onClick={() => editGoal(g.id)}
+                          onClick={() => editGoal(g.storedId)}
                           aria-label="Edit goal"
                           className="text-[10px] px-1.5 py-0.5 rounded transition-all opacity-70 hover:!opacity-100"
                           style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
                         >✎</button>
                         <button
-                          onClick={() => togglePause(g.id)}
+                          onClick={() => togglePause(g.storedId)}
                           aria-label={g.paused ? "Resume goal" : "Pause goal"}
                           title={g.paused ? "Resume this goal" : "Pause this goal — won't count toward pace/score until resumed"}
                           className="text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap transition-all hover:opacity-80"
@@ -350,12 +352,12 @@ export default function GoalsScreen({
                               placeholder={`Custom amount (${g.currency === "LBP" ? "L£" : "$"})`}
                               value={payAmt}
                               onChange={(e) => setPayAmt(e.target.value)}
-                              onKeyDown={(e) => e.key === "Enter" && pay(g.id)}
+                              onKeyDown={(e) => e.key === "Enter" && pay(g.id, g.storedId)}
                               className="flex-1 rounded-xl px-3 py-2 text-sm tabular-nums"
                               style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
                             />
                             <button
-                              onClick={() => pay(g.id)}
+                              onClick={() => pay(g.id, g.storedId)}
                               disabled={!payAmt || parseFloat(payAmt) <= 0}
                               className="px-4 py-2 rounded-xl text-xs font-bold transition-all hover:opacity-90 disabled:opacity-40"
                               style={{ background: T.jade, color: T.ink }}

@@ -206,9 +206,11 @@ function payloadSnapshot() {
   // Phase 2.8.3 (session 47): each goal's `achieved` and `achievedOn` are
   // ADDED, held out the same way and asserted below.
   const { periodLabel, ...rest } = dash;
+  // Session 52: each goal's `storedId` (the stored goal's own id) is ADDED, held out the same way and asserted below.
   const goalAchievements = dash.goals.map(({ achieved, achievedOn }) => ({ achieved, achievedOn }));
-  const goals = dash.goals.map(({ achieved: _a, achievedOn: _o, ...g }) => g);
-  return { periodLabel, goalAchievements, serialisable: { ...rest, goals, anchor: dash.anchor.toISOString() } };
+  const goalStoredIds = dash.goals.map((g) => g.storedId);
+  const goals = dash.goals.map(({ achieved: _a, achievedOn: _o, storedId: _s, ...g }) => g);
+  return { periodLabel, goalAchievements, goalStoredIds, serialisable: { ...rest, goals, anchor: dash.anchor.toISOString() } };
 }
 
 describe("period primitive — zero-diff gate", () => {
@@ -220,7 +222,7 @@ describe("period primitive — zero-diff gate", () => {
 
   for (const zone of BASELINE_ZONES) {
     it.runIf(ZONE === zone)(`the entire computeDashboard payload is unchanged [${zone}]`, () => {
-      const { periodLabel, goalAchievements, serialisable } = payloadSnapshot();
+      const { periodLabel, goalAchievements, goalStoredIds, serialisable } = payloadSnapshot();
       expect(serialisable).toMatchSnapshot();
       // At startDay 1 the label must still read as a plain month, or the
       // hold-out above would be hiding a real change to existing behaviour.
@@ -228,6 +230,7 @@ describe("period primitive — zero-diff gate", () => {
       // Neither fixture goal is reached (500 of 4,000; 0 of 1,500), so both
       // percents are unchanged in the snapshot and neither is achieved.
       expect(goalAchievements).toEqual([{ achieved: false, achievedOn: null }, { achieved: false, achievedOn: null }]);
+      expect(goalStoredIds).toEqual(["g1", "g2"]);
     });
   }
 
