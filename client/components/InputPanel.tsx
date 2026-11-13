@@ -2,7 +2,7 @@
 
 import { spentByBucket, totalSpent } from "../lib/spending";
 import { useState, useRef, useEffect, type ReactNode } from "react";
-import { useDialogFocus } from "./useDialogFocus";
+import LbpMistypeDialog from "./LbpMistypeDialog";
 import { useScrollFocus } from "./useScrollFocus";
 import type { LocalFinancials, StoredTransaction, StoredGoal, StoredDebt, StoredRecurring, StoredCard, RecurringFrequency, Currency, PaymentMethod, BudgetRuleKey } from "../lib/localData";
 import type { Session } from "../lib/auth";
@@ -179,9 +179,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   // it anyway" vs "let me fix the currency", so this stores enough to
   // resume whichever save flow (add or edit) triggered it.
   const [lbpConfirm, setLbpConfirm] = useState<{ amount: number; proceed: () => void } | null>(null);
-  const lbpConfirmRef = useRef<HTMLDivElement>(null);
   const monthListScrollRef = useScrollFocus(); // A11Y-05
-  useDialogFocus(lbpConfirmRef, lbpConfirm != null); // A11Y-02
 
   // Goal form
   const [gName,    setGName]    = useState("");
@@ -2136,42 +2134,12 @@ export default function InputPanel({ financials, dashData, onChange, session, on
       <ImportStatement financials={financials} onImport={update} onClose={() => setShowImport(false)} />
     )}
     {lbpConfirm && (
-      <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-4"
-        style={{ background: "rgba(0,0,0,0.6)" }}
-        onClick={(e) => { if (e.target === e.currentTarget) setLbpConfirm(null); }}
-        onKeyDown={(e) => { if (e.key === "Escape") setLbpConfirm(null); }}
-      >
-        <div
-          ref={lbpConfirmRef}
-          role="dialog"
-          aria-modal="true"
-          aria-label="Confirm low LBP amount"
-          className="w-full max-w-sm rounded-2xl p-6 shadow-2xl"
-          style={{ background: T.panel, border: `1px solid ${T.line}` }}
-        >
-          <p className="text-[10px] uppercase tracking-widest font-semibold mb-2" style={{ color: T.brass }}>Double-check this amount</p>
-          <p className="text-sm mb-5" style={{ color: T.text }}>
-            <strong>{lbpConfirm.amount.toLocaleString("en-US")} LBP</strong> is unusually low for a real purchase — most things this cheap are actually meant to be USD. Did you mean to log this in USD instead?
-          </p>
-          <div className="flex flex-col gap-2">
-            <button
-              onClick={() => setLbpConfirm(null)}
-              className="w-full py-2.5 rounded-xl text-sm font-semibold hover:opacity-90"
-              style={{ background: T.jade, color: T.ink }}
-            >
-              Let me fix the currency
-            </button>
-            <button
-              onClick={() => { const proceed = lbpConfirm.proceed; setLbpConfirm(null); proceed(); }}
-              className="w-full py-2.5 rounded-xl text-sm hover:opacity-90"
-              style={{ background: T.panelSoft, color: T.mute, border: `1px solid ${T.line}` }}
-            >
-              No, save it as {lbpConfirm.amount.toLocaleString("en-US")} LBP
-            </button>
-          </div>
-        </div>
-      </div>
+      <LbpMistypeDialog
+        amount={lbpConfirm.amount}
+        onFix={() => setLbpConfirm(null)}
+        onSave={() => { const proceed = lbpConfirm.proceed; setLbpConfirm(null); proceed(); }}
+        closeOnEscape
+      />
     )}
 
     {actionMsg && (
