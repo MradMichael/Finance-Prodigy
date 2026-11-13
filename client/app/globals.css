@@ -28,6 +28,17 @@
 }
 
 /*
+ * R6 (session 51 review): the date field (DateFieldDMY) is as tall as the field beside it. Its three boxes and
+ * calendar button each take the tap-size floor above, inside the field's padding, which made it taller than a
+ * plain field. The boxes reach 2 px into that padding instead, so a 24 px box sits in the 20 px line. The touch
+ * half is in the block below.
+ */
+.dmy-field > input, .dmy-field > button {
+  margin-top: -2px;
+  margin-bottom: -2px;
+}
+
+/*
  * A1, app readiness (owner-approved 2026-11-05). On a touch screen only, so the desktop layout keeps
  * its smaller text: every typing field, select and textarea is 16 px. iOS Safari zooms the page in when
  * a focused field's text is smaller, and a 375 px sweep found 30 fields at 14 px across 11 screens.
@@ -49,6 +60,19 @@
   }
   button, [role="button"], [role="tab"], [role="switch"] {
     min-width: 44px;
+  }
+  /*
+   * R6 (session 51 review): on a touch screen the date field drops its vertical padding and its boxes reach
+   * 1 px into its border, so each box keeps a 44 px tap and the field is 44 px tall, like the Amount field
+   * beside it (it was 66).
+   */
+  .dmy-field {
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+  .dmy-field > input, .dmy-field > button {
+    margin-top: -1px;
+    margin-bottom: -1px;
   }
 }
 
