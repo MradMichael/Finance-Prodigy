@@ -62,3 +62,18 @@ describe("Goals acts on the goal shown, whatever its place in the stored list", 
     expect(onChange).not.toHaveBeenCalled();
   });
 });
+
+// The same pairing by place was in Projections' funding plan: it zipped the stored list with the dashboard's by
+// index, so a stored goal the dashboard hadn't seen yet had no partner and the screen threw.
+import ProjectionsScreen from "./ProjectionsScreen";
+
+describe("Projections pairs each goal by id too", () => {
+  it("a stored list one goal ahead of the dashboard, and reordered: it renders, and plans the goals it knows", () => {
+    const NEW = goal("g-new", "Camera");
+    const financials = data([TRIP, NEW, LAPTOP]);
+    expect(() => render(<ProjectionsScreen financials={financials} dashData={computeDashboard(data([LAPTOP, TRIP]))} />)).not.toThrow();
+    const text = (document.body.textContent ?? "").replace(/\s+/g, " ");
+    expect(text).toContain("Laptop");
+    expect(text).toContain("Trip");
+  });
+});
