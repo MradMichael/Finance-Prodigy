@@ -12,6 +12,7 @@ import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker } from "./form/Primitives";
 import { fmtCur, money } from "./screens/shared";
 import ImportStatement from "./ImportStatement";
+import FutureDateNote from "./form/FutureDateNote";
 import {currentCycleKey, cycleKeyForISO, isInCycle, periodNoun, cycleLabel, type CycleKey } from "../lib/period";
 import { calendarDayOf } from "../lib/calendarDay";
 import CategoryOptions from "./form/CategoryOptions";
@@ -1420,6 +1421,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                     <div>
                       <Label htmlFor={`contribute-date-${g.id}`}>Date paid</Label>
                       <DateFieldDMY id={`contribute-date-${g.id}`} value={contributeDate} onChange={setContributeDate} />
+                      <FutureDateNote date={contributeDate} />
                     </div>
                     <PaymentMethodPicker
                       value={contributeMethod}

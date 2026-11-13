@@ -7,6 +7,7 @@ import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
 import { PaymentMethodPicker, Label, DateFieldDMY } from "../form/Primitives";
+import FutureDateNote from "../form/FutureDateNote";
 import { currentCycleKey, isInCycle, periodNoun } from "../../lib/period";
 
 export default function GoalsScreen({
@@ -373,6 +374,7 @@ export default function GoalsScreen({
                           <div>
                             <Label htmlFor={`goals-pay-date-${g.id}`}>Date paid</Label>
                             <DateFieldDMY id={`goals-pay-date-${g.id}`} value={payDate} onChange={setPayDate} />
+                            <FutureDateNote date={payDate} />
                           </div>
                           <PaymentMethodPicker
                             value={payMethod}
