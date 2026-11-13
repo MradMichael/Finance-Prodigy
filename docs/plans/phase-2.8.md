@@ -251,12 +251,18 @@ reached):
 7. A reached, paused goal shows "Achieved" and "Paused", and counts in Journey.
 8. Same-instant rows are ordered by id for goals; debts are unchanged.
 
-## Income-history fallback: decided, not approved to build
+## Income-history fallback: built and merged (session 52)
 
 Decision (owner, session 41): for periods before the first income snapshot, fall back to the **earliest**
 snapshot, not today's income. The test that pins today's fallback is rewritten first and must fail before
 the fix (rule 4). It visibly changes past periods' figures, so it needs a before/after check on the owner's
 data.
+
+**Built (session 51, held) and merged on the owner's approval (session 52).** `incomeForCycle` (`client/lib/localData.ts`)
+is the lookup; its three callers are all income (`client/lib/computeDashboard.ts`). With no history at all it is
+still today's income, and the LBP rate keeps its own rule. Tests: `client/lib/income-fallback.test.ts`. What moves
+for an account whose first record is later than its first entries: past months' income, budget rollover, the
+savings streak, and the salary credited to a tracked balance (so that balance's expected figure).
 
 ## InputPanel split (`client/components/InputPanel.tsx`): planned, not approved to build
 
