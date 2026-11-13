@@ -10,6 +10,7 @@
     "build": "prisma generate && tsc",
     "start": "node dist/index.js",
     "test": "vitest run",
+    "lint": "eslint src test --ext .ts",
     "typecheck:tests": "tsc -p tsconfig.tests.json"
   },
   "prisma": {
@@ -29,6 +30,9 @@
     "@types/express": "^4.17.21",
     "@types/node": "^20.14.2",
     "@types/supertest": "^6.0.3",
+    "@typescript-eslint/parser": "^8.62.1",
+    "eslint": "^8.57.1",
+    "eslint-plugin-import": "^2.32.0",
     "prisma": "^5.14.0",
     "supertest": "^7.3.0",
     "ts-node": "^10.9.2",
