@@ -157,16 +157,14 @@ export default function ProjectionsScreen({
     return s + toUSDShared(remaining, g.currency, lbpRate);
   }, 0);
 
-  // F3 (Goal Feasibility Engine), sub-phase 3: dashData.goals[].id is a
-  // 1-based array INDEX into financials.goals, not a real StoredGoal.id
-  // (2.4.49) -- allocateGoalCapacity's results are keyed by real id, so the
-  // mapping below zips financials.goals with dashData.goals BY ARRAY INDEX
-  // (both are built from the same data.goals.map(), same order, same
-  // length -- the same guarantee GoalsScreen.tsx's editGoal/pay/togglePause
-  // already rely on), carrying the real id through instead of the display
-  // index.
-  const openGoalsWithId = financials.goals
-    .map((stored, i) => ({ stored, dash: goals[i] }))
+  // F3 (Goal Feasibility Engine), sub-phase 3: dashData.goals[].id is only
+  // that list's numbering, not a real StoredGoal.id (2.4.49), and
+  // allocateGoalCapacity's results are keyed by real id. Session 52: each
+  // dashboard goal is paired with its stored goal by storedId, not by
+  // place -- the two lists are separate props, and a stored goal the
+  // dashboard hadn't seen yet used to have no partner (it threw).
+  const openGoalsWithId = goals
+    .flatMap((dash) => { const stored = financials.goals.find((s) => s.id === dash.storedId); return stored ? [{ stored, dash }] : []; })
     .filter(({ dash }) => !dash.achieved && !dash.paused);
   const goalCapacityInputs: GoalCapacityInput[] = openGoalsWithId.map(({ stored }) => ({
     id: stored.id,
