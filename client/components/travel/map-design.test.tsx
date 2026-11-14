@@ -1,7 +1,8 @@
 // Travel map design pass (owner, 2026-11-05; docs/plans/travel.md). Each
 // concern adds its tests here, failing first.
-//   1. The map opens fitted to the visited countries (the "Show my countries"
-//      view); the whole world only when nothing is visited.
+//   1. The map opens fitted to the visited and planned countries (the "Show my
+//      countries" view). Session 52 (owner, R16): planned ones too; it used to
+//      open on the visited ones only, cutting a planned country off.
 //   2. Visited countries stand out: a strong brass fill (the theme's brass70,
 //      brass at 0xB0) reaching 3:1 against unvisited land in every theme, with
 //      a thin ink outline (a brass one would vanish on brass) so neighbouring
@@ -48,18 +49,27 @@ async function panel(trips: StoredTrip[]) {
 const viewBox = (svg: SVGSVGElement) => svg.getAttribute("viewBox")!.split(" ").map(Number);
 const holds = ([x, y, w, h]: number[], [px, py]: [number, number]) => px >= x && px <= x + w && py >= y && py <= y + h;
 
-describe("1. opens fitted to the visited countries", () => {
-  it("with visited countries: the view holds them, a small part of the world, at the map's shape", async () => {
-    const vb = viewBox(await panel([EUROPE, JAPAN_PLANNED]));
+describe("1. opens fitted to the visited and planned countries", () => {
+  it("visited only: the view holds them, a small part of the world, at the map's shape", async () => {
+    const vb = viewBox(await panel([EUROPE]));
     expect(holds(vb, WORLD.project(2.35, 48.85))).toBe(true);
     expect(holds(vb, WORLD.project(14.51, 35.9))).toBe(true);
-    expect(holds(vb, WORLD.project(135.77, 35.01))).toBe(false); // planned only: not part of the opening view
     expect(vb[2]).toBeLessThan(WORLD.width * 0.2);
     expect(vb[2] / vb[3]).toBeCloseTo(WORLD.width / WORLD.height, 2);
   });
 
-  it("nothing visited (only planned trips): the whole world", async () => {
-    expect(viewBox(await panel([JAPAN_PLANNED]))).toEqual([0, 0, WORLD.width, WORLD.height]);
+  it("visited and planned: the view holds every one of them, at the map's shape", async () => {
+    const vb = viewBox(await panel([EUROPE, JAPAN_PLANNED]));
+    expect(holds(vb, WORLD.project(2.35, 48.85))).toBe(true);
+    expect(holds(vb, WORLD.project(14.51, 35.9))).toBe(true);
+    expect(holds(vb, WORLD.project(135.77, 35.01))).toBe(true); // session 52: the planned country is in the opening view
+    expect(vb[2] / vb[3]).toBeCloseTo(WORLD.width / WORLD.height, 2);
+  });
+
+  it("only planned trips: the view holds them, not the whole world", async () => {
+    const vb = viewBox(await panel([JAPAN_PLANNED]));
+    expect(holds(vb, WORLD.project(135.77, 35.01))).toBe(true);
+    expect(vb[2]).toBeLessThan(WORLD.width * 0.2);
   });
 });
 

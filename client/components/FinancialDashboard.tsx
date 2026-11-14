@@ -204,6 +204,7 @@ export default function FinancialDashboard({
   const [paydayBannerDismissed, setPaydayBannerDismissed] = useState(false);
 
   const { health, month, periodLabel, emergencyFund: ef, debt, goals, sixMonthTrend, encouragements, user, netWorth, streaks, budgetPace, netWorthTrend, upcomingRenewals, balanceChecks, budgetTargetPct, alerts } = data;
+  const comingUp    = upcomingRenewals.filter((r) => r.overdueCount === 0);
   const targets     = data.budgetTargets;
   const budgetLabel = data.budgetRule === "custom" ? "Custom split" : data.budgetRule.replace(/-/g, " / ");
 
@@ -458,10 +459,12 @@ export default function FinancialDashboard({
         </div>
 
         {/* Upcoming renewals */}
-        {upcomingRenewals.length > 0 && (
+        {/* Session 52 (owner, R10): what is coming up. An overdue item is in the reminder and in Needs attention;
+            it was said here a third time. */}
+        {comingUp.length > 0 && (
           <div className="rounded-2xl px-5 py-4 flex flex-wrap gap-3" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
             <p className="text-xs uppercase tracking-widest flex-shrink-0 self-center" style={{ color: T.mute }}>Renewing soon</p>
-            {upcomingRenewals.map((r) => {
+            {comingUp.map((r) => {
               const overdue = r.overdueCount > 0;
               return (
                 <span

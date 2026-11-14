@@ -83,7 +83,8 @@ it("this device takes the reset: everything it held is cleared", { timeout: 3000
 });
 
 /** The merge notice's text (the page's second live region; its first span, without the Dismiss button). */
-const noticeText = () => screen.getAllByRole("status")[1].querySelector("span")?.textContent ?? "";
+// Session 52 (R8): the backup notices' live region now comes before this one in the page, so this is the third.
+const noticeText = () => screen.getAllByRole("status")[2].querySelector("span")?.textContent ?? "";
 
 it("and says so (R1)", { timeout: 30000 }, async () => {
   render(<Home />);

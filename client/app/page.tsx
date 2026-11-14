@@ -881,6 +881,11 @@ export default function Home() {
     );
   }
 
+  // Session 52 (owner, R8): where a backup notice sits. Below md it is in the page's flow, under the top bar, and
+  // pushes the screen down; from md up it is fixed at the top right, as before. With a save error showing too
+  // (two failures at once), the phone keeps the old stacked, fixed position under it.
+  const backupNoticePlace = `${saveError ? "fixed top-[calc(11rem+env(safe-area-inset-top))] left-4 right-4 shadow-2xl z-50 md:top-[7.5rem]" : "mx-4 mt-3 md:mx-0 md:mt-0 md:top-4"} md:fixed md:left-auto md:right-4 md:max-w-md md:shadow-2xl md:z-50`;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100dvh", background: T.ink }}>
 
@@ -891,6 +896,60 @@ export default function Home() {
       <span role="status" className="sr-only">{syncStatus !== "idle" ? syncStatusLongLabel(syncStatus) : ""}</span>
       {/* PWA P3 (owner-approved wording, 2026-11-05): while the device is offline. */}
       <OfflineNotice backsUp={backupRetriesOnReconnect({ backupOn, syncRefused, newerBackup, backupTooLarge })} />
+
+      {/* ERR-02: a failed backup, until the next success. Owner-approved wording
+          (merged in session 3). In a live region that's always on the page
+          (A11Y-03), below the save error when both show.
+          Session 52 (owner, R8): the region sits here, under the top bar and the offline strip, so that on a
+          phone the two backup notices are in the page's flow (they floated over every screen). */}
+      <div role="status" className="flex-shrink-0">
+        {syncRefused && (
+          <div
+            className={`fixed ${saveError ? "top-[calc(11rem+env(safe-area-inset-top))] md:top-[7.5rem]" : "top-[calc(4.5rem+env(safe-area-inset-top))] md:top-4"} left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50`}
+            style={{ background: T.panel, border: `1px solid ${T.brass}` }}
+          >
+            {/* SEC-07 amended (session 26, item 2): the owner's wording (session 27). */}
+            <span className="text-sm" style={{ color: T.text }}>{SYNC_REFUSED_MESSAGE}</span>
+          </div>
+        )}
+        {backupTooLarge && (
+          <div
+            className={`${backupNoticePlace} rounded-2xl px-4 py-3.5`}
+            style={{ background: T.panel, border: `1px solid ${T.brass}` }}
+          >
+            {/* ERR-03 (session 22; approved and merged in session 23, b173718) */}
+            <span className="text-sm" style={{ color: T.text }}>
+              Your latest changes can&apos;t be backed up: your data is larger than the 2 MB the server can hold. They&apos;re safe on this device. Export a copy from Profile to keep one safe.
+            </span>
+          </div>
+        )}
+        {backupFailed && !backupNoticeDismissed && (
+          <div
+            className={`${backupNoticePlace} rounded-2xl px-4 py-3.5 flex items-start gap-3`}
+            style={{ background: T.panel, border: `1px solid ${T.brass}` }}
+          >
+            <span className="text-sm flex-1" style={{ color: T.text }}>
+              Your latest changes aren&apos;t backed up yet. They&apos;re safe on this device, and ESSA will try again.
+            </span>
+            <button
+              onClick={() => retryBackupRef.current()}
+              className="flex-shrink-0 text-xs font-semibold px-2.5 py-1 rounded-lg hover:opacity-80 transition-opacity"
+              style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
+            >
+              Try again
+            </button>
+            <button
+              onClick={() => setBackupNoticeDismissed(true)}
+              aria-label="Dismiss"
+              className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-lg hover:opacity-70 transition-opacity"
+              style={{ color: T.mute }}
+            >
+              ✕
+            </button>
+          </div>
+        )}
+      </div>
+
 
       {/* Body row */}
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
@@ -1000,57 +1059,6 @@ export default function Home() {
           </button>
         </div>
       )}
-
-      {/* ERR-02: a failed backup, until the next success. Owner-approved wording
-          (merged in session 3). In a live region that's always on the page
-          (A11Y-03), below the save error when both show. */}
-      <div role="status">
-        {syncRefused && (
-          <div
-            className={`fixed ${saveError ? "top-[calc(11rem+env(safe-area-inset-top))] md:top-[7.5rem]" : "top-[calc(4.5rem+env(safe-area-inset-top))] md:top-4"} left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50`}
-            style={{ background: T.panel, border: `1px solid ${T.brass}` }}
-          >
-            {/* SEC-07 amended (session 26, item 2): the owner's wording (session 27). */}
-            <span className="text-sm" style={{ color: T.text }}>{SYNC_REFUSED_MESSAGE}</span>
-          </div>
-        )}
-        {backupTooLarge && (
-          <div
-            className={`fixed ${saveError ? "top-[calc(11rem+env(safe-area-inset-top))] md:top-[7.5rem]" : "top-[calc(4.5rem+env(safe-area-inset-top))] md:top-4"} left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50`}
-            style={{ background: T.panel, border: `1px solid ${T.brass}` }}
-          >
-            {/* ERR-03 (session 22; approved and merged in session 23, b173718) */}
-            <span className="text-sm" style={{ color: T.text }}>
-              Your latest changes can&apos;t be backed up: your data is larger than the 2 MB the server can hold. They&apos;re safe on this device. Export a copy from Profile to keep one safe.
-            </span>
-          </div>
-        )}
-        {backupFailed && !backupNoticeDismissed && (
-          <div
-            className={`fixed ${saveError ? "top-[calc(11rem+env(safe-area-inset-top))] md:top-[7.5rem]" : "top-[calc(4.5rem+env(safe-area-inset-top))] md:top-4"} left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50 flex items-start gap-3`}
-            style={{ background: T.panel, border: `1px solid ${T.brass}` }}
-          >
-            <span className="text-sm flex-1" style={{ color: T.text }}>
-              Your latest changes aren&apos;t backed up yet. They&apos;re safe on this device, and ESSA will try again.
-            </span>
-            <button
-              onClick={() => retryBackupRef.current()}
-              className="flex-shrink-0 text-xs font-semibold px-2.5 py-1 rounded-lg hover:opacity-80 transition-opacity"
-              style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
-            >
-              Try again
-            </button>
-            <button
-              onClick={() => setBackupNoticeDismissed(true)}
-              aria-label="Dismiss"
-              className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-lg hover:opacity-70 transition-opacity"
-              style={{ color: T.mute }}
-            >
-              ✕
-            </button>
-          </div>
-        )}
-      </div>
 
       {/* A11Y-07 (session 22; approved and merged in session 23, b173718): a change of screen, announced. After the other live regions, so their order holds. */}
       <span id="screen-announcer" role="status" className="sr-only">{screenAnnounced}</span>

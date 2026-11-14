@@ -74,6 +74,18 @@
     margin-top: -1px;
     margin-bottom: -1px;
   }
+  /*
+   * R13 (session 52, owner: phones only): the smallest text on a touch screen is 10 px, and notes are 11 px.
+   * The review found 9 px labels, badges and chips, and explanatory lines at 9 and 10 px. A note is a sentence
+   * line: a <p> at 9 or 10 px that isn't an uppercase label. The note rule comes second, so a 9 px note ends
+   * at 11. The desktop layout keeps its sizes.
+   */
+  .text-\[9px\] {
+    font-size: 10px;
+  }
+  p.text-\[9px\]:not(.uppercase), p.text-\[10px\]:not(.uppercase) {
+    font-size: 11px;
+  }
 }
 
 /*
