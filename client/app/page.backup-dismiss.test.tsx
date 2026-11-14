@@ -97,3 +97,22 @@ describe("U3: dismissing the failed-backup notice", () => {
     expect(await screen.findByText(NOTICE)).toBeTruthy();
   });
 });
+
+// Session 52 (owner, R8): on a phone the notice floated over the top of every screen (it covered the stats strip
+// and the title) until dismissed. Below md it is now in the page's flow, under the top bar, and pushes the screen
+// down like the offline strip; from md up it stays fixed at the top right. jsdom does no layout: the classes and
+// the order in the page are checked here, the screen itself live.
+describe("R8: the failed-backup notice sits in the page flow on a phone", () => {
+  it("fixed only from md up, and before the screen's content in the page", async () => {
+    push.mockResolvedValue(FAIL);
+    await editAndUpload();
+    const notice = screen.getByText(NOTICE).parentElement!;
+    const classes = notice.className.split(/\s+/);
+    expect(classes).toContain("md:fixed");
+    expect(classes).not.toContain("fixed");
+    const content = document.getElementById("wish-name")!;
+    expect(notice.compareDocumentPosition(content) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Still one live region that's always on the page (A11Y-03).
+    expect(notice.closest('[role="status"]')).not.toBeNull();
+  });
+});
