@@ -9,6 +9,7 @@ import {
   roundMoney, retagBucketAmount, moneyMaxFor, cycleStartDayOf, edited, saveCard as storeCard, rateOn, lbpRateOf } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY, CurrencyToggle, PM_OPTIONS, CardPicker } from "./form/Primitives";
+import FutureDateNote from "./form/FutureDateNote";
 import { cycleKeyForISO, currentCycleKey } from "../lib/period";
 import { foreignCashRole } from "../lib/foreignCash";
 import { looksLikeMistypedLbp } from "../lib/entryGuards";
@@ -230,6 +231,7 @@ export default function EditTransactionSheet({
             <div>
               <Label htmlFor="edit-tx-date">Date</Label>
               <DateFieldDMY id="edit-tx-date" value={date} onChange={setDate} />
+              {transaction.goalId && <FutureDateNote date={date} />}
             </div>
           </div>
           {/* Foreign cash, model 2: the euros (labels approved, session 19). */}
