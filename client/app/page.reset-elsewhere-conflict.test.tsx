@@ -79,7 +79,8 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 /** The merge notice's text (the page's second live region; its first span, without the Dismiss button). */
-const noticeText = () => screen.getAllByRole("status")[1].querySelector("span")?.textContent ?? "";
+// Session 52 (R8): the backup notices' live region now comes before this one in the page, so this is the third.
+const noticeText = () => screen.getAllByRole("status")[2].querySelector("span")?.textContent ?? "";
 
 it("the conflict merge says so too", { timeout: 30000 }, async () => {
   // Stale monthly snapshots: the load writes them and uploads. This device's
