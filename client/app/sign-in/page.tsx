@@ -109,7 +109,7 @@ export default function SignInPage() {
           Welcome back
         </h2>
         <p className="text-xs mb-7" style={{ color: T.mute }}>Sign in to your account</p>
-        {/* docs/plans/pwa.md, item 4: a DRAFT, held for the owner's approval. It blocks nothing. */}
+        {/* docs/plans/pwa.md, item 4: wording approved by the owner (session 52). It blocks nothing. */}
         {!online && (
           <p className="rounded-xl px-4 py-3 text-xs mb-4" role="status" style={{ background: T.brass + "14", border: `1px solid ${T.brass}40`, color: T.text }}>
             You&apos;re offline. On a device you&apos;ve signed in on before, your password works without a connection. Signing in on a new device needs one.

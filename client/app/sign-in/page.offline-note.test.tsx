@@ -1,7 +1,7 @@
 // docs/plans/pwa.md, item 4: the sign-in offline note. Signing in works offline on a device that already has the
 // account (the password unlocks it here); a new device needs a connection. While the browser says it's offline,
-// the sign-in page says so above the form. It blocks nothing. Its wording is a DRAFT (pwa.md), held for the
-// owner's approval.
+// the sign-in page says so above the form. It blocks nothing. Its wording (pwa.md) was approved by the owner
+// (session 52).
 import { it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup, act } from "@testing-library/react";
 
