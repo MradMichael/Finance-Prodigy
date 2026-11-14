@@ -88,7 +88,7 @@ export default function MapPanel({ trips, today, onAddTrip, onShowTrip }: {
     <div className="space-y-4">
       {/* Design pass, 5: the sheet opens below the map at its width (a bottom sheet on a phone), never beside it. */}
       <div className="space-y-4">
-        <TravelMap world={world} trips={trips} today={today} onCountry={setSelected} selected={selected} fitTo={lists.visited} />
+        <TravelMap world={world} trips={trips} today={today} onCountry={setSelected} selected={selected} fitTo={[...lists.visited, ...lists.planned]} />{/* session 52 (owner, R16): planned countries too, as "Show my countries" */}
         {selected && <CountrySheet code={selected} trips={trips} today={today} onClose={() => setSelected(null)} onShowTrip={onShowTrip} />}
       </div>
       {/* Design pass, 6 (owner): no "Countries visited (0)". */}
