@@ -46,6 +46,9 @@ export const money  = (n: number, d = 0) => {
 const LBP_AMOUNT = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const USD_AMOUNT = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 /** A record's own amount in its own currency -- for a native-currency figure, not a cross-record USD total (use money() for those). */
-export const fmtCur = (amt: number, cur: Currency) => cur === "LBP"
-  ? `L£${LBP_AMOUNT.format(amt)}`
-  : `$${USD_AMOUNT.format(amt)}`;
+// Session 52 (owner, R12): a negative amount reads "-$2,336.78", the sign before the symbol (it read "$-2,336.78"),
+// as money() does. Negative zero is zero.
+export const fmtCur = (amt: number, cur: Currency) => {
+  const abs = Math.abs(amt);
+  return `${amt < 0 ? "-" : ""}${cur === "LBP" ? `L£${LBP_AMOUNT.format(abs)}` : `$${USD_AMOUNT.format(abs)}`}`;
+};
