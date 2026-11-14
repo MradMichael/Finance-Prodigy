@@ -572,6 +572,17 @@ describe("deleteAccount (2.2.18 -- server-cleanup result is reported, not swallo
     expect(localStorage.getItem("essa_seen_someone-else")).toBe("sealed");
   });
 
+  it("removes the entry form's remembered currency, method and card for this account only (session 52)", async () => {
+    const reg = await signUp("a@test.com", "Alice", "password12345");
+    if (!reg.ok) throw new Error("setup failed");
+    const userId = listUsers()[0].id;
+    localStorage.setItem(`essa_entry_last_${userId}`, '{"currency":"LBP","paymentMethod":"cash"}');
+    localStorage.setItem("essa_entry_last_someone-else", '{"currency":"USD","paymentMethod":"cash"}');
+    await deleteAccount(userId);
+    expect(localStorage.getItem(`essa_entry_last_${userId}`)).toBeNull();
+    expect(localStorage.getItem("essa_entry_last_someone-else")).not.toBeNull();
+  });
+
   it("removes this device's memory of the clash notices it has shown (plan H 5d)", async () => {
     const reg = await signUp("a@test.com", "Alice", "password12345");
     if (!reg.ok) throw new Error("setup failed");

@@ -1,8 +1,7 @@
 // R7 (session 51 review; InputPanel split, step S2): the "is this lira amount really USD?" dialog was written
 // out twice, in InputPanel (the entry form) and in EditTransactionSheet. These pin what each shows and does,
 // before and after the two copies become one component. lbp-mistype-guard.test.tsx covers when it asks; this
-// covers the dialog itself. The two copies differ in one thing, kept as it was: Escape closes it on the entry
-// form and leaves it open in the edit sheet (the sheet's own Escape is held while the dialog is on top).
+// covers the dialog itself. Session 52 (owner): it behaves the same in both places.
 import { describe, it, expect, vi, afterEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
@@ -75,42 +74,61 @@ describe("the entry form's dialog", () => {
   });
 });
 
-// In the edit sheet the dialog sits inside the sheet's backdrop, whose click closes the sheet, and nothing
-// stops a click in the dialog from reaching it. So today "Let me fix the currency", or a tap outside the
-// dialog, closes the sheet as well, and the edit in progress goes (the saved row is untouched). On the entry
-// form the same answer returns to the form. That is one of the copies' differences, pinned here as it is and
-// listed for the owner as its own fix; this commit only makes the two copies one.
+// Session 52 (owner, item 6): in the edit sheet the dialog sits inside the sheet's backdrop, whose click closes
+// the sheet. A click in the dialog used to reach it, so "Let me fix the currency", or a tap outside the dialog,
+// closed the sheet too and the edit in progress went. Now the dialog keeps its clicks, and Escape closes the
+// dialog there as it does on the entry form, leaving the sheet (and what was typed) as it was.
 describe("the edit sheet's dialog", () => {
+  const typed = () => (document.getElementById("edit-tx-amount") as HTMLInputElement).value;
+
   it("'No, save it' saves once, and the sheet closes", () => {
     const { onChange, onClose } = openOnEditSheet();
     fireEvent.click(screen.getByRole("button", { name: /No, save it as 400 LBP/ }));
     expect(onChange).toHaveBeenCalledTimes(1);
-    expect(onClose).toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("dialog", DIALOG)).toBeNull();
   });
 
-  it("'Let me fix the currency' saves nothing; today the click also reaches the sheet's backdrop and closes it", () => {
+  it("'Let me fix the currency' saves nothing and leaves the sheet open, with the amount as typed", () => {
     const { onChange, onClose } = openOnEditSheet();
     fireEvent.click(screen.getByRole("button", { name: "Let me fix the currency" }));
     expect(screen.queryByRole("dialog", DIALOG)).toBeNull();
     expect(onChange).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(typed()).toBe("400");
+  });
+
+  it("Escape closes the dialog only: the sheet stays, nothing is saved", () => {
+    const { dialog, onChange, onClose } = openOnEditSheet();
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(screen.queryByRole("dialog", DIALOG)).toBeNull();
+    expect(onChange).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(typed()).toBe("400");
+  });
+
+  it("a second Escape, with the dialog gone, closes the sheet as before", () => {
+    const { dialog, onClose } = openOnEditSheet();
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    fireEvent.keyDown(document.body, { key: "Escape" });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("Escape leaves it open and closes nothing", () => {
-    const { dialog, onChange, onClose } = openOnEditSheet();
-    fireEvent.keyDown(dialog, { key: "Escape" });
-    expect(screen.getByRole("dialog", DIALOG)).toBeTruthy();
-    expect(onChange).not.toHaveBeenCalled();
-    expect(onClose).not.toHaveBeenCalled();
-  });
-
-  it("a tap outside closes it and saves nothing; today it closes the sheet too", () => {
+  it("a tap outside the dialog closes it and leaves the sheet open", () => {
     const { dialog, onChange, onClose } = openOnEditSheet();
     fireEvent.click(dialog.parentElement!);
     expect(screen.queryByRole("dialog", DIALOG)).toBeNull();
     expect(onChange).not.toHaveBeenCalled();
-    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("Cash, Card and Other say which is chosen (aria-pressed), not by colour alone", () => {
+    const data = { ...DEFAULT_DATA, income: 3000, lbpRate: 89_500, transactions: [TX] } as LocalFinancials;
+    render(<ThemeProvider><EditTransactionSheet transaction={TX} financials={data} onChange={vi.fn()} onClose={vi.fn()} /></ThemeProvider>);
+    const pressed = () => ["Cash", "Card", "Other"].map((n) => screen.getByRole("button", { name: new RegExp(n + "$") }).getAttribute("aria-pressed"));
+    expect(pressed()).toEqual(["true", "false", "false"]);
+    fireEvent.click(screen.getByRole("button", { name: /Other$/ }));
+    expect(pressed()).toEqual(["false", "false", "true"]);
   });
 });
 
