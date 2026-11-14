@@ -88,6 +88,8 @@ class Store {
   }
 
   client() {
+    // The fake client's methods are closures handed out on their own; one name for the store they share.
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
     const s = this;
     const deleteMany = (t: WarehouseTable) => async ({ where }: { where: { userId: number } }) => {
       const before = s.warehouse[t].length;
