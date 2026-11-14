@@ -26,7 +26,7 @@ export function syncStatusShortLabel(status: Exclude<SyncStatus, "idle">): strin
 export function syncStatusLongLabel(status: Exclude<SyncStatus, "idle">): string {
   return status === "syncing" ? "Syncing…"
     : status === "synced" ? "Synced"
-    : status === "conflict" ? "Sync conflict — server has newer data. Resolve in Settings."
+    : status === "conflict" ? "Sync conflict — server has newer data. Resolve in Profile."
     : status === "unreachable" ? "Couldn't reach backup"
     : "Sync offline — changes saved on this device only";
 }
