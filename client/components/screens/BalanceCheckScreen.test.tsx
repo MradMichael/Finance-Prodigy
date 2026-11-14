@@ -77,7 +77,7 @@ describe("BalanceCheckScreen — the page owns the reconciliation", () => {
 
   it("offers the check-in control and the add form, so one surface owns the whole feature", () => {
     renderPage();
-    expect(screen.getByPlaceholderText(/What you actually have now/i)).toBeTruthy();
+    expect(screen.getByPlaceholderText("What you have now")).toBeTruthy(); // session 52 (R11): shortened to fit a phone
     expect(screen.getByRole("button", { name: /Track this balance/i })).toBeTruthy();
   });
 

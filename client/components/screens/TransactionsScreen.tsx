@@ -332,7 +332,7 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search name, amount, category…"
+              placeholder="Search entries"
               className="px-3 py-2 rounded-xl text-sm w-48 sm:w-64"
               style={{ background: T.panel, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
             />

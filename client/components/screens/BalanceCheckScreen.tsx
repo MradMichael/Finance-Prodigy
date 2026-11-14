@@ -517,7 +517,7 @@ export default function BalanceCheckScreen({
                           <MoneyInput
                             value={actualInputs[tb.id] ?? ""}
                             onChange={(v) => setActualInputs((prev) => ({ ...prev, [tb.id]: v }))}
-                            placeholder="What you actually have now"
+                            placeholder="What you have now"
                             max={moneyMaxFor(tb.currency, lbpRate)}
                           />
                           {takesLira(tb) && (

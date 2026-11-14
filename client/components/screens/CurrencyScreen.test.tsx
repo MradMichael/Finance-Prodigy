@@ -41,6 +41,16 @@ function renderCurrency(overrides: Partial<LocalFinancials> = {}) {
 
 const rateField = () => screen.getByLabelText(/LBP \/ USD exchange rate/i) as HTMLInputElement;
 
+// Session 52 (owner, R14): the rate reads "L£100,000 per $1" everywhere (rate-staleness decision 8's format, no
+// space after L£). The stress test's hypothetical rate said "L£ 100,000 / $1".
+describe("the stress test's hypothetical rate", () => {
+  it("reads L£… per $1", () => {
+    renderCurrency({ assets: [{ id: "a1", name: "Lira savings", value: 895_000_000, currency: "LBP" }] } as Partial<LocalFinancials>);
+    const shown = screen.getByText("Hypothetical rate").nextElementSibling!.textContent!;
+    expect(shown).toMatch(/^L£[\d,]+ per \$1$/);
+  });
+});
+
 /** The lbpRate carried by the last onChange call, or undefined if none committed. */
 function committedRate(onChange: ReturnType<typeof vi.fn>): number | undefined {
   const calls = onChange.mock.calls;

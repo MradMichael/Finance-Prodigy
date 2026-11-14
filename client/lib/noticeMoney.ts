@@ -4,6 +4,6 @@
 // sentences have always shown them (whole dollars, "$150").
 export function noticeMoney(amount: number, currency: string | undefined): string {
   return currency === "LBP"
-    ? `L£${amount.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
+    ? `${amount < 0 ? "-" : ""}L£${Math.abs(amount).toLocaleString("en-US", { maximumFractionDigits: 0 })}` // session 52 (R12): the sign first
     : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(amount);
 }

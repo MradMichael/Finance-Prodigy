@@ -108,7 +108,7 @@ describe("confirmRate across two devices", () => {
     const confirmed = confirmRate(start, at(10));
     for (const r of [mergeFinancials(confirmed, changed, at(11), seen), mergeFinancials(changed, confirmed, at(11), seen)]) {
       expect(r.clashes).toEqual([{ kind: "setting", setting: "lbpRate", kept: 100_000, other: 89_500 }]);
-      expect(clashSentence(r.clashes[0])).toBe("Both devices changed your LBP rate — kept L£ 100,000 / $1 (the other device had L£ 89,500 / $1).");
+      expect(clashSentence(r.clashes[0])).toBe("Both devices changed your LBP rate — kept L£100,000 per $1 (the other device had L£89,500 per $1).");
     }
   });
 

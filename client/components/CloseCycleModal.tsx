@@ -334,7 +334,14 @@ export default function CloseCycleModal({
           })}
         </div>
 
-        <div className="flex gap-2 mt-5">
+        {/* Session 52 (owner, R9): the button stayed greyed out with no reason given. Shown only while there is
+            something to enter; with nothing to close at all, there is no balance to name. */}
+        {!canClose && (rows.length > 0 || adjustmentRows.length > 0) && (
+          <p className="text-[11px] mt-5" style={{ color: T.mute }}>
+            To close, enter what you actually have for each balance, and a note for any gap you&apos;ve ticked.
+          </p>
+        )}
+        <div className={`flex gap-2 ${!canClose && (rows.length > 0 || adjustmentRows.length > 0) ? "mt-2" : "mt-5"}`}>
           <button
             onClick={confirm}
             disabled={!canClose}

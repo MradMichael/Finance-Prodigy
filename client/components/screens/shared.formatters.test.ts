@@ -38,10 +38,26 @@ describe("the strings are exactly what they were", () => {
     }
   });
 
-  it("fmtCur(), in both currencies", () => {
-    for (const v of VALUES) {
+  // Session 52 (owner, R12): a negative amount reads "-$2,336.78", the sign before the symbol, as money() and every
+  // Intl-formatted figure already did; it used to read "$-2,336.78". Everything at or above zero is as it was.
+  it("fmtCur(), in both currencies: unchanged at or above zero", () => {
+    for (const v of VALUES.filter((n) => !(n < 0) && !Object.is(n, -0))) {
       expect(fmtCur(v, "USD")).toBe(oldFmtCur(v, "USD"));
       expect(fmtCur(v, "LBP")).toBe(oldFmtCur(v, "LBP"));
     }
+  });
+
+  it("fmtCur(): a negative amount has its sign before the symbol", () => {
+    expect(fmtCur(-2336.78, "USD")).toBe("-$2,336.78");
+    expect(fmtCur(-1, "USD")).toBe("-$1.00");
+    expect(fmtCur(-105.5, "USD")).toBe("-$105.50");
+    expect(fmtCur(-8950000, "LBP")).toBe("-L£8,950,000");
+    expect(fmtCur(-1, "LBP")).toBe("-L£1");
+    for (const v of VALUES) for (const c of ["USD", "LBP"] as const) expect(fmtCur(v, c)).not.toMatch(/[$£]-/);
+  });
+
+  it("fmtCur(): negative zero is zero", () => {
+    expect(fmtCur(-0, "USD")).toBe("$0.00");
+    expect(fmtCur(-0, "LBP")).toBe("L£0");
   });
 });
