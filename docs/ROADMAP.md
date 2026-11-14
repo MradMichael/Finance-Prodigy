@@ -465,7 +465,7 @@ Taken after a read-only app-readiness assessment (2026-11-04). The plan is websi
 **Owner's decisions:**
 - **The session key stays in `sessionStorage`.** An installed app asks for the password on every cold start. This is deliberate and not a defect (`client/lib/crypto.ts`, `activateSessionKey`).
 - **Custom domain: deferred** until the owner is ready for Google Play. The PWA stays on `vercel.app` until then. A Play app is tied to its domain, so the domain comes first in that work.
-- **Export reminder: 14 days.** The interval for the reminder shown when backup is off and nothing has been exported.
+- **Export reminder: 14 days.** The interval for the reminder shown when backup is off and nothing has been exported. *Built and merged in session 52 (`client/lib/exportReminder.ts`; wording approved by the owner).*
 
 **Gate before any app-store work.** These are live bugs from a separate audit session, planned there as Phase 2.8; they are not specified here.
 - Must be fixed first: **LB3** and **LB6**.

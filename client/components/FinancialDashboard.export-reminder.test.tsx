@@ -1,4 +1,4 @@
-// D3 (owner, 2026-11-05): the Overview's export reminder. Its wording is a DRAFT, held for the owner's approval.
+// D3 (owner, 2026-11-05): the Overview's export reminder. Its wording was approved as drafted (owner, session 52).
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import FinancialDashboard from "./FinancialDashboard";

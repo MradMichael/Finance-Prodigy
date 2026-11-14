@@ -180,7 +180,7 @@ export default function FinancialDashboard({
   }, [wouldClaim]);
 
   // D3 (owner, 2026-11-05): with backup off, a reminder after 14 days without a download of the data
-  // (lib/exportReminder.ts). Read in an effect: the times are kept in this browser. Its wording is a draft.
+  // (lib/exportReminder.ts). Read in an effect: the times are kept in this browser. Wording approved (session 52).
   const backupOff = financials?.syncChoice?.enabled === false;
   const [exportDue, setExportDue] = useState(false);
   useEffect(() => {
