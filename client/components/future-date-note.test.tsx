@@ -2,7 +2,7 @@
 // future counts, in "saved" and in achievement, as soon as it's entered. Nothing said so: a year typed wrong
 // (2027 for 2026) silently filled the goal. One line under the date in the three goal-contribution forms, while
 // the date is after today (the device's local day, todayISO): it doesn't block the save and stores nothing.
-// Its wording is a DRAFT, held for the owner's approval.
+// Its wording was approved by the owner (session 52).
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useState } from "react";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";

@@ -242,8 +242,9 @@ reached):
 ### The owner's answers (session 47: each takes the recommendation)
 
 1. A lowered target is dated by the row that crossed it.
-2. Future-dated rows count, as they do in the saved figure. A warning when a contribution is dated in the future
-   is planned separately.
+2. Future-dated rows count, as they do in the saved figure. A note says so while a contribution is dated in the
+   future (built in session 51, merged in session 52): one line under the date in Goals' Add payment, My Finances'
+   Add to this goal, and the edit sheet for a goal's row. It doesn't block the save.
 3. Percentages show at most 99% until a goal is achieved.
 4. The empty-state line above is approved.
 5. 2.8.2 has no migration and no schema bump.
