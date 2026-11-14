@@ -40,7 +40,7 @@ it("a lira balance and a card don't", () => {
 
 it("$100 and L£895,000 at 89,500 store $110", () => {
   const onChange = show(base([cash]));
-  type("What you actually have now", "100");
+  type("What you have now", "100");
   type(LIRA, "895000");
   fireEvent.click(screen.getByRole("button", { name: "Update" }));
   expect(stored(onChange)).toBe(110);
@@ -53,14 +53,14 @@ it("lira alone stores its dollars; dollars alone as before", () => {
   expect(stored(onChange)).toBe(5);
   cleanup();
   onChange = show(base([cash]));
-  type("What you actually have now", "97.25");
+  type("What you have now", "97.25");
   fireEvent.click(screen.getByRole("button", { name: "Update" }));
   expect(stored(onChange)).toBe(97.25);
 });
 
 it("to the cent: $20 and L£100,000 at 89,500 store $21.12", () => {
   const onChange = show(base([cash]));
-  type("What you actually have now", "20");
+  type("What you have now", "20");
   type(LIRA, "100000");
   fireEvent.click(screen.getByRole("button", { name: "Update" }));
   expect(stored(onChange)).toBe(21.12);
