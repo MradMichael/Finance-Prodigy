@@ -40,7 +40,7 @@ This file records one feature's plan and the owner's decisions; it does not repl
 |---|---|---|
 | P1 | Manifest, icons, iPhone page settings | Merged (`f5b82bc`). Phone check pending, Samsung on production; iPhone not tested |
 | P2 | Standalone display, safe areas, status bar colour follows theme | Merged (`f5b82bc`). Phone check pending, Samsung on production; iPhone not tested |
-| P3 | Honest offline wording, storage persistence in Profile | Merged (`f5b82bc`), **except the sign-in note** (see below). Phone check pending, Samsung on production; iPhone not tested |
+| P3 | Honest offline wording, storage persistence in Profile | Merged (`f5b82bc`); the sign-in note merged in session 52 (see below). Phone check pending, Samsung on production; iPhone not tested |
 | P4 | "Install ESSA" in Profile | **Not started.** Gated (see below) |
 | P5 | Version and "Check for updates" in Profile | Merged (`f5b82bc`). Phone check pending, Samsung on production; iPhone not tested |
 
@@ -116,10 +116,9 @@ The owner is continuing these locally.
      - Already installed: says so.
      - Otherwise: nothing.
    - Never a popup. Wording goes to the owner before any commit.
-4. **The sign-in offline note.** Drafted, not built. The other session's sign-in work is now merged
-   (`63ceb95`), so it can go ahead once the wording is approved:
-   "You're offline. On a device you've signed in on before, your password works without a connection.
-   Signing in on a new device needs one." Not yet approved as final.
+4. **The sign-in offline note.** Built in session 51 (held), approved and merged in session 52: while the browser
+   says it's offline, above the sign-in form, "You're offline. On a device you've signed in on before, your
+   password works without a connection. Signing in on a new device needs one." It blocks nothing.
 5. **ROADMAP Phase 7 status (rule 8).** Updated in the same commit as this update: it names P1, P2, P3 and
    P5 as merged at `f5b82bc`, phone checks pending, and P4 and the sign-in note as not built.
 

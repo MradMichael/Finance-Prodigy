@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { signIn, getSession, updateDevicePassword, restartDeviceFromServer } from "../../lib/auth";
 import { useTheme } from "../../contexts/ThemeContext";
+import { useOnline } from "../../lib/useOnline";
 import { Sovereign } from "../../components/EssaBrand";
 import RecoveryCodeModal from "../../components/RecoveryCodeModal";
 import Field from "../../components/form/Field";
@@ -12,6 +13,7 @@ import Field from "../../components/form/Field";
 export default function SignInPage() {
   const router  = useRouter();
   const T       = useTheme();
+  const online  = useOnline(); // PWA item 4: the offline note
   const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
   const [error,    setError]    = useState("");
@@ -107,6 +109,12 @@ export default function SignInPage() {
           Welcome back
         </h2>
         <p className="text-xs mb-7" style={{ color: T.mute }}>Sign in to your account</p>
+        {/* docs/plans/pwa.md, item 4: wording approved by the owner (session 52). It blocks nothing. */}
+        {!online && (
+          <p className="rounded-xl px-4 py-3 text-xs mb-4" role="status" style={{ background: T.brass + "14", border: `1px solid ${T.brass}40`, color: T.text }}>
+            You&apos;re offline. On a device you&apos;ve signed in on before, your password works without a connection. Signing in on a new device needs one.
+          </p>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <Field label="Email" type="email" value={email} onChange={setEmail} placeholder="you@email.com" autoComplete="email" />
