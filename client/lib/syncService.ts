@@ -906,7 +906,7 @@ const SETTING_NAMES: Record<SettingKey, string> = {
 function settingValueText(setting: SettingKey, v: unknown): string {
   switch (setting) {
     case "income": return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(Number(v));
-    case "lbpRate": return `L£ ${Number(v).toLocaleString("en-US")} / $1`;
+    case "lbpRate": return `L£${Number(v).toLocaleString("en-US")} per $1`; // session 52 (owner, R14): the one rate format
     case "payday": {
       const n = Number(v);
       const suffix = n % 100 >= 11 && n % 100 <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[n % 10] ?? "th";

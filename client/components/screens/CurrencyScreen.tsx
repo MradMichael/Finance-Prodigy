@@ -283,7 +283,7 @@ export default function CurrencyScreen({ financials, onChange }: { financials: L
             </p>
             <div className="flex items-center justify-between gap-3 mb-2">
               <span className="text-xs" style={{ color: T.mute }}>Hypothetical rate</span>
-              <span className="text-sm font-semibold tabular-nums" style={{ color: T.brass }}>L£ {stressRate.toLocaleString("en-US")} / $1</span>
+              <span className="text-sm font-semibold tabular-nums" style={{ color: T.brass }}>{fmtCur(stressRate, "LBP")} per $1</span>{/* session 52 (R14): the one rate format */}
             </div>
             <input
               type="range" min={lbpRate} max={lbpRate * 3} step={500}

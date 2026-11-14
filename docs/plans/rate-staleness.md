@@ -84,10 +84,10 @@ The original "rate staleness" item lives in the uncommitted old queue and was no
 
 - **C4: entries made while the rate was stale keep that rate.** By design (F1 / Plan J), an LBP record stores the live rate at entry, and a later rate update does not re-price it. The entry-form label narrows the window in which that happens; it does not correct records already made. Nothing in this work closes it.
 - **C8: the Overview alert can be hidden.** `FinancialDashboard.tsx` shows the first 3 alerts with critical ones first, so 3 critical alerts push `rate-stale` out of view. Left alone (rule 3).
-- **Wording item: two rate formats.** The app writes the rate two ways. They should become one.
+- **Wording item: two rate formats. Closed (owner, session 52): "L£100,000 per $1" everywhere,** with no space after L£. The clash notice and the stress-test slider now use it. As it stood:
   - "L£ 100,000 / $1": the clash notice (`client/lib/syncService.ts`, `settingValueText` for `lbpRate`) and the Currency screen's stress-test slider (`CurrencyScreen.tsx`, the `stressRate` label).
   - "L£89,500 per $1": the Confirm button (`CurrencyScreen.tsx`) and `RateAgeChip`.
-  - The choice is the owner's; changing either side is new wording.
+  - The choice was the owner's: the "per $1" format (session 52).
 
 **Noted, not open:**
 - The clash notice says "Both devices changed your LBP rate" even when one device only confirmed. The sentence can't tell the two apart. The owner decided to leave it.
