@@ -1863,6 +1863,27 @@ export function valueForMonth(
   return best ? best.value : fallback;
 }
 
+/**
+ * Income for a cycle (owner, session 41: docs/plans/phase-2.8.md, "Income-history fallback"). The same lookup
+ * as valueForMonth, except a cycle before the first record takes the EARLIEST record rather than `current`:
+ * the figure closest in time to it. Today's income is used only when there is no history at all. Only for
+ * income; the LBP rate keeps valueForMonth's fallback.
+ */
+export function incomeForCycle(
+  history: CycleHistory | undefined,
+  ym: CycleKey,
+  current: number,
+): number {
+  if (!history || history.length === 0) return current;
+  let best: { ym: CycleKey; value: number } | null = null;
+  let earliest: { ym: CycleKey; value: number } | null = null;
+  for (const h of history) {
+    if (h.ym <= ym && (best === null || h.ym > best.ym)) best = h;
+    if (earliest === null || h.ym < earliest.ym) earliest = h;
+  }
+  return (best ?? earliest)!.value;
+}
+
 /** Same lookup as valueForMonth, but for the {needs, wants, savings} shape budgetRuleHistory snapshots. */
 export function budgetPctForMonth(
   history: CycleHistory<{ needs: number; wants: number; savings: number }> | undefined,
