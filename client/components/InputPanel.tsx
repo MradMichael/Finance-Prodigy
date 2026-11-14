@@ -7,7 +7,7 @@ import { useScrollFocus } from "./useScrollFocus";
 import type { LocalFinancials, StoredTransaction, StoredGoal, StoredDebt, StoredRecurring, StoredCard, RecurringFrequency, Currency, PaymentMethod, BudgetRuleKey } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, goalProgress, goalAchievement, goalPercent, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, remainingInstallments, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, buildExtraPaymentTx, categoryLabel, categoryIcon, matchCategoryRule, usualBucketOf, roundMoney, moneyMaxFor, MONEY_MAX_USD, derivedDebtBalance, activeTransactions, softDelete, cycleStartDayOf, syncAllowed, edited, recordDeletion, saveCard as storeCard, makeToUSDOn, rateOn, lbpRateOf, makeToUSDLive, debtPayoff } from "../lib/localData";
+import { uid, goalProgress, goalAchievement, goalPercent, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, remainingInstallments, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, buildExtraPaymentTx, categoryLabel, categoryIcon, matchCategoryRule, usualBucketOf, roundMoney, moneyMaxFor, MONEY_MAX_USD, derivedDebtBalance, activeTransactions, softDelete, cardRef, cycleStartDayOf, syncAllowed, edited, recordDeletion, saveCard as storeCard, makeToUSDOn, rateOn, lbpRateOf, makeToUSDLive, debtPayoff } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker } from "./form/Primitives";
 import { fmtCur, money } from "./screens/shared";
@@ -315,11 +315,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
       }
       return {};
     }
-    if (txCardId) {
-      const card = cards.find((c) => c.id === txCardId);
-      if (card) return { cardId: card.id, cardLabel: card.label };
-    }
-    return {};
+    return cardRef(cards, txPayMethod, txCardId);
   }
 
   function commitTransaction() {
@@ -546,12 +542,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     if (!amt || amt <= 0) return;
     const goal = financials.goals.find((g) => g.id === goalId);
     if (!goal) return; // needed for the toast message below; applyGoalContribution does its own lookup for the actual update
-    let cardId: string | undefined;
-    let cardLabel: string | undefined;
-    if (contributeMethod === "card" && contributeCardId) {
-      const card = cards.find((c) => c.id === contributeCardId);
-      if (card) { cardId = card.id; cardLabel = card.label; }
-    }
+    const { cardId, cardLabel } = cardRef(cards, contributeMethod, contributeCardId);
     // AUD-05: shared with GoalsScreen.tsx's pay() -- one implementation of
     // "what happens when you contribute to a goal," not two independently
     // maintained copies (2334ea9 already proved that split lets a real bug

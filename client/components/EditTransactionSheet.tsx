@@ -6,7 +6,7 @@ import LbpMistypeDialog from "./LbpMistypeDialog";
 import type { LocalFinancials, StoredTransaction, StoredCard, Currency, PaymentMethod } from "../lib/localData";
 import {
   fmtDate, looksRecurring, buildQuickRecurring, cycleMonthDivergence,
-  roundMoney, retagBucketAmount, moneyMaxFor, cycleStartDayOf, edited, saveCard as storeCard, rateOn, lbpRateOf } from "../lib/localData";
+  roundMoney, retagBucketAmount, moneyMaxFor, cycleStartDayOf, edited, saveCard as storeCard, cardRef, rateOn, lbpRateOf } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY, CurrencyToggle, PM_OPTIONS, CardPicker } from "./form/Primitives";
 import FutureDateNote from "./form/FutureDateNote";
@@ -161,12 +161,7 @@ export default function EditTransactionSheet({
   function commit() {
     const amtNum = parseFloat(amt.replace(/,/g, ""));
     if (!desc.trim() || isNaN(amtNum) || !date) return;
-    let resolvedCardId: string | undefined;
-    let resolvedCardLabel: string | undefined;
-    if (payMethod === "card" && cardId) {
-      const card = cards.find((c) => c.id === cardId);
-      if (card) { resolvedCardId = card.id; resolvedCardLabel = card.label; }
-    }
+    const { cardId: resolvedCardId, cardLabel: resolvedCardLabel } = cardRef(cards, payMethod, cardId);
     const efAmountUSD = efAmount == null ? efAmount : roundMoney(
       currency === "LBP"
         ? (parseFloat(efAmount.replace(/,/g, "")) || 0) / rateOn(financials, date) // CUR-05 (plan J): the entry's own day

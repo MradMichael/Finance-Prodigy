@@ -249,6 +249,17 @@ export interface PeriodCloseAcknowledgement {
   startingAt: string;
 }
 
+/**
+ * InputPanel split, S3 (session 52): what a row stores for "paid by card, this saved card": the card's id and its
+ * label, when the method is card and the card is one of the saved ones; nothing otherwise. Five forms each had
+ * their own copy of these lines.
+ */
+export function cardRef(cards: StoredCard[], method: PaymentMethod, cardId: string | null | undefined): { cardId?: string; cardLabel?: string } {
+  if (method !== "card" || !cardId) return {};
+  const card = cards.find((c) => c.id === cardId);
+  return card ? { cardId: card.id, cardLabel: card.label } : {};
+}
+
 export interface StoredCard {
   id: string;
   type: "Visa" | "Mastercard" | "Amex" | "Other";

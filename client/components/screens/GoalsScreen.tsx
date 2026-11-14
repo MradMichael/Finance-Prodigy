@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { LocalFinancials, PaymentMethod, StoredCard } from "../../lib/localData";
-import { todayISO, applyGoalContribution, toUSD as toUSDShared, activeTransactions, cycleStartDayOf, edited, saveCard as storeCard, lbpRateOf } from "../../lib/localData";
+import { todayISO, applyGoalContribution, toUSD as toUSDShared, activeTransactions, cycleStartDayOf, edited, saveCard as storeCard, cardRef, lbpRateOf } from "../../lib/localData";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
@@ -91,12 +91,7 @@ export default function GoalsScreen({
     const rawGoal = storedGoal(storedId);
     if (!rawGoal) return;
 
-    let cardId: string | undefined;
-    let cardLabel: string | undefined;
-    if (payMethod === "card" && payCardId) {
-      const card = financials.cards.find((c) => c.id === payCardId);
-      if (card) { cardId = card.id; cardLabel = card.label; }
-    }
+    const { cardId, cardLabel } = cardRef(financials.cards, payMethod, payCardId);
     // AUD-05: shared with InputPanel.tsx's contributeToGoal -- one
     // implementation of "what happens when you contribute to a goal," not
     // two independently maintained copies (2334ea9 already proved that
