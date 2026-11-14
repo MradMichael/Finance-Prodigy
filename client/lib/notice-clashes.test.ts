@@ -37,7 +37,7 @@ describe("drafts: each setting's value, under its approved name", () => {
     expect(one({ kind: "setting", setting: "income", kept: 3150.75, other: 3000 })).toBe("Both devices changed your income — kept $3,150.75 (the other device had $3,000).");
   });
   it("the LBP rate, as the Currency screen writes it", () => {
-    expect(one({ kind: "setting", setting: "lbpRate", kept: 89_500, other: 90_000 })).toBe("Both devices changed your LBP rate — kept L£ 89,500 / $1 (the other device had L£ 90,000 / $1).");
+    expect(one({ kind: "setting", setting: "lbpRate", kept: 89_500, other: 90_000 })).toBe("Both devices changed your LBP rate — kept L£89,500 per $1 (the other device had L£90,000 per $1).");
   });
   it("the budget split, a model or a custom split", () => {
     expect(one({ kind: "setting", setting: "budget", kept: { rule: "50-30-20" }, other: { rule: "custom", needs: 60, wants: 25 } }))
