@@ -594,6 +594,21 @@ describe("deleteAccount (2.2.18 -- server-cleanup result is reported, not swallo
     expect(localStorage.getItem("essa_last_sync_someone-else")).toBe("2026-10-01T09:00:00.000Z");
   });
 
+  it("removes this account's export-reminder times, and no other account's (D3)", async () => {
+    const reg = await signUp("a@test.com", "Alice", "password12345");
+    if (!reg.ok) throw new Error("setup failed");
+    const userId = listUsers()[0].id;
+    for (const k of ["essa_last_export_", "essa_export_clock_"]) {
+      localStorage.setItem(`${k}${userId}`, "2026-10-01T09:00:00.000Z");
+      localStorage.setItem(`${k}someone-else`, "2026-10-01T09:00:00.000Z");
+    }
+    await deleteAccount(userId);
+    for (const k of ["essa_last_export_", "essa_export_clock_"]) {
+      expect(localStorage.getItem(`${k}${userId}`)).toBeNull();
+      expect(localStorage.getItem(`${k}someone-else`)).toBe("2026-10-01T09:00:00.000Z");
+    }
+  });
+
   it("deletes the account locally and reports serverCleanupOk: true when there's no sync token (never synced)", async () => {
     const reg = await signUp("a@test.com", "Alice", "password12345");
     if (!reg.ok) throw new Error("setup failed");

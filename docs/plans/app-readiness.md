@@ -25,7 +25,7 @@ Website first, app second, and free if possible.
 |---|---|
 | D1 | **The session key stays in `sessionStorage`.** An installed app asks for the password on every cold start. Deliberate, not a defect. |
 | D2 | **Custom domain deferred** until the owner is ready for Google Play. The PWA stays on `vercel.app` until then. |
-| D3 | **Export reminder: 14 days**, shown when backup is off and nothing has been exported. Built by the PWA session (A2). |
+| D3 | **Export reminder: 14 days**, shown when backup is off and nothing has been exported. **Built and merged (session 52):** on the Overview, with "Download my data" and "Not now" (which restarts the 14 days); the times are kept in the browser, per account (`client/lib/exportReminder.ts`). |
 | D4 | **App gate:** LB3 and LB6 must be fixed before any app-store work; LB0, LB1, LB2, LB4 and LB5 should be. They're planned as Phase 2.8 in a separate session. |
 | D5 | **Scope split:** this plan's session owns A0 and A1. A2, A3 and A4 belong to a separate PWA session. |
 | D6 | The Projections test amount gets the whole-number keypad (its code rounds to a whole number). |
