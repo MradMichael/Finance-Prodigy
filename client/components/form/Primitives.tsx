@@ -153,9 +153,11 @@ export function PrimaryBtn({ onClick, children, color, small, disabled }: {
 }
 
 export function Section({
-  title, icon, badge, children, defaultOpen = true,
+  title, icon, badge, children, defaultOpen = true, openSignal,
 }: {
   title: string; icon: string; badge?: number; children: React.ReactNode; defaultOpen?: boolean;
+  /** Opens the section each time this changes to a non-zero value (session 52: "Log again" fills a form that may be closed). */
+  openSignal?: number;
 }) {
   const T = useTheme();
   const [open, setOpen] = useState(defaultOpen);
@@ -171,6 +173,9 @@ export function Section({
     if (defaultOpen) setOpen(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [defaultOpen]);
+  useEffect(() => {
+    if (openSignal) setOpen(true);
+  }, [openSignal]);
   return (
     <div>
       <div style={{ height: 1, background: T.line }} />

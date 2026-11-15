@@ -13,6 +13,7 @@ import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, Dat
 import { fmtCur, money } from "./screens/shared";
 import ImportStatement from "./ImportStatement";
 import FutureDateNote from "./form/FutureDateNote";
+import { logAgainEntry } from "../lib/logAgain";
 import {currentCycleKey, cycleKeyForISO, isInCycle, periodNoun, cycleLabel, type CycleKey } from "../lib/period";
 import { calendarDayOf } from "../lib/calendarDay";
 import CategoryOptions from "./form/CategoryOptions";
@@ -598,6 +599,30 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   // ── tab state ─────────────────────────────────────────────────── //
   const [activeTab, setActiveTab] = useState<"daily" | "setup">("daily");
 
+  // Session 52, item 18 (merged in session 53; the button is named "Log again: {description}"): "Log again" on a past row fills the entry form from it, dated today, and saves
+  // nothing; "+ Add entry" does that, with the form's own checks. logAgainEntry says which rows offer it and what
+  // is copied. The form opens if it was closed and is brought into view.
+  const [entryOpenSignal, setEntryOpenSignal] = useState(0);
+  function logAgain(t: StoredTransaction) {
+    const e = logAgainEntry(t, cards);
+    if (!e) return;
+    setTxSplitMode(false); setTxSplitUSD(""); setTxSplitLBP("");
+    setTxAmt(e.amount); setTxCurrency(e.currency);
+    setTxBucket(e.bucket); setBucketTouched(true); // the row's own type, not the category's usual one
+    setTxCategory(e.category); setTxDesc(e.description);
+    setTxPayMethod(e.paymentMethod); setTxPayNote(e.paymentNote); setTxCardId(e.cardId); setShowAddCard(false);
+    setTxDate(todayISO()); setTxTripPick(null);
+    setTxAddToEF(false); setTxFromEF(false); setTxEfAmt("");
+    setEntryOpenSignal((n) => n + 1);
+    // After the form has opened and filled: bring it into view. No field is focused on a touch screen, so the
+    // keyboard doesn't cover the form that was just filled.
+    setTimeout(() => {
+      const amount = document.getElementById("tx-amount");
+      amount?.scrollIntoView({ block: "center" });
+      if (typeof window.matchMedia === "function" && !window.matchMedia("(pointer: coarse)").matches) amount?.focus({ preventScroll: true });
+    }, 0);
+  }
+
   // ── reset-all-data confirmation ──────────────────────────────────── //
 
   // ── derived ───────────────────────────────────────────────────── //
@@ -701,7 +726,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
         {activeTab === "daily" && <>
 
         {/* Log an entry */}
-        <Section title="Log an entry" icon="📝" defaultOpen>
+        <Section title="Log an entry" icon="📝" defaultOpen openSignal={entryOpenSignal}>
           {!txSplitMode ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <div>
@@ -1116,7 +1141,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                   const b = TX_BUCKETS.find((b) => b.value === tx.bucket)!;
                   const divergence = cycleMonthDivergence(tx, financials.recurring ?? [], startDay);
                   return (
-                    <div key={tx.id} data-month-entry className={!showAllMonth && i >= PHONE_MONTH_ROWS ? "max-md:hidden" : undefined}>
+                    <div key={tx.id} data-month-entry data-entry-row className={!showAllMonth && i >= PHONE_MONTH_ROWS ? "max-md:hidden" : undefined}>
                         <div
                           className="flex items-center justify-between rounded-xl px-3 py-2.5 group"
                           style={{ background: T.panelSoft, borderLeft: `3px solid ${b.color}` }}
@@ -1155,6 +1180,14 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                             <span className="text-xs font-semibold tabular-nums" style={{ color: b.color }}>
                               {fmtCur(tx.amount, tx.currency ?? "USD")}
                             </span>
+                            {logAgainEntry(tx, cards) && (
+                              <button
+                                onClick={() => logAgain(tx)}
+                                aria-label={`Log again: ${tx.description}`}
+                                className="opacity-70 hover:!opacity-100 transition-opacity text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap"
+                                style={{ color: T.jade, border: `1px solid ${T.jade}40` }}
+                              >Log again</button>
+                            )}
                             <button
                               onClick={() => onEdit("transaction", tx.id)}
                               aria-label="Edit transaction"
@@ -1260,7 +1293,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                           const b = TX_BUCKETS.find((b) => b.value === tx.bucket)!;
                           const divergence = cycleMonthDivergence(tx, financials.recurring ?? [], startDay);
                           return (
-                            <div key={tx.id}>
+                            <div key={tx.id} data-entry-row>
                                 <div
                                   className="flex items-center justify-between rounded-lg px-2.5 py-2 group"
                                   style={{ background: T.panelSoft, borderLeft: `2px solid ${b.color}` }}
@@ -1280,6 +1313,14 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                                   </div>
                                   <div className="flex items-center gap-1.5 flex-shrink-0">
                                     <span className="text-xs tabular-nums font-medium" style={{ color: b.color }}>{fmtCur(tx.amount, tx.currency ?? "USD")}</span>
+                                    {logAgainEntry(tx, cards) && (
+                                      <button
+                                        onClick={() => logAgain(tx)}
+                                        aria-label={`Log again: ${tx.description}`}
+                                        className="opacity-70 hover:!opacity-100 transition-opacity text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap"
+                                        style={{ color: T.jade, border: `1px solid ${T.jade}40` }}
+                                      >Log again</button>
+                                    )}
                                     <button
                                       onClick={() => onEdit("transaction", tx.id)}
                                       aria-label="Edit transaction"
