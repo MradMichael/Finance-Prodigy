@@ -129,7 +129,9 @@ export default function Sidebar({
           onClick={onProfile}
           onFocus={() => setHovered(true)}
           onBlur={handleBlurWithinSidebar}
-          aria-label={`${session.name}: account settings`}
+          // Session 53 (owner): collapsed, the button shows only the initials, so its name starts with them
+          // (WCAG 2.5.3). Expanded, the name is on the button.
+          aria-label={!expanded && initials ? `${initials}, account settings` : `${session.name}: account settings`}
           data-sync-status={syncStatus}
           className="w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-xl transition-all hover:opacity-80"
           style={{ whiteSpace: "nowrap" }}
