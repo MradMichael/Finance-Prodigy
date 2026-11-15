@@ -7,6 +7,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useState } from "react";
 import { render, screen, cleanup, fireEvent, within } from "@testing-library/react";
+import fs from "node:fs";
+import path from "node:path";
 import InputPanel from "./InputPanel";
 import { computeDashboard } from "../lib/computeDashboard";
 import { DEFAULT_DATA, type LocalFinancials, type StoredCard, type StoredTransaction } from "../lib/localData";
@@ -126,5 +128,45 @@ describe("rows made by another form don't offer it", () => {
     render(<Harness initial={base([tx(o)])} />);
     expect(within(rowOf(o.description!)).queryByRole("button", AGAIN)).toBeNull();
     expect(within(rowOf(o.description!)).getByRole("button", { name: "Edit transaction" })).toBeTruthy();
+  });
+});
+
+// Session 54 (owner): at phone width the button sat beside the amount; on a touch screen it is a 57 x 44 box, which
+// squeezed the row's second line (method and category) onto two or three lines (rows 84 px, some 108, against 64).
+// Below md it now sits under the amount as a 20 px pill, so the row keeps its height; its button keeps the tap size
+// (24 px, 44 px on a touch screen) and reaches over the amount and the row's padding (globals.css,
+// .log-again-tap). From md up it sits beside the amount as before. jsdom does no layout: the structure and the
+// rules here; the heights live (390 and 1280).
+describe("Log again, on a phone: under the amount", () => {
+  const check = (row: HTMLElement, amountText: string, description: string) => {
+    const b = within(row).getByRole("button", { name: `Log again: ${description}` });
+    const col = b.parentElement!;
+    expect(within(col).getByText(amountText)).toBeTruthy(); // the amount and the button share a column
+    expect(col.className.split(/\s+/)).toEqual(expect.arrayContaining(["flex", "flex-col", "items-end", "md:flex-row", "md:items-center", "md:gap-1.5"]));
+    expect(b.className.split(/\s+/)).toContain("log-again-tap");
+    expect(b.style.border).toBe(""); // the pill draws the border, the button is the tap box
+    const pill = b.firstElementChild as HTMLElement;
+    expect(pill.tagName).toBe("SPAN");
+    expect(pill.textContent).toBe("Log again");
+    expect(pill.className.split(/\s+/)).toEqual(expect.arrayContaining(["h-5", "md:h-auto"]));
+    expect(pill.style.border).toMatch(/1px solid/);
+    expect(b.className.split(/\s+/)).toEqual(expect.arrayContaining(["md:flex", "md:items-stretch"])); // from md the pill fills the box, as the bordered button did
+  };
+  it("This month: the amount and the pill stack below md, side by side from md", () => {
+    render(<Harness initial={base([tx({})])} />);
+    check(rowOf("Flat white"), "$4.50", "Flat white");
+  });
+  it("History: the same", () => {
+    render(<Harness initial={base([tx({ date: "2026-10-18", description: "Cinema night", amount: 42.5 })])} />);
+    fireEvent.click(screen.getByRole("button", { name: /History/ }));
+    check(rowOf("Cinema night"), "$42.50", "Cinema night");
+  });
+  it("globals.css: below md the button takes the pill's 20 px of the layout (24 px box, 44 on a touch screen)", () => {
+    const css = fs.readFileSync(path.join(__dirname, "../app/globals.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    const block = (head: RegExp) => { const m = css.match(new RegExp(head.source + "\\s*\\{\\s*\\.log-again-tap\\s*\\{([^}]*)\\}")); return m ? m[1] : null; };
+    const narrow = block(/@media\s*\(max-width:\s*767\.98px\)/);
+    const touch = block(/@media\s*\(max-width:\s*767\.98px\)\s*and\s*\(pointer:\s*coarse\)/);
+    expect(narrow).toMatch(/margin-top:\s*-2px;\s*margin-bottom:\s*-2px;/);
+    expect(touch).toMatch(/margin-top:\s*-12px;\s*margin-bottom:\s*-12px;/);
   });
 });
