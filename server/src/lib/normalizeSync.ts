@@ -266,7 +266,8 @@ export async function normalizeToTables(email: string, raw: LocalFinancials): Pr
     const otherAcc = await tx.dimAccount.create({
       data: { userId: user.id, name: "Other / Gift", type: "CHECKING",    currency: "USD", isActive: true },
     });
-    const efAcc = await tx.dimAccount.create({
+    // The Emergency Fund account is created for the warehouse; no row below points at it, so its id isn't kept.
+    await tx.dimAccount.create({
       data: { userId: user.id, name: "Emergency Fund", type: "SAVINGS",   currency: "USD", isActive: true },
     });
 

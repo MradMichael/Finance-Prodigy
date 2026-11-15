@@ -29,6 +29,8 @@ import { buildForeignEntry, editForeignEntry } from "../../client/lib/foreignCas
 import { stableStringify } from "../../client/lib/canonical";
 
 type D = LocalFinancials;
+// One row of any kind (transactions, goals, cards, ...): the table below drives every kind through the same steps.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Item = any;
 
 interface Kind {
