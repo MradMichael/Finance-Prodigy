@@ -72,7 +72,7 @@ jobs:
       - run: npm ci
       # Session 51 (owner: "mirror the client's setup"): the same ESLint 8 and
       # parser the client lints with, and the client's one rule that isn't
-      # about React, Next or accessibility. Session 52 (held for the owner):
+      # about React, Next or accessibility. Session 52 (merged in session 53):
       # both sides add eslint:recommended and @typescript-eslint/recommended.
       - run: npm run lint
       - run: npm run build
