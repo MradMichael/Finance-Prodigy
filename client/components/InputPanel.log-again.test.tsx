@@ -1,4 +1,5 @@
-// Session 52, item 18 (held for the owner; labels approved: "Log again" / "Log this entry again"). On a row in My
+// Session 52, item 18; merged in session 53. Labels approved by the owner: "Log again", named for screen readers and
+// voice control "Log again: {description}" (session 53: the name starts with the words on the button). On a row in My
 // Finances' This month or History, "Log again" fills the Log an entry form from that row, dated today, and saves
 // nothing: "+ Add entry" does that, with the form's own checks. Only an ordinary entry offers it; a transfer, a
 // goal contribution, a debt payment, a confirmed recurring bill, a foreign-cash row and a split's part are each
@@ -23,16 +24,19 @@ function Harness({ initial }: { initial: LocalFinancials }) {
   latest = d;
   return <InputPanel financials={d} dashData={computeDashboard(d)} onChange={setD} onEdit={vi.fn()} onPay={vi.fn()} />;
 }
-const AGAIN = { name: "Log this entry again" };
+const AGAIN = { name: /^Log again: / };
 const value = (id: string) => (document.getElementById(id) as HTMLInputElement | HTMLSelectElement).value;
 const pressed = (name: RegExp) => screen.getAllByRole("button", { name }).some((b) => b.getAttribute("aria-pressed") === "true");
 const rowOf = (text: string) => screen.getByText(text).closest("[data-entry-row]") as HTMLElement;
 
 describe("Log again, from This month", () => {
-  it("the button reads \"Log again\" and is named \"Log this entry again\"", () => {
+  it("the button reads \"Log again\" and is named \"Log again: {description}\"", () => {
     render(<Harness initial={base([tx({})])} />);
-    const b = within(rowOf("Flat white")).getByRole("button", AGAIN);
+    const b = within(rowOf("Flat white")).getByRole("button", { name: "Log again: Flat white" });
     expect(b.textContent).toBe("Log again");
+    // WCAG 2.5.3: the name starts with the visible words, so "click Log again" finds it.
+    expect(b.getAttribute("aria-label")!.startsWith(b.textContent!)).toBe(true);
+    expect(screen.queryByRole("button", { name: "Log this entry again" })).toBeNull();
   });
 
   it("fills the form from the row, dated today, and stores nothing", () => {
@@ -102,7 +106,7 @@ describe("Log again, from History", () => {
   it("a past month's row fills the form the same way", () => {
     render(<Harness initial={base([tx({ date: "2026-10-18", description: "Cinema night", amount: 42.5 })])} />);
     fireEvent.click(screen.getByRole("button", { name: /History/ }));
-    fireEvent.click(within(rowOf("Cinema night")).getByRole("button", AGAIN));
+    fireEvent.click(within(rowOf("Cinema night")).getByRole("button", { name: "Log again: Cinema night" }));
     expect(value("tx-amount")).toBe("42.5");
     expect(value("tx-desc")).toBe("Cinema night");
     expect(latest.transactions).toHaveLength(1);
