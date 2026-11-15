@@ -24,17 +24,20 @@ const count = (s: string, re: RegExp) => (s.match(re) ?? []).length;
 
 // Session 53 (owner): 9 until the save error and the backup notices went into the page's flow below md. In the
 // flow they sit under the top bar, which carries the inset itself, so they need none and are no longer scanned.
+// Session 54 (owner): the sync-refused notice joined them (7 to 6).
 it("finds the pinned elements it is meant to check", () => {
-  expect(pinned.length).toBeGreaterThanOrEqual(7);
+  expect(pinned.length).toBeGreaterThanOrEqual(6);
 });
 
-it("the save error and the backup notices are not pinned below md (they sit in the flow, under the top bar)", () => {
+it("the save error, the sync-refused notice and the backup notices are not pinned below md (in the flow, under the top bar)", () => {
   const page = fs.readFileSync(path.join(root, "app", "page.tsx"), "utf8");
   const save = page.match(/\{saveError && \(\s*<div\s+role="alert"\s+className="([^"]+)"/);
   const place = page.match(/const backupNoticePlace = `([^`]+)`/);
   expect(save).not.toBeNull();
   expect(place).not.toBeNull();
   for (const cls of [save![1], place![1]]) expect(cls).not.toMatch(/(^|[\s"'`])(fixed|top-|bottom-)/);
+  const refusedAt = page.search(/\{syncRefused && \(/);
+  expect(page.slice(refusedAt, refusedAt + 200)).toMatch(/className=\{`\$\{backupNoticePlace\} /);
 });
 
 it("every element pinned to the bottom of a phone screen clears the home indicator", () => {
