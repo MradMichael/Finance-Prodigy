@@ -3,7 +3,9 @@
 // button behind, and Tab walked out past it while it stayed open. Now it
 // follows the menu-button pattern: it opens onto its first item, the arrow
 // keys move between items, Escape closes it and returns focus to the button,
-// and Tab closes it on the way out. Its name is the button's, "Account menu".
+// and Tab closes it on the way out. Its name is the button's.
+// Session 53 (owner): the button is named "{initials}, account menu". It shows the initials, and a name that
+// doesn't hold the visible text fails WCAG 2.5.3 (a voice-control user says what they see).
 import { it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -14,17 +16,33 @@ import type { Session } from "../../lib/auth";
 afterEach(cleanup);
 
 const SESSION = { userId: "u1", email: "u1@example.com", name: "Quartz Lantern" } as Session;
-function setup(syncStatus: "idle" | "synced" = "idle") {
+function setup(syncStatus: "idle" | "synced" = "idle", session: Session = SESSION, name = "QL, account menu") {
   const onProfile = vi.fn(), onSignOut = vi.fn();
-  render(<ThemeProvider><TopBar session={SESSION} onProfile={onProfile} onSignOut={onSignOut} syncStatus={syncStatus as never} /><button>After</button></ThemeProvider>);
-  return { user: userEvent.setup(), trigger: screen.getByRole("button", { name: "Account menu" }), onProfile, onSignOut };
+  render(<ThemeProvider><TopBar session={session} onProfile={onProfile} onSignOut={onSignOut} syncStatus={syncStatus as never} /><button>After</button></ThemeProvider>);
+  return { user: userEvent.setup(), trigger: screen.getByRole("button", { name }), onProfile, onSignOut };
 }
+
+it("the button is named \"{initials}, account menu\", and the name starts with the initials it shows", () => {
+  const { trigger } = setup();
+  expect(trigger.getAttribute("aria-label")).toBe("QL, account menu");
+  // The initials are the button's only readable text: the arrow beside them is decoration.
+  expect(trigger.querySelector("[aria-hidden='true']")?.textContent).toBe("▾");
+  expect(screen.queryByRole("button", { name: "Account menu" })).toBeNull();
+});
+
+it("one name gives one initial; a name with no letters to show falls back to \"Account menu\"", () => {
+  setup("idle", { ...SESSION, name: "Quartz" } as Session, "Q, account menu");
+  cleanup();
+  setup("idle", { ...SESSION, name: "" } as Session, "Account menu");
+  cleanup();
+  setup("idle", { ...SESSION, name: "   " } as Session, "Account menu");
+});
 
 it("is a menu, named by its button, holding Settings and Sign out as its items", async () => {
   const { user, trigger } = setup();
   expect(trigger.getAttribute("aria-haspopup")).toBe("menu");
   await user.click(trigger);
-  const menu = screen.getByRole("menu", { name: "Account menu" });
+  const menu = screen.getByRole("menu", { name: "QL, account menu" });
   expect(trigger.getAttribute("aria-controls")).toBe(menu.id);
   expect(screen.getAllByRole("menuitem").map((i) => i.textContent?.trim())).toEqual(["⚙ Settings", "→ Sign out"]);
 });
