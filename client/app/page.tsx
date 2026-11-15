@@ -882,9 +882,10 @@ export default function Home() {
   }
 
   // Session 52 (owner, R8): where a backup notice sits. Below md it is in the page's flow, under the top bar, and
-  // pushes the screen down; from md up it is fixed at the top right, as before. With a save error showing too
-  // (two failures at once), the phone keeps the old stacked, fixed position under it.
-  const backupNoticePlace = `${saveError ? "fixed top-[calc(11rem+env(safe-area-inset-top))] left-4 right-4 shadow-2xl z-50 md:top-[7.5rem]" : "mx-4 mt-3 md:mx-0 md:mt-0 md:top-4"} md:fixed md:left-auto md:right-4 md:max-w-md md:shadow-2xl md:z-50`;
+  // pushes the screen down; from md up it is fixed at the top right, as before. Session 53 (owner): with a save
+  // error showing too it stays in the flow below md, under the save error (also in the flow); from md up it is
+  // stacked under the save error, as before.
+  const backupNoticePlace = `mx-4 mt-3 md:mx-0 md:mt-0 ${saveError ? "md:top-[7.5rem]" : "md:top-4"} md:fixed md:left-auto md:right-4 md:max-w-md md:shadow-2xl md:z-50`;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100dvh", background: T.ink }}>
@@ -896,6 +897,31 @@ export default function Home() {
       <span role="status" className="sr-only">{syncStatus !== "idle" ? syncStatusLongLabel(syncStatus) : ""}</span>
       {/* PWA P3 (owner-approved wording, 2026-11-05): while the device is offline. */}
       <OfflineNotice backsUp={backupRetriesOnReconnect({ backupOn, syncRefused, newerBackup, backupTooLarge })} />
+
+      {/* ERR-01: a save that failed, said plainly. At the top so it can't sit
+          under the merge notice; not auto-dismissed, for the same reason.
+          Session 53 (owner): below md it is in the page's flow, here, above the backup notices (it floated
+          over the screen, and over a backup notice in the flow); from md up it is fixed at the top right. */}
+      {saveError && (
+        <div
+          role="alert"
+          className="mx-4 mt-3 flex-shrink-0 md:mx-0 md:mt-0 md:fixed md:top-4 md:left-auto md:right-4 md:max-w-md md:shadow-2xl md:z-50 rounded-2xl px-4 py-3.5 flex items-start gap-3"
+          style={{ background: T.panel, border: `1px solid ${T.coral}` }}
+        >
+          <span className="text-sm flex-1" style={{ color: T.text }}>
+            <strong style={{ color: T.coral }}>Couldn&apos;t save on this device.</strong>{" "}
+            {saveError} Anything that wasn&apos;t saved has been undone, so the screen shows only what&apos;s stored.
+          </span>
+          <button
+            onClick={() => setSaveError(null)}
+            aria-label="Dismiss save error"
+            className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-lg hover:opacity-70 transition-opacity"
+            style={{ color: T.mute }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* ERR-02: a failed backup, until the next success. Owner-approved wording
           (merged in session 3). In a live region that's always on the page
@@ -1036,29 +1062,6 @@ export default function Home() {
         </div>
       )}
       </div>
-
-      {/* ERR-01: a save that failed, said plainly. At the top so it can't sit
-          under the merge notice; not auto-dismissed, for the same reason. */}
-      {saveError && (
-        <div
-          role="alert"
-          className="fixed top-[calc(4.5rem+env(safe-area-inset-top))] md:top-4 left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50 flex items-start gap-3"
-          style={{ background: T.panel, border: `1px solid ${T.coral}` }}
-        >
-          <span className="text-sm flex-1" style={{ color: T.text }}>
-            <strong style={{ color: T.coral }}>Couldn&apos;t save on this device.</strong>{" "}
-            {saveError} Anything that wasn&apos;t saved has been undone, so the screen shows only what&apos;s stored.
-          </span>
-          <button
-            onClick={() => setSaveError(null)}
-            aria-label="Dismiss save error"
-            className="flex-shrink-0 text-xs px-1.5 py-0.5 rounded-lg hover:opacity-70 transition-opacity"
-            style={{ color: T.mute }}
-          >
-            ✕
-          </button>
-        </div>
-      )}
 
       {/* A11Y-07 (session 22; approved and merged in session 23, b173718): a change of screen, announced. After the other live regions, so their order holds. */}
       <span id="screen-announcer" role="status" className="sr-only">{screenAnnounced}</span>

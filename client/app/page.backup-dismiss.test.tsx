@@ -24,7 +24,7 @@ vi.mock("../lib/syncService", () => ({
 }));
 
 import Home from "./page";
-import { DEFAULT_DATA, cycleStartDayOf } from "../lib/localData";
+import { DEFAULT_DATA, cycleStartDayOf, saveData } from "../lib/localData";
 import { computeDashboard } from "../lib/computeDashboard";
 import { currentCycleKey, calendarKeyForDate } from "../lib/period";
 
@@ -114,5 +114,36 @@ describe("R8: the failed-backup notice sits in the page flow on a phone", () => 
     expect(notice.compareDocumentPosition(content) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // Still one live region that's always on the page (A11Y-03).
     expect(notice.closest('[role="status"]')).not.toBeNull();
+    // From md up, with no save error above it, it sits at the top.
+    expect(classes).toContain("md:top-4");
+  });
+
+  // Session 53 (owner): with a save error showing too, the phone kept the old floating stack (the save error
+  // fixed under the top bar, the backup notice fixed under it), over the screen. Now both are in the page's flow
+  // on a phone, the save error first; from md up both stay fixed at the top right, stacked as before.
+  it("stays in the flow when a save error shows too, under the save error, which is in the flow as well", async () => {
+    push.mockResolvedValue(FAIL);
+    await editAndUpload();
+    await screen.findByText(NOTICE);
+    vi.mocked(saveData).mockRejectedValueOnce(new DOMException("The quota has been exceeded.", "QuotaExceededError"));
+    fireEvent.change(document.getElementById("wish-name")!, { target: { value: "Teal lamp" } });
+    fireEvent.change(document.getElementById("wish-price")!, { target: { value: "31" } });
+    fireEvent.click(screen.getByRole("button", { name: "+ Add to wishlist" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Couldn't save on this device.");
+    const notice = screen.getByText(NOTICE).parentElement!;
+    for (const el of [alert, notice]) {
+      const classes = el.className.split(/\s+/);
+      expect(classes).not.toContain("fixed");
+      expect(classes).toContain("md:fixed");
+      expect(classes.filter((c) => /^top-/.test(c))).toEqual([]); // no phone offset: the flow places it
+    }
+    // The order in the page is the order on a phone: the save error, the backup notice, then the screen.
+    expect(alert.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(notice.compareDocumentPosition(document.getElementById("wish-name")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // From md up: the save error at the top, the backup notice stacked under it.
+    expect(alert.className.split(/\s+/)).toContain("md:top-4");
+    expect(notice.className.split(/\s+/)).toContain("md:top-[7.5rem]");
+    expect(notice.className.split(/\s+/)).not.toContain("md:top-4");
   });
 });
