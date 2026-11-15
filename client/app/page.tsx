@@ -884,7 +884,7 @@ export default function Home() {
   // Session 52 (owner, R8): where a backup notice sits. Below md it is in the page's flow, under the top bar, and
   // pushes the screen down; from md up it is fixed at the top right, as before. Session 53 (owner): with a save
   // error showing too it stays in the flow below md, under the save error (also in the flow); from md up it is
-  // stacked under the save error, as before.
+  // stacked under the save error, as before. Session 54 (owner): the sync-refused notice takes it too.
   const backupNoticePlace = `mx-4 mt-3 md:mx-0 md:mt-0 ${saveError ? "md:top-[7.5rem]" : "md:top-4"} md:fixed md:left-auto md:right-4 md:max-w-md md:shadow-2xl md:z-50`;
 
   return (
@@ -929,9 +929,12 @@ export default function Home() {
           Session 52 (owner, R8): the region sits here, under the top bar and the offline strip, so that on a
           phone the two backup notices are in the page's flow (they floated over every screen). */}
       <div role="status" className="flex-shrink-0">
+        {/* Session 54 (owner): on a phone in the page's flow, under the save error and above a backup notice
+            (it floated, and could cover one); from md up fixed at the top right, as before. The backup notices'
+            placement: "Backup has stopped on this device" is one of them. */}
         {syncRefused && (
           <div
-            className={`fixed ${saveError ? "top-[calc(11rem+env(safe-area-inset-top))] md:top-[7.5rem]" : "top-[calc(4.5rem+env(safe-area-inset-top))] md:top-4"} left-4 right-4 md:left-auto md:right-4 md:max-w-md rounded-2xl px-4 py-3.5 shadow-2xl z-50`}
+            className={`${backupNoticePlace} rounded-2xl px-4 py-3.5`}
             style={{ background: T.panel, border: `1px solid ${T.brass}` }}
           >
             {/* SEC-07 amended (session 26, item 2): the owner's wording (session 27). */}
