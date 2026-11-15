@@ -56,7 +56,8 @@ export default function TopBar({ session, onProfile, onSignOut, syncStatus }: { 
           aria-haspopup="menu"
           aria-expanded={menu}
           aria-controls={menu ? menuId : undefined}
-          aria-label="Account menu"
+          // Session 53 (owner): the name starts with the initials the button shows (WCAG 2.5.3).
+          aria-label={initials ? `${initials}, account menu` : "Account menu"}
           className="flex items-center gap-2 rounded-xl px-2.5 py-1.5"
           style={{ background: T.panelSoft }}
         >
@@ -70,7 +71,7 @@ export default function TopBar({ session, onProfile, onSignOut, syncStatus }: { 
               />
             )}
           </div>
-          <span className="text-[10px]" style={{ color: T.mute }}>▾</span>
+          <span className="text-[10px]" style={{ color: T.mute }} aria-hidden="true">▾</span>
         </button>
         {menu && (
           <>
