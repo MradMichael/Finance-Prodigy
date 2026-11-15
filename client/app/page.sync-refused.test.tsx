@@ -36,6 +36,7 @@ import { DEFAULT_DATA, cycleStartDayOf } from "../lib/localData";
 import { computeDashboard } from "../lib/computeDashboard";
 import { currentCycleKey, calendarKeyForDate } from "../lib/period";
 import { SYNC_REFUSED_MESSAGE, isSyncRefused, clearSyncRefused } from "../lib/syncRefused";
+import { saveData } from "../lib/localData";
 
 const RETRY_NOTICE = "Your latest changes aren't backed up yet. They're safe on this device, and ESSA will try again.";
 const REFUSED = { ok: false, credentialsRefused: true, error: "Invalid sync credentials for this account." };
@@ -139,4 +140,34 @@ it("after a sign-in clears the stop, backup resumes", async () => {
   expect(screen.queryByText(SYNC_REFUSED_MESSAGE)).toBeNull();
   await addWish("Brass lamp");
   await waitFor(() => expect(push).toHaveBeenCalledTimes(1));
+});
+
+// Session 54 (owner): on a phone the sync-refused notice floated under the top bar and, with a save error and a
+// backup notice showing too, could cover the backup notice. Now it is in the page's flow like them, in the order
+// save error, sync-refused, backup notice; from md up it stays fixed at the top right, as before. A refusal clears
+// the failed-backup notice and stops uploads, so "all three" is the save error, the refusal and the too-large
+// notice (a refusal doesn't clear that one). jsdom does no layout: classes and page order here, the screen live.
+it("with a save error, a refusal and the too-large notice all showing, all three sit in the flow on a phone, in that order", async () => {
+  push.mockResolvedValueOnce({ ok: false, tooLarge: true, error: "too large" }).mockResolvedValue(REFUSED);
+  await open();
+  await addWish("Amber stool");
+  const tooLarge = (await screen.findByText(/larger than the 2 MB the server can hold/)).parentElement!;
+  await addWish("Brass lamp");
+  const refused = (await screen.findByText(SYNC_REFUSED_MESSAGE)).parentElement!;
+  vi.mocked(saveData).mockRejectedValueOnce(new DOMException("The quota has been exceeded.", "QuotaExceededError"));
+  await addWish("Teal lamp");
+  const alert = await screen.findByRole("alert");
+  expect(screen.getByText(/larger than the 2 MB the server can hold/)).toBeTruthy(); // still showing
+  for (const el of [alert, refused, tooLarge]) {
+    const classes = el.className.split(/\s+/);
+    expect(classes).not.toContain("fixed");
+    expect(classes.filter((c) => /^top-/.test(c))).toEqual([]);
+    expect(classes).toContain("md:fixed");
+  }
+  const follows = (a: Element, b: Element) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+  expect(follows(alert, refused)).toBe(true);
+  expect(follows(refused, tooLarge)).toBe(true);
+  expect(follows(tooLarge, document.getElementById("wish-name")!)).toBe(true);
+  // From md up, unchanged: the save error at the top, the refusal under it at 7.5 rem.
+  expect(refused.className.split(/\s+/)).toContain("md:top-[7.5rem]");
 });
