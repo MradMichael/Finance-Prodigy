@@ -45,14 +45,17 @@ describe("U3: notices clear the phone's bars", () => {
   });
 
   // Session 52 (owner, R8): the two backup notices left this rule. Below md they sit in the page's flow
-  // (page.backup-dismiss.test.tsx pins that); the save error and the sync-refused notice stay fixed here.
-  it("the top notices sit below the top bar below md, stacked under the save error as before", () => {
+  // (page.backup-dismiss.test.tsx pins that). Session 53 (owner): the save error joined them. Only the
+  // sync-refused notice stays fixed below md.
+  it("the save error is in the flow below md and fixed from md; the sync-refused notice sits below the top bar", () => {
     const page = src("app/page.tsx");
     const save = page.match(/\{saveError && \(\s*<div\s+role="alert"\s+className="([^"]+)"/);
     expect(save).not.toBeNull();
-    // PWA P2 (2026-11-05): below md, the same offsets plus the notch/status bar's inset (viewport-fit=cover).
-    expect(save![1]).toMatch(/(^| )top-\[calc\(4\.5rem\+env\(safe-area-inset-top\)\)\]( |$)/);
+    expect(save![1]).not.toMatch(/(^| )fixed( |$)/);
+    expect(save![1]).not.toMatch(/(^| )top-/);
+    expect(save![1]).toMatch(/(^| )md:fixed( |$)/);
     expect(save![1]).toMatch(/(^| )md:top-4( |$)/);
+    // PWA P2 (2026-11-05): below md, the offsets carry the notch/status bar's inset (viewport-fit=cover).
     const refusedAt = page.search(/\{syncRefused && \(/);
     expect(refusedAt).toBeGreaterThan(-1);
     const refused = page.slice(refusedAt, refusedAt + 600);
@@ -60,14 +63,16 @@ describe("U3: notices clear the phone's bars", () => {
     expect(refused).not.toMatch(/top: saveError/);
   });
 
-  it("the two backup notices share one placement: stacked under a save error, else in the flow below md, fixed from md", () => {
+  it("the two backup notices share one placement: in the flow below md, fixed from md, stacked under a save error there", () => {
     const page = src("app/page.tsx");
     const place = page.match(/const backupNoticePlace = `([^`]+)`/);
     expect(place).not.toBeNull();
-    // With a save error showing too, the phone keeps the old stacked, fixed position under it.
-    expect(place![1]).toMatch(/saveError \? "fixed top-\[calc\(11rem\+env\(safe-area-inset-top\)\)\] left-4 right-4 shadow-2xl z-50 md:top-\[7\.5rem\]"/);
-    // Otherwise: in the flow below md (no "fixed" without the md: prefix), fixed at the top right from md.
-    expect(place![1]).toMatch(/: "mx-4 mt-3 md:mx-0 md:mt-0 md:top-4"\} md:fixed md:left-auto md:right-4 md:max-w-md/);
+    // Session 53: in the flow below md whether or not a save error shows (no "fixed" or "top-" without md:).
+    expect(place![1]).not.toMatch(/(^|[ "])fixed[ "]/);
+    expect(place![1]).not.toMatch(/(^|[ "])top-/);
+    expect(place![1]).toMatch(/^mx-4 mt-3 md:mx-0 md:mt-0 /);
+    // From md: fixed at the top right, under the save error when one shows.
+    expect(place![1]).toMatch(/\$\{saveError \? "md:top-\[7\.5rem\]" : "md:top-4"\} md:fixed md:left-auto md:right-4 md:max-w-md/);
     for (const name of ["backupTooLarge", "backupFailed"]) {
       // Session 33 (U3): the backup notice can be dismissed, so its condition gained "&& !backupNoticeDismissed".
       const at = page.search(new RegExp(`\\{${name}(?: && !\\w+)? && \\(`));
