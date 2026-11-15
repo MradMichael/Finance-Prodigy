@@ -599,7 +599,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   // ── tab state ─────────────────────────────────────────────────── //
   const [activeTab, setActiveTab] = useState<"daily" | "setup">("daily");
 
-  // Session 52, item 18 (held): "Log again" on a past row fills the entry form from it, dated today, and saves
+  // Session 52, item 18 (merged in session 53; the button is named "Log again: {description}"): "Log again" on a past row fills the entry form from it, dated today, and saves
   // nothing; "+ Add entry" does that, with the form's own checks. logAgainEntry says which rows offer it and what
   // is copied. The form opens if it was closed and is brought into view.
   const [entryOpenSignal, setEntryOpenSignal] = useState(0);
@@ -1183,7 +1183,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                             {logAgainEntry(tx, cards) && (
                               <button
                                 onClick={() => logAgain(tx)}
-                                aria-label="Log this entry again"
+                                aria-label={`Log again: ${tx.description}`}
                                 className="opacity-70 hover:!opacity-100 transition-opacity text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap"
                                 style={{ color: T.jade, border: `1px solid ${T.jade}40` }}
                               >Log again</button>
@@ -1316,7 +1316,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                                     {logAgainEntry(tx, cards) && (
                                       <button
                                         onClick={() => logAgain(tx)}
-                                        aria-label="Log this entry again"
+                                        aria-label={`Log again: ${tx.description}`}
                                         className="opacity-70 hover:!opacity-100 transition-opacity text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap"
                                         style={{ color: T.jade, border: `1px solid ${T.jade}40` }}
                                       >Log again</button>
