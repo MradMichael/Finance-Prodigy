@@ -130,10 +130,11 @@ export default function Sidebar({
           onFocus={() => setHovered(true)}
           onBlur={handleBlurWithinSidebar}
           // Session 53 (owner): collapsed, the button shows only the initials, so its name starts with them
-          // (WCAG 2.5.3). Expanded, the name is on the button.
-          aria-label={!expanded && initials ? `${initials}, account settings` : `${session.name}: account settings`}
+          // (WCAG 2.5.3). Session 54 (owner): expanded, it shows the initials and the name, and its name holds
+          // both, in that order. With no initials, the name form.
+          aria-label={initials ? (expanded ? `${initials}, ${session.name}: account settings` : `${initials}, account settings`) : `${session.name}: account settings`}
           data-sync-status={syncStatus}
-          className="w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-xl transition-all hover:opacity-80"
+          className={`w-full flex items-center gap-2.5 px-2.5 rounded-xl transition-all hover:opacity-80 ${expanded ? "pt-2.5 pb-1" : "py-2.5"}`}
           style={{ whiteSpace: "nowrap" }}
         >
           <div className="relative flex-shrink-0">
@@ -150,15 +151,23 @@ export default function Sidebar({
               />
             )}
           </div>
+          {/* A word break between the initials and the name: the name check reads the button's visible words,
+              and without it "QN" and "Quartz" run together. A space between flex items isn't drawn. */}
+          {expanded && " "}
           {expanded && (
             <div className="text-left overflow-hidden flex-1">
               <p className="text-xs font-medium truncate" style={{ color: T.text }}>{session.name}</p>
-              <p className="text-[10px] truncate" style={{ color: T.mute }}>
-                {syncStatus !== "idle" ? syncStatusShortLabel(syncStatus) : session.email}
-              </p>
             </div>
           )}
         </button>
+        {/* Session 54 (owner): the email, or the sync status while syncing, sits under the button, lined up with
+            the name, instead of inside it: inside, the name check (WCAG 2.5.3) needs every visible word in the
+            button's name. It isn't part of the tap area. */}
+        {expanded && (
+          <p className="text-[10px] truncate pl-12 pr-2.5 pb-1.5" style={{ color: T.mute }}>
+            {syncStatus !== "idle" ? syncStatusShortLabel(syncStatus) : session.email}
+          </p>
+        )}
       </div>
     </aside>
   );
