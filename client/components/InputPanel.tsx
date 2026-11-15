@@ -1177,17 +1177,22 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                             </div>
                           </div>
                           <div className="flex items-center gap-1.5 flex-shrink-0">
-                            <span className="text-xs font-semibold tabular-nums" style={{ color: b.color }}>
-                              {fmtCur(tx.amount, tx.currency ?? "USD")}
-                            </span>
-                            {logAgainEntry(tx, cards) && (
-                              <button
-                                onClick={() => logAgain(tx)}
-                                aria-label={`Log again: ${tx.description}`}
-                                className="opacity-70 hover:!opacity-100 transition-opacity text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap"
-                                style={{ color: T.jade, border: `1px solid ${T.jade}40` }}
-                              >Log again</button>
-                            )}
+                            {/* Session 54 (owner): below md, "Log again" sits under the amount as a 20 px pill, so the
+                                row keeps its height (beside it, a 44 px box on a touch screen squeezed the method and
+                                category line). Its button keeps the tap size (globals.css, .log-again-tap). From md
+                                up, beside the amount as before. */}
+                            <div className="flex flex-col items-end gap-0.5 md:flex-row md:items-center md:gap-1.5">
+                              <span className="text-xs font-semibold tabular-nums" style={{ color: b.color }}>
+                                {fmtCur(tx.amount, tx.currency ?? "USD")}
+                              </span>
+                              {logAgainEntry(tx, cards) && (
+                                <button
+                                  onClick={() => logAgain(tx)}
+                                  aria-label={`Log again: ${tx.description}`}
+                                  className="log-again-tap md:flex md:items-stretch opacity-70 hover:!opacity-100 transition-opacity text-[10px] whitespace-nowrap"
+                                ><span className="inline-flex items-center h-5 md:h-auto px-1.5 rounded" style={{ color: T.jade, border: `1px solid ${T.jade}40` }}>Log again</span></button>
+                              )}
+                            </div>
                             <button
                               onClick={() => onEdit("transaction", tx.id)}
                               aria-label="Edit transaction"
@@ -1312,15 +1317,17 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                                     )}
                                   </div>
                                   <div className="flex items-center gap-1.5 flex-shrink-0">
-                                    <span className="text-xs tabular-nums font-medium" style={{ color: b.color }}>{fmtCur(tx.amount, tx.currency ?? "USD")}</span>
-                                    {logAgainEntry(tx, cards) && (
-                                      <button
-                                        onClick={() => logAgain(tx)}
-                                        aria-label={`Log again: ${tx.description}`}
-                                        className="opacity-70 hover:!opacity-100 transition-opacity text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap"
-                                        style={{ color: T.jade, border: `1px solid ${T.jade}40` }}
-                                      >Log again</button>
-                                    )}
+                                    {/* Session 54 (owner): as in This month, under the amount below md. */}
+                                    <div className="flex flex-col items-end gap-0.5 md:flex-row md:items-center md:gap-1.5">
+                                      <span className="text-xs tabular-nums font-medium" style={{ color: b.color }}>{fmtCur(tx.amount, tx.currency ?? "USD")}</span>
+                                      {logAgainEntry(tx, cards) && (
+                                        <button
+                                          onClick={() => logAgain(tx)}
+                                          aria-label={`Log again: ${tx.description}`}
+                                          className="log-again-tap md:flex md:items-stretch opacity-70 hover:!opacity-100 transition-opacity text-[10px] whitespace-nowrap"
+                                        ><span className="inline-flex items-center h-5 md:h-auto px-1.5 rounded" style={{ color: T.jade, border: `1px solid ${T.jade}40` }}>Log again</span></button>
+                                      )}
+                                    </div>
                                     <button
                                       onClick={() => onEdit("transaction", tx.id)}
                                       aria-label="Edit transaction"

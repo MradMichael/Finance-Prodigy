@@ -89,6 +89,19 @@
 }
 
 /*
+ * Session 54 (owner): on a phone row, "Log again" sits under the amount as a 20 px pill (its inner span). Its
+ * button keeps the tap size (the 24 px floor; 44 px on a touch screen) but reaches over the amount above and the
+ * row's padding below instead of making the row taller: it takes the pill's 20 px of the layout, the way the date
+ * field's boxes reach into its padding. From md up it sits beside the amount, as before.
+ */
+@media (max-width: 767.98px) {
+  .log-again-tap { margin-top: -2px; margin-bottom: -2px; }
+}
+@media (max-width: 767.98px) and (pointer: coarse) {
+  .log-again-tap { margin-top: -12px; margin-bottom: -12px; }
+}
+
+/*
  * Spectral, served from ESSA's own site (PRIV-01, FB-1c). It used to load from
  * Google's CDN on every page, telling Google each visitor's IP, browser and
  * page. These are the same latin files Google served (v15), so rendering is
