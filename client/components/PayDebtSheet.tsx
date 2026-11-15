@@ -3,7 +3,7 @@
 import { useState, useRef } from "react";
 import { useDialogFocus } from "./useDialogFocus";
 import type { LocalFinancials, StoredDebt, PaymentMethod, StoredCard } from "../lib/localData";
-import { buildDebtPaymentTx, derivedDebtBalance, derivedEfBalance, roundMoney, moneyMaxFor, todayISO, toUSD as toUSDShared, saveCard as storeCard, rateOn, lbpRateOf } from "../lib/localData";
+import { buildDebtPaymentTx, derivedDebtBalance, derivedEfBalance, roundMoney, moneyMaxFor, todayISO, toUSD as toUSDShared, saveCard as storeCard, cardRef, rateOn, lbpRateOf } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, MoneyInput, DateFieldDMY, PaymentMethodPicker } from "./form/Primitives";
 import { fmtCur } from "./screens/shared";
@@ -62,12 +62,7 @@ export default function PayDebtSheet({
     const amount = parseFloat(amt.replace(/,/g, ""));
     if (!amount || amount <= 0) return;
     const lbpRate = lbpRateOf(financials);
-    let resolvedCardId: string | undefined;
-    let resolvedCardLabel: string | undefined;
-    if (method === "card" && cardId) {
-      const card = cards.find((c) => c.id === cardId);
-      if (card) { resolvedCardId = card.id; resolvedCardLabel = card.label; }
-    }
+    const { cardId: resolvedCardId, cardLabel: resolvedCardLabel } = cardRef(cards, method, cardId);
     // Blank efAmt means "the full payment amount," same partial-amount
     // convention the main transaction form's own EF field uses. A debt
     // payment only ever DRAWS from EF, never contributes to it.

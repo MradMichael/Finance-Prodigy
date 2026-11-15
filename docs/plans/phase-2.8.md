@@ -265,7 +265,7 @@ still today's income, and the LBP rate keeps its own rule. Tests: `client/lib/in
 for an account whose first record is later than its first entries: past months' income, budget rollover, the
 savings streak, and the salary credited to a tracked balance (so that balance's expected figure).
 
-## InputPanel split (`client/components/InputPanel.tsx`): planned, not approved to build
+## InputPanel split (`client/components/InputPanel.tsx`): S0 to S3 done; S4 to S13 planned, not approved to build
 
 Every step preserves behaviour, ships on its own, and is covered by a test that exists before the move. Any
 step that would change behaviour becomes its own bug-fix item, never part of a move. Each move step also
@@ -274,10 +274,10 @@ phone layout, the remembered last entry.
 
 | Step | What |
 |---|---|
-| S0 | Tests only: characterise what has no test yet (assets add and delete, the transfer form's guard, adding a debt, adding and pausing a goal, a History row) |
+| S0 | Tests only: characterise what has no test yet (assets add and delete, the transfer form's guard, adding a debt, adding and pausing a goal, a History row): **done** (session 52), `client/components/InputPanel.s0-characterise.test.tsx` |
 | S1 | The lira mistype check as one function: **done**, merged at `4733cd5` |
-| S2 | The mistype dialog as one component, shared with the edit sheet (this also settles the dialog duplication) |
-| S3 | The card lookup as one helper |
+| S2 | The mistype dialog as one component, shared with the edit sheet (this also settles the dialog duplication): **done**, merged at `61cac5d` (session 51), `LbpMistypeDialog` |
+| S3 | The card lookup as one helper: **done** (session 52), `cardRef` in `client/lib/localData.ts`, used by the entry form, both goal-contribution forms, the debt-payment sheet and the edit sheet. The transfer form keeps its own lines: it stores the picked id even when the card is unknown, a different rule |
 | S4 | Building a new goal as one function (no change to how achievement is set: that is 2.8.3) |
 | S5 | One transaction row component, keeping today's two variants through a prop |
 | S6 | Move the Assets section |
