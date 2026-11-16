@@ -108,14 +108,17 @@ describe("R8: the failed-backup notice sits in the page flow on a phone", () => 
     await editAndUpload();
     const notice = screen.getByText(NOTICE).parentElement!;
     const classes = notice.className.split(/\s+/);
-    expect(classes).toContain("md:fixed");
+    // Session 55 (owner): from md the notices' region is the fixed box (a column, so notices stack); a notice isn't.
+    const region = notice.closest('[role="status"]')!.className.split(/\s+/);
+    expect(region).toEqual(expect.arrayContaining(["md:fixed", "md:flex", "md:flex-col", "md:right-4", "md:max-w-md"]));
+    expect(classes).not.toContain("md:fixed");
     expect(classes).not.toContain("fixed");
     const content = document.getElementById("wish-name")!;
     expect(notice.compareDocumentPosition(content) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // Still one live region that's always on the page (A11Y-03).
     expect(notice.closest('[role="status"]')).not.toBeNull();
     // From md up, with no save error above it, it sits at the top.
-    expect(classes).toContain("md:top-4");
+    expect(region).toContain("md:top-4");
   });
 
   // Session 53 (owner): with a save error showing too, the phone kept the old floating stack (the save error
@@ -132,10 +135,11 @@ describe("R8: the failed-backup notice sits in the page flow on a phone", () => 
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("Couldn't save on this device.");
     const notice = screen.getByText(NOTICE).parentElement!;
-    for (const el of [alert, notice]) {
+    const region = notice.closest('[role="status"]')!;
+    for (const el of [alert, notice, region]) {
       const classes = el.className.split(/\s+/);
       expect(classes).not.toContain("fixed");
-      expect(classes).toContain("md:fixed");
+      expect(classes.includes("md:fixed")).toBe(el !== notice);
       expect(classes.filter((c) => /^top-/.test(c))).toEqual([]); // no phone offset: the flow places it
     }
     // The order in the page is the order on a phone: the save error, the backup notice, then the screen.
@@ -143,7 +147,7 @@ describe("R8: the failed-backup notice sits in the page flow on a phone", () => 
     expect(notice.compareDocumentPosition(document.getElementById("wish-name")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // From md up: the save error at the top, the backup notice stacked under it.
     expect(alert.className.split(/\s+/)).toContain("md:top-4");
-    expect(notice.className.split(/\s+/)).toContain("md:top-[7.5rem]");
-    expect(notice.className.split(/\s+/)).not.toContain("md:top-4");
+    expect(region.className.split(/\s+/)).toContain("md:top-[7.5rem]");
+    expect(region.className.split(/\s+/)).not.toContain("md:top-4");
   });
 });

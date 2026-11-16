@@ -162,12 +162,20 @@ it("with a save error, a refusal and the too-large notice all showing, all three
     const classes = el.className.split(/\s+/);
     expect(classes).not.toContain("fixed");
     expect(classes.filter((c) => /^top-/.test(c))).toEqual([]);
-    expect(classes).toContain("md:fixed");
+  }
+  // Session 55 (owner): from md the refusal and the too-large notice shared one fixed spot, one over the other.
+  // They are now two rows of one fixed column (their region), the refusal first.
+  const region = refused.closest('[role="status"]')!;
+  expect(tooLarge.closest('[role="status"]')).toBe(region);
+  expect(region.className.split(/\s+/)).toEqual(expect.arrayContaining(["md:fixed", "md:flex", "md:flex-col", "md:gap-3"]));
+  for (const el of [refused, tooLarge]) {
+    expect(el.parentElement).toBe(region);
+    expect(el.className.split(/\s+/).filter((c) => /^md:(fixed|top-|right-|left-)/.test(c))).toEqual([]);
   }
   const follows = (a: Element, b: Element) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
   expect(follows(alert, refused)).toBe(true);
   expect(follows(refused, tooLarge)).toBe(true);
   expect(follows(tooLarge, document.getElementById("wish-name")!)).toBe(true);
   // From md up, unchanged: the save error at the top, the refusal under it at 7.5 rem.
-  expect(refused.className.split(/\s+/)).toContain("md:top-[7.5rem]");
+  expect(region.className.split(/\s+/)).toContain("md:top-[7.5rem]");
 });
