@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import type { LocalFinancials, WishlistItem, Currency, StoredGoal } from "../../lib/localData";
-import { uid, withRate, moneyMaxFor, recordDeletion, isoLocalDay, edited, lbpRateOf, makeToUSDLive } from "../../lib/localData";
+import type { LocalFinancials, WishlistItem, Currency } from "../../lib/localData";
+import { uid, withRate, buildNewGoal, moneyMaxFor, recordDeletion, isoLocalDay, edited, lbpRateOf, makeToUSDLive } from "../../lib/localData";
 import { addMonths } from "../../lib/debtEngine";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
@@ -86,16 +86,11 @@ export default function WishlistScreen({
     // TIME-03: clamped to the target month's last day (31 Aug + 6 months is
     // 28 Feb, not 3 Mar). TIME-02: dated by the LOCAL day below.
     const targetDate = addMonths(new Date(), 6);
-    const goal: StoredGoal = {
-      id: uid(), name: item.name, emoji: item.emoji,
-      targetAmount: item.price,
-      currentAmount: 0,
-      openingAmount: 0, // plan H 5a: progress starts from nothing
-      currency: item.currency,
-      ...withRate(item.currency, lbpRate),
-      targetDate: isoLocalDay(targetDate),
-      createdAt: new Date().toISOString(),
-    };
+    // S4 (session 55): built by buildNewGoal, shared with My Finances. Progress starts from nothing (plan H 5a).
+    const goal = buildNewGoal({
+      name: item.name, emoji: item.emoji, targetAmount: item.price, openingAmount: 0,
+      currency: item.currency, targetDate: isoLocalDay(targetDate),
+    }, lbpRate);
     onChange({ ...financials, goals: [...financials.goals, edited(goal)] });
     setSavedGoalIds((s) => ({ ...s, [item.id]: true }));
   }
