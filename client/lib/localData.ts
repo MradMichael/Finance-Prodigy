@@ -2879,6 +2879,30 @@ export function withRate(currency: Currency, lbpRate: number): { lbpRateAtEntry?
   return currency === "LBP" ? { lbpRateAtEntry: lbpRate } : {};
 }
 
+/**
+ * InputPanel split, S4 (session 55): a new goal's record, as My Finances' "+ Add goal" and the Wishlist's
+ * "save toward a goal" each built it by hand. The saved figure and the opening amount start equal (plan H 5a:
+ * progress = the opening amount + contributions). The currency is locked at creation and never editable
+ * afterward: contributions are recorded against the goal in it, and changing it later would silently
+ * reinterpret them (see buildGoalContributionTx). The caller marks the edit (`edited`). Achievement is not
+ * set here: that is goalAchievement's rule.
+ */
+export function buildNewGoal(
+  input: { name: string; emoji: string; targetAmount: number; openingAmount: number; currency: Currency; targetDate: string },
+  lbpRate: number,
+): StoredGoal {
+  return {
+    id: uid(), name: input.name, emoji: input.emoji,
+    targetAmount: input.targetAmount,
+    currentAmount: input.openingAmount,
+    openingAmount: input.openingAmount,
+    currency: input.currency,
+    ...withRate(input.currency, lbpRate),
+    targetDate: input.targetDate,
+    createdAt: new Date().toISOString(),
+  };
+}
+
 // ── Money precision (2026-08-17 audit follow-up, "Option B") ──────────────
 // All money in this app is a native JS number (float dollars), not integer
 // cents — see docs/AUDIT_2026-08.md, 2.4.16. That's a deliberate choice
