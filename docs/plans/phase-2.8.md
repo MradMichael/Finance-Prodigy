@@ -265,7 +265,7 @@ still today's income, and the LBP rate keeps its own rule. Tests: `client/lib/in
 for an account whose first record is later than its first entries: past months' income, budget rollover, the
 savings streak, and the salary credited to a tracked balance (so that balance's expected figure).
 
-## InputPanel split (`client/components/InputPanel.tsx`): S0 to S12 done; S13 approved to build as pure moves (session 55)
+## InputPanel split (`client/components/InputPanel.tsx`): S0 to S13 done (session 55): every step a pure move
 
 Every step preserves behaviour, ships on its own, and is covered by a test that exists before the move. Any
 step that would change behaviour becomes its own bug-fix item, never part of a move. Each move step also
@@ -287,7 +287,7 @@ phone layout, the remembered last entry.
 | S10 | Move the Recurring section: **done** (session 55), `client/components/inputpanel/RecurringSection.tsx` |
 | S11 | Move This month and History (they share S5's row): **done** (session 55), `ThisMonthSection.tsx` and `HistorySection.tsx` in `client/components/inputpanel/` |
 | S12 | Move Log an entry (the most state, so last): **done** (session 55), `client/components/inputpanel/EntrySection.tsx` |
-| S13 | The remaining shell: tabs, stats strip, toast |
+| S13 | The remaining shell: tabs, stats strip, toast: **done** (session 55), `client/components/inputpanel/Shell.tsx` holds the stats strip and the tab bar; the toast and the lira dialog stay in InputPanel, which is now the shell (other sections share them) |
 
 Separate bug items, not part of any move: D6, D9 (pinned by a test first), D10, D11.
 

@@ -20,6 +20,7 @@ import DebtsSection, { useDebtForm } from "./inputpanel/DebtsSection";
 import TransferSection, { useTransferForm } from "./inputpanel/TransferSection";
 import AssetsSection, { useAssetsForm } from "./inputpanel/AssetsSection";
 import EntrySection, { useEntryForm } from "./inputpanel/EntrySection";
+import { StatsStrip, TabBar } from "./inputpanel/Shell";
 import { logAgainEntry } from "../lib/logAgain";
 import {currentCycleKey, isInCycle, periodNoun } from "../lib/period";
 import { calendarDayOf } from "../lib/calendarDay";
@@ -253,51 +254,11 @@ export default function InputPanel({ financials, dashData, onChange, session, on
       {/* U10 (session 33): the brand block that repeated the top bar's and the sidebar's is gone. */}
       {/* ── Quick stats strip ───────────────────────────────── */}
       {financials.income > 0 && (
-        <div
-          className="grid grid-cols-3 gap-px mx-0"
-          style={{ background: T.line, borderBottom: `1px solid ${T.line}` }}
-        >
-          {[
-            { label: "Needs", value: fmt(needsOut), color: T.sky   },
-            { label: "Wants", value: fmt(wantsOut), color: T.brass },
-            { label: "Saved", value: fmt(savOut),   color: T.jade  },
-          ].map((s) => (
-            <div key={s.label} className="flex flex-col items-center py-3" style={{ background: T.panelSoft }}>
-              <span className="text-xs font-semibold tabular-nums" style={{ color: s.color }}>{s.value}</span>
-              <span className="text-[9px] uppercase tracking-widest mt-0.5" style={{ color: T.mute }}>{s.label}</span>
-            </div>
-          ))}
-        </div>
+        <StatsStrip needs={fmt(needsOut)} wants={fmt(wantsOut)} saved={fmt(savOut)} />
       )}
 
       {/* ── Tab bar ─────────────────────────────────────────── */}
-      <div className="flex flex-shrink-0" style={{ borderBottom: `1px solid ${T.line}` }}>
-        {([
-          { id: "daily" as const, label: "Daily",  icon: "⚡", badge: monthTx.length },
-          { id: "setup" as const, label: "Manage", icon: "⚙", badge: 0 },
-        ]).map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            aria-pressed={activeTab === tab.id}
-            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-[11px] font-semibold transition-all"
-            style={{
-              color: activeTab === tab.id ? T.jade : T.mute,
-              borderBottom: activeTab === tab.id ? `2px solid ${T.jade}` : "2px solid transparent",
-              background: "transparent",
-              marginBottom: -1,
-            }}
-          >
-            <span>{tab.icon}</span>
-            <span>{tab.label}</span>
-            {tab.badge > 0 && (
-              <span className="text-[9px] font-bold px-1 py-0.5 rounded-full" style={{ background: T.jade + "28", color: T.jade }}>
-                {tab.badge}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
+      <TabBar activeTab={activeTab} setActiveTab={setActiveTab} dailyCount={monthTx.length} />
 
       {/* ── Scrollable body ─────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto px-6">
