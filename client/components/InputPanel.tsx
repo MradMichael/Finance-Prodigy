@@ -7,12 +7,13 @@ import { useScrollFocus } from "./useScrollFocus";
 import type { LocalFinancials, StoredTransaction, StoredDebt, StoredRecurring, StoredCard, RecurringFrequency, Currency, PaymentMethod, BudgetRuleKey } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, buildNewGoal, goalProgress, goalAchievement, goalPercent, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, remainingInstallments, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, buildExtraPaymentTx, categoryLabel, categoryIcon, matchCategoryRule, usualBucketOf, roundMoney, moneyMaxFor, MONEY_MAX_USD, derivedDebtBalance, activeTransactions, softDelete, cardRef, cycleStartDayOf, syncAllowed, edited, recordDeletion, saveCard as storeCard, makeToUSDOn, rateOn, lbpRateOf, makeToUSDLive, debtPayoff } from "../lib/localData";
+import { uid, buildNewGoal, goalProgress, goalAchievement, goalPercent, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, remainingInstallments, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, buildExtraPaymentTx, matchCategoryRule, usualBucketOf, roundMoney, moneyMaxFor, MONEY_MAX_USD, derivedDebtBalance, activeTransactions, softDelete, cardRef, cycleStartDayOf, syncAllowed, edited, recordDeletion, saveCard as storeCard, makeToUSDOn, rateOn, lbpRateOf, makeToUSDLive, debtPayoff } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker } from "./form/Primitives";
 import { fmtCur, money } from "./screens/shared";
 import ImportStatement from "./ImportStatement";
 import FutureDateNote from "./form/FutureDateNote";
+import EntryRow from "./inputpanel/EntryRow";
 import { logAgainEntry } from "../lib/logAgain";
 import {currentCycleKey, cycleKeyForISO, isInCycle, periodNoun, cycleLabel, type CycleKey } from "../lib/period";
 import { calendarDayOf } from "../lib/calendarDay";
@@ -1134,71 +1135,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                   const divergence = cycleMonthDivergence(tx, financials.recurring ?? [], startDay);
                   return (
                     <div key={tx.id} data-month-entry data-entry-row className={!showAllMonth && i >= PHONE_MONTH_ROWS ? "max-md:hidden" : undefined}>
-                        <div
-                          className="flex items-center justify-between rounded-xl px-3 py-2.5 group"
-                          style={{ background: T.panelSoft, borderLeft: `3px solid ${b.color}` }}
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="text-sm">{b.icon}</span>
-                            <div className="min-w-0">
-                              <span className="text-xs truncate block" style={{ color: T.text }}>
-                                {tx.description}
-                                {divergence && <span title={divergence} style={{ color: T.brass }}> ⚠</span>}
-                              </span>
-                              {/* Was hover-only (title= alone) -- unreachable on touch. Same message, always visible when present, matching 2.4.36's own confirm-form warning below. */}
-                              {divergence && (
-                                <span className="text-[9px] block" style={{ color: T.brass }}>{divergence}</span>
-                              )}
-                              {(tx.paymentMethod || tx.category) && (
-                                <span className="text-[9px]" style={{ color: T.mute }}>
-                                  {tx.paymentMethod && (
-                                    tx.paymentMethod === "card" && tx.cardLabel
-                                      ? <span className="whitespace-nowrap">{tx.cardLabel}</span>
-                                      : tx.paymentMethod === "cash"
-                                      ? "💵 Cash"
-                                      : tx.paymentMethod === "card"
-                                      ? "💳 Card"
-                                      : tx.paymentNote
-                                      ? `🤝 ${tx.paymentNote}`
-                                      : "🤝 Other"
-                                  )}
-                                  {tx.paymentMethod && tx.category && " · "}
-                                  {tx.category && `${categoryIcon(tx.category, financials.customCategories)} ${categoryLabel(tx.category, financials.customCategories)}`}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5 flex-shrink-0">
-                            {/* Session 54 (owner): below md, "Log again" sits under the amount as a 20 px pill, so the
-                                row keeps its height (beside it, a 44 px box on a touch screen squeezed the method and
-                                category line). Its button keeps the tap size (globals.css, .log-again-tap). From md
-                                up, beside the amount as before. */}
-                            <div className="flex flex-col items-end gap-0.5 md:flex-row md:items-center md:gap-1.5">
-                              <span className="text-xs font-semibold tabular-nums" style={{ color: b.color }}>
-                                {fmtCur(tx.amount, tx.currency ?? "USD")}
-                              </span>
-                              {logAgainEntry(tx, cards) && (
-                                <button
-                                  onClick={() => logAgain(tx)}
-                                  aria-label={`Log again: ${tx.description}`}
-                                  className="log-again-tap md:flex md:items-stretch opacity-70 hover:!opacity-100 transition-opacity text-[10px] whitespace-nowrap"
-                                ><span className="inline-flex items-center h-5 md:h-auto px-1.5 rounded" style={{ color: T.jade, border: `1px solid ${T.jade}40` }}>Log again</span></button>
-                              )}
-                            </div>
-                            <button
-                              onClick={() => onEdit("transaction", tx.id)}
-                              aria-label="Edit transaction"
-                              className="opacity-70 hover:!opacity-100 transition-opacity text-[10px] px-1.5 py-0.5 rounded"
-                              style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
-                            >✎</button>
-                            <button
-                              onClick={() => { if (confirm("Delete this transaction?")) softDeleteTransaction(tx.id); }}
-                              aria-label="Delete transaction"
-                              className="opacity-70 hover:!opacity-100 transition-opacity text-xs px-1"
-                              style={{ color: T.coral }}
-                            >✕</button>
-                          </div>
-                        </div>
+                        <EntryRow variant="month" tx={tx} b={b} divergence={divergence} financials={financials} cards={cards} logAgain={logAgain} onEdit={onEdit} softDeleteTransaction={softDeleteTransaction} />
                     </div>
                   );
                 })}
@@ -1291,49 +1228,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
                           const divergence = cycleMonthDivergence(tx, financials.recurring ?? [], startDay);
                           return (
                             <div key={tx.id} data-entry-row>
-                                <div
-                                  className="flex items-center justify-between rounded-lg px-2.5 py-2 group"
-                                  style={{ background: T.panelSoft, borderLeft: `2px solid ${b.color}` }}
-                                >
-                                  <div className="min-w-0 flex-1">
-                                    <p className="text-xs truncate" style={{ color: T.text }}>
-                                      {tx.description}
-                                      {divergence && <span title={divergence} style={{ color: T.brass }}> ⚠</span>}
-                                    </p>
-                                    <p className="text-[9px]" style={{ color: T.mute }}>
-                                      {fmtDate(tx.date)}{tx.category && ` · ${categoryIcon(tx.category, financials.customCategories)} ${categoryLabel(tx.category, financials.customCategories)}`}
-                                    </p>
-                                    {/* Was hover-only (title= alone) -- unreachable on touch. */}
-                                    {divergence && (
-                                      <p className="text-[9px]" style={{ color: T.brass }}>{divergence}</p>
-                                    )}
-                                  </div>
-                                  <div className="flex items-center gap-1.5 flex-shrink-0">
-                                    {/* Session 54 (owner): as in This month, under the amount below md. */}
-                                    <div className="flex flex-col items-end gap-0.5 md:flex-row md:items-center md:gap-1.5">
-                                      <span className="text-xs tabular-nums font-medium" style={{ color: b.color }}>{fmtCur(tx.amount, tx.currency ?? "USD")}</span>
-                                      {logAgainEntry(tx, cards) && (
-                                        <button
-                                          onClick={() => logAgain(tx)}
-                                          aria-label={`Log again: ${tx.description}`}
-                                          className="log-again-tap md:flex md:items-stretch opacity-70 hover:!opacity-100 transition-opacity text-[10px] whitespace-nowrap"
-                                        ><span className="inline-flex items-center h-5 md:h-auto px-1.5 rounded" style={{ color: T.jade, border: `1px solid ${T.jade}40` }}>Log again</span></button>
-                                      )}
-                                    </div>
-                                    <button
-                                      onClick={() => onEdit("transaction", tx.id)}
-                                      aria-label="Edit transaction"
-                                      className="opacity-70 hover:!opacity-100 transition-opacity text-[10px] px-1.5 py-0.5 rounded"
-                                      style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
-                                    >✎</button>
-                                    <button
-                                      onClick={() => { if (confirm("Delete this transaction?")) softDeleteTransaction(tx.id); }}
-                                      aria-label="Delete transaction"
-                                      className="opacity-70 hover:!opacity-100 transition-opacity text-[10px] px-1"
-                                      style={{ color: T.coral }}
-                                    >✕</button>
-                                  </div>
-                                </div>
+                                <EntryRow variant="history" tx={tx} b={b} divergence={divergence} financials={financials} cards={cards} logAgain={logAgain} onEdit={onEdit} softDeleteTransaction={softDeleteTransaction} />
                             </div>
                           );
                         })}
