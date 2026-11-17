@@ -163,7 +163,7 @@ export default function EditRecurringSheet({
               ))}
             </div>
             {endType === "date" && <DateFieldDMY value={end} onChange={setEnd} />}
-            {endType === "amount" && <MoneyInput value={totalAmount} onChange={setTotalAmount} placeholder="Total amount" max={moneyMaxFor(currency, lbpRateOf(financials))} />}
+            {endType === "amount" && <MoneyInput value={totalAmount} onChange={setTotalAmount} placeholder="Total amount e.g. 10,000" max={moneyMaxFor(currency, lbpRateOf(financials))} />}
           </div>
         </div>
 

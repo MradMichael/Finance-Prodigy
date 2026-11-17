@@ -330,7 +330,7 @@ export default function EditTransactionSheet({
               <CardPicker cardId={cardId} onCardIdChange={setCardId} cards={cards} onSaveCard={saveCard} />
             )}
             {payMethod === "other" && (
-              <FocusInput value={payNote} onChange={(e) => setPayNote(e.target.value)} placeholder="Who paid or how?" />
+              <FocusInput value={payNote} onChange={(e) => setPayNote(e.target.value)} placeholder="Who paid or how? e.g. Dad filled gas tank" />
             )}
           </div>
           {cycleDate && (
