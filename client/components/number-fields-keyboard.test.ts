@@ -21,7 +21,7 @@ const EXPECTED: Record<string, "decimal" | "numeric"> = {
   "components/screens/SetupScreen.tsx#ef-balance": "decimal", // commitEfBalance: parseFloat
   "components/screens/ProjectionsScreen.tsx#value={testAmount}": "numeric", // Math.round(Number(...))
   "components/screens/CurrencyScreen.tsx#currency-lbp-rate": "decimal", // commitLbpRate: parseFloat
-  "components/screens/GoalsScreen.tsx#value={payAmt}": "decimal", // parseFloat(payAmt)
+  // D-f (owner, session 56): Goals' custom amount is the money field now (a text box), so it left this list.
 };
 
 function sources(dir: string): string[] {
@@ -55,7 +55,7 @@ it("every number field names a keyboard", () => {
   expect(missing).toEqual([]);
 });
 
-it("each number field has the keyboard its parsing calls for, and there are exactly the ten known", () => {
+it("each number field has the keyboard its parsing calls for, and there are exactly the nine known", () => {
   const found = Object.fromEntries(numberFields().map((f) => [f.key, f.mode]));
   expect(found).toEqual(EXPECTED);
 });
