@@ -104,9 +104,10 @@ describe("rows by period: the same rows as filtering by isInCycle, in the same o
 
 describe("each goal's contributions: the same sum as the scan", () => {
   const goal = (id: string, currency: "USD" | "LBP"): StoredGoal => ({ id, name: id, emoji: "G", targetAmount: 5000, currentAmount: 0, openingAmount: 0, currency, targetDate: "2027-12-31", createdAt: "2026-01-01T00:00:00.000Z" });
-  const goals = [goal("usd", "USD"), goal("lbp", "LBP"), goal("none", "USD")];
+  const goals = [goal("usd", "USD"), goal("lbp", "LBP"), goal("none", "USD"), goal("order", "USD")];
   const transactions = [
-    tx({ goalId: "usd", amount: 100.1 }), tx({ goalId: "usd", amount: 0.2 }), tx({ goalId: "usd", amount: 0.3 }), // float order matters
+    tx({ goalId: "order", amount: 390.602 }), tx({ goalId: "order", amount: 4.53 }), tx({ goalId: "order", amount: 0.453 }), // see the order test
+    tx({ goalId: "usd", amount: 100.1 }), tx({ goalId: "usd", amount: 0.2 }), tx({ goalId: "usd", amount: 0.3 }),
     tx({ goalId: "usd", amount: 895000, currency: "LBP", lbpRateAtEntry: 89500 }), // at its stored rate
     tx({ goalId: "usd", amount: 447500, currency: "LBP", date: "2026-05-01" }), // at its own day's rate
     tx({ goalId: "usd", amount: 0, goalAmount: -25 }), // a correction
@@ -119,6 +120,12 @@ describe("each goal's contributions: the same sum as the scan", () => {
 
   it.each(goals.map((g) => [g.id, g] as const))("goal %s", (_, g) => {
     expect(goalContributions(g, d)).toBe(oldContributions(g, d));
+  });
+
+  it("rows are added in list order: these three round to 395.58 in order and 395.59 backwards", () => {
+    expect(roundMoney([390.602, 4.53, 0.453].reduce((s, x) => s + x, 0))).toBe(395.58);
+    expect(roundMoney([0.453, 4.53, 390.602].reduce((s, x) => s + x, 0))).toBe(395.59); // premise: order shows
+    expect(goalContributions(goals[3], d)).toBe(395.58);
   });
 
   it("the premise: the hand-made sums are what they say", () => {
