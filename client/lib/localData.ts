@@ -3811,11 +3811,30 @@ function contributionToGoal(t: StoredTransaction, g: StoredGoal, d: LocalFinanci
   return g.currency === "LBP" ? t.amount * rate : t.amount / rate;
 }
 
+/**
+ * R4 (session 56): each goal's live rows (not deleted, not purged), in list order, from one pass per transaction
+ * list. goalContributions scanned the whole list for every goal it was asked about, on every change. Kept as long
+ * as the list lives, as the confirmed-cycles index above (lists are never changed in place). Keyed by the row's
+ * `goalId` as it is, so a goal's lookup matches exactly the rows `t.goalId === g.id` matched.
+ */
+const goalRowsIndex = new WeakMap<readonly StoredTransaction[], Map<string | undefined, StoredTransaction[]>>();
+function liveGoalRows(transactions: readonly StoredTransaction[], goalId: string): readonly StoredTransaction[] {
+  let index = goalRowsIndex.get(transactions);
+  if (!index) {
+    index = new Map();
+    for (const t of transactions) {
+      if (t.deletedAt != null || t.purgedAt != null) continue;
+      const rows = index.get(t.goalId);
+      if (rows) rows.push(t); else index.set(t.goalId, [t]);
+    }
+    goalRowsIndex.set(transactions, index);
+  }
+  return index.get(goalId) ?? [];
+}
+
 /** The sum of a goal's live contributions (and corrections), in the goal's currency. */
 export function goalContributions(g: StoredGoal, d: LocalFinancials): number {
-  return roundMoney((d.transactions ?? [])
-    .filter((t) => t.goalId === g.id && t.deletedAt == null && t.purgedAt == null)
-    .reduce((s, t) => s + contributionToGoal(t, g, d), 0));
+  return roundMoney(liveGoalRows(d.transactions ?? [], g.id).reduce((s, t) => s + contributionToGoal(t, g, d), 0));
 }
 
 /**
