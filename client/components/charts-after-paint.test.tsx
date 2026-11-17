@@ -8,7 +8,8 @@ import { it, expect, afterEach } from "vitest";
 import { render, cleanup, waitFor } from "@testing-library/react";
 import fs from "fs";
 import path from "path";
-import { CashFlowChart, NetWorthChart } from "./charts.lazy.tsx";
+// By a path vitest.config.ts's alias doesn't match, so this is the lazy module itself.
+import { CashFlowChart, NetWorthChart } from "../components/charts.lazy";
 import { ThemeProvider } from "../contexts/ThemeContext";
 
 afterEach(cleanup);
