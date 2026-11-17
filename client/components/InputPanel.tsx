@@ -14,6 +14,7 @@ import { fmtCur, money } from "./screens/shared";
 import ImportStatement from "./ImportStatement";
 import FutureDateNote from "./form/FutureDateNote";
 import EntryRow from "./inputpanel/EntryRow";
+import AssetsSection, { useAssetsForm } from "./inputpanel/AssetsSection";
 import { logAgainEntry } from "../lib/logAgain";
 import {currentCycleKey, cycleKeyForISO, isInCycle, periodNoun, cycleLabel, type CycleKey } from "../lib/period";
 import { calendarDayOf } from "../lib/calendarDay";
@@ -200,10 +201,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   const [dCurrency, setDCurrency] = useState<Currency>("USD");
   // Debt payment lives in the shared PayDebtSheet (page.tsx).
 
-  // Asset form
-  const [aName,     setAName]     = useState("");
-  const [aValue,    setAValue]    = useState("");
-  const [aCurrency, setACurrency] = useState<Currency>("USD");
+  const assetsForm = useAssetsForm(); // Other Assets: its form's state stays here (S-moves, session 55), so it survives closing the section
 
 
   // Transfer form (2.4.55 sub-phase 2) -- source pool -> destination pool.
@@ -441,24 +439,6 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     };
     update({ debts: [...financials.debts, edited(debt)] });
     setDName(""); setDBalance(""); setDApr(""); setDMin(""); setDOpenedDate(""); setDCurrency("USD");
-  }
-
-  function addAsset() {
-    if (!aName.trim() || !aValue) return;
-    const asset = {
-      id: uid(), name: aName.trim(),
-      value: parseFloat(aValue.replace(/,/g, "")),
-      currency: aCurrency,
-      ...withRate(aCurrency, lbpRateOf(financials)),
-      createdAt: new Date().toISOString(),
-    };
-    update({ assets: [...(financials.assets ?? []), edited(asset)] });
-    setAName(""); setAValue(""); setACurrency("USD");
-  }
-
-  function deleteAsset(id: string) {
-    if (!confirm("Remove this asset?")) return;
-    update({ assets: (financials.assets ?? []).filter((a) => a.id !== id), deletedKeys: recordDeletion(financials, "assets", id) });
   }
 
   // Human-readable pool name for a transfer leg's own "Transfer to/from X"
@@ -1914,53 +1894,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
         </Section>
 
         <Section title="Other Assets" icon="🏦" badge={(financials.assets ?? []).length} defaultOpen={false}>
-          <p className="text-xs" style={{ color: T.mute }}>
-            Anything besides goals and your safety net: a car, a brokerage account, crypto. Counted toward net worth.
-          </p>
-          {(financials.assets ?? []).length > 0 && (
-            <div className="space-y-2">
-              {(financials.assets ?? []).map((a) => (
-                <div key={a.id} className="rounded-xl p-3 flex items-center justify-between gap-2" style={{ background: T.panelSoft, border: `1px solid ${T.line}` }}>
-                  <div>
-                    <p className="text-sm font-medium" style={{ color: T.text }}>{a.name}</p>
-                    <p className="text-xs tabular-nums" style={{ color: T.jade }}>
-                      {a.currency === "LBP" ? "L£" : "$"}{a.value.toLocaleString("en-US")}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => deleteAsset(a.id)}
-                    className="text-xs px-2 py-1 rounded-lg hover:opacity-70 transition-opacity flex-shrink-0"
-                    style={{ color: T.coral }}
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-          <div
-            className="rounded-xl p-4 space-y-3"
-            style={{ background: T.ink, border: `1px solid ${T.line}` }}
-          >
-            <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.jade }}>
-              New asset
-            </p>
-            <div>
-              <Label htmlFor="new-asset-name">Name</Label>
-              <FocusInput id="new-asset-name" value={aName} onChange={(e) => setAName(e.target.value)} placeholder="Car, brokerage account…" />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <Label htmlFor="new-asset-value">Value</Label>
-                <MoneyInput id="new-asset-value" value={aValue} onChange={setAValue} placeholder="0" max={moneyMaxFor(aCurrency, lbpRate)} />
-              </div>
-              <div>
-                <Label>Currency</Label>
-                <CurrencyToggle value={aCurrency} onChange={setACurrency} />
-              </div>
-            </div>
-            <PrimaryBtn onClick={addAsset} color={T.jade} disabled={!aName.trim() || !aValue}>+ Add asset</PrimaryBtn>
-          </div>
+          <AssetsSection financials={financials} update={update} lbpRate={lbpRate} form={assetsForm} />
         </Section>
 
         <Section title="Transfer" icon="🔁" defaultOpen={false}>
