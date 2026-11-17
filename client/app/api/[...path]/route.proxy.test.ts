@@ -4,7 +4,8 @@
 // who is calling (the address Vercel saw) with the secret that proves the message is ours. The browser never
 // sees either header, and can't plant them: anything it sends under those names is dropped.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { GET, POST, DELETE, forward } from "./route";
+import { GET, POST, DELETE } from "./route";
+import { forward } from "../../../lib/apiProxy";
 
 const KEY = "proxy-test-key-".repeat(3); // a test value, not a secret
 const env = { ...process.env };
