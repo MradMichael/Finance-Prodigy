@@ -3500,17 +3500,39 @@ export function capacityFreedFrom(
  */
 export function isCycleConfirmed(r: StoredRecurring, dueDate: Date, transactions: StoredTransaction[]): boolean {
   const dueISO = dueDate.toISOString().slice(0, 10);
-  return transactions.some((t) => {
-    // Phase 2.6.3b: a soft-deleted transaction never counts as confirming --
-    // deleting it un-pays the cycle, with no special-case code needed
-    // anywhere that calls this (isCycleOverdue, nextConfirmTarget,
-    // pendingBackfillCycles all inherit this for free, since none of them
-    // reads `transactions` any other way).
-    if (t.deletedAt != null) return false;
-    if (t.recurringId !== r.id) return false;
-    if (t.cycleDate === null) return false;
-    return (t.cycleDate ?? t.date) === dueISO;
-  });
+  return confirmedCycles(transactions).get(r.id)?.has(dueISO) ?? false;
+}
+
+/**
+ * R4 (session 55): each recurring item's confirmed cycle days in one transaction list, built in one pass and kept
+ * for as long as the list lives. isCycleConfirmed used to scan the whole list for every cycle it was asked about,
+ * and the dashboard asks about every cycle of every item since it started, on every change: entries × items ×
+ * cycles. Lists are never changed in place (every write makes a new array), so a list's index stays right; a new
+ * list gets its own. Weakly held: a list nothing uses any more is forgotten with its index.
+ *
+ * The rules are the scan's, unchanged:
+ * - Phase 2.6.3b: a soft-deleted transaction never counts as confirming -- deleting it un-pays the cycle, with no
+ *   special-case code needed anywhere that calls this (isCycleOverdue, nextConfirmTarget, pendingBackfillCycles all
+ *   inherit this for free, since none of them reads `transactions` any other way).
+ * - Only the item's own rows (`recurringId`); an explicit `cycleDate: null` is a deliberate detach and never
+ *   counts; otherwise the cycle is `cycleDate`, or `date` for a row confirmed before `cycleDate` existed.
+ */
+const confirmedIndex = new WeakMap<readonly StoredTransaction[], Map<string, Set<string>>>();
+function confirmedCycles(transactions: StoredTransaction[]): Map<string, Set<string>> {
+  let index = confirmedIndex.get(transactions);
+  if (!index) {
+    index = new Map();
+    for (const t of transactions) {
+      if (t.deletedAt != null) continue;
+      if (t.recurringId == null) continue;
+      if (t.cycleDate === null) continue;
+      let days = index.get(t.recurringId);
+      if (!days) index.set(t.recurringId, (days = new Set()));
+      days.add(t.cycleDate ?? t.date);
+    }
+    confirmedIndex.set(transactions, index);
+  }
+  return index;
 }
 
 /**
