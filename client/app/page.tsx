@@ -885,7 +885,9 @@ export default function Home() {
   // pushes the screen down; from md up it is fixed at the top right, as before. Session 53 (owner): with a save
   // error showing too it stays in the flow below md, under the save error (also in the flow); from md up it is
   // stacked under the save error, as before. Session 54 (owner): the sync-refused notice takes it too.
-  const backupNoticePlace = `mx-4 mt-3 md:mx-0 md:mt-0 ${saveError ? "md:top-[7.5rem]" : "md:top-4"} md:fixed md:left-auto md:right-4 md:max-w-md md:shadow-2xl md:z-50`;
+  // Session 55 (owner): from md up the notices' region is the fixed box (a column), so two notices stack, the
+  // sync-refused one first; they shared one spot, one over the other. A notice only drops its phone margins there.
+  const backupNoticePlace = `mx-4 mt-3 md:mx-0 md:mt-0 md:shadow-2xl`;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100dvh", background: T.ink }}>
@@ -928,7 +930,7 @@ export default function Home() {
           (A11Y-03), below the save error when both show.
           Session 52 (owner, R8): the region sits here, under the top bar and the offline strip, so that on a
           phone the two backup notices are in the page's flow (they floated over every screen). */}
-      <div role="status" className="flex-shrink-0">
+      <div role="status" className={`flex-shrink-0 md:fixed ${saveError ? "md:top-[7.5rem]" : "md:top-4"} md:right-4 md:max-w-md md:z-50 md:flex md:flex-col md:gap-3`}>
         {/* Session 54 (owner): on a phone in the page's flow, under the save error and above a backup notice
             (it floated, and could cover one); from md up fixed at the top right, as before. The backup notices'
             placement: "Backup has stopped on this device" is one of them. */}

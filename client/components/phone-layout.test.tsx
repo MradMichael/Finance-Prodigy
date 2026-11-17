@@ -70,8 +70,12 @@ describe("U3: notices clear the phone's bars", () => {
     expect(place![1]).not.toMatch(/(^|[ "])fixed[ "]/);
     expect(place![1]).not.toMatch(/(^|[ "])top-/);
     expect(place![1]).toMatch(/^mx-4 mt-3 md:mx-0 md:mt-0 /);
-    // From md: fixed at the top right, under the save error when one shows.
-    expect(place![1]).toMatch(/\$\{saveError \? "md:top-\[7\.5rem\]" : "md:top-4"\} md:fixed md:left-auto md:right-4 md:max-w-md/);
+    // From md (session 55): the notices' region is the fixed box at the top right, under the save error when one
+    // shows, and a column, so two notices stack; a notice only drops its phone margins there.
+    expect(place![1]).not.toMatch(/md:(fixed|top-|right-|left-)/);
+    const stack = page.match(/<div role="status" className=\{`([^`]+)`\}>/);
+    expect(stack).not.toBeNull();
+    expect(stack![1]).toMatch(/^flex-shrink-0 md:fixed \$\{saveError \? "md:top-\[7\.5rem\]" : "md:top-4"\} md:right-4 md:max-w-md md:z-50 md:flex md:flex-col md:gap-3$/);
     for (const name of ["syncRefused", "backupTooLarge", "backupFailed"]) {
       // Session 33 (U3): the backup notice can be dismissed, so its condition gained "&& !backupNoticeDismissed".
       const at = page.search(new RegExp(`\\{${name}(?: && !\\w+)? && \\(`));
