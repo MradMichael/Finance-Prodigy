@@ -1,25 +1,26 @@
 "use client";
 
-import { spentByBucket, totalSpent } from "../lib/spending";
-import { useState, useRef, useEffect, type ReactNode } from "react";
+import { spentByBucket } from "../lib/spending";
+import { useState, useRef, useEffect } from "react";
 import LbpMistypeDialog from "./LbpMistypeDialog";
 import { useScrollFocus } from "./useScrollFocus";
 import type { LocalFinancials, StoredTransaction, StoredCard, Currency, PaymentMethod, BudgetRuleKey } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, todayISO, FREQ_LABELS, BUDGET_RULES, historizedRecurringContribution, cycleMonthDivergence, withRate, looksRecurring, buildQuickRecurring, matchCategoryRule, usualBucketOf, roundMoney, moneyMaxFor, MONEY_MAX_USD, activeTransactions, softDelete, cardRef, cycleStartDayOf, syncAllowed, edited, saveCard as storeCard, makeToUSDOn, rateOn, lbpRateOf, makeToUSDLive, debtPayoff } from "../lib/localData";
+import { uid, todayISO, BUDGET_RULES, historizedRecurringContribution, withRate, looksRecurring, buildQuickRecurring, matchCategoryRule, usualBucketOf, roundMoney, moneyMaxFor, MONEY_MAX_USD, activeTransactions, softDelete, cardRef, cycleStartDayOf, syncAllowed, edited, saveCard as storeCard, makeToUSDOn, rateOn, lbpRateOf, makeToUSDLive, debtPayoff } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES } from "./form/Primitives";
 import { fmtCur, money } from "./screens/shared";
 import ImportStatement from "./ImportStatement";
-import EntryRow from "./inputpanel/EntryRow";
+import HistorySection from "./inputpanel/HistorySection";
+import ThisMonthSection from "./inputpanel/ThisMonthSection";
 import RecurringSection, { useRecurringForm } from "./inputpanel/RecurringSection";
 import GoalsSection, { useGoalsForm } from "./inputpanel/GoalsSection";
 import DebtsSection, { useDebtForm } from "./inputpanel/DebtsSection";
 import TransferSection, { useTransferForm } from "./inputpanel/TransferSection";
 import AssetsSection, { useAssetsForm } from "./inputpanel/AssetsSection";
 import { logAgainEntry } from "../lib/logAgain";
-import {currentCycleKey, cycleKeyForISO, isInCycle, periodNoun, cycleLabel, type CycleKey } from "../lib/period";
+import {currentCycleKey, isInCycle, periodNoun } from "../lib/period";
 import { calendarDayOf } from "../lib/calendarDay";
 import CategoryOptions from "./form/CategoryOptions";
 import { suggestedTripId } from "../lib/trips";
@@ -51,15 +52,6 @@ interface Props {
   onEdit: (kind: "transaction" | "debt" | "recurring" | "goal", id: string) => void;
   /** Opens the shared "record a payment" surface (page.tsx) for a debt -- shared with DebtsScreen. */
   onPay: (debtId: string) => void;
-}
-
-/**
- * R1 (session 32 review): builds what it renders only when it mounts. Inside a Section, that is only while
- * the Section is open: History built a row for every past entry on every render, closed, which cost 500 ms
- * a render at 15,000 entries and 0.65 s per action on a mid-range phone at 1,500.
- */
-function BuiltWhenOpen({ render }: { render: () => ReactNode }) {
-  return <>{render()}</>;
 }
 
 /**
@@ -894,72 +886,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
           badge={monthTx.length + recurRowsThisMonth.length}
           defaultOpen={monthTx.length + recurRowsThisMonth.length > 0}
         >
-          {monthTx.length === 0 && recurRowsThisMonth.length === 0 ? (
-            <div
-              className="rounded-xl px-4 py-6 text-center"
-              style={{ background: T.panelSoft, border: `1px dashed ${T.line}` }}
-            >
-              <p className="text-2xl mb-1">📭</p>
-              <p className="text-xs" style={{ color: T.mute }}>No entries yet this {noun}</p>
-            </div>
-          ) : (
-            <>
-              <div ref={monthListScrollRef} className="space-y-2 md:max-h-72 md:overflow-y-auto pr-0.5" /* U6 (session 33): grows on a phone, a box from md up */>
-                {monthTx.map((tx, i) => {
-                  // Safe again now that TRANSFER is a real TX_BUCKETS member
-                  // (2.4.55 sub-phase 3) -- the ?? TRANSFER_META fallback
-                  // this replaced (2.4.56) is no longer reachable.
-                  const b = TX_BUCKETS.find((b) => b.value === tx.bucket)!;
-                  const divergence = cycleMonthDivergence(tx, financials.recurring ?? [], startDay);
-                  return (
-                    <div key={tx.id} data-month-entry data-entry-row className={!showAllMonth && i >= PHONE_MONTH_ROWS ? "max-md:hidden" : undefined}>
-                        <EntryRow variant="month" tx={tx} b={b} divergence={divergence} financials={financials} cards={cards} logAgain={logAgain} onEdit={onEdit} softDeleteTransaction={softDeleteTransaction} />
-                    </div>
-                  );
-                })}
-                {recurRowsThisMonth.map(({ r, usd }) => {
-                  const b = TX_BUCKETS.find((bb) => bb.value === r.bucket)!;
-                  return (
-                    <div
-                      key={`recur-${r.id}`}
-                      className="flex items-center justify-between rounded-xl px-3 py-2.5"
-                      style={{ background: T.panelSoft, borderLeft: `3px solid ${b.color}`, opacity: 0.85 }}
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-sm flex-shrink-0">↻</span>
-                        <div className="min-w-0">
-                          <span className="text-xs truncate block" style={{ color: T.text }}>{r.emoji ? `${r.emoji} ` : ""}{r.name}</span>
-                          <span className="text-[9px]" style={{ color: T.mute }}>Recurring · {FREQ_LABELS[r.frequency]}</span>
-                        </div>
-                      </div>
-                      <span className="text-xs font-semibold tabular-nums flex-shrink-0" style={{ color: b.color }}>
-                        {fmtCur(usd, "USD")}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-              {!showAllMonth && monthTx.length > PHONE_MONTH_ROWS && (
-                <button
-                  onClick={() => setShowAllMonth(true)}
-                  className="md:hidden w-full text-xs font-semibold px-3 py-2 rounded-xl hover:opacity-90"
-                  style={{ background: T.panelSoft, color: T.text, border: `1px solid ${T.line}` }}
-                >
-                  Show all
-                </button>
-              )}
-              <div
-                className="flex justify-between text-xs px-3 py-2 rounded-xl"
-                style={{ background: T.ink, color: T.mute }}
-              >
-                <span>
-                  {monthTx.length} {monthTx.length === 1 ? "entry" : "entries"}
-                  {recurRowsThisMonth.length > 0 && ` + ${recurRowsThisMonth.length} recurring`}
-                </span>
-                <span className="font-semibold tabular-nums" style={{ color: T.text }}>{fmt(totalOut)} logged</span>
-              </div>
-            </>
-          )}
+          <ThisMonthSection financials={financials} cards={cards} monthTx={monthTx} recurRowsThisMonth={recurRowsThisMonth} noun={noun} startDay={startDay} TX_BUCKETS={TX_BUCKETS} PHONE_MONTH_ROWS={PHONE_MONTH_ROWS} showAllMonth={showAllMonth} setShowAllMonth={setShowAllMonth} monthListScrollRef={monthListScrollRef} totalOut={totalOut} fmt={fmt} logAgain={logAgain} onEdit={onEdit} softDeleteTransaction={softDeleteTransaction} />
         </Section>
 
         {/* History — past months */}
@@ -968,55 +895,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
           if (pastTx.length === 0) return null;
           return (
             <Section title="History" icon="📚" badge={pastTx.length} defaultOpen={false}>
-              <BuiltWhenOpen render={() => {
-          const byMonth: Record<CycleKey, StoredTransaction[]> = {} as Record<CycleKey, StoredTransaction[]>;
-          pastTx.forEach((t) => {
-            const ym = cycleKeyForISO(t.date, startDay);
-            if (!byMonth[ym]) byMonth[ym] = [];
-            byMonth[ym].push(t);
-          });
-          // Keys here are built by cycleKeyForISO above, so they are cycle
-          // keys and get the range form (2.4.120).
-          const label = (ym: CycleKey) => cycleLabel(ym, startDay);
-          return (
-              <div className="space-y-4">
-                {/* Object.keys erases the brand -- it returns string[] whatever
-                    the Record says, deliberately, because an object may carry keys
-                    beyond its declared type. Re-asserted here, the same way
-                    TransactionsScreen:556 does (2.4.96, fourth row). */}
-                {(Object.keys(byMonth) as CycleKey[]).sort().reverse().map((ym) => {
-                  const txs = byMonth[ym];
-                  // Excludes INCOME, matching the current month's total just
-                  // above (totalOut) and every other "spend" figure in the
-                  // app -- this used to include it, inflating past months'
-                  // totals for anyone who ever logged a gift/reimbursement.
-                  // TRANSFER (2.4.55) excluded too -- not spend, and its
-                  // amount can be negative (an incoming leg).
-                  // Session 19: the shared spending rule (lib/spending.ts): a change-back nets against Wants; income, transfers and other reimbursements stay out.
-                  const total = totalSpent(txs, (t) => toUSDOn(t.amount, t.currency, t.date));
-                  return (
-                    <div key={ym}>
-                      <div className="flex justify-between items-center mb-2">
-                        <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.mute }}>{label(ym)}</p>
-                        <p className="text-[10px] tabular-nums font-semibold" style={{ color: T.text }}>{fmt(total)}</p>
-                      </div>
-                      <div className="space-y-1.5">
-                        {txs.sort((a, b) => b.date.localeCompare(a.date)).map((tx) => {
-                          const b = TX_BUCKETS.find((b) => b.value === tx.bucket)!;
-                          const divergence = cycleMonthDivergence(tx, financials.recurring ?? [], startDay);
-                          return (
-                            <div key={tx.id} data-entry-row>
-                                <EntryRow variant="history" tx={tx} b={b} divergence={divergence} financials={financials} cards={cards} logAgain={logAgain} onEdit={onEdit} softDeleteTransaction={softDeleteTransaction} />
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-          );
-              }} />
+              <HistorySection financials={financials} cards={cards} pastTx={pastTx} startDay={startDay} TX_BUCKETS={TX_BUCKETS} toUSDOn={toUSDOn} fmt={fmt} logAgain={logAgain} onEdit={onEdit} softDeleteTransaction={softDeleteTransaction} />
             </Section>
           );
         })()}
