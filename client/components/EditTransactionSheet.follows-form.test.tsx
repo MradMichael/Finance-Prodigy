@@ -7,8 +7,10 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import EditTransactionSheet from "./EditTransactionSheet";
 import { ThemeProvider } from "../contexts/ThemeContext";
-import { DEFAULT_DATA, type LocalFinancials, type StoredTransaction, type TxBucket } from "../lib/localData";
+import { DEFAULT_DATA, type LocalFinancials, type StoredTransaction } from "../lib/localData";
 import { entryDescription } from "../lib/entryGuards";
+
+type TxBucket = StoredTransaction["bucket"];
 
 afterEach(cleanup);
 
