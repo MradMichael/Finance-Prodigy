@@ -12,7 +12,7 @@ const ROOT = path.join(__dirname, "..");
 
 /** Each number field: the file, and its id, or its value expression when it has no id. */
 const EXPECTED: Record<string, "decimal" | "numeric"> = {
-  "components/InputPanel.tsx#new-debt-apr": "decimal", // parseFloat(dApr)
+  "components/inputpanel/DebtsSection.tsx#new-debt-apr": "decimal", // parseFloat(dApr); in InputPanel.tsx until the split's S8 (session 55)
   "components/EditDebtSheet.tsx#edit-debt-balance": "decimal", // commitBalance: parseFloat
   "components/EditDebtSheet.tsx#edit-debt-apr": "decimal", // parseFloat(apr)
   "components/screens/SetupScreen.tsx#setup-income": "decimal", // parseFloat
