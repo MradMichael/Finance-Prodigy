@@ -16,11 +16,9 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  ResponsiveContainer,
-  AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
-  LineChart, Line,
-} from "recharts";
+// R17 (session 55): the charts and their library load after the first paint (charts.lazy.tsx).
+import { CashFlowChart, NetWorthChart } from "./charts.lazy";
+import { money } from "./overview/format";
 import { useTheme } from "../contexts/ThemeContext";
 import { moneyEquals, type LocalFinancials, cycleStartDayOf } from "../lib/localData";
 import { getLastSyncTime, serverCopyExists } from "../lib/syncService";
@@ -30,31 +28,10 @@ import { downloadDataFile } from "../lib/exportData";
 import { periodTotals, bucketDisplayState, type DashboardPayload } from "../lib/computeDashboard";
 import OnboardingChecklist from "./OnboardingChecklist";
 import { fmtCur, type Screen } from "./screens/shared";
-import {currentCycleKey, cycleKeyForISO, cycleLabel, cycleLabelLong, cycleTickLabel, ymKeyToCycleKey, cycleBounds, periodNoun, asCalendarKey, asCycleKey, type CycleKey, type CalendarKey } from "../lib/period";
+import {currentCycleKey, cycleKeyForISO, cycleLabel, cycleBounds, periodNoun, asCycleKey, type CycleKey } from "../lib/period";
 const SERIF: React.CSSProperties = { fontFamily: "Georgia, 'Times New Roman', serif" };
 const NUMS: React.CSSProperties = { fontVariantNumeric: "tabular-nums" };
 
-const money = (n: number, digits = 0) =>
-  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: digits }).format(n);
-/**
- * sixMonthTrend's ymKey is a CYCLE key in numeric form. It used to render as
- * a calendar month name ("Aug '26") beneath a panel titled "last 6 cycles" --
- * form (a), under a cycle-titled chart (2.4.101). Ticks now carry the
- * cycle's start date and the tooltip carries the full range.
- */
-const ymTick = (ymKey: number, startDay: number) => cycleTickLabel(ymKeyToCycleKey(ymKey), startDay);
-const ymFull = (ymKey: number, startDay: number) => cycleLabelLong(ymKeyToCycleKey(ymKey), startDay);
-/**
- * A CALENDAR month, short ("Sep '26"). netWorthHistory is the one
- * calendar-keyed series (2.4.87), and this is its formatter. Cycle keys get
- * cycleLabel instead -- the two key spaces had been sharing this one
- * function, which is the two-meanings-one-label shape 2.4.87 exists to
- * prevent, just in the display layer rather than the data.
- */
-const ymStrLabel = (ym: CalendarKey) => {
-  const [y, m] = ym.split("-").map(Number);
-  return `${["", "Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][m]} ’${String(y).slice(2)}`;
-};
 
 // --------------------------- sub-views --------------------------- //
 
@@ -592,26 +569,7 @@ export default function FinancialDashboard({
 
           <Panel title={`Cash flow · last 6 ${noun}s`}>
             <div className="h-56">
-              <ResponsiveContainer>
-                <AreaChart data={sixMonthTrend} margin={{ top: 8, right: 4, left: -18, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="inc" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={T.jade} stopOpacity={0.45} />
-                      <stop offset="100%" stopColor={T.jade} stopOpacity={0.03} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid stroke={T.line} strokeDasharray="2 6" vertical={false} />
-                  <XAxis dataKey="ymKey" tickFormatter={(v) => ymTick(Number(v), startDay)} tick={{ fill: T.mute, fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: T.mute, fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <Tooltip
-                    contentStyle={{ background: T.panelSoft, border: `1px solid ${T.line}`, borderRadius: 12, color: T.text }}
-                    labelFormatter={(v) => ymFull(Number(v), startDay)}
-                    formatter={(v: number, name: string) => [money(v), name === "income" ? "Income" : "Spend"]}
-                  />
-                  <Area type="monotone" dataKey="income" stroke={T.jade} strokeWidth={2} fill="url(#inc)" />
-                  <Area type="monotone" dataKey="spend" stroke={T.coral} strokeWidth={2} fill="transparent" strokeDasharray="5 4" />
-                </AreaChart>
-              </ResponsiveContainer>
+              <CashFlowChart data={sixMonthTrend} startDay={startDay} />
             </div>
             <p className="text-xs mt-2" style={{ color: T.mute }}>
               The gap between the lines is your progress so far. {periodLabel} is still in progress, so its spend line will keep rising (and the gap will keep shrinking) as the rest of it gets logged.
@@ -722,19 +680,7 @@ export default function FinancialDashboard({
               )}
               {netWorthTrend.length >= 2 && (
                 <div className="h-40 mb-2">
-                  <ResponsiveContainer>
-                    <LineChart data={netWorthTrend} margin={{ top: 8, right: 4, left: -18, bottom: 0 }}>
-                      <CartesianGrid stroke={T.line} strokeDasharray="2 6" vertical={false} />
-                      <XAxis dataKey="ym" tickFormatter={ymStrLabel} tick={{ fill: T.mute, fontSize: 11 }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fill: T.mute, fontSize: 11 }} axisLine={false} tickLine={false} />
-                      <Tooltip
-                        contentStyle={{ background: T.panelSoft, border: `1px solid ${T.line}`, borderRadius: 12, color: T.text }}
-                        labelFormatter={(v) => ymStrLabel(asCalendarKey(String(v)))}
-                        formatter={(v: number) => [money(v), "Net worth"]}
-                      />
-                      <Line type="monotone" dataKey="value" stroke={nwColor} strokeWidth={2} dot={{ r: 3, fill: nwColor }} />
-                    </LineChart>
-                  </ResponsiveContainer>
+                  <NetWorthChart data={netWorthTrend} color={nwColor} />
                 </div>
               )}
 
