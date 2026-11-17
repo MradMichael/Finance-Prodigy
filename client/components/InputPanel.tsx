@@ -99,7 +99,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     if (bucketTouched) return;
     const usual = usualBucketOf(effectiveCategory, financials.customCategories);
     if (usual) setTxBucket(usual);
-  }, [effectiveCategory, bucketTouched, financials.customCategories]);
+  }, [effectiveCategory, bucketTouched, financials.customCategories, setTxBucket]); // setTxBucket: a state setter (S12 moved it into useEntryForm), the same every render
   const [showImport, setShowImport] = useState(false);
   // Phase 2.6.3b: brief confirmation after a soft-delete, telling the user
   // recovery exists at the exact moment it becomes relevant -- see
