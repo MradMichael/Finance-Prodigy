@@ -9,6 +9,7 @@ import { prisma } from "../lib/prisma";
 import { emailSchema, tokenSchema } from "../lib/validation";
 import { lockedSentence, type AccountLimit } from "../lib/accountLimit";
 import { COPY_LIMIT_SENTENCE, type CopyCreationLimit } from "../lib/copyCreationLimit";
+import { clientAddress } from "../lib/clientKey";
 
 // SEC-07 (owner, session 25, item 4b; amended session 26; merged in session 28): pull, push, relink
 // and delete count wrong credentials per account (lib/accountLimit.ts). A client
@@ -169,7 +170,7 @@ router.post("/push", async (req, res, next) => {
     let syncedAt: Date;
     // SEC-05: a new copy's creation is reserved before it's written and given back if it isn't
     // (a refusal, a failed write, or another request creating the row first).
-    const client = req.ip ?? "";
+    const client = clientAddress(req); // SEC-04 / R1: the person's address behind our proxy, else the one that connected
     let reservation = null as number | null; // set inside the transaction below
     try {
       syncedAt = await withTransactionRetry(() => prisma.$transaction(async (tx) => {
