@@ -90,3 +90,17 @@ describe("History groups by the account's cycle", () => {
     expect(within(group("Late October") as HTMLElement).queryByText("Early October")).toBeNull();
   });
 });
+
+describe("the Daily tab carries the count of this cycle's entries", () => {
+  const tx = (id: string, date: string): StoredTransaction => ({ id, amount: 5, currency: "USD", bucket: "WANTS", description: id, date, paymentMethod: "cash", createdAt: `${date}T09:00:00.000Z`, updatedAt: `${date}T09:00:00.000Z` }) as StoredTransaction;
+
+  it("two entries this cycle and one last cycle: the tab says 2; with none, no count", () => {
+    vi.useFakeTimers({ now: new Date(2026, 10, 20, 12, 0), toFake: ["Date"] });
+    render(<Harness initial={base({ transactions: [tx("a", "2026-11-03"), tx("b", "2026-11-18"), tx("c", "2026-10-28")] })} />);
+    const daily = screen.getByRole("button", { name: /Daily/ });
+    expect(daily.textContent).toMatch(/Daily\s*2$/);
+    cleanup();
+    render(<Harness initial={base()} />);
+    expect(screen.getByRole("button", { name: /Daily/ }).textContent).toMatch(/Daily$/);
+  });
+});
