@@ -265,7 +265,7 @@ still today's income, and the LBP rate keeps its own rule. Tests: `client/lib/in
 for an account whose first record is later than its first entries: past months' income, budget rollover, the
 savings streak, and the salary credited to a tracked balance (so that balance's expected figure).
 
-## InputPanel split (`client/components/InputPanel.tsx`): S0 to S6 done; S7 to S13 approved to build as pure moves (session 55)
+## InputPanel split (`client/components/InputPanel.tsx`): S0 to S7 done; S8 to S13 approved to build as pure moves (session 55)
 
 Every step preserves behaviour, ships on its own, and is covered by a test that exists before the move. Any
 step that would change behaviour becomes its own bug-fix item, never part of a move. Each move step also
@@ -281,7 +281,7 @@ phone layout, the remembered last entry.
 | S4 | Building a new goal as one function (no change to how achievement is set: that is 2.8.3): **done** (session 55), `buildNewGoal` in `client/lib/localData.ts`, used by My Finances' Add goal and the Wishlist |
 | S5 | One transaction row component, keeping today's two variants through a prop: **done** (session 55), `client/components/inputpanel/EntryRow.tsx` |
 | S6 | Move the Assets section: **done** (session 55), `client/components/inputpanel/AssetsSection.tsx`; the form's state stays in InputPanel through a hook, so typed text survives closing the section |
-| S7 | Move the Transfer section |
+| S7 | Move the Transfer section: **done** (session 55), `client/components/inputpanel/TransferSection.tsx` |
 | S8 | Move the Debts section |
 | S9 | Move the Goals section |
 | S10 | Move the Recurring section |
