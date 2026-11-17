@@ -94,6 +94,12 @@ describe("the limiters count per person behind the site's proxy", () => {
     expect((await viaProxy("203.0.113.201", "a-guess")).status).toBe(429);
   });
 
+  it("a direct caller who writes its own X-Forwarded-For entry is still keyed on the address that connected (trust proxy stays 1)", async () => {
+    const direct = (spoofed: string) => request(app).post("/api/auth/check-email").set("X-Forwarded-For", `${spoofed}, ${PROXY}`).send({ email: "nobody@example.com" });
+    for (let i = 0; i < 30; i++) expect((await direct(`198.51.100.${i + 1}`)).status).not.toBe(429);
+    expect((await direct("198.51.100.200")).status).toBe(429);
+  });
+
   it("the remaining count the server reports is the person's own", async () => {
     await viaProxy(ALICE); await viaProxy(ALICE); await viaProxy(ALICE);
     const bob = await viaProxy(BOB);
