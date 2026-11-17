@@ -12,7 +12,11 @@ export default defineConfig({
   // a page test renders a screen the moment it's chosen. components/screens-lazy.test.tsx tests the lazy
   // module itself (it imports it by a path this alias doesn't match).
   resolve: {
-    alias: [{ find: /^\.\/screens\.lazy$/, replacement: fileURLToPath(new URL("./app/screens.sync.tsx", import.meta.url)) }],
+    alias: [
+      { find: /^\.\/screens\.lazy$/, replacement: fileURLToPath(new URL("./app/screens.sync.tsx", import.meta.url)) },
+      // R17 (session 55): the Overview's charts, likewise (components/charts.lazy.tsx; tested by charts-after-paint.test.tsx).
+      { find: /^\.\/charts\.lazy$/, replacement: fileURLToPath(new URL("./components/charts.sync.tsx", import.meta.url)) },
+    ],
   },
   test: {
     environment: "jsdom",
