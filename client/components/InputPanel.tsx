@@ -4,10 +4,10 @@ import { spentByBucket, totalSpent } from "../lib/spending";
 import { useState, useRef, useEffect, type ReactNode } from "react";
 import LbpMistypeDialog from "./LbpMistypeDialog";
 import { useScrollFocus } from "./useScrollFocus";
-import type { LocalFinancials, StoredTransaction, StoredGoal, StoredDebt, StoredRecurring, StoredCard, RecurringFrequency, Currency, PaymentMethod, BudgetRuleKey } from "../lib/localData";
+import type { LocalFinancials, StoredTransaction, StoredDebt, StoredRecurring, StoredCard, RecurringFrequency, Currency, PaymentMethod, BudgetRuleKey } from "../lib/localData";
 import type { Session } from "../lib/auth";
 import type { computeDashboard } from "../lib/computeDashboard";
-import { uid, goalProgress, goalAchievement, goalPercent, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, remainingInstallments, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, buildExtraPaymentTx, categoryLabel, categoryIcon, matchCategoryRule, usualBucketOf, roundMoney, moneyMaxFor, MONEY_MAX_USD, derivedDebtBalance, activeTransactions, softDelete, cardRef, cycleStartDayOf, syncAllowed, edited, recordDeletion, saveCard as storeCard, makeToUSDOn, rateOn, lbpRateOf, makeToUSDLive, debtPayoff } from "../lib/localData";
+import { uid, buildNewGoal, goalProgress, goalAchievement, goalPercent, todayISO, fmtDate, FREQ_LABELS, FREQ_MONTHLY, BUDGET_RULES, historizedRecurringContribution, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, cycleMonthDivergence, recurringPaidSoFar, remainingInstallments, withRate, applyGoalContribution, looksRecurring, buildQuickRecurring, buildTransferTx, buildExtraPaymentTx, categoryLabel, categoryIcon, matchCategoryRule, usualBucketOf, roundMoney, moneyMaxFor, MONEY_MAX_USD, derivedDebtBalance, activeTransactions, softDelete, cardRef, cycleStartDayOf, syncAllowed, edited, recordDeletion, saveCard as storeCard, makeToUSDOn, rateOn, lbpRateOf, makeToUSDLive, debtPayoff } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, Section, CurrencyToggle, DateFieldDMY, PM_OPTIONS, CARD_TYPES, PaymentMethodPicker } from "./form/Primitives";
 import { fmtCur, money } from "./screens/shared";
@@ -410,21 +410,13 @@ export default function InputPanel({ financials, dashData, onChange, session, on
 
   function addGoal() {
     if (!gName.trim() || !gTarget || !gDate) return;
-    const goal: StoredGoal = {
-      id: uid(), name: gName.trim(), emoji: gEmoji || "🎯",
+    // S4 (session 55): the record is built by buildNewGoal (localData.ts), shared with the Wishlist.
+    const goal = buildNewGoal({
+      name: gName.trim(), emoji: gEmoji || "🎯",
       targetAmount: parseFloat(gTarget.replace(/,/g, "")),
-      currentAmount: parseFloat(gCurrent.replace(/,/g, "")) || 0,
-      // Plan H 5a: what the goal starts with; progress = this + contributions.
       openingAmount: parseFloat(gCurrent.replace(/,/g, "")) || 0,
-      // Currency is locked at creation and never editable afterward --
-      // contributions are recorded against a goal in this currency, and
-      // changing it later would silently reinterpret them. See
-      // buildGoalContributionTx in localData.ts.
-      currency: gCurrency,
-      ...withRate(gCurrency, lbpRateOf(financials)),
-      targetDate: gDate,
-      createdAt: new Date().toISOString(),
-    };
+      currency: gCurrency, targetDate: gDate,
+    }, lbpRateOf(financials));
     update({ goals: [...financials.goals, edited(goal)] });
     setGName(""); setGTarget(""); setGCurrent(""); setGDate(""); setGEmoji("🎯"); setGCurrency("USD");
   }
