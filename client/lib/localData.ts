@@ -4381,7 +4381,7 @@ export function debtPayoff(debt: StoredDebt, transactions: StoredTransaction[], 
  * that flip the field -- everything else should read through this instead
  * of re-deriving its own `t.deletedAt == null` filter inline.
  */
-export function activeTransactions(transactions: StoredTransaction[]): StoredTransaction[] {
+export function activeTransactions(transactions: readonly StoredTransaction[]): StoredTransaction[] {
   return transactions.filter((t) => t.deletedAt == null);
 }
 
