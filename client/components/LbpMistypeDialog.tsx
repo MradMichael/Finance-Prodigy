@@ -13,11 +13,13 @@ import { useDialogFocus } from "./useDialogFocus";
  * outside, and Escape where `closeOnEscape` is set: the entry form and the edit sheet both set it, session 52).
  * `onSave` closes it and goes ahead.
  */
-export default function LbpMistypeDialog({ amount, onFix, onSave, closeOnEscape = false }: {
+export default function LbpMistypeDialog({ amount, onFix, onSave, closeOnEscape = false, forGoal = false }: {
   amount: number;
   onFix: () => void;
   onSave: () => void;
   closeOnEscape?: boolean;
+  /** Item 3 (owner, session 57; words approved): a goal payment, whose box can't switch currency. */
+  forGoal?: boolean;
 }) {
   const T = useTheme();
   const ref = useRef<HTMLDivElement>(null);
@@ -41,7 +43,11 @@ export default function LbpMistypeDialog({ amount, onFix, onSave, closeOnEscape 
       >
         <p className="text-[10px] uppercase tracking-widest font-semibold mb-2" style={{ color: T.brass }}>Double-check this amount</p>
         <p className="text-sm mb-5" style={{ color: T.text }}>
-          <strong>{amount.toLocaleString("en-US")} LBP</strong> is unusually low for a real purchase — most things this cheap are actually meant to be USD. Did you mean to log this in USD instead?
+          {forGoal ? (
+            <><strong>{amount.toLocaleString("en-US")} LBP</strong> is unusually low for a goal payment. Did you mean a larger amount?</>
+          ) : (
+            <><strong>{amount.toLocaleString("en-US")} LBP</strong> is unusually low for a real purchase — most things this cheap are actually meant to be USD. Did you mean to log this in USD instead?</>
+          )}
         </p>
         <div className="flex flex-col gap-2">
           <button
@@ -49,7 +55,7 @@ export default function LbpMistypeDialog({ amount, onFix, onSave, closeOnEscape 
             className="w-full py-2.5 rounded-xl text-sm font-semibold hover:opacity-90"
             style={{ background: T.jade, color: T.ink }}
           >
-            Let me fix the currency
+            {forGoal ? "Let me fix the amount" : "Let me fix the currency"}
           </button>
           <button
             onClick={onSave}

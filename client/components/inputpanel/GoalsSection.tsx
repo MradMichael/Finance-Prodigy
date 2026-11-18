@@ -9,6 +9,7 @@ import { useTheme } from "../../contexts/ThemeContext";
 import { fmtCur } from "../screens/shared";
 import FutureDateNote from "../form/FutureDateNote";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, CurrencyToggle, DateFieldDMY, PaymentMethodPicker } from "../form/Primitives";
+import { looksLikeMistypedLbp } from "../../lib/entryGuards";
 
 /** Goals: its form's state. InputPanel calls this, so the state lives there and what is typed survives closing the section, as before the move. */
 export function useGoalsForm() {
@@ -33,7 +34,7 @@ export function useGoalsForm() {
   return { gName, setGName, gEmoji, setGEmoji, gTarget, setGTarget, gCurrent, setGCurrent, gDate, setGDate, gCurrency, setGCurrency, contributeGoalId, setContributeGoalId, contributeGoalAmt, setContributeGoalAmt, contributeMethod, setContributeMethod, contributeCardId, setContributeCardId, contributeOtherNote, setContributeOtherNote, contributeDate, setContributeDate };
 }
 
-export default function GoalsSection({ financials, update, lbpRate, cards, saveCard, showToast, onEdit, form }: {
+export default function GoalsSection({ financials, update, lbpRate, cards, saveCard, showToast, onEdit, form, setLbpConfirm }: {
   financials: LocalFinancials;
   update: (patch: Partial<LocalFinancials>) => void;
   lbpRate: number;
@@ -42,6 +43,8 @@ export default function GoalsSection({ financials, update, lbpRate, cards, saveC
   showToast: (msg: string) => void;
   onEdit: (kind: "goal", id: string) => void;
   form: ReturnType<typeof useGoalsForm>;
+  /** Item 3 (session 57): the panel's lira check, with a goal payment's words. */
+  setLbpConfirm: (v: { amount: number; proceed: () => void; forGoal?: boolean } | null) => void;
 }) {
   const T = useTheme();
   const { gName, setGName, gEmoji, setGEmoji, gTarget, setGTarget, gCurrent, setGCurrent, gDate, setGDate, gCurrency, setGCurrency, contributeGoalId, setContributeGoalId, contributeGoalAmt, setContributeGoalAmt, contributeMethod, setContributeMethod, contributeCardId, setContributeCardId, contributeOtherNote, setContributeOtherNote, contributeDate, setContributeDate } = form;
@@ -59,9 +62,18 @@ export default function GoalsSection({ financials, update, lbpRate, cards, saveC
     setGName(""); setGTarget(""); setGCurrent(""); setGDate(""); setGEmoji("🎯"); setGCurrency("USD");
   }
 
+  // Item 3 (owner, session 57): a lira goal's amount under L£500 asks first, as Goals' Add payment does (it never did
+  // here). "Let me fix the amount" pays nothing; "No, save it as … LBP" pays.
   function contributeToGoal(goalId: string) {
     const amt = parseFloat(contributeGoalAmt.replace(/,/g, ""));
     if (!amt || amt <= 0) return;
+    const goal = financials.goals.find((g) => g.id === goalId);
+    if (!goal) return;
+    if (looksLikeMistypedLbp(amt, goal.currency)) { setLbpConfirm({ amount: amt, forGoal: true, proceed: () => commitContribution(goalId, amt) }); return; }
+    commitContribution(goalId, amt);
+  }
+
+  function commitContribution(goalId: string, amt: number) {
     const goal = financials.goals.find((g) => g.id === goalId);
     if (!goal) return; // needed for the toast message below; applyGoalContribution does its own lookup for the actual update
     const { cardId, cardLabel } = cardRef(cards, contributeMethod, contributeCardId);

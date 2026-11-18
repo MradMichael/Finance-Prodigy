@@ -416,6 +416,7 @@ export default function GoalsScreen({
       {lbpConfirm && (
         <LbpMistypeDialog
           amount={lbpConfirm.amount}
+          forGoal
           closeOnEscape
           onFix={() => setLbpConfirm(null)}
           onSave={() => { const c = lbpConfirm; setLbpConfirm(null); commitPay(c.dashGoalId, c.storedId, c.amount); }}
