@@ -3844,7 +3844,7 @@ export function applyGoalContribution(
 }
 
 /** One live contribution, in its goal's currency: frozen if stored, else at its own stored rate (its cycle's rate when it has none). */
-function contributionToGoal(t: StoredTransaction, g: StoredGoal, d: LocalFinancials): number {
+export function contributionToGoal(t: StoredTransaction, g: StoredGoal, d: LocalFinancials): number {
   if (t.goalAmount != null) return t.goalAmount;
   if (t.currency === g.currency) return t.amount;
   // Plan J: its stored rate as before, else the rate on its own day (it was its cycle's).
@@ -3859,7 +3859,7 @@ function contributionToGoal(t: StoredTransaction, g: StoredGoal, d: LocalFinanci
  * `goalId` as it is, so a goal's lookup matches exactly the rows `t.goalId === g.id` matched.
  */
 const goalRowsIndex = new WeakMap<readonly StoredTransaction[], Map<string | undefined, StoredTransaction[]>>();
-function liveGoalRows(transactions: readonly StoredTransaction[], goalId: string): readonly StoredTransaction[] {
+export function liveGoalRows(transactions: readonly StoredTransaction[], goalId: string): readonly StoredTransaction[] {
   let index = goalRowsIndex.get(transactions);
   if (!index) {
     index = new Map();
