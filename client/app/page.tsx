@@ -12,7 +12,7 @@ import DueReminder from "../components/DueReminder";
 // R3 (owner, session 33): every screen but the Overview loads on first use (screens.lazy.tsx).
 import {
   InputPanel, TransactionsScreen, CategoriesScreen, GoalsScreen, DebtsScreen, BudgetScreen, SetupScreen, RecurringScreen,
-  ProjectionsScreen, JourneyScreen, CurrencyScreen, TripsScreen, BalanceCheckScreen, WishlistScreen, StatisticsScreen, preloadScreens,
+  ProjectionsScreen, JourneyScreen, CurrencyScreen, TripsScreen, BalanceCheckScreen, WishlistScreen, StatisticsScreen, MonthlyReportScreen, preloadScreens,
 } from "./screens.lazy";
 import Sidebar from "../components/shell/Sidebar";
 import BottomNav from "../components/shell/BottomNav";
@@ -1030,6 +1030,7 @@ export default function Home() {
           {screen === "balancecheck" && <BalanceCheckScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
           {screen === "wishlist"     && <WishlistScreen financials={financials} onChange={handleChange} />}
           {screen === "statistics"   && <StatisticsScreen financials={financials} dashData={dashboardData} />}
+          {screen === "report"       && <MonthlyReportScreen financials={financials} />}
         </div>
 
       </div>
