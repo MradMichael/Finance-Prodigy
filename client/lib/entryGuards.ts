@@ -17,7 +17,11 @@ export function entryDescription(typed: string, bucket: string): string {
   return typed.trim() || bucket.charAt(0) + bucket.slice(1).toLowerCase();
 }
 
-/** Whether to ask "did you mean USD?" before storing this amount. */
+/**
+ * Whether to ask "did you mean USD?" before storing this amount. Item 4 (owner, session 57): never at 0. A correction
+ * row is stored at 0 on purpose (its change is in its own field), and 0 isn't a mistyped amount; of the four callers
+ * only the edit sheet can pass 0 (the entry form and Goals refuse it first).
+ */
 export function looksLikeMistypedLbp(amount: number, currency: string): boolean {
-  return currency === "LBP" && amount < LBP_MISTYPE_THRESHOLD;
+  return currency === "LBP" && amount > 0 && amount < LBP_MISTYPE_THRESHOLD;
 }
