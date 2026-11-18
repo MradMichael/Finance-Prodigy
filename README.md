@@ -16,6 +16,8 @@ A local-first personal finance tracker: 50/30/20 (or custom) budget tracking, a 
 
 If you never run the server, the app works fully offline — sign-up, sign-in, and all the screens work purely against `localStorage`.
 
+**The monthly report is made on your device too.** The Monthly report screen builds one period from the data in your browser; "Share this report" asks first, then draws an image on the device and hands it to the phone's share sheet (or downloads it). Nothing is uploaded.
+
 ---
 
 ## Repository layout

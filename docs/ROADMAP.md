@@ -417,7 +417,7 @@ New resolver `capacityFreedFrom(r, transactions, asOf)` answers "from what date 
 
 ## Phase 5 — F4 In-app monthly report
 
-**Status:** not started · **Depends on:** Phase 1, Phase 3
+**Status:** built (session 57): the Monthly report screen under More, one period of the account's own cycle at a time, with the comparison with the period before and a shared image (made on the device, after a confirmation). A PDF is not built. The owner's phone check is pending · **Depends on:** Phase 1, Phase 3
 
 The owner already produces and reads a monthly report externally. It should be a first-class product output.
 
@@ -593,7 +593,7 @@ Phase 2.8  Goal progress from ledger — plan H 5a (72de874), 2.8.5 (5a5ef2c), L
 Phase 2    COHORT LAUNCH             — not yet: its preconditions (below) aren't all marked complete
 Phase 3    Recurring end dates       — partly built: installments, the step change, P3-A/B/C, the due reminder
 Phase 4    Goal feasibility          — ✅ complete 2026-09-01
-Phase 5    Monthly report            — not started
+Phase 5    Monthly report            — built (session 57): screen and shared image; PDF not built; the owner's phone check pending
 Phase 6    Spending intelligence     — not started
 Phase 7    PWA / offline             — partly built: offline shell, P1/P2/P3/P5 (f5b82bc); P4 not started
 Phase 8    Arabic / RTL              — not started; last, to avoid translating twice
