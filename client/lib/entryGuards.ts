@@ -8,6 +8,15 @@
  */
 export const LBP_MISTYPE_THRESHOLD = 500;
 
+/**
+ * An entry's description as stored: what was typed, trimmed, or the type's own name when nothing was ("Needs",
+ * "Transfer"). D-a (owner, session 56): the entry form and the edit sheet both call this, so a blank description
+ * can't be refused in one place and named in the other again.
+ */
+export function entryDescription(typed: string, bucket: string): string {
+  return typed.trim() || bucket.charAt(0) + bucket.slice(1).toLowerCase();
+}
+
 /** Whether to ask "did you mean USD?" before storing this amount. */
 export function looksLikeMistypedLbp(amount: number, currency: string): boolean {
   return currency === "LBP" && amount < LBP_MISTYPE_THRESHOLD;

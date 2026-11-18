@@ -12,7 +12,7 @@ import { Label, FocusInput, MoneyInput, DateFieldDMY, CurrencyToggle, PM_OPTIONS
 import FutureDateNote from "./form/FutureDateNote";
 import { cycleKeyForISO, currentCycleKey } from "../lib/period";
 import { foreignCashRole } from "../lib/foreignCash";
-import { looksLikeMistypedLbp } from "../lib/entryGuards";
+import { looksLikeMistypedLbp, entryDescription } from "../lib/entryGuards";
 import CategoryOptions from "./form/CategoryOptions";
 
 type TxBucket = "NEEDS" | "WANTS" | "SAVINGS" | "INCOME" | "TRANSFER";
@@ -150,17 +150,23 @@ export default function EditTransactionSheet({
   const isSpending = (b: TxBucket) => b === "NEEDS" || b === "WANTS" || b === "SAVINGS";
   const fxAmtNum = parseFloat(fxAmt.replace(/,/g, ""));
 
+  // D-a (owner, session 56): as the entry form, an amount of 0 is refused and Save is disabled until there is one.
+  // A row stored at 0 on purpose (a debt, safety net or goal correction: amount 0, the change in its own field)
+  // is edited here too and keeps saving at 0; refusing its 0 would lock it.
+  const amountOk = (n: number) => n > 0 || (transaction.amount === 0 && n === 0);
+  const canSave = amountOk(parseFloat(amt.replace(/,/g, "")));
+
   function save() {
     if (fxRole && !(fxAmtNum > 0)) return;
     const amtNum = parseFloat(amt.replace(/,/g, ""));
-    if (!desc.trim() || isNaN(amtNum) || !date) return;
+    if (!amountOk(amtNum) || !date) return;
     if (looksLikeMistypedLbp(amtNum, currency)) { setLbpConfirmAmount(amtNum); return; }
     commit();
   }
 
   function commit() {
     const amtNum = parseFloat(amt.replace(/,/g, ""));
-    if (!desc.trim() || isNaN(amtNum) || !date) return;
+    if (!amountOk(amtNum) || !date) return;
     const { cardId: resolvedCardId, cardLabel: resolvedCardLabel } = cardRef(cards, payMethod, cardId);
     const efAmountUSD = efAmount == null ? efAmount : roundMoney(
       currency === "LBP"
@@ -177,7 +183,7 @@ export default function EditTransactionSheet({
     const signedAmt = keptBucket === "TRANSFER" ? (transferGained || fxRole === "back" ? amtNum : -amtNum) : amtNum;
     update({
       transactions: financials.transactions.map((t) => t.id !== transaction.id ? t : {
-        ...t, amount: signedAmt, description: desc.trim(),
+        ...t, amount: signedAmt, description: entryDescription(desc, keptBucket), // D-a: blank takes the type's name
         date, bucket: keptBucket, category: category || undefined, currency,
         ...(t.fx ? { fx: { ...t.fx, amount: roundMoney(fxAmtNum) } } : {}),
         paymentMethod: payMethod,
@@ -324,7 +330,7 @@ export default function EditTransactionSheet({
               <CardPicker cardId={cardId} onCardIdChange={setCardId} cards={cards} onSaveCard={saveCard} />
             )}
             {payMethod === "other" && (
-              <FocusInput value={payNote} onChange={(e) => setPayNote(e.target.value)} placeholder="Who paid or how?" />
+              <FocusInput value={payNote} onChange={(e) => setPayNote(e.target.value)} placeholder="Who paid or how? e.g. Dad filled gas tank" />
             )}
           </div>
           {cycleDate && (
@@ -392,7 +398,7 @@ export default function EditTransactionSheet({
         </div>
 
         <div className="flex gap-2 mt-5">
-          <button onClick={save} className="flex-1 px-3 py-2 rounded-xl text-sm font-semibold hover:opacity-90" style={{ background: T.jade, color: T.ink }}>Save</button>
+          <button onClick={save} disabled={!canSave} className="flex-1 px-3 py-2 rounded-xl text-sm font-semibold hover:opacity-90 disabled:opacity-40 disabled:pointer-events-none" style={{ background: T.jade, color: T.ink }}>Save</button>
           <button onClick={onClose} className="px-3 py-2 rounded-xl text-sm hover:opacity-70" style={{ color: T.mute }}>Cancel</button>
         </div>
       </div>

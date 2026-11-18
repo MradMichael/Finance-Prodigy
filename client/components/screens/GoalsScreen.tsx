@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import type { LocalFinancials, PaymentMethod, StoredCard } from "../../lib/localData";
-import { todayISO, applyGoalContribution, toUSD as toUSDShared, activeTransactions, cycleStartDayOf, edited, saveCard as storeCard, cardRef, lbpRateOf } from "../../lib/localData";
+import { todayISO, applyGoalContribution, toUSD as toUSDShared, activeTransactions, cycleStartDayOf, edited, saveCard as storeCard, cardRef, lbpRateOf, moneyMaxFor } from "../../lib/localData";
+import { looksLikeMistypedLbp } from "../../lib/entryGuards";
+import LbpMistypeDialog from "../LbpMistypeDialog";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
-import { PaymentMethodPicker, Label, DateFieldDMY } from "../form/Primitives";
+import { PaymentMethodPicker, Label, DateFieldDMY, MoneyInput } from "../form/Primitives";
 import FutureDateNote from "../form/FutureDateNote";
 import { currentCycleKey, isInCycle, periodNoun } from "../../lib/period";
 
@@ -39,6 +41,7 @@ export default function GoalsScreen({
   // already had a success confirmation (paySuccess below); only the date
   // field was missing here.
   const [payDate,      setPayDate]      = useState(todayISO());
+  const [lbpConfirm,   setLbpConfirm]   = useState<{ dashGoalId: number; storedId: string; amount: number } | null>(null);
 
   const lbpRate = lbpRateOf(financials);
   const startDay = cycleStartDayOf(financials);
@@ -84,10 +87,23 @@ export default function GoalsScreen({
   // dashboard and the stored list are separate props, and a place only matches while they are in step.
   const storedGoal = (storedId: string) => financials.goals.find((g) => g.id === storedId);
 
+  // D-f (owner, session 56): the custom amount is the money field, with the lira mistype check an entry has.
+  // The field applies its limit when it is left; Enter pays without leaving it, so the limit is applied here
+  // too: the field shows the limit and nothing is paid until the next press.
   function pay(dashGoalId: number, storedId: string) {
     const amt = parseFloat(payAmt.replace(/,/g, ""));
     if (!amt || amt <= 0) return;
 
+    const rawGoal = storedGoal(storedId);
+    if (!rawGoal) return;
+
+    const max = moneyMaxFor(rawGoal.currency, lbpRate);
+    if (amt > max) { setPayAmt(String(max)); return; }
+    if (looksLikeMistypedLbp(amt, rawGoal.currency)) { setLbpConfirm({ dashGoalId, storedId, amount: amt }); return; }
+    commitPay(dashGoalId, storedId, amt);
+  }
+
+  function commitPay(dashGoalId: number, storedId: string, amt: number) {
     const rawGoal = storedGoal(storedId);
     if (!rawGoal) return;
 
@@ -342,15 +358,16 @@ export default function GoalsScreen({
 
                           {/* Custom amount */}
                           <div className="flex gap-2">
-                            <input
-                              type="number" inputMode="decimal" min="0" step="1"
-                              placeholder={`Custom amount (${g.currency === "LBP" ? "L£" : "$"})`}
-                              value={payAmt}
-                              onChange={(e) => setPayAmt(e.target.value)}
-                              onKeyDown={(e) => e.key === "Enter" && pay(g.id, g.storedId)}
-                              className="flex-1 rounded-xl px-3 py-2 text-sm tabular-nums"
-                              style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
-                            />
+                            {/* D-f: the money field, as My Finances' "Add to this goal"; Enter still pays (keys bubble here). */}
+                            <div className="flex-1 min-w-0" onKeyDown={(e) => e.key === "Enter" && pay(g.id, g.storedId)}>
+                              <MoneyInput
+                                value={payAmt}
+                                onChange={setPayAmt}
+                                placeholder={`Custom amount (${g.currency === "LBP" ? "L£" : "$"})`}
+                                max={moneyMaxFor(g.currency, lbpRate)}
+                                style={{ background: T.ink, fontVariantNumeric: "tabular-nums" }}
+                              />
+                            </div>
                             <button
                               onClick={() => pay(g.id, g.storedId)}
                               disabled={!payAmt || parseFloat(payAmt) <= 0}
@@ -396,6 +413,14 @@ export default function GoalsScreen({
           </div>
         )}
       </div>
+      {lbpConfirm && (
+        <LbpMistypeDialog
+          amount={lbpConfirm.amount}
+          closeOnEscape
+          onFix={() => setLbpConfirm(null)}
+          onSave={() => { const c = lbpConfirm; setLbpConfirm(null); commitPay(c.dashGoalId, c.storedId, c.amount); }}
+        />
+      )}
     </main>
   );
 }

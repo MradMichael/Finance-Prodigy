@@ -15,7 +15,7 @@ import { Label, FocusInput, MoneyInput, PrimaryBtn, CurrencyToggle, DateFieldDMY
 import { fmtCur } from "../screens/shared";
 import CategoryOptions from "../form/CategoryOptions";
 import RateAgeChip from "../RateAgeChip";
-import { looksLikeMistypedLbp } from "../../lib/entryGuards";
+import { looksLikeMistypedLbp, entryDescription } from "../../lib/entryGuards";
 
 /**
  * U5 (owner, session 33, DECISIONS_PENDING 14 (a)): the last currency and payment method (and card) an entry
@@ -136,7 +136,7 @@ export default function EntrySection({ financials, dashData, session, update, lb
     const amt = parseFloat(txAmt);
     if (!amt || amt <= 0) return;
     const { cardId, cardLabel, cards: withNewCard } = resolveCard();
-    const description = txDesc.trim() || txBucket.charAt(0) + txBucket.slice(1).toLowerCase();
+    const description = entryDescription(txDesc, txBucket);
     // "If null only": a category rule only ever fills in a category the
     // user hasn't already picked -- never overrides an explicit choice.
     const autoCategory = txCategory || matchCategoryRule(description, financials.categoryRules);
@@ -197,7 +197,7 @@ export default function EntrySection({ financials, dashData, session, update, lb
     const amtLBPLeg = parseFloat(txSplitLBP.replace(/,/g, ""));
     if (!(amtUSDLeg > 0) || !(amtLBPLeg > 0)) return;
     const { cardId, cardLabel, cards: withNewCard } = resolveCard();
-    const description = txDesc.trim() || txBucket.charAt(0) + txBucket.slice(1).toLowerCase();
+    const description = entryDescription(txDesc, txBucket);
     const autoCategory = txCategory || matchCategoryRule(description, financials.categoryRules);
     const now = new Date().toISOString();
     const linkedPaymentId = uid();
