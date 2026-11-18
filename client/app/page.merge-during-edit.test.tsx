@@ -87,10 +87,11 @@ it("an edit made while a conflict merge is in flight is still on screen and on t
   fireEvent.change(document.getElementById("wish-price")!, { target: { value: "22.15" } });
   fireEvent.click(screen.getByRole("button", { name: "+ Add to wishlist" }));
   await waitFor(() => expect(hasStool(writes.at(-1))).toBe(true));
+  expect(document.body.textContent).toContain("Amber stool"); // premise: on screen before the merge lands
 
   releaseFirst!(); // the merge built from the copy without the stool lands now
   await vi.advanceTimersByTimeAsync(100);
-  expect(screen.getByText("Amber stool")).toBeTruthy(); // still on screen
+  expect(document.body.textContent).toContain("Amber stool"); // still on screen (it reads "✨ Amber stool")
   expect(hasStool(writes.at(-1))).toBe(true); // and still the copy on this device
 
   // The edit's own sync merges it with the server's copy (which holds the first merge).
