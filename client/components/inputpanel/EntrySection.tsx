@@ -512,7 +512,7 @@ export default function EntrySection({ financials, dashData, session, update, lb
             <FocusInput
               value={txPayNote}
               onChange={(e) => setTxPayNote(e.target.value)}
-              placeholder="Who paid or how? e.g. Dad filled gas tank"
+              placeholder="Who paid or how?"
             />
             <p className="text-[10px] px-1" style={{ color: T.mute }}>
               Still counted in your budget. You consumed the expense.
