@@ -53,8 +53,9 @@ export const TripsScreen = lazyScreen(() => import("../components/screens/TripsS
 export const BalanceCheckScreen = lazyScreen(() => import("../components/screens/BalanceCheckScreen"));
 export const WishlistScreen = lazyScreen(() => import("../components/screens/WishlistScreen"));
 export const StatisticsScreen = lazyScreen(() => import("../components/screens/StatisticsScreen"));
+export const MonthlyReportScreen = lazyScreen(() => import("../components/screens/MonthlyReportScreen"));
 
-const ALL = [InputPanel, TransactionsScreen, CategoriesScreen, GoalsScreen, DebtsScreen, BudgetScreen, SetupScreen, RecurringScreen, ProjectionsScreen, JourneyScreen, CurrencyScreen, TripsScreen, BalanceCheckScreen, WishlistScreen, StatisticsScreen];
+const ALL = [InputPanel, TransactionsScreen, CategoriesScreen, GoalsScreen, DebtsScreen, BudgetScreen, SetupScreen, RecurringScreen, ProjectionsScreen, JourneyScreen, CurrencyScreen, TripsScreen, BalanceCheckScreen, WishlistScreen, StatisticsScreen, MonthlyReportScreen];
 
 /**
  * Fetches every screen's code once; safe to call again (each loads once). Settles even if some can't load

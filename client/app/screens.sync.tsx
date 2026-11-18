@@ -18,6 +18,7 @@ export { default as TripsScreen } from "../components/screens/TripsScreen";
 export { default as BalanceCheckScreen } from "../components/screens/BalanceCheckScreen";
 export { default as WishlistScreen } from "../components/screens/WishlistScreen";
 export { default as StatisticsScreen } from "../components/screens/StatisticsScreen";
+export { default as MonthlyReportScreen } from "../components/screens/MonthlyReportScreen";
 
 export function preloadScreens(): Promise<void> {
   return Promise.resolve();

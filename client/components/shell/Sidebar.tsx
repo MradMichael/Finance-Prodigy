@@ -97,8 +97,9 @@ export default function Sidebar({
         )}
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 py-3 space-y-0.5 px-2 overflow-hidden">
+      {/* Nav. F4 (session 56, held): it scrolls (min-h-0 lets it shrink in the column), so on a short window
+          the last screens stay reachable instead of sitting under the account footer. */}
+      <nav className="flex-1 min-h-0 py-3 space-y-0.5 px-2 overflow-y-auto overflow-x-hidden overscroll-contain [scrollbar-width:thin]">
         {NAV.map(({ key, label, icon }) => {
           const active = screen === key;
           return (
