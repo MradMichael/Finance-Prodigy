@@ -251,6 +251,7 @@ export default function Home() {
     if (newerBackupRef.current) return; // travel slice 0: stopped until reloaded
     if (refusedHere()) return; // SEC-07 amended: stopped until a sign-in here
     setSyncStatus("syncing");
+    const onScreenAtStart = financialsRef.current; // item 8b: what the screen held when this sync began
     const result = await pushToServer(email, data);
     // Travel slice 0: a copy from newer code isn't uploaded; this device stops syncing and says so.
     if (result.newerVersion) { stopForNewerBackup(); return; }
@@ -271,6 +272,12 @@ export default function Home() {
       // Session 23, item 5 (owner): the merged push refused for size is ERR-03's case, not a conflict.
       if (!merged.ok && merged.tooLarge) { stopForTooLarge(); return; }
       if (!merged.ok) { setSyncStatus("conflict"); return; }
+      // Item 8b (owner, session 56): the merge was built from the copy this sync started with, and it took three
+      // network waits. If the person changed something meanwhile, storing and showing the merge would put that
+      // change out of sight (and lose it if the tab closed before its own sync). The server has the merge
+      // (mergeAndPush pushed it), so it stays there, and the newer copy reaches it the way every change does: an
+      // edit schedules its own upload (handleChange), and a fetch's merge uploads when the server is behind.
+      if (financialsRef.current !== onScreenAtStart) return;
       const userId = sessionRef.current?.userId;
       // DI-15: the sync is recorded only once the merged copy is stored here.
       // A failed store records nothing and drops nothing: the previous record

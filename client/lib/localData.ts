@@ -2011,8 +2011,49 @@ export async function loadData(userId: string): Promise<LocalFinancials> {
   }
 }
 
-export async function saveData(data: LocalFinancials, userId: string): Promise<void> {
-  if (typeof window === "undefined") return;
+/**
+ * Item 8a (owner, session 56): one write at a time per account, in the order asked. Each save encrypts the
+ * whole copy (Web Crypto, which promises no order between two calls) and then writes it; two in flight used to
+ * write whichever finished last, so an older copy could land after a newer one and stay on disk. Now a save
+ * asked for while another runs waits; if several wait, only the latest is written (it holds every change the
+ * others did: each copy is built on the one before), and the ones it replaced settle with its outcome, so a
+ * caller never hears "stored" for a copy that wasn't, and a failure reaches every save it covered.
+ */
+type SaveWaiter = { resolve: () => void; reject: (err: unknown) => void };
+const saveQueues = new Map<string, { running: boolean; next: { data: LocalFinancials; waiters: SaveWaiter[] } | null }>();
+
+export function saveData(data: LocalFinancials, userId: string): Promise<void> {
+  if (typeof window === "undefined") return Promise.resolve();
+  const key = storageKey(userId);
+  let queue = saveQueues.get(key);
+  if (!queue) saveQueues.set(key, (queue = { running: false, next: null }));
+  const q = queue;
+  return new Promise<void>((resolve, reject) => {
+    if (q.next) { q.next.data = data; q.next.waiters.push({ resolve, reject }); }
+    else q.next = { data, waiters: [{ resolve, reject }] };
+    if (!q.running) void drainSaves(key, q);
+  });
+}
+
+async function drainSaves(key: string, q: { running: boolean; next: { data: LocalFinancials; waiters: SaveWaiter[] } | null }): Promise<void> {
+  q.running = true;
+  try {
+    while (q.next) {
+      const { data, waiters } = q.next;
+      q.next = null;
+      try {
+        await writeEncrypted(data, key);
+        for (const w of waiters) w.resolve();
+      } catch (err) {
+        for (const w of waiters) w.reject(err);
+      }
+    }
+  } finally {
+    q.running = false;
+  }
+}
+
+async function writeEncrypted(data: LocalFinancials, key: string): Promise<void> {
   const { encryptJSON } = await import("./crypto");
   // Migrated here too, not just in loadData -- this is what makes the four
   // call sites that consume a server pull directly (auth.ts signInFromSync/
@@ -2020,7 +2061,7 @@ export async function saveData(data: LocalFinancials, userId: string): Promise<v
   // without touching any of them: whatever they hand in gets normalized to
   // the current schema on the way to disk, regardless of caller.
   const stored = await encryptJSON(JSON.stringify(migrateFinancials(data)));
-  localStorage.setItem(storageKey(userId), stored);
+  localStorage.setItem(key, stored);
 }
 
 /**
