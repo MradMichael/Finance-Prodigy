@@ -17,8 +17,14 @@ async function apiRewrite(apiUrl: string | undefined): Promise<Rewrite> {
   if (apiUrl === undefined) delete process.env.API_URL;
   else process.env.API_URL = apiUrl;
   for (const m of ["./next.config.js", "./securityHeaders.js"]) delete req.cache[req.resolve(m)];
-  const rewrites: Rewrite[] = await req("./next.config.js").rewrites();
-  const rule = rewrites.find((r) => r.source === "/api/:path*");
+  // SEC-04 / R1 (session 55, held): the rewrite is a FALLBACK now. Next checks a plain list of rewrites before
+  // dynamic routes, which would keep the site's own proxy route (app/api/[...path]/route.ts) from ever running.
+  // As a fallback it applies only when no route answered: the route answers /api, and deleting the route file
+  // brings this rewrite back.
+  const all: { fallback?: Rewrite[]; beforeFiles?: Rewrite[]; afterFiles?: Rewrite[] } | Rewrite[] = await req("./next.config.js").rewrites();
+  if (Array.isArray(all)) throw new Error("the /api rewrite must be a fallback, not a plain list (a plain list runs before the proxy route)");
+  if ((all.beforeFiles ?? []).length || (all.afterFiles ?? []).length) throw new Error("only fallback rewrites are expected");
+  const rule = (all.fallback ?? []).find((r) => r.source === "/api/:path*");
   if (!rule) throw new Error("no /api rewrite");
   return rule;
 }

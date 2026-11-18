@@ -31,6 +31,28 @@ describe("the README matches the code", () => {
     expect(flat(README)).toMatch(/no longer written/);
   });
 
+  // SEC-04 / R1 (owner, session 56): ESSA_PROXY_KEY was documented in both .env.example files but not in the
+  // README's table. Every variable an example file sets has a row naming the file it goes in.
+  it("the environment table has a row for every variable the .env.example files set, in the right file", () => {
+    const rows = new Map<string, string>();
+    for (const m of README.matchAll(/^\| `([A-Z0-9_]+)` \| ([^|]+) \|/gm)) rows.set(m[1], m[2]);
+    for (const side of ["server", "client"]) {
+      const names = read("..", side, ".env.example").split("\n").map((l) => /^([A-Z0-9_]+)=/.exec(l)?.[1]).filter(Boolean) as string[];
+      expect(names.length, side).toBeGreaterThan(0);
+      for (const name of names) {
+        expect(rows.has(name), `${name} (${side}/.env.example) has no README row`).toBe(true);
+        expect(rows.get(name), name).toContain(`\`${side}/.env\``);
+      }
+    }
+  });
+
+  it("says the site's /api route forwards to the server, and next.config.js only as its fallback", () => {
+    expect(read("app", "api", "[...path]", "route.ts")).toMatch(/forward/); // premise: the route exists
+    expect(flat(README)).not.toMatch(/next\.config\.js[^|]*Proxies \/api/);
+    expect(flat(README)).not.toMatch(/Where `next\.config\.js` proxies/);
+    expect(flat(README)).toMatch(/app\/api\/\[\.\.\.path\]\/route\.ts/);
+  });
+
   it("gives the Security page's reason the backup copy isn't encrypted", () => {
     const reason = "generates its own independent key";
     expect(flat(read("app", "security", "page.tsx"))).toContain(reason); // premise: the page's wording

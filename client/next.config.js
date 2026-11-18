@@ -2,14 +2,19 @@ const { securityHeaders } = require("./securityHeaders");
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // SEC-04 / R1 (session 55): /api is answered by the site's own proxy route (app/api/[...path]/route.ts). This
+  // rewrite is its fallback: Next applies a plain list of rewrites BEFORE dynamic routes (the route would never
+  // run), and a fallback only when no route answered. Deleting the route file brings the rewrite back.
   async rewrites() {
-    return [
-      {
-        source: "/api/:path*",
-        // `||`, not `??` (session 37): an empty API_URL counts as unset, so /api is never rewritten onto itself.
-        destination: `${process.env.API_URL || "http://localhost:4000"}/api/:path*`,
-      },
-    ];
+    return {
+      fallback: [
+        {
+          source: "/api/:path*",
+          // `||`, not `??` (session 37): an empty API_URL counts as unset, so /api is never rewritten onto itself.
+          destination: `${process.env.API_URL || "http://localhost:4000"}/api/:path*`,
+        },
+      ],
+    };
   },
   // FB-1c (SEC-03, PRIV-01). Production only: `next dev` needs eval for hot
   // reload, which the policy forbids. What each header does, and the way back

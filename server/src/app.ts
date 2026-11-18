@@ -21,6 +21,7 @@ import events from "./routes/events";
 import cspReport from "./routes/cspReport";
 import clientErrors from "./routes/clientErrors";
 import { logger } from "./lib/logger";
+import { limiterKey } from "./lib/clientKey";
 
 export function createApp(): express.Express {
   const app = express();
@@ -35,6 +36,9 @@ export function createApp(): express.Express {
   // requests per user per 15 min" into "100 total for the whole app." Trusting
   // exactly one hop (not `true`, which would trust an unbounded chain and let
   // a client spoof X-Forwarded-For) is the correct setting for this topology.
+  // SEC-04 / R1 (session 55): behind the site's own proxy route that one hop is the site, the same for every
+  // person, so each limiter keys on lib/clientKey.ts's address instead: the person's, when the request proves it
+  // came from our proxy; otherwise this one. This stays 1: 2 would believe a direct caller's own header.
   app.set("trust proxy", 1);
   // crossOriginResourcePolicy defaults to "same-origin", which would make
   // browsers block the client's fetch to this API — the client is always a
@@ -53,6 +57,7 @@ export function createApp(): express.Express {
     limit: 60,
     standardHeaders: true,
     legacyHeaders: false,
+    keyGenerator: limiterKey,
     message: { error: "Too many requests. Please wait a few minutes and try again." },
   });
   app.use("/api/csp-report", cspReportLimiter, cspReport);
@@ -64,6 +69,7 @@ export function createApp(): express.Express {
     limit: 20,
     standardHeaders: true,
     legacyHeaders: false,
+    keyGenerator: limiterKey,
     message: { error: "Too many requests. Please wait a few minutes and try again." },
   });
   app.use("/api/client-errors", clientErrorsLimiter, clientErrors);
@@ -86,6 +92,7 @@ export function createApp(): express.Express {
     limit: 100,
     standardHeaders: true,
     legacyHeaders: false,
+    keyGenerator: limiterKey,
     message: { error: "Too many sync requests. Please wait a few minutes and try again." },
   });
   app.use("/api/sync", syncLimiter, sync);
@@ -99,6 +106,7 @@ export function createApp(): express.Express {
     limit: 30,
     standardHeaders: true,
     legacyHeaders: false,
+    keyGenerator: limiterKey,
     message: { error: "Too many requests. Please wait a few minutes and try again." },
   });
   app.use("/api/auth", authLimiter, auth);
@@ -114,6 +122,7 @@ export function createApp(): express.Express {
     limit: 30,
     standardHeaders: true,
     legacyHeaders: false,
+    keyGenerator: limiterKey,
     message: { error: "Too many requests. Please wait a few minutes and try again." },
   });
   app.use("/api/events", eventsLimiter, events);

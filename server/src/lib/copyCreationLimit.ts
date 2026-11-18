@@ -11,7 +11,7 @@ import { createHash } from "crypto";
  * before it's written and given back if it doesn't happen (a refusal, a failed write, or another
  * request creating the same row first), so only real creations count.
  *
- * The client is `req.ip`, the key the other limiters use (one trusted proxy, app.ts). In memory,
+ * The client is lib/clientKey.ts's address, the key the other limiters use (SEC-04 / R1, session 55). In memory,
  * one per app (app.locals), keyed by a hash of the address, never the address; one Render instance
  * today, so one count; a restart clears it. Bounded: past MAX_CLIENTS the longest-untouched entry
  * is dropped.

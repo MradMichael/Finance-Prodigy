@@ -30,7 +30,8 @@ Finance-Prodigy/
 │   │   ├── recover/                   # Forgot-password flow (recovery code, see Security model)
 │   │   ├── profile/                   # Account settings, theme picker, sync push/pull, data export, analytics opt-in
 │   │   ├── about/, terms/, privacy/, security/  # FAQ, Terms of Service, Privacy Policy, Trust & Security
-│   │   └── admin/                     # Diagnostics: API health, registered users, sync status — gated to admin accounts only (see Security model)
+│   │   ├── admin/                     # Diagnostics: API health, registered users, sync status — gated to admin accounts only (see Security model)
+│   │   └── api/[...path]/route.ts     # Forwards /api/* to the Express server (see API_URL and ESSA_PROXY_KEY below)
 │   ├── lib/
 │   │   ├── auth.ts                    # Sign-up/in/out, password hashing, recovery, sync-relink token
 │   │   ├── crypto.ts                  # AES-GCM encryption + the DEK-wrapping scheme behind recovery codes
@@ -47,7 +48,7 @@ Finance-Prodigy/
 │   ├── contexts/
 │   │   └── ThemeContext.tsx           # The 6-theme system (light/dark-aware, per-account persisted)
 │   ├── public/                        # manifest.webmanifest, sw.js, icons — PWA/installable support
-│   └── next.config.js                 # Proxies /api/* to the Express server (see API_URL below)
+│   └── next.config.js                 # Security headers; its /api rewrite is only the route's fallback
 ├── server/                        # Express API — sync (the analytics warehouse is no longer written)
 │   ├── prisma/
 │   │   ├── schema.prisma              # Postgres star schema (Neon or any Postgres host)
@@ -113,7 +114,8 @@ Then in the app: Profile → Push (uploads your local data) or Pull (restores fr
 | `PORT` | `server/.env` | `4000` | Express listen port |
 | `CLIENT_ORIGIN` | `server/.env` | `http://localhost:3000` | CORS allow-origin |
 | `LOG_EMAIL_KEY` | `server/.env` | 32 random bytes as hex (64 characters) | Key for the HMAC references that stand in for email addresses in log lines. Unset or shorter than 32 characters: accounts are logged as `unkeyed` and the server warns at startup |
-| `API_URL` | `client/.env` | `http://localhost:4000` | Where `next.config.js` proxies `/api/*` to — the browser only ever calls relative `/api/*` paths, so this is the one place that needs to change for a deployed setup (e.g. your Railway API URL) |
+| `ESSA_PROXY_KEY` | `server/.env` and `client/.env` (the same value in both) | 32 random bytes as hex (64 characters) | Shared secret between the site's `/api` route and the server, so the rate limits count each person rather than the site's proxy. The route sends the caller's address with it, and the server believes that address only when the secret matches. Unset or shorter than 32 characters: nothing is sent and the limits count by the address that connected, as before. Never give it a `NEXT_PUBLIC_` name |
+| `API_URL` | `client/.env` | `http://localhost:4000` | Where the site's `/api` route (`app/api/[...path]/route.ts`) forwards `/api/*` to — the browser only ever calls relative `/api/*` paths, so this is the one place that needs to change for a deployed setup (e.g. your Railway API URL) |
 | `VERCEL_GIT_COMMIT_SHA` | set by Vercel at build time | (none locally) | Not configured by hand. `sw/build-sw.mjs` puts its first 7 characters in the service worker so Profile can show which commit a phone is running; unset, the version shows the build ID only |
 
 On Neon specifically: both URLs come from the same project's Connect panel — `DATABASE_URL` is the default pooled one it shows you, `DIRECT_URL` is the same string with `-pooler` dropped from the hostname and `pgbouncer=true` removed.
