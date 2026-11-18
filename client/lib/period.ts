@@ -178,6 +178,35 @@ export function isInCycle(iso: string, key: CycleKey, startDay: number): boolean
 }
 
 /**
+ * R4 (session 56): the records of one cycle, the same ones `list.filter((t) => isInCycle(t.date, key, startDay))`
+ * gives, in the same order (so sums over them add in the same order). The dashboard asked that of the whole list
+ * for every period it looks at (about 35), reading every row each time; now each (list, start day) is read once
+ * into an index by cycle key and kept for as long as the list lives. Lists are never changed in place (every write
+ * makes a new array), so a list's index stays right; a new list gets its own. Weakly held, like the confirmed
+ * cycles index in localData.ts.
+ *
+ * Each row's key is `cycleKeyForISO`, which is what `isInCycle` compares: at start day 1 it is the first seven
+ * characters, the same test as `startsWith` for a seven-character key. Read-only: the arrays are shared.
+ */
+const cycleIndex = new WeakMap<object, Map<number, Map<string, readonly unknown[]>>>();
+const NONE: readonly never[] = Object.freeze([]);
+export function transactionsInCycle<T extends { date: string }>(list: readonly T[], key: CycleKey, startDay: number): readonly T[] {
+  let byStartDay = cycleIndex.get(list);
+  if (!byStartDay) cycleIndex.set(list, (byStartDay = new Map()));
+  let index = byStartDay.get(startDay) as Map<string, T[]> | undefined;
+  if (!index) {
+    index = new Map();
+    for (const t of list) {
+      const k = cycleKeyForISO(t.date, startDay);
+      const rows = index.get(k);
+      if (rows) rows.push(t); else index.set(k, [t]);
+    }
+    byStartDay.set(startDay, index);
+  }
+  return index.get(key) ?? NONE;
+}
+
+/**
  * How far into its cycle a date is (1-based), and how long that cycle is.
  *
  * Replaces `daysElapsed = now.getDate()` / `daysInMonth`, which drive
