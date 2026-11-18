@@ -32,7 +32,13 @@ const B64_CHUNK = 0x8000;
 
 // R4 (session 51 review): apply, not a spread. A spread walks the chunk through the array iterator, which
 // cost 164 ms an entry on a phone at 1,500 entries; apply reads the typed array by index. Same arguments.
+// Item 5 (owner, session 57; R4's plan item 7, its first step): the browser's own base64 where it has it
+// (Uint8Array.prototype.toBase64; MDN: Baseline 2025, newly available; older browsers, Samsung Internet among them,
+// lack it). The same text as the loop below (the standard alphabet, with padding), checked by test and live in Edge,
+// so what is stored doesn't change.
 export function toB64(bytes: Uint8Array): string {
+  const native = (bytes as Uint8Array & { toBase64?: () => string }).toBase64;
+  if (typeof native === "function") return native.call(bytes);
   let binary = "";
   for (let i = 0; i < bytes.length; i += B64_CHUNK) {
     binary += String.fromCharCode.apply(null, bytes.subarray(i, i + B64_CHUNK) as unknown as number[]);
