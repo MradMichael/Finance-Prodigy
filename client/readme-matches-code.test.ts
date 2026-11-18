@@ -37,13 +37,22 @@ describe("the README matches the code", () => {
     const rows = new Map<string, string>();
     for (const m of README.matchAll(/^\| `([A-Z0-9_]+)` \| ([^|]+) \|/gm)) rows.set(m[1], m[2]);
     for (const side of ["server", "client"]) {
-      const names = read("..", side, ".env.example").split("\n").map((l) => /^([A-Z0-9_]+)=/.exec(l)?.[1]).filter(Boolean) as string[];
-      expect(names.length, side).toBeGreaterThan(0);
-      for (const name of names) {
-        expect(rows.has(name), `${name} (${side}/.env.example) has no README row`).toBe(true);
-        expect(rows.get(name), name).toContain(`\`${side}/.env\``);
-      }
+      // Item 6 (session 57): commented example lines ("# NAME=…", a variable left unset by default, or one a platform
+      // sets) need a row too; the uncommented ones, set by hand, name the file they go in.
+      const lines = read("..", side, ".env.example").split("\n");
+      const set = lines.map((l) => /^([A-Z0-9_]+)=/.exec(l)?.[1]).filter(Boolean) as string[];
+      const commented = lines.map((l) => /^#\s*([A-Z0-9_]+)=/.exec(l)?.[1]).filter(Boolean) as string[];
+      expect(set.length, side).toBeGreaterThan(0);
+      for (const name of [...set, ...commented]) expect(rows.has(name), `${name} (${side}/.env.example) has no README row`).toBe(true);
+      for (const name of set) expect(rows.get(name), name).toContain(`\`${side}/.env\``);
     }
+  });
+
+  // Item 6 (owner, session 57): next.config.js reads ESSA_CSP_REPORT_ONLY at build time ("1" puts the content policy
+  // back to report-only, the rollback); it was in neither .env.example nor the README.
+  it("ESSA_CSP_REPORT_ONLY, which next.config.js reads, is in client/.env.example (so the table above needs its row)", () => {
+    expect(read("next.config.js")).toMatch(/process\.env\.ESSA_CSP_REPORT_ONLY/); // premise
+    expect(read(".env.example")).toMatch(/^#?\s*ESSA_CSP_REPORT_ONLY=/m);
   });
 
   it("says the site's /api route forwards to the server, and next.config.js only as its fallback", () => {
