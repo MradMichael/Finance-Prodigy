@@ -73,7 +73,7 @@ export default function EntryRow({ variant, tx, b, divergence, financials, cards
               <button
                 onClick={() => logAgain(tx)}
                 aria-label={`Log again: ${tx.description}`}
-                className="log-again-tap md:flex md:items-stretch opacity-70 hover:!opacity-100 transition-opacity text-[10px] whitespace-nowrap"
+                className="log-again-tap md:flex md:items-stretch text-[10px] whitespace-nowrap"
               ><span className="inline-flex items-center h-5 md:h-auto px-1.5 rounded" style={{ color: T.jade, border: `1px solid ${T.jade}40` }}>Log again</span></button>
             )}
           </div>
@@ -119,7 +119,7 @@ export default function EntryRow({ variant, tx, b, divergence, financials, cards
               <button
                 onClick={() => logAgain(tx)}
                 aria-label={`Log again: ${tx.description}`}
-                className="log-again-tap md:flex md:items-stretch opacity-70 hover:!opacity-100 transition-opacity text-[10px] whitespace-nowrap"
+                className="log-again-tap md:flex md:items-stretch text-[10px] whitespace-nowrap"
               ><span className="inline-flex items-center h-5 md:h-auto px-1.5 rounded" style={{ color: T.jade, border: `1px solid ${T.jade}40` }}>Log again</span></button>
             )}
           </div>

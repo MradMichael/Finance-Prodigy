@@ -152,18 +152,21 @@ export default function GoalsSection({ financials, update, lbpRate, cards, saveC
                       </p>
                     )}
                   </div>
-                  <div className="flex gap-1.5 opacity-70 transition-opacity flex-shrink-0">
+                  {/* Item 2 (owner, session 58): the 70% fading moved from this row to its three icon-only buttons (the
+                      same look, hover included: 70%, 56% on hover), so "+add", 10 px text, reaches 4.5:1 in every
+                      theme at full strength. */}
+                  <div className="flex gap-1.5 flex-shrink-0">
                     <button
                       onClick={() => onEdit("goal", g.id)}
                       aria-label="Edit goal"
-                      className="text-[10px] px-1.5 py-0.5 rounded transition-all hover:opacity-80"
+                      className="text-[10px] px-1.5 py-0.5 rounded transition-all opacity-70 hover:opacity-[0.56]"
                       style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
                     >✎</button>
                     <button
                       onClick={() => toggleGoalPause(g.id)}
                       aria-label={g.pausedAt ? "Resume goal" : "Pause goal"}
                       title={g.pausedAt ? "Resume this goal" : "Pause this goal — won't count toward pace/score until resumed"}
-                      className="text-[10px] px-1.5 py-0.5 rounded transition-all hover:opacity-80"
+                      className="text-[10px] px-1.5 py-0.5 rounded transition-all opacity-70 hover:opacity-[0.56]"
                       style={{ color: g.pausedAt ? T.jade : T.mute, border: `1px solid ${g.pausedAt ? T.jade : T.mute}40` }}
                     >{g.pausedAt ? "▶" : "⏸"}</button>
                     <button
@@ -175,7 +178,7 @@ export default function GoalsSection({ financials, update, lbpRate, cards, saveC
                     <button
                       onClick={() => { if (confirm("Delete this goal?")) update({ goals: financials.goals.filter((x) => x.id !== g.id), deletedKeys: recordDeletion(financials, "goals", g.id) }); }}
                       aria-label="Delete goal"
-                      className="text-xs"
+                      className="text-xs opacity-70"
                       style={{ color: T.coral }}
                     >✕</button>
                   </div>
