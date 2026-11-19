@@ -121,7 +121,8 @@ export default function InputPanel({ financials, dashData, onChange, session, on
   // entry" guard below -- OK/Cancel semantics don't map cleanly onto "save
   // it anyway" vs "let me fix the currency", so this stores enough to
   // resume whichever save flow (add or edit) triggered it.
-  const [lbpConfirm, setLbpConfirm] = useState<{ amount: number; proceed: () => void } | null>(null);
+  // Item 3 (session 57): `forGoal` gives the dialog a goal payment's words (Add to this goal).
+  const [lbpConfirm, setLbpConfirm] = useState<{ amount: number; proceed: () => void; forGoal?: boolean } | null>(null);
   const monthListScrollRef = useScrollFocus(); // A11Y-05
 
   const goalsForm = useGoalsForm(); // Goals: its form's state stays here (S-moves, session 55), so it survives closing the section
@@ -306,7 +307,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
 
         {/* Goals */}
         <Section title="Goals" icon="🎯" badge={financials.goals.length} defaultOpen={false}>
-          <GoalsSection financials={financials} update={update} lbpRate={lbpRate} cards={cards} saveCard={saveCard} showToast={showToast} onEdit={onEdit} form={goalsForm} />
+          <GoalsSection financials={financials} update={update} lbpRate={lbpRate} cards={cards} saveCard={saveCard} showToast={showToast} onEdit={onEdit} form={goalsForm} setLbpConfirm={setLbpConfirm} />
         </Section>
 
         {/* Recurring Payments */}
@@ -359,6 +360,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
     {lbpConfirm && (
       <LbpMistypeDialog
         amount={lbpConfirm.amount}
+        forGoal={lbpConfirm.forGoal}
         onFix={() => setLbpConfirm(null)}
         onSave={() => { const proceed = lbpConfirm.proceed; setLbpConfirm(null); proceed(); }}
         closeOnEscape

@@ -117,19 +117,19 @@ describe("paying", () => {
 });
 
 describe("the lira mistype check", () => {
-  it("a lira goal at L£400: it asks first, and nothing is paid until the answer", () => {
+  it("a lira goal at L£400: it asks first, with the goal's words (item 3, session 57), and nothing is paid until the answer", () => {
     const s = open("Car");
     type(s.box, "400");
     fireEvent.click(s.pay);
-    expect(screen.getByRole("dialog", { name: "Confirm low LBP amount" })).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Confirm low LBP amount" }).textContent).toContain("400 LBP is unusually low for a goal payment. Did you mean a larger amount?");
     expect(s.onChange).not.toHaveBeenCalled();
   });
 
-  it("\"Let me fix the currency\" closes it and pays nothing; the amount stays to fix", () => {
+  it("\"Let me fix the amount\" closes it and pays nothing; the amount stays to fix", () => {
     const s = open("Car");
     type(s.box, "400");
     fireEvent.click(s.pay);
-    fireEvent.click(screen.getByRole("button", { name: "Let me fix the currency" }));
+    fireEvent.click(screen.getByRole("button", { name: "Let me fix the amount" }));
     expect(screen.queryByRole("dialog", { name: "Confirm low LBP amount" })).toBeNull();
     expect(s.onChange).not.toHaveBeenCalled();
     expect(s.box.value).toBe("400");
