@@ -31,7 +31,7 @@ export default function StatisticsScreen({
   const noun = periodNoun(startDay);
   const toUSD = makeToUSDLive(financials);
   const now = new Date();
-  const usual = usualMonth(financials, now); // F5 (session 60, held)
+  const usual = usualMonth(financials, now); // F5 (session 60; approved session 61)
 
   // ── Cash flow trend + table (same underlying data, two views) ──────
   const trend = dashData.sixMonthTrend;
@@ -182,7 +182,7 @@ export default function StatisticsScreen({
           )}
         </div>
 
-        {/* Your usual month (ROADMAP Phase 6, F5; session 60, held): this period so far against the average of the
+        {/* Your usual month (ROADMAP Phase 6, F5; session 60, approved in session 61): this period so far against the average of the
             three before it, and at most three lines for a category well above it. lib/usualMonth.ts has the rule. */}
         <section className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
           <h2 className="text-xs uppercase tracking-widest mb-1" style={{ color: T.mute }}>{USUAL_TEXT.heading(usual.noun)}</h2>

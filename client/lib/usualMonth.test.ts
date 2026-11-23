@@ -1,4 +1,4 @@
-// Session 60 (owner: plan first, build held): "your usual month" (ROADMAP Phase 6, F5). Each spending category this
+// Session 60 (owner: plan first; built held, approved in session 61): "your usual month" (ROADMAP Phase 6, F5). Each spending category this
 // period so far, against the person's own average of the three periods before it; and at most three plain lines for
 // a category already well above its usual month. The money rule (FIX_PLANS session 60, Part 2):
 // - spending is the shared rule, Needs and Wants by category (a change-back nets in its own category); Savings out;

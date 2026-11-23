@@ -1,4 +1,4 @@
-// "Your usual month" (ROADMAP Phase 6, F5; session 60, built held for the owner's approval of its wording). Each
+// "Your usual month" (ROADMAP Phase 6, F5; built in session 60, the wording approved by the owner in session 61). Each
 // spending category this period so far, against the person's own average of the three periods before it, and at
 // most three plain lines for a category already well above its usual month. Derived from the rows on every call;
 // nothing is stored or synced. The money rule (FIX_PLANS session 60, Part 2):
@@ -22,7 +22,7 @@ export const USUAL_MIN_USD = 50;
 const PERIODS = 3;
 const MAX_LINES = 3;
 
-/** Every sentence the card shows (drafts for the owner, session 60). */
+/** Every sentence the card shows (approved by the owner as drafted, session 61). */
 export const USUAL_TEXT = {
   heading: (noun: string) => `Your usual ${noun}`,
   lead: (noun: string, plural: string) => `This ${noun} so far, against the average of your last three ${plural}.`,

@@ -1,5 +1,5 @@
-// Session 60 (held): the "Your usual month" card on Statistics, after "This month vs. last month". Every sentence is a
-// draft for the owner (FIX_PLANS session 60, Part 2), checked verbatim here.
+// Session 60: the "Your usual month" card on Statistics, after "This month vs. last month". Every sentence as the
+// owner approved it in session 61 (FIX_PLANS session 60, Part 2), checked verbatim here.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, within } from "@testing-library/react";
 import StatisticsScreen from "./StatisticsScreen";
