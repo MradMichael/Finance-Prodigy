@@ -9,8 +9,9 @@
 // - the usual month = the three previous periods' spending ÷ 3 (a period without that category counts 0), and only
 //   when each of those periods has at least one live entry (else a quiet month can't be told from one not logged);
 // - a line when this period so far is above the usual month by USUAL_MIN_PCT % AND USUAL_MIN_USD, compared in whole
-//   cents; none for a category with no usual spending; never for a category below it (the period isn't over); at
-//   most three, the largest difference first.
+//   cents; none for a category with no usual spending; never for a category below it (the period isn't over); never
+//   for "Uncategorized" (owner, session 61: it names nothing to act on; its row stays in the table); at most three,
+//   the largest difference first.
 import { cycleStartDayOf, makeToUSDOn, categoryLabel, roundMoney, type LocalFinancials, type StoredTransaction } from "./localData";
 import { transactionsInCycle, currentCycleKey, cycleKeyMinus, periodNoun, type CycleKey } from "./period";
 import { spendingEffect, spentByCategory } from "./spending";
@@ -36,6 +37,8 @@ export interface UsualObservation { label: string; percent: number; amount: numb
 export interface UsualMonth { ready: boolean; noun: string; nounPlural: string; rows: UsualRow[]; observations: UsualObservation[] }
 
 const live = (rows: readonly StoredTransaction[]) => rows.filter((t) => t.deletedAt == null && t.purgedAt == null);
+/** The rows `categoryLabel` calls "Uncategorized": no category (grouped as "uncategorized"), or an empty one. */
+const uncategorized = (key: string) => !key || key === "uncategorized";
 
 export function usualMonth(data: LocalFinancials, now: Date): UsualMonth {
   const startDay = cycleStartDayOf(data);
@@ -69,6 +72,7 @@ export function usualMonth(data: LocalFinancials, now: Date): UsualMonth {
   const observations: (UsualObservation & { cents: number })[] = [];
   if (ready) {
     for (const r of rows) {
+      if (uncategorized(r.key)) continue;
       const uc = Math.round(r.usual * 100), cc = Math.round(r.soFar * 100);
       if (uc <= 0 || cc <= uc) continue;
       const dc = cc - uc;
