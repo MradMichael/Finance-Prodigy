@@ -8,6 +8,7 @@ import { useScrollFocus } from "../useScrollFocus";
 import { SERIF, NUMS, money } from "./shared";
 import {currentCycleKey, cycleKeyMinus, cycleBounds, cycleLabel, ymKeyToCycleKey, periodNoun } from "../../lib/period";
 import { calendarDayOf } from "../../lib/calendarDay";
+import { usualMonth, usualSentence, USUAL_TEXT } from "../../lib/usualMonth";
 
 
 /**
@@ -30,6 +31,7 @@ export default function StatisticsScreen({
   const noun = periodNoun(startDay);
   const toUSD = makeToUSDLive(financials);
   const now = new Date();
+  const usual = usualMonth(financials, now); // F5 (session 60, held)
 
   // ── Cash flow trend + table (same underlying data, two views) ──────
   const trend = dashData.sixMonthTrend;
@@ -179,6 +181,44 @@ export default function StatisticsScreen({
           </div>
           )}
         </div>
+
+        {/* Your usual month (ROADMAP Phase 6, F5; session 60, held): this period so far against the average of the
+            three before it, and at most three lines for a category well above it. lib/usualMonth.ts has the rule. */}
+        <section className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
+          <h2 className="text-xs uppercase tracking-widest mb-1" style={{ color: T.mute }}>{USUAL_TEXT.heading(usual.noun)}</h2>
+          {!usual.ready ? (
+            <p className="text-sm" style={{ color: T.mute }}>{USUAL_TEXT.empty(usual.noun, usual.nounPlural)}</p>
+          ) : (
+            <>
+              <p className="text-xs mb-3" style={{ color: T.mute }}>{USUAL_TEXT.lead(usual.noun, usual.nounPlural)}</p>
+              <ul className="space-y-1.5 mb-4">
+                {usual.observations.length === 0 ? (
+                  <li className="text-sm" style={{ color: T.mute }}>{USUAL_TEXT.none(usual.noun)}</li>
+                ) : usual.observations.map((o) => (
+                  <li key={o.label} className="text-sm" style={{ ...NUMS, color: T.text }}>{usualSentence(o, usual.noun)}</li>
+                ))}
+              </ul>
+              <table className="w-full text-sm" style={NUMS}>
+                <thead>
+                  <tr>
+                    <td />
+                    <th scope="col" className="text-right font-normal text-xs pb-1" style={{ color: T.mute }}>{USUAL_TEXT.soFar}</th>
+                    <th scope="col" className="text-right font-normal text-xs pb-1 pl-3" style={{ color: T.mute }}>{USUAL_TEXT.usual}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {usual.rows.map((r) => (
+                    <tr key={r.key}>
+                      <th scope="row" className="text-left font-normal py-0.5" style={{ color: T.text }}>{r.label}</th>
+                      <td className="text-right py-0.5" style={{ color: T.text }}>{money(r.soFar)}</td>
+                      <td className="text-right py-0.5 pl-3" style={{ color: T.mute }}>{money(r.usual)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+        </section>
 
         {/* Planned payments timeline */}
         <div className="rounded-2xl p-5" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
