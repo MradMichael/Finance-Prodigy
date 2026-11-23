@@ -109,3 +109,27 @@ describe("periods follow the account's cycle", () => {
     expect(r.rows).toEqual([{ key: "groceries", label: "Groceries", soFar: 40, usual: 120 }]);
   });
 });
+
+// Owner, session 61: "Uncategorized" never gets a line (it names nothing to act on); its row stays in the table.
+// Uncategorised is categoryLabel's own rule: no category, or an empty one (possible only from an imported backup).
+describe("Uncategorized never gets a line; its row stays", () => {
+  const account = (category: string | undefined) => {
+    const c = category === undefined ? {} : { category };
+    return data([
+      ...["08", "09", "10"].map((m) => tx({ ...c, amount: 200, date: `2026-${m}-05` })),
+      tx({ ...c, amount: 400, date: "2026-11-05" }), // 100% and $200 above
+      ...["08", "09", "10"].map((m) => tx({ category: "groceries", amount: 200, date: `2026-${m}-06` })),
+      tx({ category: "groceries", amount: 300, date: "2026-11-06" }), // 50% and $100 above: still a line
+    ]);
+  };
+  it("no category: no line; its row is in the table", () => {
+    const r = usualMonth(account(undefined), NOW);
+    expect(r.observations).toEqual([{ label: "Groceries", percent: 50, amount: 100 }]);
+    expect(r.rows.find((x) => x.label === "Uncategorized")).toMatchObject({ soFar: 400, usual: 200 });
+  });
+  it("an empty category: no line either; its row is in the table", () => {
+    const r = usualMonth(account(""), NOW);
+    expect(r.observations).toEqual([{ label: "Groceries", percent: 50, amount: 100 }]);
+    expect(r.rows.find((x) => x.label === "Uncategorized")).toMatchObject({ soFar: 400, usual: 200 });
+  });
+});

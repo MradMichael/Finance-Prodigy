@@ -1,7 +1,7 @@
 // Session 60 (held): the "Your usual month" card on Statistics, after "This month vs. last month". Every sentence is a
 // draft for the owner (FIX_PLANS session 60, Part 2), checked verbatim here.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, within } from "@testing-library/react";
 import StatisticsScreen from "./StatisticsScreen";
 import { ThemeProvider } from "../../contexts/ThemeContext";
 import { computeDashboard } from "../../lib/computeDashboard";
@@ -40,6 +40,17 @@ describe("Statistics: Your usual month", () => {
       tx({ category: "groceries", amount: 100, date: "2026-11-04" }),
     ]);
     expect(card().textContent).toContain("Nothing is above your usual month so far.");
+  });
+
+  it("Uncategorized never gets a line; its row stays (owner, session 61)", () => {
+    show([
+      ...["08", "09", "10"].map((m) => tx({ amount: 200, date: `2026-${m}-05` })),
+      tx({ amount: 400, date: "2026-11-04" }),
+    ]);
+    const c = card();
+    expect(c.textContent).not.toContain("Uncategorized is already");
+    expect(c.textContent).toContain("Nothing is above your usual month so far.");
+    expect(within(c).getByRole("rowheader", { name: "Uncategorized" })).toBeTruthy();
   });
 
   it("too little history: the empty state, and no figures", () => {
