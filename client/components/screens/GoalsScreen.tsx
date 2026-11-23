@@ -223,8 +223,8 @@ export default function GoalsScreen({
                   style={{
                     background: T.panel,
                     border: `1px solid ${isSuccess ? T.jade : T.line}`,
-                    transition: "border-color 0.4s, opacity 0.4s",
-                    opacity: g.paused ? 0.6 : 1,
+                    // Item 1 (session 59): no fade when paused (every text kept at 4.5:1); the "paused" pill says it.
+                    transition: "border-color 0.4s",
                   }}
                 >
                   <div className="p-5">

@@ -127,7 +127,7 @@ export default function GoalsSection({ financials, update, lbpRate, cards, saveC
           <div key={g.id}>
             <div
               className="rounded-xl px-3 py-2.5 group"
-              style={{ background: T.panelSoft, border: `1px solid ${T.line}`, opacity: g.pausedAt ? 0.65 : 1 }}
+              style={{ background: T.panelSoft, border: `1px solid ${T.line}` }} // item 1 (session 59): no fade when paused; the "Paused" badge says it
             >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
