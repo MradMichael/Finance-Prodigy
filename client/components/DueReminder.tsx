@@ -115,7 +115,8 @@ export default function DueReminder({
       )}
       {one && (
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex-1 min-w-0 space-y-1">
+          {/* With a row found, three buttons: the text keeps 12rem, so on a phone they wrap below it (session 63, live at 390). */}
+          <div className={`flex-1 ${entry ? "min-w-[12rem]" : "min-w-0"} space-y-1`}>
             <p className="text-sm" style={{ color: T.text }}>
               <span aria-hidden="true">{one.emoji} </span>{question(one)}
             </p>
