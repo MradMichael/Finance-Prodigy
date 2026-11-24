@@ -53,6 +53,11 @@ describe("Statistics: Your usual month", () => {
     expect(within(c).getByRole("rowheader", { name: "Uncategorized" })).toBeTruthy();
   });
 
+  it("an empty category and no category: one Uncategorized row (owner, session 62)", () => {
+    show(["08", "09", "10", "11"].flatMap((m) => [tx({ amount: 100, date: `2026-${m}-04` }), tx({ category: "", amount: 50, date: `2026-${m}-05` })]));
+    expect(within(card()).getAllByRole("rowheader", { name: "Uncategorized" })).toHaveLength(1);
+  });
+
   it("too little history: the empty state, and no figures", () => {
     show([tx({ category: "groceries", amount: 200, date: "2026-10-05" })]);
     const c = card();
