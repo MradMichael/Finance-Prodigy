@@ -3,7 +3,7 @@
 // through the page (handleChange), so nothing new is logged; Undo takes the link off again. The harness is
 // page.due-reminder.test.tsx's.
 import { it, expect, vi, afterEach, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, cleanup, within } from "@testing-library/react";
 import type { LocalFinancials, StoredTransaction } from "../lib/localData";
 
 const SESSION = { userId: "u1", email: "u1@example.com", name: "U One" };
@@ -51,17 +51,26 @@ it("names the row logged by hand; Already logged links it (no new row), and Undo
   const region = await screen.findByRole("region", { name: "Payment reminder" }, { timeout: 10000 });
   expect(region.textContent).toContain("Rent is due today ($500.00). Is it paid?");
   expect(region.textContent).toContain("You logged rent on 13/10/2026 ($500.00).");
+  // Each step waits for what it checks (5 s, as the page's other tests allow for a loaded machine): a save is seen
+  // in `saved` before React has necessarily shown it.
+  const wait = { timeout: 5000 };
+  const reminder = () => screen.getByRole("region", { name: "Payment reminder" });
+  // The page stores its monthly snapshot on load, built from the copy it rendered: an edit that lands before that
+  // effect runs is overwritten by it, on screen and in storage (AUDIT 2.4.170, on main for every edit; noticed in
+  // session 63, not changed). So the click waits for that save, as page.due-reminder.test.tsx's "Not yet" does.
+  await waitFor(() => expect(saved.some((d) => (d.netWorthHistory ?? []).length > 0)).toBe(true), wait);
   fireEvent.click(screen.getByRole("button", { name: "Already logged" }));
-  await waitFor(() => expect(last()?.transactions.find((t) => t.id === "hand")?.recurringId).toBe("r-rent"));
+  await waitFor(() => expect(last()?.transactions.find((t) => t.id === "hand")?.recurringId).toBe("r-rent"), wait);
   expect(last().transactions).toHaveLength(1);
   expect(last().transactions[0]).toMatchObject({ id: "hand", amount: 500, date: "2026-10-13", recurringId: "r-rent", cycleDate: "2026-10-15" });
-  await waitFor(() => expect(screen.getByRole("status").textContent).toBe("Rent: your entry of 13/10/2026 now counts as this payment. Nothing new was logged."));
-  expect(screen.queryByRole("button", { name: "Yes, it's paid" })).toBeNull(); // the cycle is paid: nothing left to ask
+  await waitFor(() => expect(within(reminder()).getByRole("status").textContent).toBe("Rent: your entry of 13/10/2026 now counts as this payment. Nothing new was logged."), wait);
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Yes, it's paid" })).toBeNull(), wait); // the cycle is paid: nothing left to ask
   fireEvent.click(screen.getByRole("button", { name: "Undo" }));
-  await waitFor(() => expect(last().transactions.find((t) => t.id === "hand")?.recurringId).toBeUndefined());
+  await waitFor(() => expect(last().transactions.find((t) => t.id === "hand")?.recurringId).toBeUndefined(), wait);
   expect(last().transactions).toHaveLength(1);
   expect(last().transactions[0].cycleDate).toBeUndefined();
-  expect((await screen.findByRole("region", { name: "Payment reminder" })).textContent).toContain("Rent is due today ($500.00). Is it paid?");
+  await waitFor(() => expect(reminder().textContent).toContain("Rent is due today ($500.00). Is it paid?"), wait);
+  expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
 }, 20000);
 
 it("nothing logged by hand: no line and no Already logged (the reminder as before)", async () => {
