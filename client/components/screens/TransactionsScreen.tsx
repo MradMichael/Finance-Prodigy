@@ -1,6 +1,6 @@
 "use client";
 
-import { spentByBucket, spentByCategory, spendingEffect, totalSpent } from "../../lib/spending";
+import { categoryKey, spentByBucket, spentByCategory, spendingEffect, totalSpent } from "../../lib/spending";
 import { useState } from "react";
 import type { LocalFinancials, StoredRecurring } from "../../lib/localData";
 import { fmtDate, historizedRecurringContribution, categoryLabel as categoryLabelShared, categoryIcon as categoryIconShared, activeTransactions, cycleMonthDivergence, purgeTransaction, undeleteTransaction, cycleStartDayOf, todayISO, makeToUSDOn, makeToUSDLive } from "../../lib/localData";
@@ -251,7 +251,7 @@ export default function TransactionsScreen({ financials, onChange, onEdit }: { f
       const asOf = filter === currentYm ? new Date() : cycleBounds(filter, startDay).start;
       for (const r of recurring) {
         const amt = toUSD(historizedRecurringContribution(r, filter, asOf, startDay), r.currency);
-        if (amt > 0) bump(r.category ?? "uncategorized", amt);
+        if (amt > 0) bump(categoryKey(r.category), amt);
       }
     }
     return Array.from(totals.entries())

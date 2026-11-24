@@ -52,8 +52,16 @@ export function totalSpent<T extends Row>(rows: readonly T[], valueOf: (t: T) =>
   return b.needs + b.wants + b.savings;
 }
 
-/** Spending by category (keyed by `keyOf`, "uncategorized" by default); a change-back nets in its own. */
-export function spentByCategory<T extends Row>(rows: readonly T[], valueOf: (t: T) => number, keyOf: (t: T) => string = (t) => t.category ?? "uncategorized"): Map<string, number> {
+/**
+ * The key a category groups under: "uncategorized" for none or an empty one. Owner, session 63: an empty category
+ * (only from an imported backup) is no category, one "Uncategorized" on every screen. The one rule for grouping.
+ */
+export function categoryKey(category: string | undefined): string {
+  return category || "uncategorized";
+}
+
+/** Spending by category (keyed by `keyOf`, `categoryKey` by default); a change-back nets in its own. */
+export function spentByCategory<T extends Row>(rows: readonly T[], valueOf: (t: T) => number, keyOf: (t: T) => string = (t) => categoryKey(t.category)): Map<string, number> {
   const out = new Map<string, number>();
   for (const t of rows) {
     const e = spendingEffect(t);

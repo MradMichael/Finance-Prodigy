@@ -1,6 +1,6 @@
 "use client";
 
-import { spentByCategory } from "../../lib/spending";
+import { categoryKey, spentByCategory } from "../../lib/spending";
 import { useState } from "react";
 import type { LocalFinancials, CategoryRule } from "../../lib/localData";
 import { CATEGORIES, allCategories, categoryLabel, categoryIcon, matchCategoryRule, historizedRecurringContribution, uid, moneyEquals, activeTransactions, cycleStartDayOf, recordDeletion, edited, makeToUSDOn, makeToUSDLive } from "../../lib/localData";
@@ -166,7 +166,7 @@ export default function CategoriesScreen({
   if (scope === "month") {
     for (const r of financials.recurring ?? []) {
       const amt = toUSD(historizedRecurringContribution(r, currentYm, new Date(), startDay), r.currency);
-      if (amt > 0) bump(r.category ?? "uncategorized", amt);
+      if (amt > 0) bump(categoryKey(r.category), amt);
     }
   }
   const breakdown = Array.from(totals.entries()).map(([key, value]) => ({ key, value })).sort((a, b) => b.value - a.value);
