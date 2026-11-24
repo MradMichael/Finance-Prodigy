@@ -433,10 +433,10 @@ The owner already produces and reads a monthly report externally. It should be a
 
 ## Phase 6 — F5 Spending intelligence
 
-**Status:** partly built (session 61): the three-month average and the plain-language observations ("Your usual month" on Statistics); undeclared recurring charges planned, not built; the owner's check pending · **Depends on:** Phase 5
+**Status:** built (sessions 61-62): the three-month average and the plain-language observations ("Your usual month" on Statistics); undeclared recurring charges ("Bills you log by hand" on Recurring, session 62); the owner's check pending · **Depends on:** Phase 5
 
 - Category spending compared against **the user's own trailing three-month average**, never generic benchmarks. ✅ **Built (session 61):** "Your usual month" on Statistics (`lib/usualMonth.ts`): each category this period so far against the average of the three periods before it (shown once each has an entry), lira rows at their own day's rate, Savings and deleted rows out.
-- Detection of recurring subscription charges the user has not explicitly declared. **Planned (session 61), not built.**
+- Detection of recurring subscription charges the user has not explicitly declared. ✅ **Built (session 62):** "Bills you log by hand" on Recurring (`lib/billHints.ts`): a bill logged by hand about once a month (every gap between payments 20 to 40 days, at least three, the latest at most 62 days old, amounts within 50% of their median in their own currency) is offered as a recurring item starting one month after its latest payment, or set aside with "Not a bill" (kept in the data, synced). Monthly bills only.
 - Plain-language observations: "Fuel is 40% above your usual month," not a variance table. ✅ **Built (session 61):** at most three lines, for a category already 25% and $50 or more above its usual month ("Uncategorized" never gets one), with the figures in a table below them, as the owner approved.
 
 **Tone constraint (from the brief).** This feature observes a person's finances during difficult periods. It reports facts and highlights options. It does not congratulate, admonish, or moralise.
@@ -594,7 +594,7 @@ Phase 2    COHORT LAUNCH             — not yet: its preconditions (below) aren
 Phase 3    Recurring end dates       — built: installments, the step change, P3-A/B/C, the due reminder; the owner's check pending
 Phase 4    Goal feasibility          — ✅ complete 2026-09-01
 Phase 5    Monthly report            — built (session 57): screen and shared image; PDF not built; the owner's phone check pending
-Phase 6    Spending intelligence     — partly built: your usual month (session 61); undeclared recurring charges planned; the owner's check pending
+Phase 6    Spending intelligence     — built: your usual month (session 61); bills you log by hand (session 62); the owner's check pending
 Phase 7    PWA / offline             — partly built: offline shell, P1/P2/P3/P5 (f5b82bc); P4 not started
 Phase 8    Arabic / RTL              — not started; last, to avoid translating twice
 Phase 9    Generalized currency      — 9-N approved 2026-09-01, not built

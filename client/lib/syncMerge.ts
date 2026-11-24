@@ -800,8 +800,26 @@ const KNOWN_FIELDS = {
   budgetSplitHealedFrom: true, budgetCustomWants: true, customCategories: true, categoryRules: true, wishlist: true,
   recurringModelNoticeSeen: true, syncChoice: true, periodCloses: true, deletedKeys: true, resetAt: true,
   revivedKeys: true, clashRecords: true, transactionClashRecords: true, balanceClashRecords: true, correctionClashRecords: true, trips: true, foreignEntries: true,
-  lbpRateLog: true, salaryIntoBalanceId: true, freedMoneyTo: true,
+  lbpRateLog: true, salaryIntoBalanceId: true, freedMoneyTo: true, billHintsSetAside: true,
 } as const satisfies Record<keyof LocalFinancials, true>;
+
+/**
+ * Session 62: "Not a bill" (`billHintsSetAside`), one record under the fingerprint rule. A side whose list still has
+ * the fingerprint this device last synced didn't change it, so the other side's is taken (an Undo after a sync
+ * holds); when both changed it, or there is no record of the last sync, the union (no setting-aside lost). Absent
+ * from both copies, it stays absent.
+ */
+function mergeBillHintsSetAside(local: LocalFinancials, server: LocalFinancials, seen?: SeenMap | null): Pick<LocalFinancials, "billHintsSetAside"> {
+  const l = local.billHintsSetAside, s = server.billHintsSetAside;
+  if (l === undefined && s === undefined) return {};
+  const tidy = (xs: readonly string[] | undefined) => [...new Set(xs ?? [])].sort();
+  const base = seen?.kinds.billHintsSetAside?.list;
+  if (base !== undefined) {
+    if (fingerprint(tidy(l)) === base) return { billHintsSetAside: tidy(s) };
+    if (fingerprint(tidy(s)) === base) return { billHintsSetAside: tidy(l) };
+  }
+  return { billHintsSetAside: tidy([...(l ?? []), ...(s ?? [])]) };
+}
 
 /** The top-level fields of a copy that this code doesn't know (travel slice 0). */
 export function unknownFieldsOf(d: LocalFinancials): Record<string, unknown> {
@@ -897,6 +915,7 @@ export function mergeFinancials(localIn: LocalFinancials, serverIn: LocalFinanci
     ...(revivedKeys ? { revivedKeys } : {}),
     ...(ruled ? ruled.data : {}),
     ...(cards ? { cards: cards.cards } : {}),
+    ...mergeBillHintsSetAside(localIn, serverIn, seen),
     clashRecords: clashRecords.length ? clashRecords : undefined,
     transactionClashRecords: transactionClashRecords.length ? transactionClashRecords : undefined,
     balanceClashRecords: balanceClashRecords.length ? balanceClashRecords : undefined,

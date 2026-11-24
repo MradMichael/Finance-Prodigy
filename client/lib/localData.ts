@@ -1039,6 +1039,12 @@ export interface LocalFinancials {
    * Synced with the budget setting (SETTING_FIELDS).
    */
   freedMoneyTo?: "goals" | "none";
+  /**
+   * Session 62 ("Bills you log by hand", lib/billHints.ts): the hints set aside with "Not a bill", each by its key
+   * (description and currency). Kept in the data, so inside the encrypted copy and synced (per device would hold
+   * merchant names in plain text); merged by the fingerprint rule as one record (syncMerge).
+   */
+  billHintsSetAside?: string[];
   budgetRule?: BudgetRuleKey;
   budgetCustomNeeds?: number;
   // 2.4.106: set when BudgetScreen's heal effect floors an out-of-range
