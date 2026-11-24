@@ -5,7 +5,7 @@
 // share: the toast, the lira dialog, saving a card, and "Log again" (which fills this form from a row).
 import { useState } from "react";
 import type { LocalFinancials, Currency, PaymentMethod, StoredCard, StoredTransaction, BudgetRuleKey, cycleStartDayOf } from "../../lib/localData";
-import { uid, todayISO, BUDGET_RULES, withRate, looksRecurring, buildQuickRecurring, matchCategoryRule, roundMoney, moneyMaxFor, MONEY_MAX_USD, cardRef, edited, saveCard as storeCard, rateOn, lbpRateOf } from "../../lib/localData";
+import { uid, todayISO, BUDGET_RULES, withRate, looksRecurring, buildQuickRecurring, quickRecurringStart, matchCategoryRule, roundMoney, moneyMaxFor, MONEY_MAX_USD, cardRef, edited, saveCard as storeCard, rateOn, lbpRateOf } from "../../lib/localData";
 import type { Session } from "../../lib/auth";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import type { periodNoun } from "../../lib/period";
@@ -221,9 +221,9 @@ export default function EntrySection({ financials, dashData, session, update, lb
     showToast(`Logged ${description}, ${fmtCur(amtUSDLeg, "USD")} + ${fmtCur(amtLBPLeg, "LBP")}.`); // U4 (session 33)
   }
 
-  /** Quick-add a Recurring item from a transaction that looksRecurring flagged — starts today, monthly, editable further in the Recurring screen. Past transactions are left untouched; this only affects future months. */
+  /** Quick-add a Recurring item from a transaction that looksRecurring flagged — monthly, editable further in the Recurring screen. Past transactions are left untouched; this only affects future months. Session 62 (TODO 117): it starts one month after the latest payment of that bill, this entry's date included (the entry is logged right after), so this period is never asked for again. */
   function convertToRecurring(name: string, amount: string, currency: Currency, bucket: Bucket, category: string) {
-    const rec = buildQuickRecurring(name, amount, currency, bucket, category);
+    const rec = buildQuickRecurring(name, amount, currency, bucket, category, quickRecurringStart(name, financials.transactions, txDate));
     if (!rec) return;
     update({ recurring: [...(financials.recurring ?? []), edited(rec)] });
   }
