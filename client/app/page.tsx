@@ -39,6 +39,7 @@ import PayDebtSheet from "../components/PayDebtSheet";
 import EditTransactionSheet from "../components/EditTransactionSheet";
 import { todayCalendarDay } from "../lib/calendarDay";
 import OfflineNotice, { backupRetriesOnReconnect } from "../components/OfflineNotice";
+import { linkLoggedEntry, loggedEntries, unlinkLoggedEntry } from "../lib/alreadyLogged";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HOME
@@ -652,6 +653,20 @@ export default function Home() {
     }
   }
 
+  // TODO 121 (session 63; held for the owner): the reminder's "Already logged" links the row the person logged by
+  // hand to the cycle it asks about, through handleChange like any edit; linkLoggedEntry re-checks that the cycle is
+  // still the one asked about and the row still the one offered. Undo takes the link off. True when stored.
+  async function handleLinkLoggedEntry(recurringId: string, txId: string, dueDate: string): Promise<boolean> {
+    if (!financials) return false;
+    const next = linkLoggedEntry(financials, recurringId, txId, dueDate, todayCalendarDay());
+    return next ? handleChange(next) : false;
+  }
+  async function handleUnlinkLoggedEntry(recurringId: string, txId: string, dueDate: string): Promise<boolean> {
+    if (!financials) return false;
+    const next = unlinkLoggedEntry(financials, recurringId, txId, dueDate);
+    return next ? handleChange(next) : false;
+  }
+
   function handleDismissRecurringModelNotice() {
     if (!financials) return;
     handleChange({ ...financials, recurringModelNoticeSeen: true });
@@ -665,6 +680,8 @@ export default function Home() {
   function handleProfile() { router.push("/profile"); }
 
   const dashboardData = useMemo(() => (financials ? computeDashboard(financials) : null), [financials]);
+  // TODO 121: the row already logged for each cycle the reminder can ask about.
+  const loggedFound = useMemo(() => (financials && dashboardData ? loggedEntries(financials, dashboardData.upcomingRenewals) : {}), [financials, dashboardData]);
 
   // Persist monthly snapshots (net worth, income, LBP rate) so past months
   // can be judged against what was actually true then, not whatever these
@@ -1019,6 +1036,10 @@ export default function Home() {
             blocked={(!financials.recurringModelNoticeSeen && financials.recurring.some((r) => r.confirmCutoverDate)) || (undecided && !!session && serverHasCopy !== null)}
             onConfirm={(id) => handleConfirmRecurringPayment(id)}
             onReview={() => setScreen("recurring")}
+            found={loggedFound}
+            onLink={handleLinkLoggedEntry}
+            onUnlink={handleUnlinkLoggedEntry}
+            resetKey={screen}
           />
           {screen === "overview"     && <FinancialDashboard data={dashboardData} financials={financials ?? undefined} onNavigate={setScreen} onConfirmRecurring={handleConfirmRecurringPayment} loggingRecurringIds={loggingRecurringIds} justConfirmedIds={justConfirmedIds} />}
           {screen === "budget"       && <BudgetScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
