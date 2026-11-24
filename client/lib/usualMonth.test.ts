@@ -133,3 +133,12 @@ describe("Uncategorized never gets a line; its row stays", () => {
     expect(r.rows.find((x) => x.label === "Uncategorized")).toMatchObject({ soFar: 400, usual: 200 });
   });
 });
+
+// Owner, session 62: an empty category (possible only from an imported backup) counts as no category: one
+// "Uncategorized" row, not two rows with the same name.
+describe("an empty category counts as no category: one Uncategorized row", () => {
+  it("$100 with no category and $50 with an empty one, in each period: one row, $150 so far and $150 usual", () => {
+    const rows = ["08", "09", "10", "11"].flatMap((m) => [tx({ amount: 100, date: `2026-${m}-05` }), tx({ category: "", amount: 50, date: `2026-${m}-06` })]);
+    expect(usualMonth(data(rows), NOW).rows).toEqual([{ key: "uncategorized", label: "Uncategorized", soFar: 150, usual: 150 }]);
+  });
+});
