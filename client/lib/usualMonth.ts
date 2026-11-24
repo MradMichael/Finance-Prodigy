@@ -50,8 +50,9 @@ export function usualMonth(data: LocalFinancials, now: Date): UsualMonth {
   const spending = (key: CycleKey) => {
     const rows = live(transactionsInCycle(list, key, startDay));
     const spent = rows.filter((t) => { const e = spendingEffect(t); return e != null && e.bucket !== "SAVINGS"; });
-    // Owner, session 62: an empty category (only from an imported backup) is no category: one "Uncategorized" row.
-    return { count: rows.length, byCategory: spentByCategory(spent, usd, (t) => t.category || "uncategorized") };
+    // Owner, session 62: an empty category (only from an imported backup) is no category: one "Uncategorized" row
+    // (session 63: the rule is spending's `categoryKey`, the default key, shared with every screen).
+    return { count: rows.length, byCategory: spentByCategory(spent, usd) };
   };
 
   const current = currentCycleKey(now, startDay);

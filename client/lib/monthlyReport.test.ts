@@ -171,3 +171,26 @@ describe("first and empty periods; the period list", () => {
     expect(reportPeriods(d, NOW)[0]).toBe("2026-09");
   });
 });
+
+// Owner, session 63, item 1: an empty category (only from an imported backup) is no category. One "Uncategorized"
+// line in "Where it went", and one figure in the comparison: it pairs figures by label, so two keys called
+// "Uncategorized" overwrote each other there, whichever came last.
+describe("an empty category is no category", () => {
+  const plain = (o: Partial<StoredTransaction>) => tx({ bucket: "WANTS", ...o });
+  const data = (rows: StoredTransaction[]) => ({ ...DEFAULT_DATA, income: 3000, transactions: rows }) as LocalFinancials;
+
+  it("one Uncategorized line in Where it went, with both", () => {
+    const r = buildMonthlyReport(data([plain({ amount: 100, date: "2026-10-04" }), plain({ amount: 50, category: "", date: "2026-10-05" })]), K("2026-10"), NOW);
+    expect(r.whereItWent.lines.filter((l) => l.label === "Uncategorized")).toEqual([{ label: "Uncategorized", usd: 150 }]);
+    expect(r.whereItWent.total).toBe(150);
+  });
+
+  // Last period $100 with none and $100 with an empty one ($200); this period $100 with none: 50% lower, $100 less.
+  it.each([["none first", false], ["empty first", true]])("the comparison counts both (%s)", (_name, emptyFirst) => {
+    const sep = [plain({ amount: 100, date: "2026-09-04" }), plain({ amount: 100, category: "", date: "2026-09-05" })];
+    const r = buildMonthlyReport(data([...(emptyFirst ? sep.reverse() : sep), plain({ amount: 100, date: "2026-10-04" })]), K("2026-10"), NOW);
+    const line = r.changes.filter((c) => c.name === "Uncategorized");
+    expect(line).toEqual([{ name: "Uncategorized", percent: 50, amount: 100, up: false }]);
+    expect(changeSentence(line[0], r.previousLabel)).toBe("Uncategorized was 50% lower than Sep 2026 ($100.00 less).");
+  });
+});
