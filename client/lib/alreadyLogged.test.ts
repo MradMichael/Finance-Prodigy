@@ -33,6 +33,8 @@ describe("the rule: which row counts as already logged", () => {
 
   it("in the item's currency only (nothing converted)", () => {
     expect(found([row({ currency: "LBP", amount: 1_342_500 })])).toBeNull();
+    // Session 63 perturbation A4: the row above also fails the band, so only this one shows the currency check.
+    expect(found([row({ currency: "LBP", amount: 15 })])).toBeNull();
   });
 
   it("within 50% of the item's amount, both edges counted", () => {
@@ -130,6 +132,9 @@ describe("Already logged: the link, and its Undo", () => {
   it("refuses a row that no longer matches, a cycle that isn't the one asked about, or an item that's gone", () => {
     expect(linkLoggedEntry(data([{ ...hand, amount: 40 }]), "r-netflix", "hand", DUE, TODAY, AT)).toBeNull();
     expect(linkLoggedEntry(data([hand]), "r-netflix", "hand", "2026-12-24", TODAY, AT)).toBeNull();
+    // Session 63 perturbation A11: a row inside December's window, while the reminder asks about November.
+    const dec = row({ id: "dec", date: "2026-12-20" });
+    expect(linkLoggedEntry(data([dec]), "r-netflix", "dec", "2026-12-24", TODAY, AT)).toBeNull();
     expect(linkLoggedEntry(data([hand], []), "r-netflix", "hand", DUE, TODAY, AT)).toBeNull();
     const other = row({ id: "other", date: "2026-11-20" });
     expect(linkLoggedEntry(data([hand, other]), "r-netflix", "other", DUE, TODAY, AT)).toBeNull(); // not the row offered
