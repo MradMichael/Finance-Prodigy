@@ -6,7 +6,7 @@
 // and is shown as it is.
 import { describe, it, expect } from "vitest";
 import type { StoredTransaction } from "./localData";
-import { isChangeBack, spendingEffect, spentByBucket, wantsSpent, totalSpent, spentByCategory } from "./spending";
+import { isChangeBack, spendingEffect, spentByBucket, wantsSpent, totalSpent, spentByCategory, categoryKey } from "./spending";
 
 const row = (id: string, amount: number, extra: Partial<StoredTransaction> = {}): StoredTransaction =>
   ({ id, amount, currency: "USD", bucket: "WANTS", description: id, date: "2026-10-03", ...extra }) as StoredTransaction;
@@ -52,5 +52,20 @@ describe("totals", () => {
 
   it("each figure comes through the converter it's given", () => {
     expect(wantsSpent([EXCHANGE, BACK], (t) => t.amount * 2)).toBe(790);
+  });
+});
+
+// Owner, session 63, item 1: an empty category (only from an imported backup) is no category, one "Uncategorized"
+// on every screen. The key rule lives here once; the screens and the reports go through it.
+describe("an empty category is no category", () => {
+  it("categoryKey: none and empty are \"uncategorized\"; a real category is kept", () => {
+    expect(categoryKey(undefined)).toBe("uncategorized");
+    expect(categoryKey("")).toBe("uncategorized");
+    expect(categoryKey("dining")).toBe("dining");
+  });
+
+  it("spentByCategory puts an empty category with the rows that have none, under one key", () => {
+    const rows = [row("a", 100), row("b", 50, { category: "" }), row("c", 30, { category: "dining" })];
+    expect([...spentByCategory(rows, usd)]).toEqual([["uncategorized", 150], ["dining", 30]]);
   });
 });
