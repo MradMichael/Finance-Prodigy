@@ -5,7 +5,7 @@ import { useDialogFocus } from "./useDialogFocus";
 import LbpMistypeDialog from "./LbpMistypeDialog";
 import type { LocalFinancials, StoredTransaction, StoredCard, Currency, PaymentMethod } from "../lib/localData";
 import {
-  fmtDate, looksRecurring, buildQuickRecurring, cycleMonthDivergence,
+  fmtDate, looksRecurring, buildQuickRecurring, quickRecurringStart, cycleMonthDivergence,
   roundMoney, retagBucketAmount, moneyMaxFor, cycleStartDayOf, edited, saveCard as storeCard, cardRef, rateOn, lbpRateOf } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY, CurrencyToggle, PM_OPTIONS, CardPicker } from "./form/Primitives";
@@ -142,7 +142,9 @@ export default function EditTransactionSheet({
   }
 
   function convertToRecurring() {
-    const rec = buildQuickRecurring(desc, amt, currency, bucket === "INCOME" || bucket === "TRANSFER" ? "NEEDS" : bucket, category);
+    // Session 62 (TODO 117): one month after the latest payment of this bill, this one (as dated on screen) included.
+    const start = quickRecurringStart(desc, financials.transactions.filter((t) => t.id !== transaction.id), date);
+    const rec = buildQuickRecurring(desc, amt, currency, bucket === "INCOME" || bucket === "TRANSFER" ? "NEEDS" : bucket, category, start);
     if (!rec) return;
     update({ recurring: [...(financials.recurring ?? []), edited(rec)] });
   }

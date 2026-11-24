@@ -4319,22 +4319,48 @@ export function looksRecurring(description: string, date: string, transactions: 
 
 /**
  * Quick-add a Recurring item from a transaction looksRecurring flagged --
- * starts today, monthly, editable further in the Recurring screen. Past
- * transactions are left untouched; this only affects future months. Shared
- * by the main entry form and the edit-transaction sheet (same reasoning as
- * looksRecurring above) -- caller still does its own
- * `update({ recurring: [...] })`, matching every other builder here.
+ * monthly, editable further in the Recurring screen. Past transactions are
+ * left untouched; this only affects future months. Shared by the main entry
+ * form and the edit-transaction sheet (same reasoning as looksRecurring
+ * above) -- caller still does its own `update({ recurring: [...] })`,
+ * matching every other builder here. `startDate` is the caller's
+ * `quickRecurringStart(...)` (session 62); today when not given.
  */
-export function buildQuickRecurring(name: string, amount: string, currency: Currency, bucket: "NEEDS" | "WANTS" | "SAVINGS", category: string): StoredRecurring | null {
+export function buildQuickRecurring(name: string, amount: string, currency: Currency, bucket: "NEEDS" | "WANTS" | "SAVINGS", category: string, startDate: string = todayISO()): StoredRecurring | null {
   const amt = parseFloat(amount.replace(/,/g, ""));
   if (!name.trim() || !amt) return null;
   return {
     id: uid(), name: name.trim(), emoji: "🔁",
     amount: amt, currency, frequency: "monthly", bucket,
     ...(category ? { category } : {}),
-    startDate: todayISO(), endDate: null, totalAmount: null,
+    startDate, endDate: null, totalAmount: null,
     createdAt: new Date().toISOString(),
   };
+}
+
+/** The same calendar day one month later, clamped to that month's last day (31 Jan -> 28 Feb). On the date's text, so no time zone moves it. */
+export function oneMonthAfterISO(iso: string): string {
+  const y = Number(iso.slice(0, 4)), m = Number(iso.slice(5, 7)), d = Number(iso.slice(8, 10));
+  const ny = m === 12 ? y + 1 : y, nm = m === 12 ? 1 : m + 1;
+  const last = new Date(Date.UTC(ny, nm, 0)).getUTCDate(); // day 0 of the month after nm: nm's last day
+  return `${ny}-${String(nm).padStart(2, "0")}-${String(Math.min(d, last)).padStart(2, "0")}`;
+}
+
+/**
+ * Session 62 (owner; TODO 117): where a quick-added recurring item starts. Starting it today made its first cycle
+ * due today, so the reminder asked for a bill the person had just logged by hand, and "Yes, it's paid" logged it a
+ * second time. It starts one month after the latest payment of that bill instead: the latest live row whose
+ * description matches the name as looksRecurring matches (trimmed, lower case), or `paidOn`, the payment on screen
+ * (the entry form's date, the edit sheet's), whichever is later. With neither, today, as before.
+ */
+export function quickRecurringStart(name: string, transactions: readonly StoredTransaction[], paidOn?: string, today: string = todayISO()): string {
+  const norm = name.trim().toLowerCase();
+  let latest = paidOn ?? "";
+  for (const t of transactions) {
+    if (t.deletedAt != null || t.purgedAt != null) continue;
+    if (t.description.trim().toLowerCase() === norm && t.date > latest) latest = t.date;
+  }
+  return latest ? oneMonthAfterISO(latest) : today;
 }
 
 // ── Phase 2.6.2 -- ledger-derived EF/debt balances (pure logic; see
