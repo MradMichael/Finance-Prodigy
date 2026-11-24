@@ -27,6 +27,8 @@ export const SEEN_KINDS = [
   "lbpRateLog",
   // Session 38 (approved, session 39): tracked balances, by id, so a check-in on both devices is told.
   "trackedBalances",
+  // Session 62: the bill hints set aside ("Not a bill"), the whole list as one record, keyed "list".
+  "billHintsSetAside",
 ] as const;
 export type SeenKind = (typeof SEEN_KINDS)[number];
 
@@ -105,6 +107,7 @@ export function keyedRecords(d: LocalFinancials, kind: SeenKind): Map<string, un
     case "budgetRuleHistory": return byYm(d.budgetRuleHistory);
     case "netWorthHistory": return byYm(d.netWorthHistory);
     case "transactions": return new Map((d.transactions ?? []).map((t) => [t.id, transactionContent(t) as unknown]));
+    case "billHintsSetAside": return new Map([["list", [...new Set(d.billHintsSetAside ?? [])].sort() as unknown]]);
   }
 }
 
