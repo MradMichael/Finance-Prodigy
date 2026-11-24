@@ -1,10 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import type { LocalFinancials } from "../../lib/localData";
-import { capacityFreedFrom, committedMonthlyUSD, FREQ_MONTHLY, nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, remainingInstallments, FREQ_LABELS, categoryLabel, categoryIcon, fmtDate, makeToUSDLive } from "../../lib/localData";
+import { todayISO, capacityFreedFrom, committedMonthlyUSD, FREQ_MONTHLY, nominalMonthlyEquivalent, nextConfirmTarget, isCycleConfirmed, remainingInstallments, FREQ_LABELS, categoryLabel, categoryIcon, fmtDate, makeToUSDLive } from "../../lib/localData";
 import { useTheme } from "../../contexts/ThemeContext";
 import { SERIF, money, fmtCur } from "./shared";
 import { calendarDayOf } from "../../lib/calendarDay";
+import { billHints, addBillAsRecurring, setBillAside, undoBillAside, BILL_TEXT, type BillHint } from "../../lib/billHints";
 import type { computeDashboard } from "../../lib/computeDashboard";
 
 type Renewal = ReturnType<typeof computeDashboard>["upcomingRenewals"][number];
@@ -13,9 +15,11 @@ type Renewal = ReturnType<typeof computeDashboard>["upcomingRenewals"][number];
  * U2 (owner, session 33, DECISIONS_PENDING 19 (a)): the reminder's "Review" leads here, so each upcoming item
  * says when it's due, in Renewing soon's words, with Renewing soon's Confirm (the same handler, from the page).
  */
-export default function RecurringScreen({ financials, onEdit, renewals, onConfirm, loggingIds, justConfirmedIds }: {
+export default function RecurringScreen({ financials, onEdit, renewals, onConfirm, loggingIds, justConfirmedIds, onChange }: {
   financials: LocalFinancials; onEdit: (id: string) => void;
   renewals?: Renewal[]; onConfirm?: (id: string) => unknown; loggingIds?: Set<string>; justConfirmedIds?: Set<string>;
+  /** Session 62: the page's save, for "Bills you log by hand" (without it the card isn't shown). */
+  onChange?: (d: LocalFinancials) => unknown;
 }) {
   const T    = useTheme();
   const now  = new Date();
@@ -24,6 +28,29 @@ export default function RecurringScreen({ financials, onEdit, renewals, onConfir
   const toUSD   = makeToUSDLive(financials);
   const BC   = { NEEDS: T.sky, WANTS: T.brass, SAVINGS: T.jade } as const;
   const BL   = { NEEDS: "Needs", WANTS: "Wants", SAVINGS: "Savings" } as const;
+
+  // Session 62: "Bills you log by hand". A hint acted on stays in its place ("... is now recurring", "... won't be
+  // suggested again" with Undo) until the screen is left; the live hints no longer include it.
+  const [done, setDone] = useState<Record<string, { hint: BillHint; kind: "added" | "aside"; firstDue?: string }>>({});
+  const live = billHints(financials, todayISO()).filter((h) => !done[h.key]);
+  const billRows = [...live.map((hint) => ({ hint, done: undefined })), ...Object.values(done).map((d) => ({ hint: d.hint, done: d }))]
+    .sort((a, b) => (a.hint.lastDate !== b.hint.lastDate ? (a.hint.lastDate < b.hint.lastDate ? 1 : -1) : a.hint.name.localeCompare(b.hint.name)));
+  const addBill = (hint: BillHint) => {
+    if (!onChange) return;
+    const { data, item } = addBillAsRecurring(financials, hint, todayISO());
+    setDone((d) => ({ ...d, [hint.key]: { hint, kind: "added", firstDue: item.startDate } }));
+    onChange(data);
+  };
+  const setAside = (hint: BillHint) => {
+    if (!onChange) return;
+    setDone((d) => ({ ...d, [hint.key]: { hint, kind: "aside" } }));
+    onChange(setBillAside(financials, hint.key));
+  };
+  const undoAside = (hint: BillHint) => {
+    if (!onChange) return;
+    setDone((d) => { const next = { ...d }; delete next[hint.key]; return next; });
+    onChange(undoBillAside(financials, hint.key));
+  };
 
   // "Committed monthly" is a stable, informational figure -- what you're on
   // the hook for -- so it deliberately uses the nominal (payment-status-
@@ -63,6 +90,41 @@ export default function RecurringScreen({ financials, onEdit, renewals, onConfir
           <p className="text-[10px] uppercase tracking-widest" style={{ color: T.mute }}>ESSA</p>
           <h1 className="text-3xl mt-1" style={SERIF}>Recurring</h1>
         </div>
+
+        {/* Session 62 ("Bills you log by hand", lib/billHints.ts; all wording approved): bills logged by hand every
+            month, each offered as a recurring item or set aside. What was done stays in place until the screen is left. */}
+        {onChange && billRows.length > 0 && (
+          <section aria-labelledby="bill-hints-heading" className="rounded-2xl px-5 py-4" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
+            <h2 id="bill-hints-heading" className="text-xs uppercase tracking-widest mb-1" style={{ color: T.mute }}>{BILL_TEXT.heading}</h2>
+            <p className="text-xs mb-3" style={{ color: T.mute }}>{BILL_TEXT.lead}</p>
+            <ul className="space-y-3">
+              {billRows.map(({ hint, done }, i) => (
+                <li key={hint.key} className="text-sm">
+                  {done?.kind === "added" ? (
+                    <p style={{ color: T.text }}>{BILL_TEXT.added(hint.name, fmtDate(done.firstDue))}</p>
+                  ) : done?.kind === "aside" ? (
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                      <p style={{ color: T.text }}>{BILL_TEXT.setAside(hint.name)}</p>
+                      <button type="button" onClick={() => undoAside(hint)} className="text-xs font-semibold px-3 py-1.5 rounded-full"
+                        style={{ border: `1px solid ${T.line}`, color: T.text }}>{BILL_TEXT.undo}</button>
+                    </div>
+                  ) : (
+                    <>
+                      <p id={`bill-hint-${i}`} style={{ color: T.text }}>{hint.name}</p>
+                      <p className="text-xs" style={{ color: T.mute }}>{BILL_TEXT.about(fmtCur(hint.amount, hint.currency), fmtDate(hint.lastDate))}</p>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        <button type="button" onClick={() => addBill(hint)} aria-describedby={`bill-hint-${i}`} className="text-xs font-semibold px-3 py-1.5 rounded-full"
+                          style={{ background: T.jade, color: T.ink }}>{BILL_TEXT.add}</button>
+                        <button type="button" onClick={() => setAside(hint)} aria-describedby={`bill-hint-${i}`} className="text-xs px-3 py-1.5 rounded-full"
+                          style={{ border: `1px solid ${T.line}`, color: T.text }}>{BILL_TEXT.notABill}</button>
+                      </div>
+                    </>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         {financials.recurring.length === 0 ? (
           <div className="text-center py-20">
