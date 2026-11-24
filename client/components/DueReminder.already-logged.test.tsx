@@ -90,6 +90,16 @@ describe("a row already logged for the cycle asked about", () => {
   });
 });
 
+// Session 63's live check at 390: with three buttons beside it, the question was squeezed into a column about 80 px
+// wide ("20/10/2" cut off). With a row found, the text keeps at least 12rem (as Overview's renewals do), so on a
+// phone the buttons wrap below it; at 1280 they stay on its line. jsdom has no layout, so the class is what is pinned.
+it("with a row found, the question keeps 12rem, so the three buttons wrap below it on a phone", () => {
+  show();
+  const block = screen.getByText(/You logged Netflix/).parentElement!;
+  expect(block.className.split(" ")).toContain("min-w-[12rem]");
+  expect(block.className.split(" ")).toContain("flex-1");
+});
+
 describe("as before", () => {
   it("nothing found: no line, and today's two buttons (Yes leads)", () => {
     show({ found: {} });
