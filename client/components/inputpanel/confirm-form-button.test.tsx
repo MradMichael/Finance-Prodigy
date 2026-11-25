@@ -32,3 +32,21 @@ it("the Confirm payment form's \"Confirm\" keeps its label's width (it doesn't s
   expect(confirm.parentElement!.classList.contains("flex")).toBe(true);
   expect(confirm.classList.contains("shrink-0")).toBe(true);
 });
+
+// The live check after the first fix: "Confirm" fitted, but at 390 the row was then 341 px of content in 315, and the
+// cancel ✕ sat outside it (the date field can't be narrower than about 213 px). So, as the form already does when an
+// entry is found (session 64), the buttons wrap below the date field on a phone: the date field takes the whole row
+// below 640 px (sm), and shares it from 640 px up.
+it("on a phone, the date field takes the row and the buttons wrap below it; from 640 px up they share one row", () => {
+  render(<InputPanel financials={DATA} dashData={computeDashboard(DATA)} onChange={vi.fn()} onEdit={vi.fn()} onPay={vi.fn()} onConfirmRecurring={vi.fn()} />);
+  fireEvent.click(screen.getByRole("button", { name: /Manage/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Recurring Payments/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm this Rent payment" }));
+  const form = screen.getByText("Confirm payment").parentElement as HTMLElement;
+  const row = within(form).getByRole("button", { name: "Confirm" }).parentElement!;
+  expect(row.classList.contains("flex-wrap")).toBe(true);
+  const date = form.querySelector(`#confirm-date-${RENT.id}`)!.closest("div.basis-full") as HTMLElement | null;
+  expect(date, "the date field's box takes the whole row on a phone").not.toBeNull();
+  expect(date!.parentElement).toBe(row);
+  expect(date!.classList.contains("sm:flex-1")).toBe(true);
+});
