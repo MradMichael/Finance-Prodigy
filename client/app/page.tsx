@@ -787,6 +787,11 @@ export default function Home() {
   // needs purging, so this can't loop.
   useEffect(() => {
     if (!financials || autoWritesPausedRef.current) return; // same guard as the snapshot effect
+    // AUDIT 2.4.174 (session 65): the snapshot's guard too (2.4.170). A newer
+    // copy was handed over after this render -- an edit, or the snapshot just
+    // above in this same flush -- and this render's copy would replace it. Its
+    // own render runs this effect again, on top of it.
+    if (financialsRef.current !== financials) return;
     const purged = autoPurgeExpired(financials.transactions);
     if (purged === financials.transactions) return;
     handleChange({ ...financials, transactions: purged }, { automatic: true });
