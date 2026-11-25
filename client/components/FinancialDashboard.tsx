@@ -28,6 +28,8 @@ import { downloadDataFile } from "../lib/exportData";
 import { periodTotals, bucketDisplayState, type DashboardPayload } from "../lib/computeDashboard";
 import OnboardingChecklist from "./OnboardingChecklist";
 import { fmtCur, type Screen } from "./screens/shared";
+import { useLoggedLink, LinkedNotice, FoundLine, foundLineId, choiceStyles, type LinkLogged } from "./LoggedLink";
+import { LOGGED_TEXT, type LoggedEntry } from "../lib/alreadyLogged";
 import {currentCycleKey, cycleKeyForISO, cycleLabel, cycleBounds, periodNoun, asCycleKey, type CycleKey } from "../lib/period";
 const SERIF: React.CSSProperties = { fontFamily: "Georgia, 'Times New Roman', serif" };
 const NUMS: React.CSSProperties = { fontVariantNumeric: "tabular-nums" };
@@ -113,7 +115,7 @@ function Panel({ title, children, className = "" }: { title?: string; children: 
 // ---------------------------- screen ----------------------------- //
 
 export default function FinancialDashboard({
-  data, financials, onNavigate, onConfirmRecurring, loggingRecurringIds, justConfirmedIds,
+  data, financials, onNavigate, onConfirmRecurring, loggingRecurringIds, justConfirmedIds, found, onLink, onUnlink,
 }: {
   data: DashboardPayload;
   /** 2.4.55 sub-phase 3 -- the raw ledger, needed only for the past-month
@@ -128,9 +130,15 @@ export default function FinancialDashboard({
   loggingRecurringIds?: Set<string>;
   /** Recurring item ids that just finished confirming, briefly, before their target moves on to the next cycle (2.4.30, finding 3). */
   justConfirmedIds?: Set<string>;
+  /** TODO 124: the entry already logged by hand for each renewal's cycle (lib/alreadyLogged.ts), by item id. */
+  found?: Record<string, LoggedEntry>;
+  /** Links that entry to the cycle instead of logging a new payment ("Already logged"); and its Undo. */
+  onLink?: LinkLogged;
+  onUnlink?: LinkLogged;
 }) {
   const T = useTheme();
   const router = useRouter();
+  const logged = useLoggedLink(onLink, onUnlink);
 
   // Recovery (the recovery-code flow on a lost/wiped device) only has
   // anything to recover if this account has pushed at least once -- with
@@ -438,11 +446,14 @@ export default function FinancialDashboard({
         {/* Upcoming renewals */}
         {/* Session 52 (owner, R10): what is coming up. An overdue item is in the reminder and in Needs attention;
             it was said here a third time. */}
-        {comingUp.length > 0 && (
+        {(comingUp.length > 0 || logged.linked) && (
           <div className="rounded-2xl px-5 py-4 flex flex-wrap gap-3" style={{ background: T.panel, border: `1px solid ${T.line}` }}>
             <p className="text-xs uppercase tracking-widest flex-shrink-0 self-center" style={{ color: T.mute }}>Renewing soon</p>
             {comingUp.map((r) => {
               const overdue = r.overdueCount > 0;
+              // TODO 124: an entry logged by hand for this cycle: "Already logged" leads, Confirm is outlined (the reminder's rule).
+              const entry = onLink ? found?.[r.id] : undefined;
+              const { filled, outlined } = choiceStyles(T);
               return (
                 <span
                   key={r.id}
@@ -457,12 +468,24 @@ export default function FinancialDashboard({
                   <span className="whitespace-nowrap" style={{ color: overdue || r.dueInDays <= 2 ? T.coral : T.brass, fontWeight: overdue ? 600 : undefined }}>
                     · {overdue ? `${r.overdueCount} overdue` : r.dueInDays === 0 ? "today" : r.dueInDays === 1 ? "tomorrow" : `in ${r.dueInDays}d`}
                   </span>
+                  {entry && (
+                    <button
+                      type="button"
+                      onClick={() => logged.link(r.id, r.name, entry, r.dueDate)}
+                      disabled={logged.busy}
+                      aria-describedby={foundLineId("overview", r.id)}
+                      className="text-[10px] font-semibold px-2 py-1 rounded-full transition-all hover:opacity-80 disabled:opacity-40"
+                      style={filled}
+                    >
+                      {LOGGED_TEXT.already}
+                    </button>
+                  )}
                   {onConfirmRecurring && (
                     <button
-                      onClick={() => onConfirmRecurring(r.id)}
+                      onClick={() => { logged.clear(); onConfirmRecurring(r.id); }}
                       disabled={loggingRecurringIds?.has(r.id)}
-                      className="text-[10px] font-semibold px-2 py-1 rounded-full transition-all hover:opacity-80 disabled:opacity-40 disabled:hover:opacity-40"
-                      style={{ background: T.jade + "22", color: T.jade }}
+                      className={`text-[10px] ${entry ? "" : "font-semibold "}px-2 py-1 rounded-full transition-all hover:opacity-80 disabled:opacity-40 disabled:hover:opacity-40`}
+                      style={entry ? outlined : { background: T.jade + "22", color: T.jade }}
                       title={`Confirm this ${r.name} payment`}
                     >
                       {loggingRecurringIds?.has(r.id) ? "Confirming…" : justConfirmedIds?.has(r.id) ? "Confirmed ✓" : "Confirm"}
@@ -471,6 +494,12 @@ export default function FinancialDashboard({
                 </span>
               );
             })}
+            {onLink && comingUp.map((r) => found?.[r.id] && (
+              <FoundLine key={`found-${r.id}`} id={foundLineId("overview", r.id)} entry={found[r.id]} className="basis-full text-xs" />
+            ))}
+            {(logged.linked || (onLink && comingUp.some((r) => found?.[r.id]))) && (
+              <LinkedNotice text={logged.linked?.text ?? ""} busy={logged.busy} onUndo={onUnlink ? logged.undo : undefined} className="basis-full" />
+            )}
           </div>
         )}
 
