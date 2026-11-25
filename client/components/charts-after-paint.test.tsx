@@ -5,7 +5,7 @@
 // nothing stored. This tests the lazy module itself; the Overview's tests use its plain twin (charts.sync.tsx,
 // through vitest.config.ts's alias), so they render the charts at once, as before.
 import { it, expect, afterEach, vi } from "vitest";
-import { render, cleanup, waitFor } from "@testing-library/react";
+import { render, cleanup, act } from "@testing-library/react";
 import fs from "fs";
 import path from "path";
 // By a path vitest.config.ts's alias doesn't match, so this is the lazy module itself.
@@ -41,9 +41,13 @@ it("a chart not loaded yet draws nothing (no words), then itself once its code a
   const trend = [{ ymKey: 202610, income: 3000, spend: 2100 }, { ymKey: 202611, income: 3000, spend: 1900 }];
   const { container } = render(<ThemeProvider><div style={{ width: 400, height: 224 }}><CashFlowChart data={trend} startDay={1} /></div></ThemeProvider>);
   expect(container.textContent).toBe("");
-  await waitFor(() => expect(container.querySelector(".recharts-responsive-container")).not.toBeNull());
+  // AUDIT 2.4.173: waits for the chart's own code (the promise the chart itself waits on), not for a fixed time;
+  // the chart is then on screen at once. The test's timeout is a bound, not the wait.
+  await act(() => CashFlowChart.preload());
+  expect(container.querySelector(".recharts-responsive-container")).not.toBeNull();
   cleanup();
   const nw = [{ ym: "2026-10", value: 21000 }, { ym: "2026-11", value: 21500 }];
   const second = render(<ThemeProvider><div style={{ width: 400, height: 160 }}><NetWorthChart data={nw as never} color="#2a9d8f" /></div></ThemeProvider>);
-  await waitFor(() => expect(second.container.querySelector(".recharts-responsive-container")).not.toBeNull());
-});
+  await act(() => NetWorthChart.preload());
+  expect(second.container.querySelector(".recharts-responsive-container")).not.toBeNull();
+}, 30000);
