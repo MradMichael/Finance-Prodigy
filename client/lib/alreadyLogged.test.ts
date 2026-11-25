@@ -1,4 +1,4 @@
-// TODO 121 (owner, session 63, item 2; option b, held for the owner): "Already logged" on the due-date reminder.
+// TODO 121 (owner, session 63, item 2; option b; approved in full, session 64): "Already logged" on the due-date reminder.
 // A recurring bill also logged by hand was confirmed and logged twice. The reminder now finds the row already
 // logged for the cycle it asks about, and links it (the row gains the item's recurringId and the cycle's day)
 // instead of logging a new one. The rule (FIX_PLANS session 63, item 2): live, tied to nothing, spending, the

@@ -653,7 +653,7 @@ export default function Home() {
     }
   }
 
-  // TODO 121 (session 63; held for the owner): the reminder's "Already logged" links the row the person logged by
+  // TODO 121 (session 63; approved by the owner, session 64): the reminder's "Already logged" links the row the person logged by
   // hand to the cycle it asks about, through handleChange like any edit; linkLoggedEntry re-checks that the cycle is
   // still the one asked about and the row still the one offered. Undo takes the link off. True when stored.
   async function handleLinkLoggedEntry(recurringId: string, txId: string, dueDate: string): Promise<boolean> {

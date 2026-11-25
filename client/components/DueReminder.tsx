@@ -19,7 +19,7 @@ export type Renewal = ReturnType<typeof computeDashboard>["upcomingRenewals"][nu
  *   exactly what Confirm writes; for an item with several outstanding cycles, that's the oldest, and
  *   the banner then asks about the next. Not yet hides that item until the app is next opened
  *   (component state only: nothing stored).
- * - Already logged (TODO 121; session 63, held for the owner): when a row the person logged by hand
+ * - Already logged (TODO 121; session 63, approved by the owner in session 64): when a row the person logged by hand
  *   matches the cycle asked about (`found`, lib/alreadyLogged.ts), a line names it and "Already
  *   logged" leads: it links that row to the cycle (`onLink`) instead of logging a new one, then says
  *   so with Undo (`onUnlink`). That notice stays until Undo, the next answer, or a move to another

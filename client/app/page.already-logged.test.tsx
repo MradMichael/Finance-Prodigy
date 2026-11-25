@@ -1,4 +1,4 @@
-// TODO 121 (owner, session 63, item 2; option b, held for the owner): "Already logged", wired into the app. Rent
+// TODO 121 (owner, session 63, item 2; option b; approved in full, session 64): "Already logged", wired into the app. Rent
 // (due 15 Oct) was logged by hand on 13 Oct; the reminder names that row, and Already logged links it to the cycle
 // through the page (handleChange), so nothing new is logged; Undo takes the link off again. The harness is
 // page.due-reminder.test.tsx's.

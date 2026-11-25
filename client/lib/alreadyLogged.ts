@@ -1,5 +1,5 @@
-// "Already logged" on the due-date reminder (TODO 121; owner, session 63, item 2, option b; held for the owner's
-// approval). A recurring bill the person also logs by hand was asked about anyway, and "Yes, it's paid" logged it a
+// "Already logged" on the due-date reminder (TODO 121; owner, session 63, item 2, option b; approved
+// in full, session 64). A recurring bill the person also logs by hand was asked about anyway, and "Yes, it's paid" logged it a
 // second time: a cycle counts as paid only through a row carrying the item's recurringId and the cycle's day
 // (confirmedCycles), and a row logged by hand carries neither. The reminder now finds the row already logged for the
 // cycle it asks about, names it, and links it on "Already logged": the row gains the item's recurringId and the
@@ -25,7 +25,7 @@ export const HALF_CYCLE_DAYS: Record<RecurringFrequency, number> = {
   weekly: 3, biweekly: 7, monthly: 15, every2months: 30, quarterly: 45, biannually: 91, yearly: 182,
 };
 
-/** Every sentence the reminder adds (drafted, session 63; held for the owner's approval). */
+/** Every sentence the reminder adds (drafted in session 63; approved by the owner, session 64). */
 export const LOGGED_TEXT = {
   found: (name: string, date: string, amount: string) => `You logged ${name} on ${date} (${amount}).`,
   already: "Already logged",

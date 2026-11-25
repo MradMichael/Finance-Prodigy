@@ -1,4 +1,4 @@
-// TODO 121 (owner, session 63, item 2; option b, held for the owner): "Already logged" on the due-date reminder.
+// TODO 121 (owner, session 63, item 2; option b; approved in full, session 64): "Already logged" on the due-date reminder.
 // When one item is due and a row already logged matches its cycle (lib/alreadyLogged.ts), the reminder names the
 // row and offers "Already logged", which links it instead of logging a new one; then it says so, with Undo. The
 // notice stays until Undo, the next answer, or a move to another screen (no timer: an Undo that vanishes is a
