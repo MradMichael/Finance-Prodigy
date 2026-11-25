@@ -55,9 +55,9 @@ it("names the row logged by hand; Already logged links it (no new row), and Undo
   // in `saved` before React has necessarily shown it.
   const wait = { timeout: 5000 };
   const reminder = () => screen.getByRole("region", { name: "Payment reminder" });
-  // The page stores its monthly snapshot on load, built from the copy it rendered: an edit that lands before that
-  // effect runs is overwritten by it, on screen and in storage (AUDIT 2.4.170, on main for every edit; noticed in
-  // session 63, not changed). So the click waits for that save, as page.due-reminder.test.tsx's "Not yet" does.
+  // The page stores its monthly snapshot on load. Until session 64 an edit that landed before that effect ran was
+  // overwritten by it (AUDIT 2.4.170, fixed in PR #10). The click still waits for that save, so the last save read
+  // below is the link's (or the snapshot's on top of it), as page.due-reminder.test.tsx's "Not yet" does.
   await waitFor(() => expect(saved.some((d) => (d.netWorthHistory ?? []).length > 0)).toBe(true), wait);
   fireEvent.click(screen.getByRole("button", { name: "Already logged" }));
   await waitFor(() => expect(last()?.transactions.find((t) => t.id === "hand")?.recurringId).toBe("r-rent"), wait);
