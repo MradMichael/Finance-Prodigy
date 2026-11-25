@@ -5,6 +5,10 @@
 // computed as the browser composites it: the text colour, faded by every opacity on the way up (an `opacity-NN`
 // class or an inline opacity), over the nearest background. jsdom does no layout, so this is the arithmetic; the
 // live check runs axe at 390 and 1280.
+//
+// TODO 133 (owner, session 66, item 2; AUDIT 2.4.179): both are checked hovered too. "+add" kept an 80% hover fade, and
+// hovered it fell to 4.07 in Ivory and 4.30 in Aurora. Session 65's arithmetic (recurring-row.contrast.test.tsx): a
+// hovered button's ancestors are hovered too, and an element's `hover:opacity-*` replaces its own resting opacity.
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import InputPanel from "../InputPanel";
@@ -27,15 +31,29 @@ const lum = ([r, g, b]: number[]) => 0.2126 * channel(r) + 0.7152 * channel(g) +
 const ratio = (a: number[], b: number[]) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
 const over = (fg: number[], alpha: number, bg: number[]) => [0, 1, 2].map((i) => fg[i] * alpha + bg[i] * (1 - alpha));
 
-/** The contrast an element's text shows: its colour, faded by every opacity above it, over the nearest background. */
+const opacityOf = (cls: string, prefix: "" | "hover:"): number | null => {
+  const m = new RegExp(`^${prefix}opacity-(?:(\\d+)|\\[(0?\\.\\d+|1)\\])$`).exec(cls);
+  return m ? (m[1] !== undefined ? Number(m[1]) / 100 : Number(m[2])) : null;
+};
+
+/**
+ * The contrast an element's text shows, the lower of at rest and hovered: its colour, faded by every opacity above it,
+ * over the nearest background.
+ */
 function shownContrast(el: HTMLElement): number {
   let fg: number[] | null = null;
-  let alpha = 1;
+  let rest = 1, hovered = 1;
   const backs: number[][] = [];
   for (let n: HTMLElement | null = el; n; n = n.parentElement) {
     if (!fg && n.style.color) fg = parse(n.style.color);
-    for (const cls of Array.from(n.classList)) { const m = /^opacity-(\d+)$/.exec(cls); if (m) alpha *= Number(m[1]) / 100; }
-    if (n.style.opacity) alpha *= Number(n.style.opacity);
+    let own = 1, ownHover: number | null = null;
+    for (const cls of Array.from(n.classList)) {
+      const a = opacityOf(cls, ""); if (a !== null) own *= a;
+      const h = opacityOf(cls, "hover:"); if (h !== null) ownHover = h;
+    }
+    if (n.style.opacity) own *= Number(n.style.opacity);
+    rest *= own;
+    hovered *= ownHover ?? own;
     const bg = n.style.background || n.style.backgroundColor;
     const c = bg ? parse(bg) : null;
     if (c) { backs.push(c); if (c[3] === 1) break; }
@@ -43,7 +61,7 @@ function shownContrast(el: HTMLElement): number {
   if (!fg || !backs.length) throw new Error("no colour or background found");
   let bg = backs[backs.length - 1];
   for (let i = backs.length - 2; i >= 0; i--) bg = over(backs[i], backs[i][3], bg); // tints over the opaque one
-  return ratio(over(fg, alpha, bg), bg);
+  return Math.min(ratio(over(fg, rest, bg), bg), ratio(over(fg, hovered, bg), bg));
 }
 
 const GOAL: StoredGoal = { id: "g1", name: "Laptop", emoji: "L", targetAmount: 1500, currentAmount: 0, openingAmount: 0, currency: "USD", targetDate: "2027-12-31", createdAt: "2026-01-01T00:00:00.000Z" };
@@ -57,14 +75,14 @@ async function openIn(theme: ThemeKey) {
 }
 
 describe.each(Object.keys(THEMES) as ThemeKey[])("%s", (theme) => {
-  it("\"Log again\" on this month's row reaches 4.5:1", async () => {
+  it("\"Log again\" on this month's row reaches 4.5:1, at rest and hovered", async () => {
     await openIn(theme);
     const pill = screen.getByRole("button", { name: "Log again: Bread" }).querySelector("span")!;
     const r = shownContrast(pill);
     expect(r, `${r.toFixed(2)}`).toBeGreaterThanOrEqual(4.5);
   });
 
-  it("\"+add\" on a goal reaches 4.5:1", async () => {
+  it("\"+add\" on a goal reaches 4.5:1, at rest and hovered", async () => {
     await openIn(theme);
     fireEvent.click(screen.getByRole("button", { name: /Manage/ }));
     fireEvent.click(screen.getByRole("button", { name: /Goals/ }));
