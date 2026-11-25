@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from "react";
 import { useScrollFocus } from "../components/useScrollFocus";
 import { MERGE_NOT_STORED, PUSH_NOT_RECORDED_NOTICE } from "../lib/storageNotices";
 import { syncStatusLongLabel } from "../components/shell/SyncDot";
@@ -125,13 +125,15 @@ export default function Home() {
 
   // SYNC-1 step 3: the copy the background fetch merges into, read when the
   // pull LANDS, so an edit made while the server was waking is part of the
-  // merge. A user's edit reaches it through this effect before anything else
-  // runs (React flushes a discrete event's effects at once). handleChange
-  // also sets it directly, for the writes that come from effects (monthly
-  // snapshot, purge), whose re-render can land after the pull; those
-  // effects would simply write again, so no test can see the difference.
+  // merge. handleChange (and the fetch's merge) set it the moment they hand a
+  // copy over, ahead of the render that shows it; every commit sets it to
+  // what it shows.
+  // AUDIT 2.4.170 (session 64): at commit, not in a passive effect. An edit
+  // that lands after a commit and before that render's effects run would
+  // otherwise be put back to the older copy by this very effect, and the
+  // monthly snapshot (below) couldn't tell that a newer copy exists.
   const financialsRef = useRef<LocalFinancials | null>(null);
-  useEffect(() => { financialsRef.current = financials; }, [financials]);
+  useLayoutEffect(() => { financialsRef.current = financials; }, [financials]);
   const lastFetchAtRef = useRef(0);
   const fetchingRef = useRef(false);
 
@@ -675,6 +677,10 @@ export default function Home() {
     // stale here again; without this, that would retry the refused write on
     // every render (persist's autoWritesPaused).
     if (autoWritesPausedRef.current) return;
+    // AUDIT 2.4.170 (session 64): an edit landed after this render and before
+    // this effect. Writing this render's copy would put it out of sight and out
+    // of storage; its own render runs this effect again, on top of it.
+    if (financialsRef.current !== financials) return;
     const now = new Date();
     // The one write path for all four histories, and now the one place their
     // two key spaces are distinguished. Identical strings at startDay 1; the
