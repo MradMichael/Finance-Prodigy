@@ -51,18 +51,28 @@ function tiedToNothing(t: StoredTransaction): boolean {
 
 /** The row already logged for R's cycle due on `dueISO` (YYYY-MM-DD), or null. */
 export function loggedEntryFor(r: StoredRecurring, dueISO: string, transactions: readonly StoredTransaction[]): StoredTransaction | null {
+  return findLogged(r, dueISO, transactions, (t) => billHintKey(t.description, t.currency));
+}
+
+/**
+ * The rule above, for one bill. TODO 127 (owner, session 65): the name key is the costly check (a normalised string),
+ * so it comes last, after the amount and the date, and comes from `keyOf`, which loggedEntries shares across the bills
+ * of one call. Every check must hold and the tie-break runs only on rows that pass them all, so the order changes the
+ * cost, not the answer (alreadyLogged.same-results.test.ts holds it to session 63's rule).
+ */
+function findLogged(r: StoredRecurring, dueISO: string, transactions: readonly StoredTransaction[], keyOf: (t: StoredTransaction) => string): StoredTransaction | null {
   if (!(r.amount > 0)) return null;
-  const key = billHintKey(r.name, r.currency);
+  let key: string | undefined; // the bill's own, built the first time a row needs it
   const due = dayNumber(dueISO);
   const half = HALF_CYCLE_DAYS[r.frequency];
   let best: StoredTransaction | null = null, bestGap = Infinity;
   for (const t of transactions) {
     if (t.deletedAt != null || t.purgedAt != null || !tiedToNothing(t)) continue;
     if (t.bucket !== "NEEDS" && t.bucket !== "WANTS" && t.bucket !== "SAVINGS") continue;
-    if (billHintKey(t.description, t.currency) !== key) continue;
     if (!(t.amount > 0) || Math.abs(t.amount - r.amount) > BILL_BAND * r.amount) continue;
     const gap = Math.abs(dayNumber(t.date) - due);
     if (!(gap <= half)) continue;
+    if (keyOf(t) !== (key ??= billHintKey(r.name, r.currency))) continue;
     if (best === null || gap < bestGap || (gap === bestGap && earlier(t, best))) { best = t; bestGap = gap; }
   }
   return best;
@@ -75,12 +85,21 @@ function earlier(a: StoredTransaction, b: StoredTransaction): boolean {
   return a.id < b.id;
 }
 
-/** For each renewal the reminder can show, the row found for its cycle (by item id). */
+/**
+ * For each renewal the reminder can show, the row found for its cycle (by item id). Called once per render (the page's
+ * memo), so each row's name key is built at most once here, for all the renewals (TODO 127).
+ */
 export function loggedEntries(data: LocalFinancials, renewals: readonly { id: string; dueDate: string }[]): Record<string, LoggedEntry> {
   const out: Record<string, LoggedEntry> = {};
+  const keys = new Map<StoredTransaction, string>();
+  const keyOf = (t: StoredTransaction) => {
+    let k = keys.get(t);
+    if (k === undefined) { k = billHintKey(t.description, t.currency); keys.set(t, k); }
+    return k;
+  };
   for (const n of renewals) {
     const r = (data.recurring ?? []).find((x) => x.id === n.id);
-    const t = r ? loggedEntryFor(r, n.dueDate, data.transactions ?? []) : null;
+    const t = r ? findLogged(r, n.dueDate, data.transactions ?? [], keyOf) : null;
     if (t) out[n.id] = { txId: t.id, description: t.description.trim(), date: t.date, amount: t.amount, currency: t.currency };
   }
   return out;
