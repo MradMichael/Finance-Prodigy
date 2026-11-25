@@ -191,11 +191,16 @@ export default function RecurringSection({ financials, update, lbpRate, onEdit, 
                             <span className="text-xs font-semibold tabular-nums" style={{ color: b.color }}>
                               {sym}{Math.round(mo).toLocaleString("en-US")}<span className="font-normal" style={{ color: T.mute }}>/mo</span>
                             </span>
-                            <div className="flex gap-1.5 opacity-70 transition-opacity">
+                            {/* AUDIT 2.4.175 (owner, session 65; session 58's form): the 70% fading moved from this group
+                                to its two icon-only buttons (edit, delete), which keep their look (edit 70%, 56% on hover;
+                                delete 70%), so "Confirm" and "+extra", 10 px text, reach 4.5:1 in every theme. Those two
+                                have no hover fade either: at 80% they fell under 4.5:1 in three themes. "Confirming…"
+                                keeps its disabled fade (a disabled control is exempt). */}
+                            <div className="flex gap-1.5">
                               <button
                                 onClick={() => onEdit("recurring", r.id)}
                                 aria-label="Edit recurring payment"
-                                className="text-[10px] px-1.5 py-0.5 rounded transition-all hover:opacity-80"
+                                className="text-[10px] px-1.5 py-0.5 rounded transition-all opacity-70 hover:opacity-[0.56]"
                                 style={{ color: T.brass, border: `1px solid ${T.brass}40` }}
                               >✎</button>
                               {!ended && target && onConfirmRecurring && (
@@ -203,7 +208,7 @@ export default function RecurringSection({ financials, update, lbpRate, onEdit, 
                                   onClick={() => { setConfirmingRecId(isConfirming ? null : r.id); setConfirmDate(target.dueDate.toISOString().slice(0, 10)); }}
                                   disabled={loggingRecurringIds?.has(r.id)}
                                   aria-label={`Confirm this ${r.name} payment`}
-                                  className="text-[10px] px-1.5 py-0.5 rounded transition-all hover:opacity-80 disabled:opacity-40 disabled:hover:opacity-40"
+                                  className="text-[10px] px-1.5 py-0.5 rounded transition-all disabled:opacity-40"
                                   style={{ color: justConfirmed ? T.jade : overdue ? T.coral : T.jade, border: `1px solid ${(justConfirmed ? T.jade : overdue ? T.coral : T.jade)}40` }}
                                 >
                                   {loggingRecurringIds?.has(r.id) ? "Confirming…" : justConfirmed ? "Confirmed ✓" : "Confirm"}
@@ -213,7 +218,7 @@ export default function RecurringSection({ financials, update, lbpRate, onEdit, 
                                 <button
                                   onClick={() => { setExtraRecId(isAddingExtra ? null : r.id); setExtraRecAmt(""); }}
                                   aria-label="Log an extra payment"
-                                  className="text-[10px] px-1.5 py-0.5 rounded transition-all hover:opacity-80"
+                                  className="text-[10px] px-1.5 py-0.5 rounded transition-all"
                                   style={{ color: T.jade, border: `1px solid ${T.jade}40` }}
                                 >
                                   +extra
@@ -247,7 +252,7 @@ export default function RecurringSection({ financials, update, lbpRate, onEdit, 
                                   });
                                 }}
                                 aria-label="Delete recurring payment"
-                                className="text-xs"
+                                className="text-xs opacity-70"
                                 style={{ color: T.coral }}
                               >✕</button>
                             </div>
