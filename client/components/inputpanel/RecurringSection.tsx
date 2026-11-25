@@ -323,7 +323,10 @@ export default function RecurringSection({ financials, update, lbpRate, onEdit, 
                                   onConfirmRecurring?.(r.id, confirmDate ? new Date(confirmDate) : undefined);
                                   setConfirmingRecId(null);
                                 }}
-                                className={`px-3 py-1.5 rounded-xl text-xs ${formEntry ? "" : "font-semibold "}transition-all hover:opacity-90`}
+                                // TODO 132 (session 66): shrink-0, so it keeps its label's width. The tap-size floor
+                                // (globals.css) replaces flexbox's own minimum, and at 390 px the date field squeezed
+                                // this to 44 px under a 56 px label.
+                                className={`shrink-0 px-3 py-1.5 rounded-xl text-xs ${formEntry ? "" : "font-semibold "}transition-all hover:opacity-90`}
                                 style={formEntry ? outlined : { background: T.jade, color: T.ink }}
                               >
                                 Confirm
