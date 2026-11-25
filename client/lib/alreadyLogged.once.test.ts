@@ -24,7 +24,7 @@ const row = (id: string, description: string, o: Partial<StoredTransaction> = {}
 // Inside every bill's band and window, with words no bill has: each is checked by name against all 8 bills.
 const NEAR = Array.from({ length: 50 }, (_, i) => row(`near${i}`, `Near row ${i}`));
 // Each bill's own row, in other case and spacing.
-const OWN = BILLS.map((b, k) => row(`own${k}`, `  bill ${k}  `, { date: "2026-11-23" }));
+const OWN = BILLS.map((_b, k) => row(`own${k}`, `  bill ${k}  `, { date: "2026-11-23" }));
 // Outside every band (ten times the amount) or every window (five months early).
 const FAR = Array.from({ length: 30 }, (_, i) => row(`far${i}`, `Far row ${i}`, { amount: 1000 }));
 const EARLY = Array.from({ length: 30 }, (_, i) => row(`early${i}`, `Early row ${i}`, { date: "2026-06-20" }));

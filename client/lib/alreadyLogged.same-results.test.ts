@@ -5,7 +5,9 @@
 import { describe, it, expect } from "vitest";
 import { HALF_CYCLE_DAYS, loggedEntries, loggedEntryFor } from "./alreadyLogged";
 import { BILL_BAND, billHintKey } from "./billHints";
-import { DEFAULT_DATA, type Bucket, type Currency, type LocalFinancials, type RecurringFrequency, type StoredRecurring, type StoredTransaction } from "./localData";
+import { DEFAULT_DATA, type Currency, type LocalFinancials, type RecurringFrequency, type StoredRecurring, type StoredTransaction } from "./localData";
+
+type Bucket = StoredTransaction["bucket"];
 
 // ---- The reference: session 63's rule, verbatim but for its constants, which are copied too ----
 const REF_HALF: Record<RecurringFrequency, number> = { weekly: 3, biweekly: 7, monthly: 15, every2months: 30, quarterly: 45, biannually: 91, yearly: 182 };
@@ -54,10 +56,10 @@ const BILLS: { r: StoredRecurring; due: string }[] = [
   { r: bill("b-car", "Car insurance", 450, "USD", "biannually"), due: "2027-01-10" },
   { r: bill("b-domain", "Domain   name", 20, "USD", "yearly"), due: "2027-03-01" },
 ];
-const BUCKETS: Bucket[] = ["NEEDS", "WANTS", "SAVINGS", "INCOME", "TRANSFER"] as Bucket[];
+const BUCKETS: Bucket[] = ["NEEDS", "WANTS", "SAVINGS", "INCOME", "TRANSFER"];
 const TIES: Partial<StoredTransaction>[] = [
   {}, {}, {}, {}, {}, {}, { recurringId: "x" }, { cycleDate: null }, { cycleDate: "2026-11-24" }, { extraForRecurringId: "x" },
-  { debtId: "d" }, { goalId: "g" }, { fx: { pairId: "p" } } as Partial<StoredTransaction>, { linkedPaymentId: "l" },
+  { debtId: "d" }, { goalId: "g" }, { fx: { pairId: "p" } } as unknown as Partial<StoredTransaction>, { linkedPaymentId: "l" },
 ];
 
 function generate(seed: number): StoredTransaction[] {
