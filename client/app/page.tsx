@@ -1048,7 +1048,7 @@ export default function Home() {
             resetKey={screen}
           />
           {screen === "overview"     && <FinancialDashboard data={dashboardData} financials={financials ?? undefined} onNavigate={setScreen} onConfirmRecurring={handleConfirmRecurringPayment} loggingRecurringIds={loggingRecurringIds} justConfirmedIds={justConfirmedIds} found={loggedFound} onLink={handleLinkLoggedEntry} onUnlink={handleUnlinkLoggedEntry} />}
-          {screen === "budget"       && <BudgetScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
+          {screen === "budget"       && <BudgetScreen financials={financials} dashData={dashboardData} onChange={handleChange} isLatest={(f) => financialsRef.current === f} />}
           {screen === "setup"        && <SetupScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
           {screen === "finances"     && <InputPanel financials={financials} dashData={dashboardData} onChange={handleChange} session={session} onConfirmRecurring={handleConfirmRecurringPayment} loggingRecurringIds={loggingRecurringIds} justConfirmedIds={justConfirmedIds} onEdit={handleEdit} onPay={setPayingDebtId} onLinkLogged={handleLinkLoggedEntry} onUnlinkLogged={handleUnlinkLoggedEntry} />}
           {screen === "transactions" && <TransactionsScreen financials={financials} onChange={handleChange} onEdit={(id) => handleEdit("transaction", id)} />}

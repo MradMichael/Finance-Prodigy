@@ -13,10 +13,13 @@ export default function BudgetScreen({
   financials,
   dashData,
   onChange,
+  isLatest,
 }: {
   financials: LocalFinancials;
   dashData: ReturnType<typeof computeDashboard>;
   onChange: (f: LocalFinancials) => void;
+  /** AUDIT 2.4.174: whether `copy` is still the page's latest (false once a newer copy has been handed over). */
+  isLatest?: (copy: LocalFinancials) => boolean;
 }) {
   const T = useTheme();
   const noun = periodNoun(cycleStartDayOf(financials));
@@ -30,8 +33,18 @@ export default function BudgetScreen({
   // One-time heal for a split saved before MIN_SPLIT_PCT existed (e.g.
   // Needs at 0%) -- corrects it on load instead of leaving broken data in
   // place until the user happens to touch a slider themselves.
+  //
+  // AUDIT 2.4.174 (session 65): skipped when a newer copy was handed over
+  // after this render (the monthly snapshot's guard, 2.4.170): an edit that
+  // landed between Budget's first render and this effect would otherwise be
+  // replaced by this render's copy. That happens when the render was
+  // scheduled rather than the answer to a tap (its code arriving on a first
+  // visit, a sync merge). Keyed on the whole copy, so the newer copy's own
+  // render runs it again, on top of it. Without isLatest (the screen rendered
+  // alone), no newer copy can exist.
   useEffect(() => {
     if (ruleKey !== "custom") return;
+    if (isLatest && !isLatest(financials)) return;
     const healed = floorCustomSplit(customNeeds, customWants);
     if (healed.needs !== customNeeds || healed.wants !== customWants) {
       // 2.4.106: stamp WHAT changed, not just that something did. The
@@ -46,7 +59,7 @@ export default function BudgetScreen({
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ruleKey, customNeeds, customWants]);
+  }, [financials]);
 
   /** Drops the stamp -- on dismissal, or once the user edits the split themselves. */
   function clearHealNotice(patch: Partial<LocalFinancials> = {}) {
