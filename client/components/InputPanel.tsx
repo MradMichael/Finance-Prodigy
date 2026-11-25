@@ -43,6 +43,9 @@ interface Props {
   session?: Session;
   /** Confirms a recurring item's oldest outstanding cycle -- same shared handler FinancialDashboard's Renewing-soon chip uses. `paidDate` is optional -- when set, records the real payment date instead of defaulting to the cycle's due date (2.4.30, finding A). */
   onConfirmRecurring?: (recurringId: string, paidDate?: Date) => void;
+  /** TODO 124: links an entry logged by hand to a cycle instead of logging a new payment ("Already logged"); and its Undo. */
+  onLinkLogged?: (recurringId: string, txId: string, dueDate: string) => Promise<boolean>;
+  onUnlinkLogged?: (recurringId: string, txId: string, dueDate: string) => Promise<boolean>;
   /** Recurring item ids whose confirm write is currently in flight. */
   loggingRecurringIds?: Set<string>;
   /** Recurring item ids that just finished confirming, briefly, before their target moves on to the next cycle (2.4.30, finding 3). */
@@ -56,7 +59,7 @@ interface Props {
 /** This month on a phone shows this many entries until "Show all" (owner, session 34; label approved in session 35). */
 const PHONE_MONTH_ROWS = 20;
 
-export default function InputPanel({ financials, dashData, onChange, session, onConfirmRecurring, loggingRecurringIds, justConfirmedIds, onEdit, onPay }: Props) {
+export default function InputPanel({ financials, dashData, onChange, session, onConfirmRecurring, loggingRecurringIds, justConfirmedIds, onEdit, onPay, onLinkLogged, onUnlinkLogged }: Props) {
   const T = useTheme();
   const startDay = cycleStartDayOf(financials);
   const BUCKETS: { value: Bucket; label: string; icon: string; color: string }[] = [
@@ -312,7 +315,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
 
         {/* Recurring Payments */}
         <Section title="Recurring Payments" icon="🔁" badge={(financials.recurring ?? []).length} defaultOpen={false}>
-          <RecurringSection financials={financials} update={update} lbpRate={lbpRate} onEdit={onEdit} BUCKETS={BUCKETS} noun={noun} startDay={startDay} today={today} toUSD={toUSD} onConfirmRecurring={onConfirmRecurring} loggingRecurringIds={loggingRecurringIds} justConfirmedIds={justConfirmedIds} form={recurringForm} />
+          <RecurringSection financials={financials} update={update} lbpRate={lbpRate} onEdit={onEdit} BUCKETS={BUCKETS} noun={noun} startDay={startDay} today={today} toUSD={toUSD} onConfirmRecurring={onConfirmRecurring} loggingRecurringIds={loggingRecurringIds} justConfirmedIds={justConfirmedIds} form={recurringForm} onLinkLogged={onLinkLogged} onUnlinkLogged={onUnlinkLogged} />
         </Section>
 
         {/* Debts */}

@@ -2,12 +2,14 @@
 
 // InputPanel split, S10 (session 55): My Finances' Recurring Payments section, moved here line for line. The
 // section's header (title and count) stays in InputPanel; a closed section doesn't build this at all.
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { LocalFinancials, Currency, StoredRecurring, RecurringFrequency, cycleStartDayOf, makeToUSDLive } from "../../lib/localData";
 import { uid, todayISO, fmtDate, lbpRateOf, edited, recordDeletion, moneyMaxFor, FREQ_LABELS, FREQ_MONTHLY, nominalMonthlyEquivalent, isRecurringActive, nextConfirmTarget, isCycleConfirmed, recurringPaidSoFar, remainingInstallments, buildExtraPaymentTx } from "../../lib/localData";
 import { cycleKeyForISO, cycleLabel, type periodNoun } from "../../lib/period";
 import type { calendarDayOf } from "../../lib/calendarDay";
 import { useTheme } from "../../contexts/ThemeContext";
+import { LOGGED_TEXT, loggedEntries } from "../../lib/alreadyLogged";
+import { useLoggedLink, LinkedNotice, FoundLine, foundLineId, choiceStyles, type LinkLogged } from "../LoggedLink";
 import CategoryOptions from "../form/CategoryOptions";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, CurrencyToggle, DateFieldDMY } from "../form/Primitives";
 
@@ -36,7 +38,7 @@ export function useRecurringForm() {
   return { rName, setRName, rEmoji, setREmoji, rAmount, setRAmount, rCurrency, setRCurrency, rFreq, setRFreq, rBucket, setRBucket, rCategory, setRCategory, rStart, setRStart, rEndType, setREndType, rEnd, setREnd, rTotalAmount, setRTotalAmount, extraRecId, setExtraRecId, extraRecAmt, setExtraRecAmt, confirmingRecId, setConfirmingRecId, confirmDate, setConfirmDate };
 }
 
-export default function RecurringSection({ financials, update, lbpRate, onEdit, BUCKETS, noun, startDay, today, toUSD, onConfirmRecurring, loggingRecurringIds, justConfirmedIds, form }: {
+export default function RecurringSection({ financials, update, lbpRate, onEdit, BUCKETS, noun, startDay, today, toUSD, onConfirmRecurring, loggingRecurringIds, justConfirmedIds, form, onLinkLogged, onUnlinkLogged }: {
   financials: LocalFinancials;
   update: (patch: Partial<LocalFinancials>) => void;
   lbpRate: number;
@@ -50,9 +52,25 @@ export default function RecurringSection({ financials, update, lbpRate, onEdit, 
   loggingRecurringIds: Set<string> | undefined;
   justConfirmedIds: Set<string> | undefined;
   form: ReturnType<typeof useRecurringForm>;
+  /** TODO 124: links an entry logged by hand to the cycle instead of logging a new payment ("Already logged"); and its Undo. */
+  onLinkLogged?: LinkLogged;
+  onUnlinkLogged?: LinkLogged;
 }) {
   const T = useTheme();
   const { rName, setRName, rEmoji, setREmoji, rAmount, setRAmount, rCurrency, setRCurrency, rFreq, setRFreq, rBucket, setRBucket, rCategory, setRCategory, rStart, setRStart, rEndType, setREndType, rEnd, setREnd, rTotalAmount, setRTotalAmount, extraRecId, setExtraRecId, extraRecAmt, setExtraRecAmt, confirmingRecId, setConfirmingRecId, confirmDate, setConfirmDate } = form;
+  // TODO 124 (owner, session 64, item 3): the reminder's "Already logged" in the Confirm payment form. The entry is
+  // found for the open form's row only (its own target cycle), so typing elsewhere in My Finances does no extra work.
+  const logged = useLoggedLink(onLinkLogged, onUnlinkLogged);
+  const confirmingEntry = useMemo(() => {
+    if (!confirmingRecId || !onLinkLogged) return null;
+    const r = (financials.recurring ?? []).find((x) => x.id === confirmingRecId);
+    const target = r ? nextConfirmTarget(r, financials.transactions, financials, today) : null;
+    if (!r || !target) return null;
+    const dueISO = target.dueDate.toISOString().slice(0, 10);
+    const entry = loggedEntries(financials, [{ id: r.id, dueDate: dueISO }])[r.id];
+    return entry ? { recurringId: r.id, dueISO, entry } : null;
+  }, [confirmingRecId, onLinkLogged, financials, today]);
+  const { filled, outlined } = choiceStyles(T);
 
   function addRecurring() {
     if (!rName.trim() || !rAmount || !rStart) return;
@@ -119,6 +137,8 @@ export default function RecurringSection({ financials, update, lbpRate, onEdit, 
                   const isAddingExtra = extraRecId === r.id;
                   const isConfirming  = confirmingRecId === r.id;
                   const justConfirmed = justConfirmedIds?.has(r.id);
+                  const formEntry  = isConfirming && confirmingEntry?.recurringId === r.id ? confirmingEntry : null;
+                  const linkedHere = logged.linked?.recurringId === r.id;
                   return (
                     <div key={r.id}>
                       <div
@@ -273,18 +293,33 @@ export default function RecurringSection({ financials, update, lbpRate, onEdit, 
                             <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: T.jade }}>
                               Confirm payment
                             </p>
-                            <div className="flex gap-2 items-end">
-                              <div className="flex-1">
+                            {formEntry && <FoundLine id={foundLineId("finances", r.id)} entry={formEntry.entry} />}
+                            {/* With an entry found, three buttons beside the date: they wrap below it on a phone. */}
+                            <div className={`flex ${formEntry ? "flex-wrap " : ""}gap-2 items-end`}>
+                              <div className={formEntry ? "flex-1 min-w-[9rem]" : "flex-1"}>
                                 <Label htmlFor={`confirm-date-${r.id}`}>Date actually paid</Label>
                                 <DateFieldDMY id={`confirm-date-${r.id}`} value={confirmDate} onChange={setConfirmDate} />
                               </div>
+                              {formEntry && (
+                                <button
+                                  type="button"
+                                  onClick={async () => { if (await logged.link(r.id, r.name, formEntry.entry, formEntry.dueISO)) setConfirmingRecId(null); }}
+                                  disabled={logged.busy}
+                                  aria-describedby={foundLineId("finances", r.id)}
+                                  className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+                                  style={filled}
+                                >
+                                  {LOGGED_TEXT.already}
+                                </button>
+                              )}
                               <button
                                 onClick={() => {
+                                  logged.clear();
                                   onConfirmRecurring?.(r.id, confirmDate ? new Date(confirmDate) : undefined);
                                   setConfirmingRecId(null);
                                 }}
-                                className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all hover:opacity-90"
-                                style={{ background: T.jade, color: T.ink }}
+                                className={`px-3 py-1.5 rounded-xl text-xs ${formEntry ? "" : "font-semibold "}transition-all hover:opacity-90`}
+                                style={formEntry ? outlined : { background: T.jade, color: T.ink }}
                               >
                                 Confirm
                               </button>
@@ -315,6 +350,9 @@ export default function RecurringSection({ financials, update, lbpRate, onEdit, 
                               );
                             })()}
                           </div>
+                        )}
+                        {(formEntry || linkedHere) && (
+                          <LinkedNotice text={linkedHere ? logged.linked!.text : ""} busy={logged.busy} onUndo={onUnlinkLogged ? logged.undo : undefined} className={linkedHere ? "mt-2" : ""} />
                         )}
                       </div>
                     </div>

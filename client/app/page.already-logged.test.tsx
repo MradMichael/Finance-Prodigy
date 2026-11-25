@@ -59,7 +59,8 @@ it("names the row logged by hand; Already logged links it (no new row), and Undo
   // overwritten by it (AUDIT 2.4.170, fixed in PR #10). The click still waits for that save, so the last save read
   // below is the link's (or the snapshot's on top of it), as page.due-reminder.test.tsx's "Not yet" does.
   await waitFor(() => expect(saved.some((d) => (d.netWorthHistory ?? []).length > 0)).toBe(true), wait);
-  fireEvent.click(screen.getByRole("button", { name: "Already logged" }));
+  // The reminder's Already logged (TODO 124 put one on the item's Renewing soon chip too).
+  fireEvent.click(within(reminder()).getByRole("button", { name: "Already logged" }));
   await waitFor(() => expect(last()?.transactions.find((t) => t.id === "hand")?.recurringId).toBe("r-rent"), wait);
   expect(last().transactions).toHaveLength(1);
   expect(last().transactions[0]).toMatchObject({ id: "hand", amount: 500, date: "2026-10-13", recurringId: "r-rent", cycleDate: "2026-10-15" });
