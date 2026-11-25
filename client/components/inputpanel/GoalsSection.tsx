@@ -154,7 +154,8 @@ export default function GoalsSection({ financials, update, lbpRate, cards, saveC
                   </div>
                   {/* Item 2 (owner, session 58): the 70% fading moved from this row to its three icon-only buttons (the
                       same look, hover included: 70%, 56% on hover), so "+add", 10 px text, reaches 4.5:1 in every
-                      theme at full strength. */}
+                      theme at full strength. TODO 133 (session 66): "+add" has no hover fade either; at 80% it fell
+                      to 4.07 in Ivory and 4.30 in Aurora when hovered. */}
                   <div className="flex gap-1.5 flex-shrink-0">
                     <button
                       onClick={() => onEdit("goal", g.id)}
@@ -172,7 +173,7 @@ export default function GoalsSection({ financials, update, lbpRate, cards, saveC
                     <button
                       onClick={() => { setContributeGoalId(isContrib ? null : g.id); setContributeGoalAmt(""); setContributeDate(todayISO()); }}
                       aria-label="Add to this goal"
-                      className="text-[10px] px-1.5 py-0.5 rounded transition-all hover:opacity-80"
+                      className="text-[10px] px-1.5 py-0.5 rounded transition-all"
                       style={{ color: T.jade, border: `1px solid ${T.jade}40` }}
                     >+add</button>
                     <button
