@@ -8,6 +8,8 @@ import { SERIF, money, fmtCur } from "./shared";
 import { calendarDayOf } from "../../lib/calendarDay";
 import { billHints, addBillAsRecurring, setBillAside, undoBillAside, BILL_TEXT, type BillHint } from "../../lib/billHints";
 import type { computeDashboard } from "../../lib/computeDashboard";
+import { LOGGED_TEXT, type LoggedEntry } from "../../lib/alreadyLogged";
+import { useLoggedLink, LinkedNotice, FoundLine, foundLineId, choiceStyles, type LinkLogged } from "../LoggedLink";
 
 type Renewal = ReturnType<typeof computeDashboard>["upcomingRenewals"][number];
 
@@ -15,13 +17,19 @@ type Renewal = ReturnType<typeof computeDashboard>["upcomingRenewals"][number];
  * U2 (owner, session 33, DECISIONS_PENDING 19 (a)): the reminder's "Review" leads here, so each upcoming item
  * says when it's due, in Renewing soon's words, with Renewing soon's Confirm (the same handler, from the page).
  */
-export default function RecurringScreen({ financials, onEdit, renewals, onConfirm, loggingIds, justConfirmedIds, onChange }: {
+export default function RecurringScreen({ financials, onEdit, renewals, onConfirm, loggingIds, justConfirmedIds, onChange, found, onLink, onUnlink }: {
   financials: LocalFinancials; onEdit: (id: string) => void;
   renewals?: Renewal[]; onConfirm?: (id: string) => unknown; loggingIds?: Set<string>; justConfirmedIds?: Set<string>;
   /** Session 62: the page's save, for "Bills you log by hand" (without it the card isn't shown). */
   onChange?: (d: LocalFinancials) => unknown;
+  /** TODO 124: the entry already logged by hand for each renewal's cycle (lib/alreadyLogged.ts), by item id. */
+  found?: Record<string, LoggedEntry>;
+  /** Links that entry to the cycle instead of logging a new payment ("Already logged"); and its Undo. */
+  onLink?: LinkLogged;
+  onUnlink?: LinkLogged;
 }) {
   const T    = useTheme();
+  const logged = useLoggedLink(onLink, onUnlink);
   const now  = new Date();
   // The recurring engine takes calendar days: today, on this device.
   const today = calendarDayOf(now);
@@ -153,6 +161,10 @@ export default function RecurringScreen({ financials, onEdit, renewals, onConfir
                     const paidThisCycle = target ? isCycleConfirmed(r, target.dueDate, financials.transactions) : false;
                     const remaining = remainingInstallments(r, financials.transactions, financials, today);
                     const due = renewals?.find((x) => x.id === r.id);
+                    // TODO 124: an entry logged by hand for the due cycle: "Already logged" leads, Confirm is outlined (the reminder's rule).
+                    const entry = due && onLink ? found?.[r.id] : undefined;
+                    const linkedHere = logged.linked?.recurringId === r.id;
+                    const { filled, outlined } = choiceStyles(T);
                     return (
                       <div
                         key={r.id}
@@ -186,18 +198,34 @@ export default function RecurringScreen({ financials, onEdit, renewals, onConfir
                               <span className="whitespace-nowrap" style={{ color: due.overdueCount > 0 || due.dueInDays <= 2 ? T.coral : T.brass, fontWeight: due.overdueCount > 0 ? 600 : undefined }}>
                                 {due.overdueCount > 0 ? `${due.overdueCount} overdue` : due.dueInDays === 0 ? "today" : due.dueInDays === 1 ? "tomorrow" : `in ${due.dueInDays}d`}
                               </span>
+                              {entry && due && (
+                                <button
+                                  type="button"
+                                  onClick={() => logged.link(r.id, r.name, entry, due.dueDate)}
+                                  disabled={logged.busy}
+                                  aria-describedby={foundLineId("recurring", r.id)}
+                                  className="text-[10px] font-semibold px-2 py-1 rounded-full transition-all hover:opacity-80 disabled:opacity-40"
+                                  style={filled}
+                                >
+                                  {LOGGED_TEXT.already}
+                                </button>
+                              )}
                               {onConfirm && (
                                 <button
-                                  onClick={() => onConfirm(r.id)}
+                                  onClick={() => { logged.clear(); onConfirm(r.id); }}
                                   disabled={loggingIds?.has(r.id)}
-                                  className="text-[10px] font-semibold px-2 py-1 rounded-full transition-all hover:opacity-80 disabled:opacity-40 disabled:hover:opacity-40"
-                                  style={{ background: T.jade + "22", color: T.jade }}
+                                  className={`text-[10px] ${entry ? "" : "font-semibold "}px-2 py-1 rounded-full transition-all hover:opacity-80 disabled:opacity-40 disabled:hover:opacity-40`}
+                                  style={entry ? outlined : { background: T.jade + "22", color: T.jade }}
                                   title={`Confirm this ${r.name} payment`}
                                 >
                                   {loggingIds?.has(r.id) ? "Confirming…" : justConfirmedIds?.has(r.id) ? "Confirmed ✓" : "Confirm"}
                                 </button>
                               )}
                             </p>
+                          )}
+                          {entry && <FoundLine id={foundLineId("recurring", r.id)} entry={entry} className="text-[11px] mt-1" />}
+                          {(entry || linkedHere) && (
+                            <LinkedNotice text={linkedHere ? logged.linked!.text : ""} busy={logged.busy} onUndo={onUnlink ? logged.undo : undefined} className={linkedHere ? "mt-1" : ""} />
                           )}
                         </div>
                         <p className="text-sm font-medium tabular-nums" style={{ color: BC[bucket] }}>
