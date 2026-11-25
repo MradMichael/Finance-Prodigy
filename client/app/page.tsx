@@ -787,6 +787,11 @@ export default function Home() {
   // needs purging, so this can't loop.
   useEffect(() => {
     if (!financials || autoWritesPausedRef.current) return; // same guard as the snapshot effect
+    // AUDIT 2.4.174 (session 65): the snapshot's guard too (2.4.170). A newer
+    // copy was handed over after this render -- an edit, or the snapshot just
+    // above in this same flush -- and this render's copy would replace it. Its
+    // own render runs this effect again, on top of it.
+    if (financialsRef.current !== financials) return;
     const purged = autoPurgeExpired(financials.transactions);
     if (purged === financials.transactions) return;
     handleChange({ ...financials, transactions: purged }, { automatic: true });
@@ -1043,7 +1048,7 @@ export default function Home() {
             resetKey={screen}
           />
           {screen === "overview"     && <FinancialDashboard data={dashboardData} financials={financials ?? undefined} onNavigate={setScreen} onConfirmRecurring={handleConfirmRecurringPayment} loggingRecurringIds={loggingRecurringIds} justConfirmedIds={justConfirmedIds} found={loggedFound} onLink={handleLinkLoggedEntry} onUnlink={handleUnlinkLoggedEntry} />}
-          {screen === "budget"       && <BudgetScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
+          {screen === "budget"       && <BudgetScreen financials={financials} dashData={dashboardData} onChange={handleChange} isLatest={(f) => financialsRef.current === f} />}
           {screen === "setup"        && <SetupScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
           {screen === "finances"     && <InputPanel financials={financials} dashData={dashboardData} onChange={handleChange} session={session} onConfirmRecurring={handleConfirmRecurringPayment} loggingRecurringIds={loggingRecurringIds} justConfirmedIds={justConfirmedIds} onEdit={handleEdit} onPay={setPayingDebtId} onLinkLogged={handleLinkLoggedEntry} onUnlinkLogged={handleUnlinkLoggedEntry} />}
           {screen === "transactions" && <TransactionsScreen financials={financials} onChange={handleChange} onEdit={(id) => handleEdit("transaction", id)} />}
