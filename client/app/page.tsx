@@ -680,7 +680,8 @@ export default function Home() {
   function handleProfile() { router.push("/profile"); }
 
   const dashboardData = useMemo(() => (financials ? computeDashboard(financials) : null), [financials]);
-  // TODO 121: the row already logged for each cycle the reminder can ask about.
+  // TODO 121: the row already logged for each cycle the reminder can ask about (TODO 124: and the Overview's chips
+  // and Recurring's due lines, which list the same renewals).
   const loggedFound = useMemo(() => (financials && dashboardData ? loggedEntries(financials, dashboardData.upcomingRenewals) : {}), [financials, dashboardData]);
 
   // Persist monthly snapshots (net worth, income, LBP rate) so past months
@@ -1041,15 +1042,15 @@ export default function Home() {
             onUnlink={handleUnlinkLoggedEntry}
             resetKey={screen}
           />
-          {screen === "overview"     && <FinancialDashboard data={dashboardData} financials={financials ?? undefined} onNavigate={setScreen} onConfirmRecurring={handleConfirmRecurringPayment} loggingRecurringIds={loggingRecurringIds} justConfirmedIds={justConfirmedIds} />}
+          {screen === "overview"     && <FinancialDashboard data={dashboardData} financials={financials ?? undefined} onNavigate={setScreen} onConfirmRecurring={handleConfirmRecurringPayment} loggingRecurringIds={loggingRecurringIds} justConfirmedIds={justConfirmedIds} found={loggedFound} onLink={handleLinkLoggedEntry} onUnlink={handleUnlinkLoggedEntry} />}
           {screen === "budget"       && <BudgetScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
           {screen === "setup"        && <SetupScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
-          {screen === "finances"     && <InputPanel financials={financials} dashData={dashboardData} onChange={handleChange} session={session} onConfirmRecurring={handleConfirmRecurringPayment} loggingRecurringIds={loggingRecurringIds} justConfirmedIds={justConfirmedIds} onEdit={handleEdit} onPay={setPayingDebtId} />}
+          {screen === "finances"     && <InputPanel financials={financials} dashData={dashboardData} onChange={handleChange} session={session} onConfirmRecurring={handleConfirmRecurringPayment} loggingRecurringIds={loggingRecurringIds} justConfirmedIds={justConfirmedIds} onEdit={handleEdit} onPay={setPayingDebtId} onLinkLogged={handleLinkLoggedEntry} onUnlinkLogged={handleUnlinkLoggedEntry} />}
           {screen === "transactions" && <TransactionsScreen financials={financials} onChange={handleChange} onEdit={(id) => handleEdit("transaction", id)} />}
           {screen === "categories"   && <CategoriesScreen financials={financials} onChange={handleChange} />}
           {screen === "goals"        && <GoalsScreen dashData={dashboardData} financials={financials} onChange={handleChange} onEdit={(id) => handleEdit("goal", id)} />}
           {screen === "debts"        && <DebtsScreen financials={financials} dashData={dashboardData} onEdit={(id) => handleEdit("debt", id)} onPay={setPayingDebtId} />}
-          {screen === "recurring"    && <RecurringScreen financials={financials} onEdit={(id) => handleEdit("recurring", id)} renewals={dashboardData.upcomingRenewals} onConfirm={handleConfirmRecurringPayment} loggingIds={loggingRecurringIds} justConfirmedIds={justConfirmedIds} onChange={handleChange} />}
+          {screen === "recurring"    && <RecurringScreen financials={financials} onEdit={(id) => handleEdit("recurring", id)} renewals={dashboardData.upcomingRenewals} onConfirm={handleConfirmRecurringPayment} found={loggedFound} onLink={handleLinkLoggedEntry} onUnlink={handleUnlinkLoggedEntry} loggingIds={loggingRecurringIds} justConfirmedIds={justConfirmedIds} onChange={handleChange} />}
           {screen === "projections"  && <ProjectionsScreen financials={financials} dashData={dashboardData} onChange={handleChange} />}
           {screen === "journey"      && <JourneyScreen financials={financials} dashData={dashboardData} onNavigate={setScreen} />}
           {screen === "currency"     && <CurrencyScreen financials={financials} onChange={handleChange} />}
