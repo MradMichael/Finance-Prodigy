@@ -42,19 +42,18 @@ vi.mock("../lib/syncService", () => ({
 
 import Home from "./page";
 
-type IdleWindow = Window & { requestIdleCallback?: unknown; cancelIdleCallback?: unknown };
 beforeEach(() => {
   saved.length = 0;
   vi.useFakeTimers({ now: new Date(2026, 9, 15, 10, 0), toFake: ["Date"] });
-  // The idle preload never comes, so Budget's code is fetched only when Budget opens (a first visit).
-  (window as IdleWindow).requestIdleCallback = () => 0;
-  (window as IdleWindow).cancelIdleCallback = () => {};
+  // The idle preload never comes, so Budget's code is fetched only when Budget opens (a first visit). jsdom has no
+  // requestIdleCallback of its own (the page falls back to a 2-second timer without it).
+  Object.assign(window, { requestIdleCallback: () => 0, cancelIdleCallback: () => {} });
 });
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
-  delete (window as IdleWindow).requestIdleCallback;
-  delete (window as IdleWindow).cancelIdleCallback;
+  Reflect.deleteProperty(window, "requestIdleCallback");
+  Reflect.deleteProperty(window, "cancelIdleCallback");
 });
 
 const last = () => saved[saved.length - 1];
