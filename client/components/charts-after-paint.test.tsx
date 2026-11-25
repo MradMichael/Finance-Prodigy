@@ -4,16 +4,24 @@
 // each chart's box is drawn with its height at once, and the chart draws into it when its code arrives. No words,
 // nothing stored. This tests the lazy module itself; the Overview's tests use its plain twin (charts.sync.tsx,
 // through vitest.config.ts's alias), so they render the charts at once, as before.
-import { it, expect, afterEach } from "vitest";
-import { render, cleanup, waitFor } from "@testing-library/react";
+import { it, expect, afterEach, vi } from "vitest";
+import { render, cleanup, act } from "@testing-library/react";
 import fs from "fs";
 import path from "path";
 // By a path vitest.config.ts's alias doesn't match, so this is the lazy module itself.
 import { CashFlowChart, NetWorthChart } from "../components/charts.lazy";
 import { ThemeProvider } from "../contexts/ThemeContext";
 
+// AUDIT 2.4.173 (owner, session 64, item 4): the chart's code can take more than a second to arrive when this file
+// runs beside others. Its arrival is delayed here on purpose, so the test checks that it waits for the code however
+// long it takes, not for a fixed time.
+vi.mock("./overview/CashFlowChart", async (importOriginal) => {
+  await new Promise((r) => setTimeout(r, 1500));
+  return importOriginal<typeof import("./overview/CashFlowChart")>();
+});
+
 afterEach(cleanup);
-const read = (p: string) => fs.readFileSync(path.join(__dirname, p), "utf8");
+const read =(p: string) => fs.readFileSync(path.join(__dirname, p), "utf8");
 
 it("the Overview doesn't import the chart library itself: it comes with the charts, after the first paint", () => {
   const src = read("FinancialDashboard.tsx");
@@ -33,9 +41,13 @@ it("a chart not loaded yet draws nothing (no words), then itself once its code a
   const trend = [{ ymKey: 202610, income: 3000, spend: 2100 }, { ymKey: 202611, income: 3000, spend: 1900 }];
   const { container } = render(<ThemeProvider><div style={{ width: 400, height: 224 }}><CashFlowChart data={trend} startDay={1} /></div></ThemeProvider>);
   expect(container.textContent).toBe("");
-  await waitFor(() => expect(container.querySelector(".recharts-responsive-container")).not.toBeNull());
+  // AUDIT 2.4.173: waits for the chart's own code (the promise the chart itself waits on), not for a fixed time;
+  // the chart is then on screen at once. The test's timeout is a bound, not the wait.
+  await act(() => CashFlowChart.preload());
+  expect(container.querySelector(".recharts-responsive-container")).not.toBeNull();
   cleanup();
   const nw = [{ ym: "2026-10", value: 21000 }, { ym: "2026-11", value: 21500 }];
   const second = render(<ThemeProvider><div style={{ width: 400, height: 160 }}><NetWorthChart data={nw as never} color="#2a9d8f" /></div></ThemeProvider>);
-  await waitFor(() => expect(second.container.querySelector(".recharts-responsive-container")).not.toBeNull());
-});
+  await act(() => NetWorthChart.preload());
+  expect(second.container.querySelector(".recharts-responsive-container")).not.toBeNull();
+}, 30000);
