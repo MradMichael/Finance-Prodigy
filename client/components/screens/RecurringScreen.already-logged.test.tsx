@@ -23,7 +23,8 @@ function show(renewals: Renewal[], found: Record<string, LoggedEntry>, wired = t
     {...(wired ? { onLink: p.onLink, onUnlink: p.onUnlink } : {})} />);
   return { ...p, view };
 }
-const rowOf = (name: string) => screen.getByText(name, { exact: false, selector: "p" }).closest("div.flex.items-center") as HTMLElement;
+// The row by its name line (text-sm), since the found line and the notice name the item too.
+const rowOf = (name: string) => screen.getByText((_, el) => el?.tagName === "P" && el.classList.contains("text-sm") && !!el.textContent?.startsWith(name)).closest("div.flex.items-center") as HTMLElement;
 
 describe("Recurring: Already logged on a due line whose cycle was logged by hand", () => {
   it("names the entry in that row; Already logged leads (filled), Confirm is outlined; the other row is as before", () => {

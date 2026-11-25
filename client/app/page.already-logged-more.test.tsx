@@ -1,6 +1,6 @@
-// TODO 124 (owner, session 64, item 3): "Already logged" on the other Confirm buttons, wired into the app. Rent is due
-// on 15 October (in 2 days: on the Overview's chips and Recurring's due line, not yet on the reminder) and was logged
-// by hand on the 13th. On each of the three surfaces, Already logged links that row to the cycle through the page
+// TODO 124 (owner, session 64, item 3): "Already logged" on the other Confirm buttons, wired into the app. Rent started
+// in September (confirmed); its next cycle is due on 15 October (in 2 days: on the Overview's chips, Recurring's due
+// line and My Finances' row, not yet on the reminder) and was logged by hand on the 13th. On each of the three surfaces, Already logged links that row to the cycle through the page
 // (handleChange), so nothing new is logged. The harness is page.already-logged.test.tsx's.
 import { it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
@@ -12,6 +12,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ROUTER }));
 vi.mock("../lib/auth", () => ({ getSession: () => SESSION, hasValidSession: () => true, signOut: vi.fn() }));
 const saved: LocalFinancials[] = [];
 const HAND: StoredTransaction = { id: "hand", amount: 500, currency: "USD", bucket: "NEEDS", description: "rent", date: "2026-10-13", paymentMethod: "cash", createdAt: "2026-10-13T09:00:00.000Z" };
+const SEPT: StoredTransaction = { id: "sept", amount: 500, currency: "USD", bucket: "NEEDS", description: "Rent", date: "2026-09-15", paymentMethod: "cash", createdAt: "2026-09-15T09:00:00.000Z", recurringId: "r-rent", cycleDate: "2026-09-15" };
 vi.mock("../lib/localData", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/localData")>();
   return {
@@ -19,8 +20,8 @@ vi.mock("../lib/localData", async (importOriginal) => {
     loadData: vi.fn(async () => ({
       ...actual.DEFAULT_DATA, income: 3000, syncChoice: { enabled: false, decidedAt: "2026-10-01T08:00:00.000Z" },
       recurring: [{ id: "r-rent", name: "Rent", emoji: "🏠", amount: 500, currency: "USD", frequency: "monthly", bucket: "NEEDS",
-        startDate: "2026-10-15", endDate: null, totalAmount: null, createdAt: "2026-10-01T00:00:00.000Z" }],
-      transactions: [HAND],
+        startDate: "2026-09-15", endDate: null, totalAmount: null, createdAt: "2026-09-01T00:00:00.000Z" }],
+      transactions: [HAND, SEPT],
     })),
     saveData: vi.fn(async (d: LocalFinancials) => { saved.push(d); }),
   };
@@ -53,8 +54,8 @@ async function opened() {
 }
 async function linkedOnce() {
   await waitFor(() => expect(last()?.transactions.find((t) => t.id === "hand")?.recurringId).toBe("r-rent"), wait);
-  expect(last().transactions).toHaveLength(1); // nothing new was logged
-  expect(last().transactions[0]).toMatchObject({ id: "hand", amount: 500, date: "2026-10-13", recurringId: "r-rent", cycleDate: "2026-10-15" });
+  expect(last().transactions).toHaveLength(2); // nothing new was logged (the hand row and September's)
+  expect(last().transactions.find((t) => t.id === "hand")).toMatchObject({ id: "hand", amount: 500, date: "2026-10-13", recurringId: "r-rent", cycleDate: "2026-10-15" });
   expect(await screen.findByText(NOTICE, undefined, wait)).toBeTruthy();
 }
 
