@@ -299,9 +299,12 @@ export default function RecurringSection({ financials, update, lbpRate, onEdit, 
                               Confirm payment
                             </p>
                             {formEntry && <FoundLine id={foundLineId("finances", r.id)} entry={formEntry.entry} />}
-                            {/* With an entry found, three buttons beside the date: they wrap below it on a phone. */}
-                            <div className={`flex ${formEntry ? "flex-wrap " : ""}gap-2 items-end`}>
-                              <div className={formEntry ? "flex-1 min-w-[9rem]" : "flex-1"}>
+                            {/* With an entry found, three buttons beside the date: they wrap below it on a phone.
+                                TODO 132 (session 66): without one too. The date field can't be narrower than about
+                                213 px, so at 390 "Confirm" and the cancel button didn't fit beside it: below 640 px the
+                                date field takes the row and the buttons wrap below it. */}
+                            <div className="flex flex-wrap gap-2 items-end">
+                              <div className={formEntry ? "flex-1 min-w-[9rem]" : "basis-full sm:flex-1"}>
                                 <Label htmlFor={`confirm-date-${r.id}`}>Date actually paid</Label>
                                 <DateFieldDMY id={`confirm-date-${r.id}`} value={confirmDate} onChange={setConfirmDate} />
                               </div>
