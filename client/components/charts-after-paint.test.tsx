@@ -4,7 +4,7 @@
 // each chart's box is drawn with its height at once, and the chart draws into it when its code arrives. No words,
 // nothing stored. This tests the lazy module itself; the Overview's tests use its plain twin (charts.sync.tsx,
 // through vitest.config.ts's alias), so they render the charts at once, as before.
-import { it, expect, afterEach } from "vitest";
+import { it, expect, afterEach, vi } from "vitest";
 import { render, cleanup, waitFor } from "@testing-library/react";
 import fs from "fs";
 import path from "path";
@@ -12,8 +12,16 @@ import path from "path";
 import { CashFlowChart, NetWorthChart } from "../components/charts.lazy";
 import { ThemeProvider } from "../contexts/ThemeContext";
 
+// AUDIT 2.4.173 (owner, session 64, item 4): the chart's code can take more than a second to arrive when this file
+// runs beside others. Its arrival is delayed here on purpose, so the test checks that it waits for the code however
+// long it takes, not for a fixed time.
+vi.mock("./overview/CashFlowChart", async (importOriginal) => {
+  await new Promise((r) => setTimeout(r, 1500));
+  return importOriginal<typeof import("./overview/CashFlowChart")>();
+});
+
 afterEach(cleanup);
-const read = (p: string) => fs.readFileSync(path.join(__dirname, p), "utf8");
+const read =(p: string) => fs.readFileSync(path.join(__dirname, p), "utf8");
 
 it("the Overview doesn't import the chart library itself: it comes with the charts, after the first paint", () => {
   const src = read("FinancialDashboard.tsx");
