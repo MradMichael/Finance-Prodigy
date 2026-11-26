@@ -34,7 +34,8 @@ function EmailField({ email }: { email: string }) {
   const [shown, setShown] = useState(false);
   return (
     <span className="inline-flex items-center gap-1.5 text-xs" style={{ color: T.mute }}>
-      <span style={{ filter: shown ? "none" : "blur(4px)", transition: "filter 0.2s", userSelect: shown ? undefined : "none" as React.CSSProperties["userSelect"] }}>{email}</span>
+      {/* TODO 134 (session 67): break-all, so a long address wraps inside its column instead of pushing the row's badges out. */}
+      <span className="break-all" style={{ filter: shown ? "none" : "blur(4px)", transition: "filter 0.2s", userSelect: shown ? undefined : "none" as React.CSSProperties["userSelect"] }}>{email}</span>
       <button onClick={() => setShown((v) => !v)} className="text-[9px] px-1.5 py-0.5 rounded hover:opacity-70" style={{ border: `1px solid ${T.line}`, color: T.mute }}>
         {shown ? "hide" : "show"}
       </button>
@@ -338,7 +339,8 @@ function AdminPageContent() {
                   style={{ background: T.panelSoft, border: `1px solid ${T.line}` }}
                 >
                   <div className="flex items-start justify-between gap-2 mb-2">
-                    <div>
+                    {/* TODO 134 (session 67): min-w-0, so this column can be narrower than a long email. */}
+                    <div className="min-w-0">
                       <p className="text-sm font-medium" style={{ color: T.text }}>{u.name}</p>
                       <EmailField email={u.email} />
                     </div>
