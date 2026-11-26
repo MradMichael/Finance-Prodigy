@@ -95,3 +95,24 @@ describe("each user's row shows that account's own last sync (DI-16)", () => {
     expect(new Set(rows.map((r) => r.textContent)).size).toBe(2);
   });
 });
+
+// TODO 134 (owner, session 67; AUDIT 2.4.182): at 390 px a long email pushed the row's "Admin" and "Has data" badges 19 px
+// past it. The name and email column had no min-w-0, and an email is one unbreakable string, so the column couldn't be
+// narrower than the address. Now the column can shrink and the address wraps inside it. jsdom does no layout, so this
+// checks the classes; the live check (session 67's rows-67.js) measures the row.
+describe("a user's row keeps a long email inside its column (TODO 134)", () => {
+  it("the name and email column can shrink, and the email wraps anywhere", async () => {
+    seedUser({ id: "u1", isAdmin: true });
+    seedSession("u1");
+    render(<AdminPage />);
+    await waitFor(() => expect(screen.getByText("Admin panel")).toBeInTheDocument());
+    const email = screen.getByText("u1@example.com");
+    // The premise: the row is the flex row that also holds the badges.
+    const column = email.closest("div")!;
+    const row = column.parentElement!;
+    expect(row.classList.contains("justify-between")).toBe(true);
+    expect(row.textContent).toContain("Admin");
+    expect(column.classList.contains("min-w-0")).toBe(true);
+    expect(email.classList.contains("break-all")).toBe(true);
+  });
+});
