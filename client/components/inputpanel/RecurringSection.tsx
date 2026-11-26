@@ -151,12 +151,15 @@ export default function RecurringSection({ financials, update, lbpRate, onEdit, 
                       >
                         <div className="flex items-start justify-between gap-2 group">
                           <div className="min-w-0 flex-1">
-                            <p className="text-sm" style={{ color: T.text }}>
+                            {/* TODO 134 (session 67): a <wbr /> before each badge, so the badges can wrap below the
+                                name (with no space between them they wrapped as one word, and at 390 px ran past the
+                                name's column and over the edit button); break-words for a single over-long name. */}
+                            <p className="text-sm break-words" style={{ color: T.text }}>
                               {r.emoji} {r.name}
-                              {ended && <span className="ml-1.5 text-[9px] uppercase tracking-wider" style={{ color: T.mute }}>ended</span>}
-                              {!ended && overdue && <span className="ml-1.5 text-[9px] uppercase tracking-wider" style={{ color: T.coral }}>overdue{target!.overdueCount > 1 ? ` ×${target!.overdueCount}` : ""}</span>}
-                              {!ended && !overdue && paidThisCycle && <span className="ml-1.5 text-[9px] uppercase tracking-wider" style={{ color: T.jade }}>✓ paid</span>}
-                              <span className="ml-1.5 text-[9px] uppercase tracking-wider px-1 rounded" style={{ background: cur === "LBP" ? T.brass + "22" : T.jade + "15", color: cur === "LBP" ? T.brass : T.jade }}>{cur}</span>
+                              {ended && <><wbr /><span className="ml-1.5 text-[9px] uppercase tracking-wider" style={{ color: T.mute }}>ended</span></>}
+                              {!ended && overdue && <><wbr /><span className="ml-1.5 text-[9px] uppercase tracking-wider" style={{ color: T.coral }}>overdue{target!.overdueCount > 1 ? ` ×${target!.overdueCount}` : ""}</span></>}
+                              {!ended && !overdue && paidThisCycle && <><wbr /><span className="ml-1.5 text-[9px] uppercase tracking-wider" style={{ color: T.jade }}>✓ paid</span></>}
+                              <wbr /><span className="ml-1.5 text-[9px] uppercase tracking-wider px-1 rounded" style={{ background: cur === "LBP" ? T.brass + "22" : T.jade + "15", color: cur === "LBP" ? T.brass : T.jade }}>{cur}</span>
                             </p>
                             <p className="text-[10px] mt-0.5 tabular-nums" style={{ color: T.mute }}>
                               {sym}{r.amount.toLocaleString("en-US")} · {FREQ_LABELS[r.frequency]}
