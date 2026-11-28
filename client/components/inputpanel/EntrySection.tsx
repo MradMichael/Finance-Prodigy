@@ -5,7 +5,7 @@
 // share: the toast, the lira dialog, saving a card, and "Log again" (which fills this form from a row).
 import { useState } from "react";
 import type { LocalFinancials, Currency, PaymentMethod, StoredCard, StoredTransaction, BudgetRuleKey, cycleStartDayOf } from "../../lib/localData";
-import { uid, todayISO, BUDGET_RULES, withRate, looksRecurring, buildQuickRecurring, quickRecurringStart, matchCategoryRule, roundMoney, moneyMaxFor, MONEY_MAX_USD, cardRef, edited, saveCard as storeCard, rateOn, lbpRateOf } from "../../lib/localData";
+import { uid, todayISO, BUDGET_RULES, withRate, looksRecurring, buildQuickRecurring, quickRecurringStart, matchCategoryRule, roundMoney, moneyMaxFor, MONEY_MAX_USD, cardRef, edited, saveCard as storeCard, rateOn, lbpRateOf, buildNewDebt, debtsNotYetReceived } from "../../lib/localData";
 import type { Session } from "../../lib/auth";
 import type { computeDashboard } from "../../lib/computeDashboard";
 import type { periodNoun } from "../../lib/period";
@@ -77,7 +77,10 @@ export function useEntryForm(session: Session | undefined, financials: LocalFina
   const [showAddCard, setShowAddCard] = useState(false);
   const [newCardType, setNewCardType] = useState<StoredCard["type"]>("Visa");
   const [newCardLast4, setNewCardLast4] = useState("");
-  return { remembered, txAmt, setTxAmt, txBucket, setTxBucket, bucketTouched, setBucketTouched, txCategory, setTxCategory, txDesc, setTxDesc, txDate, setTxDate, txTripPick, setTxTripPick, txCurrency, setTxCurrency, txSplitMode, setTxSplitMode, txSplitUSD, setTxSplitUSD, txSplitLBP, setTxSplitLBP, txPayMethod, setTxPayMethod, txPayNote, setTxPayNote, txAddToEF, setTxAddToEF, txFromEF, setTxFromEF, txEfAmt, setTxEfAmt, txCardId, setTxCardId, showAddCard, setShowAddCard, newCardType, setNewCardType, newCardLast4, setNewCardLast4 };
+  // Session 68's plan, step C (owner approved, session 69): "Money borrowed for" on a Transfer: "" (Not a loan), a
+  // debt's id, or "new" (A new debt).
+  const [txBorrowedFor, setTxBorrowedFor] = useState("");
+  return { txBorrowedFor, setTxBorrowedFor, remembered, txAmt, setTxAmt, txBucket, setTxBucket, bucketTouched, setBucketTouched, txCategory, setTxCategory, txDesc, setTxDesc, txDate, setTxDate, txTripPick, setTxTripPick, txCurrency, setTxCurrency, txSplitMode, setTxSplitMode, txSplitUSD, setTxSplitUSD, txSplitLBP, setTxSplitLBP, txPayMethod, setTxPayMethod, txPayNote, setTxPayNote, txAddToEF, setTxAddToEF, txFromEF, setTxFromEF, txEfAmt, setTxEfAmt, txCardId, setTxCardId, showAddCard, setShowAddCard, newCardType, setNewCardType, newCardLast4, setNewCardLast4 };
 }
 
 export default function EntrySection({ financials, dashData, session, update, lbpRate, cards, saveCard, showToast, setLbpConfirm, TX_BUCKETS, activeTx, noun, startDay, savOut, txTrip, looksLikeSalary, form }: {
@@ -100,7 +103,7 @@ export default function EntrySection({ financials, dashData, session, update, lb
   form: ReturnType<typeof useEntryForm>;
 }) {
   const T = useTheme();
-  const { txAmt, setTxAmt, txBucket, setTxBucket, setBucketTouched, txCategory, setTxCategory, txDesc, setTxDesc, txDate, setTxDate, setTxTripPick, txCurrency, setTxCurrency, txSplitMode, setTxSplitMode, txSplitUSD, setTxSplitUSD, txSplitLBP, setTxSplitLBP, txPayMethod, setTxPayMethod, txPayNote, setTxPayNote, txAddToEF, setTxAddToEF, txFromEF, setTxFromEF, txEfAmt, setTxEfAmt, txCardId, setTxCardId, showAddCard, setShowAddCard, newCardType, setNewCardType, newCardLast4, setNewCardLast4 } = form;
+  const { txBorrowedFor, setTxBorrowedFor, txAmt, setTxAmt, txBucket, setTxBucket, setBucketTouched, txCategory, setTxCategory, txDesc, setTxDesc, txDate, setTxDate, setTxTripPick, txCurrency, setTxCurrency, txSplitMode, setTxSplitMode, txSplitUSD, setTxSplitUSD, txSplitLBP, setTxSplitLBP, txPayMethod, setTxPayMethod, txPayNote, setTxPayNote, txAddToEF, setTxAddToEF, txFromEF, setTxFromEF, txEfAmt, setTxEfAmt, txCardId, setTxCardId, showAddCard, setShowAddCard, newCardType, setNewCardType, newCardLast4, setNewCardLast4 } = form;
 
   function addTransaction() {
     const amt = parseFloat(txAmt);
@@ -149,6 +152,11 @@ export default function EntrySection({ financials, dashData, session, update, lb
     const efAmtRaw = txEfAmt.trim() ? parseFloat(txEfAmt.replace(/,/g, "")) : amt;
     // Plan J: a backdated entry's draw at its own day's rate, as every figure prices it.
     const efAmtUSD = txCurrency === "LBP" ? efAmtRaw / rateOn(financials, txDate) : efAmtRaw;
+    // Step C (session 69): money borrowed, on a Transfer only (a pick left from an earlier type is ignored). "A new
+    // debt" is the entry's amount, currency and date, interest and minimum 0, named by the description or "Loan".
+    const loanPick = txBucket === "TRANSFER" ? txBorrowedFor : "";
+    const newDebt = loanPick === "new" ? buildNewDebt({ name: txDesc.trim() || "Loan", balance: amt, apr: 0, minPayment: 0, currency: txCurrency, openedDate: txDate }, lbpRateOf(financials)) : null;
+    const borrowedForDebtId = newDebt ? newDebt.id : loanPick && financials.debts.some((d) => d.id === loanPick) ? loanPick : undefined;
     const now = new Date().toISOString();
     const tx: StoredTransaction = {
       id: uid(), amount: amt, currency: txCurrency, bucket: txBucket,
@@ -163,8 +171,11 @@ export default function EntrySection({ financials, dashData, session, update, lb
       ...(txTrip ? { tripId: txTrip } : {}),
       ...(txBucket === "SAVINGS" && txAddToEF ? { efAmount: roundMoney(efAmtUSD) } : {}),
       ...(txBucket !== "SAVINGS" && txBucket !== "INCOME" && txBucket !== "TRANSFER" && txFromEF ? { efAmount: roundMoney(-efAmtUSD) } : {}),
+      ...(borrowedForDebtId ? { borrowedForDebtId } : {}),
     };
-    update({ transactions: [tx, ...financials.transactions], ...(withNewCard ? { cards: withNewCard } : {}) });
+    // The entry and, for "A new debt", the debt in ONE update.
+    update({ transactions: [tx, ...financials.transactions], ...(withNewCard ? { cards: withNewCard } : {}), ...(newDebt ? { debts: [...financials.debts, edited(newDebt)] } : {}) });
+    setTxBorrowedFor("");
     setTxAmt(""); setTxDesc(""); setTxPayNote(""); setTxAddToEF(false); setTxFromEF(false); setTxEfAmt(""); setTxCategory(""); setTxTripPick(null);
     setBucketTouched(false);
     rememberEntry(session?.userId, { currency: txCurrency, paymentMethod: txPayMethod, cardId });
@@ -317,6 +328,31 @@ export default function EntrySection({ financials, dashData, session, update, lb
             pools has its own form in Manage → Transfer.
           </p>
         )}
+        {txBucket === "TRANSFER" && !txSplitMode && (() => {
+          const newAmt = parseFloat(txAmt) || 0;
+          return (
+            <div className="mt-2">
+              <Label htmlFor="tx-borrowed-for">Money borrowed for</Label>
+              <select
+                id="tx-borrowed-for"
+                value={txBorrowedFor}
+                onChange={(e) => setTxBorrowedFor(e.target.value)}
+                aria-describedby={txBorrowedFor === "new" && newAmt > 0 ? "tx-borrowed-new-line" : undefined}
+                className="w-full rounded-xl px-3 py-2.5 text-sm"
+                style={{ background: T.panelSoft, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
+              >
+                <option value="">Not a loan</option>
+                {debtsNotYetReceived(financials.debts, financials.transactions).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                <option value="new">A new debt</option>
+              </select>
+              {txBorrowedFor === "new" && newAmt > 0 && (
+                <p id="tx-borrowed-new-line" className="text-[11px] mt-1.5 px-1" style={{ color: T.mute }}>
+                  {`Adds a debt named ${txDesc.trim() || "Loan"} of ${fmtCur(newAmt, txCurrency)}. Set its interest and monthly minimum under Manage → Debts.`}
+                </p>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       <div>
