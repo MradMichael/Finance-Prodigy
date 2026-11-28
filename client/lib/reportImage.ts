@@ -5,7 +5,7 @@
 import { REPORT_TEXT, changeSentence, goalSentence, type MonthlyReport, type ReportSection } from "./monthlyReport";
 import { fmtCur } from "../components/screens/shared";
 
-export interface ImageLine { text: string; right?: string; kind: "title" | "period" | "heading" | "line" | "sentence" | "footer" }
+export interface ImageLine { text: string; right?: string; kind: "title" | "period" | "heading" | "note" | "line" | "sentence" | "footer" }
 export interface ImageColors { background: string; text: string; mute: string; accent: string; line: string }
 
 const usd = (n: number) => fmtCur(n, "USD");
@@ -18,6 +18,11 @@ export function reportImageLines(r: MonthlyReport): ImageLine[] {
     for (const l of s.lines) out.push({ text: l.label, right: usd(l.usd), kind: "line" });
   };
   section(REPORT_TEXT.moneyIn, r.moneyIn);
+  // Session 69, step D: right after Money in, only when it has lines; no total.
+  if (r.paidBackAndBorrowed.lines.length) {
+    out.push({ text: REPORT_TEXT.paidBackAndBorrowed, kind: "heading" }, { text: REPORT_TEXT.notCounted, kind: "note" });
+    for (const l of r.paidBackAndBorrowed.lines) out.push({ text: l.label, right: usd(l.usd), kind: "line" });
+  }
   section(REPORT_TEXT.bills, r.bills);
   section(REPORT_TEXT.whereItWent, r.whereItWent);
   out.push({ text: REPORT_TEXT.saved, kind: "heading" });
@@ -39,6 +44,7 @@ const STYLE: Record<ImageLine["kind"], { font: string; height: number; gapBefore
   title: { font: "600 60px Spectral, Georgia, serif", height: 72, gapBefore: 0 },
   period: { font: "32px system-ui, sans-serif", height: 44, gapBefore: 4 },
   heading: { font: "600 32px system-ui, sans-serif", height: 44, gapBefore: 36 },
+  note: { font: "26px system-ui, sans-serif", height: 36, gapBefore: 2 },
   line: { font: "30px system-ui, sans-serif", height: 42, gapBefore: 0 },
   sentence: { font: "30px system-ui, sans-serif", height: 42, gapBefore: 4 },
   footer: { font: "26px system-ui, sans-serif", height: 36, gapBefore: 48 },
@@ -84,7 +90,7 @@ export function drawReport(r: MonthlyReport, colors: ImageColors): HTMLCanvasEle
   for (const { line, rows, y: top } of laidOut) {
     const st = STYLE[line.kind];
     ctx.font = st.font;
-    ctx.fillStyle = line.kind === "heading" ? colors.accent : line.kind === "period" || line.kind === "footer" ? colors.mute : colors.text;
+    ctx.fillStyle = line.kind === "heading" ? colors.accent : line.kind === "period" || line.kind === "note" || line.kind === "footer" ? colors.mute : colors.text;
     rows.forEach((row, i) => { ctx!.textAlign = "left"; ctx!.fillText(row, PAD, top + i * st.height); });
     if (line.right) { ctx.textAlign = "right"; ctx.fillText(line.right, WIDTH - PAD, top); }
   }
