@@ -494,6 +494,14 @@ export interface StoredTransaction {
   // which is exactly what every existing row means. Same shape as
   // recurringModelNoticeSeen.
   goalId?: string;
+  // Session 68's plan, step B (owner approved, session 69): "this entry is the money received when this debt was
+  // taken on" -- a loan received. Set only on a TRANSFER that gained (positive amount, the pool gained; the polarity
+  // TRANSFER shares with efAmount), by buildLoanReceiptTx. Nothing that computes a balance reads it: the pool gains
+  // through the TRANSFER like any other, and derivedDebtBalance reads `debtId` only, so the debt keeps its full
+  // opening balance. A receipt NEVER carries `debtId`: that would count it as a payment and pay the debt off.
+  // Optional and additive, like goalId: no schema bump, absent means "not a loan received". An older build sees an
+  // ordinary gained Transfer and keeps the field on edit ({...t}); a purge drops it with the rest.
+  borrowedForDebtId?: string;
   // Schema v7 (plan H 5a): this row's amount IN ITS GOAL'S CURRENCY, frozen.
   // Set by the v7 migration on a contribution whose currency differs from
   // its goal's and that has no stored rate, and by a goal balance correction
@@ -4020,6 +4028,37 @@ export function buildDebtPaymentTx(
     ...(opts.cardId ? { cardId: opts.cardId, cardLabel: opts.cardLabel } : {}),
     ...(opts.paymentMethod === "other" && opts.paymentNote ? { paymentNote: opts.paymentNote } : {}),
   };
+}
+
+/**
+ * Session 68's plan, step B (owner approved, session 69): the money received when a debt is taken on. A TRANSFER
+ * that GAINED (amount positive: the pool gained, as TRANSFER and efAmount both mean it) for the debt's opening
+ * balance, in the debt's own currency (no USD figure stored), on the pool it arrived in, linked by
+ * `borrowedForDebtId`. Never `debtId`: derivedDebtBalance would subtract it and the debt would read paid off.
+ * Description "Borrowed: {debt name}" (S6, approved). `date` is the caller's (the form's opened date if typed and
+ * not in the future, otherwise today).
+ */
+export function buildLoanReceiptTx(
+  debt: StoredDebt,
+  pool: { paymentMethod: PaymentMethod; cardId?: string; cardLabel?: string },
+  lbpRate: number,
+  date: string,
+): StoredTransaction {
+  const now = new Date().toISOString();
+  return {
+    id: uid(), amount: Math.abs(debt.openingBalance), currency: debt.currency, bucket: "TRANSFER",
+    description: `Borrowed: ${debt.name}`, date,
+    paymentMethod: pool.paymentMethod,
+    ...(pool.paymentMethod === "card" && pool.cardId ? { cardId: pool.cardId, cardLabel: pool.cardLabel } : {}),
+    borrowedForDebtId: debt.id,
+    createdAt: now, updatedAt: now,
+    ...withRate(debt.currency, lbpRate),
+  };
+}
+
+/** Session 69 (step B): whether a debt's money received is still among the entries (not deleted). */
+export function hasLoanReceipt(debtId: string, transactions: readonly StoredTransaction[]): boolean {
+  return transactions.some((t) => t.borrowedForDebtId === debtId && t.deletedAt == null);
 }
 
 /**
