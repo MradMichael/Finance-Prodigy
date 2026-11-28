@@ -3,8 +3,9 @@
 // InputPanel split, S8 (session 55): My Finances' Debts section, moved here line for line. The section's header
 // (title and count) stays in InputPanel; a closed section doesn't build this at all.
 import { useState } from "react";
-import type { LocalFinancials, Currency, StoredDebt } from "../../lib/localData";
-import { uid, withRate, lbpRateOf, edited, recordDeletion, moneyMaxFor, debtPayoff, derivedDebtBalance, fmtDate } from "../../lib/localData";
+import type { LocalFinancials, Currency, StoredDebt, PaymentMethod } from "../../lib/localData";
+import { uid, withRate, lbpRateOf, edited, recordDeletion, moneyMaxFor, debtPayoff, derivedDebtBalance, fmtDate, todayISO, buildLoanReceiptTx, hasLoanReceipt } from "../../lib/localData";
+import { looksLikeMistypedLbp } from "../../lib/entryGuards";
 import { useTheme } from "../../contexts/ThemeContext";
 import { fmtCur } from "../screens/shared";
 import { Label, FocusInput, MoneyInput, PrimaryBtn, CurrencyToggle, DateFieldDMY } from "../form/Primitives";
@@ -22,23 +23,45 @@ export function useDebtForm() {
   // see the "usability backlog" comment there. dOpenedDate below is the New
   // Debt form's own field, unrelated to editing an existing one.
   const [dOpenedDate,      setDOpenedDate]      = useState("");
-  return { dName, setDName, dBalance, setDBalance, dApr, setDApr, dMin, setDMin, dCurrency, setDCurrency, dOpenedDate, setDOpenedDate };
+  // Session 69 (step B): "Money received into (optional)": "" (Not recorded), "cash", or "card:<id>".
+  const [dReceivedInto, setDReceivedInto] = useState("");
+  return { dName, setDName, dBalance, setDBalance, dApr, setDApr, dMin, setDMin, dCurrency, setDCurrency, dOpenedDate, setDOpenedDate, dReceivedInto, setDReceivedInto };
 }
 
-export default function DebtsSection({ financials, update, lbpRate, onEdit, onPay, form }: {
+export default function DebtsSection({ financials, update, lbpRate, onEdit, onPay, form, setLbpConfirm }: {
   financials: LocalFinancials;
   update: (patch: Partial<LocalFinancials>) => void;
   lbpRate: number;
   onEdit: (kind: "debt", id: string) => void;
   onPay: (debtId: string) => void;
   form: ReturnType<typeof useDebtForm>;
+  /** Session 69 (step B): the panel's lira check, asked when the money received goes into a pool. */
+  setLbpConfirm: (v: { amount: number; proceed: () => void } | null) => void;
 }) {
   const T = useTheme();
-  const { dName, setDName, dBalance, setDBalance, dApr, setDApr, dMin, setDMin, dCurrency, setDCurrency, dOpenedDate, setDOpenedDate } = form;
+  const { dName, setDName, dBalance, setDBalance, dApr, setDApr, dMin, setDMin, dCurrency, setDCurrency, dOpenedDate, setDOpenedDate, dReceivedInto, setDReceivedInto } = form;
+
+  // Session 68's plan, step B (owner approved, session 69): where the money borrowed arrived, if the person says.
+  // Cash or a saved card; anything else (Not recorded, a card since removed) records no money received.
+  const cards = financials.cards ?? [];
+  const receivedCard = dReceivedInto.startsWith("card:") ? cards.find((c) => c.id === dReceivedInto.slice(5)) : undefined;
+  const pool: { paymentMethod: PaymentMethod; cardId?: string; cardLabel?: string; label: string } | null =
+    dReceivedInto === "cash" ? { paymentMethod: "cash", label: "Cash" }
+    : receivedCard ? { paymentMethod: "card", cardId: receivedCard.id, cardLabel: receivedCard.label, label: receivedCard.label }
+    : null;
+  const typedBalance = parseFloat(dBalance.replace(/,/g, "")) || 0;
+  // The opened date if one is typed and it isn't in the future; otherwise today.
+  const receiptDate = dOpenedDate && dOpenedDate <= todayISO() ? dOpenedDate : todayISO();
 
   function addDebt() {
     if (!dName.trim() || !dBalance) return;
     const balance = parseFloat(dBalance.replace(/,/g, ""));
+    // With a pool picked, a mistyped lira balance would also land in Cash or the card: the lira check asks first.
+    if (pool && looksLikeMistypedLbp(balance, dCurrency)) { setLbpConfirm({ amount: balance, proceed: () => commitDebt(balance) }); return; }
+    commitDebt(balance);
+  }
+
+  function commitDebt(balance: number) {
     const debt: StoredDebt = {
       id: uid(), name: dName.trim(),
       balance,
@@ -53,8 +76,10 @@ export default function DebtsSection({ financials, update, lbpRate, onEdit, onPa
       // starting balance IS its opening balance, trivially.
       openingBalance: balance,
     };
-    update({ debts: [...financials.debts, edited(debt)] });
-    setDName(""); setDBalance(""); setDApr(""); setDMin(""); setDOpenedDate(""); setDCurrency("USD");
+    // The debt and the money received in ONE update: one save, one sync push.
+    const receipt = pool && balance > 0 ? buildLoanReceiptTx(debt, pool, lbpRateOf(financials), receiptDate) : null;
+    update({ debts: [...financials.debts, edited(debt)], ...(receipt ? { transactions: [receipt, ...financials.transactions] } : {}) });
+    setDName(""); setDBalance(""); setDApr(""); setDMin(""); setDOpenedDate(""); setDCurrency("USD"); setDReceivedInto("");
   }
 
   return (
@@ -111,7 +136,7 @@ export default function DebtsSection({ financials, update, lbpRate, onEdit, onPa
                       >pay</button>
                     )}
                     <button
-                      onClick={() => { if (confirm("Delete this debt?")) update({ debts: financials.debts.filter((x) => x.id !== d.id), deletedKeys: recordDeletion(financials, "debts", d.id) }); }}
+                      onClick={() => { if (confirm(hasLoanReceipt(d.id, financials.transactions) ? "Delete this debt? The money you received for it stays in your entries." : "Delete this debt?")) update({ debts: financials.debts.filter((x) => x.id !== d.id), deletedKeys: recordDeletion(financials, "debts", d.id) }); }}
                       aria-label="Delete debt"
                       className="text-xs"
                       style={{ color: T.coral }}
@@ -157,6 +182,26 @@ export default function DebtsSection({ financials, update, lbpRate, onEdit, onPa
             <Label>Currency</Label>
             <CurrencyToggle value={dCurrency} onChange={setDCurrency} />
           </div>
+        </div>
+        <div>
+          <Label htmlFor="new-debt-received">Money received into (optional)</Label>
+          <select
+            id="new-debt-received"
+            value={dReceivedInto}
+            onChange={(e) => setDReceivedInto(e.target.value)}
+            aria-describedby={pool && typedBalance > 0 ? "new-debt-received-line" : undefined}
+            className="w-full rounded-xl px-3 py-2.5 text-sm"
+            style={{ background: T.panelSoft, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
+          >
+            <option value="">Not recorded</option>
+            <option value="cash">Cash</option>
+            {cards.map((c) => <option key={c.id} value={`card:${c.id}`}>{c.label}</option>)}
+          </select>
+          {pool && typedBalance > 0 && (
+            <p id="new-debt-received-line" className="text-[11px] mt-1.5 px-1" style={{ color: T.mute }}>
+              {`Adds ${fmtCur(typedBalance, dCurrency)} to ${pool.label} on ${fmtDate(receiptDate)}. Not counted as income.`}
+            </p>
+          )}
         </div>
         <PrimaryBtn onClick={addDebt} color={T.coral} disabled={!dName.trim() || !dBalance}>+ Add debt</PrimaryBtn>
       </div>

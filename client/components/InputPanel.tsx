@@ -320,7 +320,7 @@ export default function InputPanel({ financials, dashData, onChange, session, on
 
         {/* Debts */}
         <Section title="Debts" icon="💳" badge={financials.debts.filter((d) => !debtPayoff(d, financials.transactions, financials).paidOff).length} defaultOpen={false}>
-          <DebtsSection financials={financials} update={update} lbpRate={lbpRate} onEdit={onEdit} onPay={onPay} form={debtForm} />
+          <DebtsSection financials={financials} update={update} lbpRate={lbpRate} onEdit={onEdit} onPay={onPay} form={debtForm} setLbpConfirm={setLbpConfirm} />
         </Section>
 
         <Section title="Other Assets" icon="🏦" badge={(financials.assets ?? []).length} defaultOpen={false}>

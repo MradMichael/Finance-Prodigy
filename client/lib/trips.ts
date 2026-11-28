@@ -153,9 +153,12 @@ export function suggestedTripId(trips: StoredTrip[], date: string, { orNext = fa
   return trips.filter((t) => t.startDate > date).sort((a, b) => a.startDate.localeCompare(b.startDate))[0]?.id;
 }
 
-/** A reimbursement: a TRANSFER that gained money and isn't one leg of a transfer (no other TRANSFER shares its link). */
+/**
+ * A reimbursement: a TRANSFER that gained money and isn't one leg of a transfer (no other TRANSFER shares its link),
+ * nor a loan received (session 69, step B: borrowed money can't lower a trip's spending).
+ */
 export function isReimbursement(t: StoredTransaction, all: StoredTransaction[]): boolean {
-  if (t.bucket !== "TRANSFER" || !(t.amount > 0)) return false;
+  if (t.bucket !== "TRANSFER" || !(t.amount > 0) || t.borrowedForDebtId) return false;
   return !(t.linkedPaymentId && all.some((o) => o.id !== t.id && o.bucket === "TRANSFER" && o.linkedPaymentId === t.linkedPaymentId));
 }
 
