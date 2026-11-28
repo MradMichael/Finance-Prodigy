@@ -3,7 +3,7 @@
 import { useState, useRef } from "react";
 import { useDialogFocus } from "./useDialogFocus";
 import type { LocalFinancials, StoredDebt } from "../lib/localData";
-import { derivedDebtBalance, buildDebtAdjustmentTx, roundMoney, moneyMaxFor, edited, lbpRateOf } from "../lib/localData";
+import { derivedDebtBalance, debtPayoff, buildDebtAdjustmentTx, roundMoney, moneyMaxFor, edited, lbpRateOf, fmtDate } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY } from "./form/Primitives";
 
@@ -40,6 +40,9 @@ export default function EditDebtSheet({
   const [balanceInput, setBalanceInput] = useState<string | null>(null);
 
   const balance = derivedDebtBalance(debt, financials.transactions, financials);
+  // Session 68's plan, step A (owner approved, session 69, D4 (a)): a paid-off debt shows 0, not a blank field, and
+  // says why; the field stays editable (a typed balance is a correction, as before). A 0 balance is always paid off.
+  const payoff = debtPayoff(debt, financials.transactions, financials);
 
   function save() {
     if (!name.trim()) return;
@@ -101,15 +104,23 @@ export default function EditDebtSheet({
                 type="number" inputMode="decimal" min="0" step="1"
                 className="w-full rounded-lg px-3 py-2 text-sm tabular-nums"
                 style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none" }}
-                value={balanceInput ?? (balance || "")}
+                value={balanceInput ?? balance}
                 onChange={(e) => setBalanceInput(e.target.value)}
                 onBlur={(e) => commitBalance(e.target.value)}
                 placeholder="0"
+                aria-describedby={payoff.paidOff ? "edit-debt-paid-off" : undefined}
               />
             </div>
             <div><Label htmlFor="edit-debt-apr">APR (%)</Label><FocusInput id="edit-debt-apr" type="number" inputMode="decimal" min="0" step="0.1" value={apr} onChange={(e) => setApr(e.target.value)} placeholder="0" /></div>
             <div><Label htmlFor="edit-debt-min">Min/mo</Label><MoneyInput id="edit-debt-min" value={min} onChange={setMin} placeholder="0" max={moneyMaxFor(debt.currency, lbpRateOf(financials))} /></div>
           </div>
+          {payoff.paidOff && (
+            <p id="edit-debt-paid-off" className="text-[11px] px-1" style={{ color: T.mute }}>
+              {payoff.on
+                ? `Paid off on ${fmtDate(payoff.on)}. Type a balance only if you still owe something; it's saved as a correction.`
+                : "Paid off. Type a balance only if you still owe something; it's saved as a correction."}
+            </p>
+          )}
           <div>
             <Label htmlFor="edit-debt-opened">Opened date (when this debt started)</Label>
             <DateFieldDMY id="edit-debt-opened" value={opened} onChange={setOpened} />
