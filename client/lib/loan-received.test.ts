@@ -7,6 +7,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { computeDashboard, trackedBalanceExpected, periodTotals } from "./computeDashboard";
 import { DEFAULT_DATA, buildLoanReceiptTx, derivedDebtBalance, mergeTransactions, type LocalFinancials, type StoredDebt, type StoredTransaction, type TrackedBalance } from "./localData";
 import { mergeFinancials } from "./syncMerge";
+import { seenOf } from "./syncSeen";
 import { isReimbursement } from "./trips";
 import { asCycleKey } from "./period";
 
@@ -78,10 +79,11 @@ describe("trips", () => {
 });
 
 describe("sync", () => {
-  it("the debt and its receipt, pushed together, arrive together", () => {
+  it("the debt and its receipt, pushed together, arrive together (a pull after a sync, as syncs merge: with the last synced copy seen)", () => {
     const receipt = buildLoanReceiptTx(LOAN, { paymentMethod: "cash" }, 89_500, "2026-07-05");
+    const lastSynced = data();
     const server = data({ debts: [{ ...LOAN, updatedAt: "2026-07-05T10:00:00.000Z" }], transactions: [receipt] });
-    const merged = mergeFinancials(data(), server, new Date(2026, 6, 20)).data;
+    const merged = mergeFinancials(data(), server, new Date(2026, 6, 20), seenOf(lastSynced)).data;
     expect(merged.debts.map((d) => d.id)).toEqual(["d1"]);
     expect(merged.transactions.find((t) => t.id === receipt.id)).toMatchObject({ borrowedForDebtId: "d1", amount: 800, bucket: "TRANSFER" });
     expect(derivedDebtBalance(LOAN, merged.transactions, merged)).toBe(800);
