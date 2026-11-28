@@ -2958,6 +2958,28 @@ export function buildNewGoal(
   };
 }
 
+/**
+ * Session 69 (step C): a new debt's record, as My Finances' "+ Add debt" and the entry form's "A new debt" each
+ * build it. A brand-new debt has no history yet, so its starting balance IS its opening balance (Phase 2.6.1). The
+ * currency is locked at creation, with the rate it was entered at for a lira debt. The caller marks the edit.
+ */
+export function buildNewDebt(
+  input: { name: string; balance: number; apr: number; minPayment: number; currency: Currency; openedDate?: string },
+  lbpRate: number,
+): StoredDebt {
+  return {
+    id: uid(), name: input.name,
+    balance: input.balance,
+    apr: input.apr,
+    minPayment: input.minPayment,
+    currency: input.currency,
+    ...withRate(input.currency, lbpRate),
+    createdAt: new Date().toISOString(),
+    ...(input.openedDate ? { openedDate: input.openedDate } : {}),
+    openingBalance: input.balance,
+  };
+}
+
 // ── Money precision (2026-08-17 audit follow-up, "Option B") ──────────────
 // All money in this app is a native JS number (float dollars), not integer
 // cents — see docs/AUDIT_2026-08.md, 2.4.16. That's a deliberate choice
@@ -4054,6 +4076,20 @@ export function buildLoanReceiptTx(
     createdAt: now, updatedAt: now,
     ...withRate(debt.currency, lbpRate),
   };
+}
+
+/** Session 69 (step C): one leg of a same-moment transfer: another TRANSFER shares its linkedPaymentId (2.4.55). */
+export function isTransferLeg(t: StoredTransaction, all: readonly StoredTransaction[]): boolean {
+  return !!t.linkedPaymentId && all.some((o) => o.id !== t.id && o.bucket === "TRANSFER" && o.linkedPaymentId === t.linkedPaymentId);
+}
+
+/**
+ * Session 69 (step C): the debts "Money borrowed for" offers: those whose money isn't already recorded on another
+ * entry (not deleted). `exceptTxId` is the entry being edited, whose own debt stays offered.
+ */
+export function debtsNotYetReceived(debts: readonly StoredDebt[], transactions: readonly StoredTransaction[], exceptTxId?: string): StoredDebt[] {
+  const received = new Set(transactions.filter((t) => t.id !== exceptTxId && t.borrowedForDebtId && t.deletedAt == null).map((t) => t.borrowedForDebtId));
+  return debts.filter((d) => !received.has(d.id));
 }
 
 /** Session 69 (step B): whether a debt's money received is still among the entries (not deleted). */

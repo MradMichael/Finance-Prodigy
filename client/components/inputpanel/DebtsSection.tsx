@@ -3,8 +3,8 @@
 // InputPanel split, S8 (session 55): My Finances' Debts section, moved here line for line. The section's header
 // (title and count) stays in InputPanel; a closed section doesn't build this at all.
 import { useState } from "react";
-import type { LocalFinancials, Currency, StoredDebt, PaymentMethod } from "../../lib/localData";
-import { uid, withRate, lbpRateOf, edited, recordDeletion, moneyMaxFor, debtPayoff, derivedDebtBalance, fmtDate, todayISO, buildLoanReceiptTx, hasLoanReceipt } from "../../lib/localData";
+import type { LocalFinancials, Currency, PaymentMethod } from "../../lib/localData";
+import { lbpRateOf, edited, recordDeletion, moneyMaxFor, debtPayoff, derivedDebtBalance, fmtDate, todayISO, buildNewDebt, buildLoanReceiptTx, hasLoanReceipt } from "../../lib/localData";
 import { looksLikeMistypedLbp } from "../../lib/entryGuards";
 import { useTheme } from "../../contexts/ThemeContext";
 import { fmtCur } from "../screens/shared";
@@ -62,20 +62,13 @@ export default function DebtsSection({ financials, update, lbpRate, onEdit, onPa
   }
 
   function commitDebt(balance: number) {
-    const debt: StoredDebt = {
-      id: uid(), name: dName.trim(),
-      balance,
+    // Session 69 (step C): built by buildNewDebt, shared with the entry form's "A new debt". Same fields as before.
+    const debt = buildNewDebt({
+      name: dName.trim(), balance,
       apr: Math.max(0, parseFloat(dApr) || 0),
       minPayment: parseFloat(dMin.replace(/,/g, "")) || 0,
-      // Same reasoning as addGoal's currency field -- see its comment.
-      currency: dCurrency,
-      ...withRate(dCurrency, lbpRateOf(financials)),
-      createdAt: new Date().toISOString(),
-      ...(dOpenedDate ? { openedDate: dOpenedDate } : {}),
-      // Phase 2.6.1 -- a brand-new debt has no history yet, so its own
-      // starting balance IS its opening balance, trivially.
-      openingBalance: balance,
-    };
+      currency: dCurrency, openedDate: dOpenedDate || undefined,
+    }, lbpRateOf(financials));
     // The debt and the money received in ONE update: one save, one sync push.
     const receipt = pool && balance > 0 ? buildLoanReceiptTx(debt, pool, lbpRateOf(financials), receiptDate) : null;
     update({ debts: [...financials.debts, edited(debt)], ...(receipt ? { transactions: [receipt, ...financials.transactions] } : {}) });

@@ -6,7 +6,8 @@ import LbpMistypeDialog from "./LbpMistypeDialog";
 import type { LocalFinancials, StoredTransaction, StoredCard, Currency, PaymentMethod } from "../lib/localData";
 import {
   fmtDate, looksRecurring, buildQuickRecurring, quickRecurringStart, cycleMonthDivergence,
-  roundMoney, retagBucketAmount, moneyMaxFor, cycleStartDayOf, edited, saveCard as storeCard, cardRef, rateOn, lbpRateOf } from "../lib/localData";
+  roundMoney, retagBucketAmount, moneyMaxFor, cycleStartDayOf, edited, saveCard as storeCard, cardRef, rateOn, lbpRateOf,
+  isTransferLeg, debtsNotYetReceived } from "../lib/localData";
 import { useTheme } from "../contexts/ThemeContext";
 import { Label, FocusInput, MoneyInput, DateFieldDMY, CurrencyToggle, PM_OPTIONS, CardPicker } from "./form/Primitives";
 import FutureDateNote from "./form/FutureDateNote";
@@ -114,6 +115,10 @@ export default function EditTransactionSheet({
     transaction.debtAdjustment == null ? transaction.debtAdjustment : String(0 - transaction.debtAdjustment)
   );
   const [lbpConfirmAmount, setLbpConfirmAmount] = useState<number | null>(null);
+  // Session 68's plan, step C (owner approved, session 69): "Money borrowed for", on a Transfer that gained (not a
+  // foreign-cash row, not one leg of a transfer). Cleared on save if the row stops being one.
+  const [borrowedFor, setBorrowedFor] = useState(transaction.borrowedForDebtId ?? "");
+  const isLeg = isTransferLeg(transaction, financials.transactions);
   const sheetRef = useRef<HTMLDivElement>(null);
   useDialogFocus(sheetRef, true, onClose); // A11Y-02: a named modal dialog, focus in and back; U8 (session 32): Escape closes it
 
@@ -150,6 +155,12 @@ export default function EditTransactionSheet({
   }
 
   const isSpending = (b: TxBucket) => b === "NEEDS" || b === "WANTS" || b === "SAVINGS";
+  // Money coming in that can be a loan received: a Transfer that gained, not foreign cash, not a transfer's leg.
+  const loanable = bucket === "TRANSFER" && transferGained && !fxRole && !isLeg;
+  // "Linked debt" counts a row as a payment. Money coming in can't pay a debt, so on it (Income, or a loanable
+  // Transfer) the link is shown only when the row already has one: a wrong link stays visible and can be removed
+  // (session 68's H2: an Income entry linked to its own loan read the debt as paid off).
+  const showLinkedDebt = !(bucket === "INCOME" || loanable) || transaction.debtId != null;
   const fxAmtNum = parseFloat(fxAmt.replace(/,/g, ""));
 
   // D-a (owner, session 56): as the entry form, an amount of 0 is refused and Save is disabled until there is one.
@@ -196,6 +207,7 @@ export default function EditTransactionSheet({
         efAmount: efAmountUSD,
         debtId,
         debtAdjustment: debtAdjustmentNum,
+        borrowedForDebtId: keptBucket === "TRANSFER" && signedAmt > 0 && !fxRole && !isLeg && borrowedFor ? borrowedFor : undefined,
         updatedAt: new Date().toISOString(),
       }),
     });
@@ -294,6 +306,23 @@ export default function EditTransactionSheet({
               <p className="text-[10px] px-1" style={{ color: T.mute }}>
                 Not counted as spending or income. Excluded from every budget total.
               </p>
+              {loanable && (
+                <div>
+                  <Label htmlFor="edit-tx-borrowed-for">Money borrowed for</Label>
+                  <select
+                    id="edit-tx-borrowed-for"
+                    value={borrowedFor}
+                    onChange={(e) => setBorrowedFor(e.target.value)}
+                    className="w-full rounded-lg px-2 py-1.5 text-[10px]"
+                    style={{ background: T.ink, border: `1px solid ${T.line}`, color: T.text, outline: "none", colorScheme: "dark" }}
+                  >
+                    <option value="">Not a loan</option>
+                    {debtsNotYetReceived(financials.debts, financials.transactions, transaction.id).map((d) => (
+                      <option key={d.id} value={d.id}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
           )}
           <select
@@ -363,7 +392,7 @@ export default function EditTransactionSheet({
           ) : (
             <button type="button" onClick={() => setEfAmount(amt)} className="text-[10px] font-medium px-2.5 py-1.5 rounded-lg transition-all hover:opacity-80" style={{ color: T.jade, border: `1px solid ${T.jade}40` }}>+ Link to Emergency fund</button>
           )}
-          <div>
+          {showLinkedDebt && <div>
             <Label htmlFor="edit-tx-debt">Linked debt</Label>
             <select
               id="edit-tx-debt"
@@ -381,7 +410,7 @@ export default function EditTransactionSheet({
                 <option key={d.id} value={d.id}>{d.name}</option>
               ))}
             </select>
-          </div>
+          </div>}
           {debtId && (
             debtAdjustment != null ? (
               <div className="rounded-lg px-2.5 py-2 space-y-1.5" style={{ background: T.ink, border: `1px solid ${T.line}` }}>
