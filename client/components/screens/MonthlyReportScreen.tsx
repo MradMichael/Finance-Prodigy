@@ -97,6 +97,14 @@ export default function MonthlyReportScreen({ financials }: { financials: LocalF
         ) : (
           <>
             <section className={card} style={cardStyle}><Heading total={report.moneyIn.total}>{REPORT_TEXT.moneyIn}</Heading><Lines lines={report.moneyIn.lines} /></section>
+            {/* Session 69, step D (session 68's plan, approved): money in that isn't income, outside Money in; no total. */}
+            {report.paidBackAndBorrowed.lines.length > 0 && (
+              <section className={card} style={cardStyle}>
+                <Heading>{REPORT_TEXT.paidBackAndBorrowed}</Heading>
+                <p className="text-xs mt-1" style={{ color: T.mute }}>{REPORT_TEXT.notCounted}</p>
+                <Lines lines={report.paidBackAndBorrowed.lines} />
+              </section>
+            )}
             <section className={card} style={cardStyle}><Heading total={report.bills.total}>{REPORT_TEXT.bills}</Heading><Lines lines={report.bills.lines} /></section>
             <section className={card} style={cardStyle}><Heading total={report.whereItWent.total}>{REPORT_TEXT.whereItWent}</Heading><Lines lines={report.whereItWent.lines} /></section>
             <section className={card} style={cardStyle}><Heading>{REPORT_TEXT.saved}</Heading><Lines lines={report.saved.lines} /></section>

@@ -5,8 +5,13 @@
 // image say the same thing.
 //
 // What each section counts (live rows only: a deleted row counts nowhere):
-// - Money in: the salary for the period (incomeForCycle, as periodTotals) as "Income", then each income entry by
-//   its own name.
+// - Money in: the salary for the period (incomeForCycle, as periodTotals) as "Income", then Income entries by
+//   category, "Extra income" for none (session 69, step D; was each entry by its own name). Its total is the
+//   figure Statistics calls Income for the period.
+// - Paid back and borrowed (session 69, step D): the Transfers that gained, by category ("Paid back: {category}",
+//   "Paid back" for none), and each loan received by its debt ("Borrowed: {debt}"; a deleted debt's receipt by its
+//   own description). Not a transfer's two legs, not a foreign-cash change-back (it nets in Where it went). Outside
+//   Money in, with no total, and not compared with the period before.
 // - Bills and debt payments: a recurring bill's confirmed rows by the bill's name, and debt payments (a row naming
 //   a debt, not a correction) by the debt's name.
 // - Where it went: spending by category (the shared spending rule, Needs and Wants; Savings has its own section),
@@ -20,10 +25,10 @@
 //   A figure that was 0 before has no percent to give and isn't compared.
 import {
   cycleStartDayOf, makeToUSDOn, incomeForCycle, categoryLabel, goalProgress, goalPercent, liveGoalRows, contributionToGoal,
-  roundMoney, type Currency, type LocalFinancials, type StoredTransaction,
+  roundMoney, transferLegLinks, type Currency, type LocalFinancials, type StoredTransaction,
 } from "./localData";
 import { transactionsInCycle, cycleKeyMinus, cycleKeyForISO, currentCycleKey, cycleBounds, cycleLabel, cycleLabelLong, periodNoun, type CycleKey } from "./period";
-import { spendingEffect, spentByBucket, spentByCategory } from "./spending";
+import { spendingEffect, spentByBucket, spentByCategory, categoryKey, isChangeBack } from "./spending";
 import { fmtCur } from "../components/screens/shared";
 
 export const CHANGE_MIN_PCT = 25;
@@ -34,6 +39,12 @@ export const REPORT_TEXT = {
   title: "Monthly report",
   picker: "Period",
   moneyIn: "Money in",
+  // Session 69, step D (session 68's plan, S14-S18; approved): money in that isn't income.
+  paidBackAndBorrowed: "Paid back and borrowed",
+  notCounted: "Not counted in Money in.",
+  paidBack: (category: string) => `Paid back: ${category}`,
+  paidBackNone: "Paid back",
+  borrowed: (debt: string) => `Borrowed: ${debt}`,
   bills: "Bills and debt payments",
   whereItWent: "Where it went",
   saved: "Saved",
@@ -52,7 +63,8 @@ export const REPORT_TEXT = {
 
 // Labels the app already uses for these figures (not new words): Statistics' "Income", the type "Savings",
 // Setup's "Safety net", the screen "Goals".
-const LINE = { income: "Income", savings: "Savings", safetyNet: "Safety net", goals: "Goals" } as const;
+// "Extra income" (session 69, step D, S13; approved, D1 (a)): the entry form's own words for an Income entry.
+const LINE = { income: "Income", extraIncome: "Extra income", savings: "Savings", safetyNet: "Safety net", goals: "Goals" } as const;
 
 export interface ReportLine { label: string; usd: number }
 export interface ReportSection { total: number; lines: ReportLine[] }
@@ -61,7 +73,7 @@ export interface ReportChange { name: string; percent: number; amount: number; u
 export interface MonthlyReport {
   key: CycleKey; previous: CycleKey; noun: string; label: string; longLabel: string; previousLabel: string;
   empty: boolean; first: boolean;
-  moneyIn: ReportSection; bills: ReportSection; whereItWent: ReportSection; saved: { lines: ReportLine[] };
+  moneyIn: ReportSection; paidBackAndBorrowed: { lines: ReportLine[] }; bills: ReportSection; whereItWent: ReportSection; saved: { lines: ReportLine[] };
   goals: GoalLine[]; changes: ReportChange[];
 }
 
@@ -85,8 +97,20 @@ function figures(data: LocalFinancials, key: CycleKey) {
   const rows = live(transactionsInCycle(data.transactions ?? [], key, startDay));
 
   const salary = incomeForCycle(data.incomeHistory, key, data.income);
-  const incomeRows = grouped(rows.filter((t) => t.bucket === "INCOME").map((t) => [t.description, usd(t)]));
+  const incomeLabel = (t: StoredTransaction) => { const k = categoryKey(t.category); return k === "uncategorized" ? LINE.extraIncome : categoryLabel(k, data.customCategories); };
+  const incomeRows = grouped(rows.filter((t) => t.bucket === "INCOME").map((t) => [incomeLabel(t), usd(t)]));
   const moneyInLines = [...(salary ? [{ label: LINE.income, usd: roundMoney(salary) }] : []), ...incomeRows];
+
+  const all = data.transactions ?? [];
+  const backLabel = (t: StoredTransaction) => {
+    if (t.borrowedForDebtId) { const d = data.debts?.find((x) => x.id === t.borrowedForDebtId); return d ? REPORT_TEXT.borrowed(d.name) : t.description; }
+    const k = categoryKey(t.category);
+    return k === "uncategorized" ? REPORT_TEXT.paidBackNone : REPORT_TEXT.paidBack(categoryLabel(k, data.customCategories));
+  };
+  const gained = rows.filter((t) => t.bucket === "TRANSFER" && t.amount > 0 && !isChangeBack(t));
+  // A transfer's leg: another TRANSFER shares its link (isTransferLeg), found in one pass, only when needed.
+  const legs = gained.some((t) => t.linkedPaymentId) ? transferLegLinks(all) : null;
+  const backLines = grouped(gained.filter((t) => !(t.linkedPaymentId && legs?.has(t.linkedPaymentId))).map((t) => [backLabel(t), usd(t)]));
 
   const billPairs: [string, number][] = [];
   for (const t of rows) {
@@ -110,6 +134,7 @@ function figures(data: LocalFinancials, key: CycleKey) {
   return {
     rows, byCategory,
     moneyIn: { total: total(moneyInLines), lines: moneyInLines },
+    paidBackAndBorrowed: { lines: backLines },
     bills: { total: total(billLines), lines: billLines },
     whereItWent: { total: roundMoney([...byCategory.values()].reduce((s, v) => s + v, 0)), lines: whereLines },
     saved: { lines: [{ label: LINE.savings, usd: roundMoney(savings) }, { label: LINE.safetyNet, usd: roundMoney(safetyNet) }, { label: LINE.goals, usd: roundMoney(toGoals) }] },
@@ -174,7 +199,7 @@ export function buildMonthlyReport(data: LocalFinancials, key: CycleKey, now: Da
   return {
     key, previous, noun: periodNoun(startDay), label: cycleLabel(key, startDay), longLabel: cycleLabelLong(key, startDay), previousLabel: cycleLabel(previous, startDay),
     empty, first,
-    moneyIn: cur.moneyIn, bills: cur.bills, whereItWent: cur.whereItWent, saved: cur.saved,
+    moneyIn: cur.moneyIn, paidBackAndBorrowed: cur.paidBackAndBorrowed, bills: cur.bills, whereItWent: cur.whereItWent, saved: cur.saved,
     goals, changes,
   };
 }

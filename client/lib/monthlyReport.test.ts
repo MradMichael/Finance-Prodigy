@@ -59,8 +59,9 @@ describe("one period's figures", () => {
     expect(r.first).toBe(false);
   });
 
-  it("money in: the salary as Income, then each income entry by its name", () => {
-    expect(r.moneyIn.lines).toEqual([{ label: "Income", usd: 3000 }, { label: "Freelance", usd: 500 }]);
+  // Session 69, step D (session 68 plan, D1 (a)): Income entries by category, "Extra income" for none (was: by name).
+  it("money in: the salary as Income, then Income entries by category (Extra income for none)", () => {
+    expect(r.moneyIn.lines).toEqual([{ label: "Income", usd: 3000 }, { label: "Extra income", usd: 500 }]);
     expect(r.moneyIn.total).toBe(3500);
   });
 

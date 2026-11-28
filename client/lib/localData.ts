@@ -4084,6 +4084,19 @@ export function isTransferLeg(t: StoredTransaction, all: readonly StoredTransact
 }
 
 /**
+ * Session 69 (step D): the linkedPaymentIds two or more TRANSFER rows share, in one pass. For a TRANSFER row,
+ * `isTransferLeg(t, all)` is exactly `transferLegLinks(all).has(t.linkedPaymentId)`; this is for a reader that
+ * asks about many rows (the monthly report), so it doesn't scan every entry once per row.
+ */
+export function transferLegLinks(all: readonly StoredTransaction[]): Set<string> {
+  const count = new Map<string, number>();
+  for (const t of all) if (t.bucket === "TRANSFER" && t.linkedPaymentId) count.set(t.linkedPaymentId, (count.get(t.linkedPaymentId) ?? 0) + 1);
+  const out = new Set<string>();
+  for (const [k, n] of count) if (n > 1) out.add(k);
+  return out;
+}
+
+/**
  * Session 69 (step C): the debts "Money borrowed for" offers: those whose money isn't already recorded on another
  * entry (not deleted). `exceptTxId` is the entry being edited, whose own debt stays offered.
  */
