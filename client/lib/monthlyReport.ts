@@ -25,7 +25,7 @@
 //   A figure that was 0 before has no percent to give and isn't compared.
 import {
   cycleStartDayOf, makeToUSDOn, incomeForCycle, categoryLabel, goalProgress, goalPercent, liveGoalRows, contributionToGoal,
-  roundMoney, isTransferLeg, type Currency, type LocalFinancials, type StoredTransaction,
+  roundMoney, transferLegLinks, type Currency, type LocalFinancials, type StoredTransaction,
 } from "./localData";
 import { transactionsInCycle, cycleKeyMinus, cycleKeyForISO, currentCycleKey, cycleBounds, cycleLabel, cycleLabelLong, periodNoun, type CycleKey } from "./period";
 import { spendingEffect, spentByBucket, spentByCategory, categoryKey, isChangeBack } from "./spending";
@@ -107,7 +107,10 @@ function figures(data: LocalFinancials, key: CycleKey) {
     const k = categoryKey(t.category);
     return k === "uncategorized" ? REPORT_TEXT.paidBackNone : REPORT_TEXT.paidBack(categoryLabel(k, data.customCategories));
   };
-  const backLines = grouped(rows.filter((t) => t.bucket === "TRANSFER" && t.amount > 0 && !isChangeBack(t) && !isTransferLeg(t, all)).map((t) => [backLabel(t), usd(t)]));
+  const gained = rows.filter((t) => t.bucket === "TRANSFER" && t.amount > 0 && !isChangeBack(t));
+  // A transfer's leg: another TRANSFER shares its link (isTransferLeg), found in one pass, only when needed.
+  const legs = gained.some((t) => t.linkedPaymentId) ? transferLegLinks(all) : null;
+  const backLines = grouped(gained.filter((t) => !(t.linkedPaymentId && legs?.has(t.linkedPaymentId))).map((t) => [backLabel(t), usd(t)]));
 
   const billPairs: [string, number][] = [];
   for (const t of rows) {
