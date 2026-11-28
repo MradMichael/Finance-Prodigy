@@ -417,7 +417,7 @@ New resolver `capacityFreedFrom(r, transactions, asOf)` answers "from what date 
 
 ## Phase 5 — F4 In-app monthly report
 
-**Status:** built (session 57): the Monthly report screen under More, one period of the account's own cycle at a time, with the comparison with the period before and a shared image (made on the device, after a confirmation). A PDF is not built. The owner's phone check is pending · **Depends on:** Phase 1, Phase 3
+**Status:** built (session 57): the Monthly report screen under More, one period of the account's own cycle at a time, with the comparison with the period before and a shared image (made on the device, after a confirmation). A PDF is not built. Session 69 (TODO 135, step D): Money in lists Income entries by category ("Extra income" for none), its total unchanged, and a "Paid back and borrowed" section follows it. The owner's phone check is pending · **Depends on:** Phase 1, Phase 3
 
 The owner already produces and reads a monthly report externally. It should be a first-class product output.
 
